@@ -112,7 +112,6 @@ DC_InitHack(PDC pdc)
         DC_vCopyState(pdc, defaultDCstate, TRUE);
     }
 
-    TextIntRealizeFont(pdc->pdcattr->hlfntNew,NULL);
     pdc->pdcattr->iCS_CP = ftGdiGetTextCharsetInfo(pdc,NULL,0);
 
     /* This should never fail */
