@@ -112,8 +112,6 @@ DC_InitHack(PDC pdc)
         DC_vCopyState(pdc, defaultDCstate, TRUE);
     }
 
-    pdc->pdcattr->iCS_CP = ftGdiGetTextCharsetInfo(pdc,NULL,0);
-
     /* This should never fail */
     ASSERT(pdc->dclevel.ppal);
 }
