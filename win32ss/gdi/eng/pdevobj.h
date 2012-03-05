@@ -187,7 +187,10 @@ InitPDEVImpl(VOID);
 PPDEVOBJ
 NTAPI
 PDEVOBJ_CreatePDEV(
-    struct _LDEVOBJ *pldev);
+    struct _LDEVOBJ *pldev,
+    PGRAPHICS_DEVICE pGraphicsDevice,
+    PDEVMODEW pdevmode,
+    PWSTR pwszLogAddress);
 
 BOOL
 NTAPI
