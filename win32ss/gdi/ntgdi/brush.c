@@ -25,22 +25,12 @@ typedef struct _GDI_OBJ_ATTR_ENTRY
   RGN_ATTR Attr[GDIOBJATTRFREE];
 } GDI_OBJ_ATTR_ENTRY, *PGDI_OBJ_ATTR_ENTRY;
 
-static const ULONG HatchBrushes[NB_HATCH_STYLES][8] =
-{
-    {0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0xFF, 0xFF, 0xFF}, /* HS_HORIZONTAL */
-    {0xF7, 0xF7, 0xF7, 0xF7, 0xF7, 0xF7, 0xF7, 0xF7}, /* HS_VERTICAL   */
-    {0xFE, 0xFD, 0xFB, 0xF7, 0xEF, 0xDF, 0xBF, 0x7F}, /* HS_FDIAGONAL  */
-    {0x7F, 0xBF, 0xDF, 0xEF, 0xF7, 0xFB, 0xFD, 0xFE}, /* HS_BDIAGONAL  */
-    {0xF7, 0xF7, 0xF7, 0xF7, 0x00, 0xF7, 0xF7, 0xF7}, /* HS_CROSS      */
-    {0x7E, 0xBD, 0xDB, 0xE7, 0xE7, 0xDB, 0xBD, 0x7E}  /* HS_DIAGCROSS  */
-};
-
 BOOL
 FASTCALL
 IntGdiSetBrushOwner(PBRUSH pbr, ULONG ulOwner)
 {
     // FIXME:
-    if (pbr->flAttrs & GDIBRUSH_IS_GLOBAL) return TRUE;
+    if (pbr->flAttrs & BR_IS_GLOBAL) return TRUE;
 
     if ((ulOwner == GDI_OBJ_HMGR_PUBLIC) || ulOwner == GDI_OBJ_HMGR_NONE)
     {
@@ -129,9 +119,8 @@ NTAPI
 BRUSH_Cleanup(PVOID ObjectBody)
 {
     PBRUSH pbrush = (PBRUSH)ObjectBody;
-    if (pbrush->flAttrs & (GDIBRUSH_IS_HATCH | GDIBRUSH_IS_BITMAP))
+    if (pbrush->hbmPattern)
     {
-        ASSERT(pbrush->hbmPattern);
         GreSetObjectOwner(pbrush->hbmPattern, GDI_OBJ_HMGR_POWNED);
         GreDeleteObject(pbrush->hbmPattern);
     }
@@ -162,7 +151,7 @@ BRUSH_GetObject(PBRUSH pbrush, INT Count, LPLOGBRUSH Buffer)
     Buffer->lbColor = pbrush->BrushAttr.lbColor;
 
     /* Set Hatch */
-    if ((pbrush->flAttrs & GDIBRUSH_IS_HATCH)!=0)
+    if ((pbrush->flAttrs & BR_IS_HATCH)!=0)
     {
         /* FIXME: This is not the right value */
         Buffer->lbHatch = (LONG)pbrush->hbmPattern;
@@ -175,23 +164,23 @@ BRUSH_GetObject(PBRUSH pbrush, INT Count, LPLOGBRUSH Buffer)
     Buffer->lbStyle = 0;
 
     /* Get the type of style */
-    if ((pbrush->flAttrs & GDIBRUSH_IS_SOLID)!=0)
+    if ((pbrush->flAttrs & BR_IS_SOLID)!=0)
     {
         Buffer->lbStyle = BS_SOLID;
     }
-    else if ((pbrush->flAttrs & GDIBRUSH_IS_NULL)!=0)
+    else if ((pbrush->flAttrs & BR_IS_NULL)!=0)
     {
         Buffer->lbStyle = BS_NULL; // BS_HOLLOW
     }
-    else if ((pbrush->flAttrs & GDIBRUSH_IS_HATCH)!=0)
+    else if ((pbrush->flAttrs & BR_IS_HATCH)!=0)
     {
         Buffer->lbStyle = BS_HATCHED;
     }
-    else if ((pbrush->flAttrs & GDIBRUSH_IS_BITMAP)!=0)
+    else if ((pbrush->flAttrs & BR_IS_BITMAP)!=0)
     {
         Buffer->lbStyle = BS_PATTERN;
     }
-    else if ((pbrush->flAttrs & GDIBRUSH_IS_DIB)!=0)
+    else if ((pbrush->flAttrs & BR_IS_DIB)!=0)
     {
         Buffer->lbStyle = BS_DIBPATTERN;
     }
@@ -254,7 +243,7 @@ IntGdiCreateDIBBrush(
     }
     hBrush = pbrush->BaseObject.hHmgr;
 
-    pbrush->flAttrs |= GDIBRUSH_IS_BITMAP | GDIBRUSH_IS_DIB;
+    pbrush->flAttrs |= BR_IS_BITMAP | BR_IS_DIB;
     pbrush->hbmPattern = hPattern;
     /* FIXME: Fill in the rest of fields!!! */
 
@@ -273,34 +262,23 @@ IntGdiCreateHatchBrush(
 {
     HBRUSH hBrush;
     PBRUSH pbrush;
-    HBITMAP hPattern;
 
     if (Style < 0 || Style >= NB_HATCH_STYLES)
     {
         return 0;
     }
 
-    hPattern = GreCreateBitmap(8, 8, 1, 1, (LPBYTE)HatchBrushes[Style]);
-    if (hPattern == NULL)
-    {
-        EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
-        return NULL;
-    }
-
     pbrush = BRUSH_AllocBrushWithHandle();
     if (pbrush == NULL)
     {
-        GreDeleteObject(hPattern);
         EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
         return NULL;
     }
     hBrush = pbrush->BaseObject.hHmgr;
 
-    pbrush->flAttrs |= GDIBRUSH_IS_HATCH;
-    pbrush->hbmPattern = hPattern;
+    pbrush->flAttrs |= BR_IS_HATCH;
     pbrush->BrushAttr.lbColor = Color & 0xFFFFFF;
-
-    GreSetObjectOwner(hPattern, GDI_OBJ_HMGR_PUBLIC);
+    pbrush->ulStyle = Style;
 
     GDIOBJ_vUnlockObject(&pbrush->BaseObject);
 
@@ -332,7 +310,7 @@ IntGdiCreatePatternBrush(
     }
     hBrush = pbrush->BaseObject.hHmgr;
 
-    pbrush->flAttrs |= GDIBRUSH_IS_BITMAP;
+    pbrush->flAttrs |= BR_IS_BITMAP;
     pbrush->hbmPattern = hPattern;
     /* FIXME: Fill in the rest of fields!!! */
 
@@ -359,7 +337,7 @@ IntGdiCreateSolidBrush(
     }
     hBrush = pbrush->BaseObject.hHmgr;
 
-    pbrush->flAttrs |= GDIBRUSH_IS_SOLID;
+    pbrush->flAttrs |= BR_IS_SOLID;
 
     pbrush->BrushAttr.lbColor = Color & 0x00FFFFFF;
     /* FIXME: Fill in the rest of fields!!! */
@@ -384,7 +362,7 @@ IntGdiCreateNullBrush(VOID)
     }
     hBrush = pbrush->BaseObject.hHmgr;
 
-    pbrush->flAttrs |= GDIBRUSH_IS_NULL;
+    pbrush->flAttrs |= BR_IS_NULL;
     GDIOBJ_vUnlockObject(&pbrush->BaseObject);
 
     return hBrush;
@@ -397,7 +375,7 @@ IntGdiSetSolidBrushColor(HBRUSH hBrush, COLORREF Color)
     PBRUSH pbrush;
 
     pbrush = BRUSH_ShareLockBrush(hBrush);
-    if (pbrush->flAttrs & GDIBRUSH_IS_SOLID)
+    if (pbrush->flAttrs & BR_IS_SOLID)
     {
         pbrush->BrushAttr.lbColor = Color & 0xFFFFFF;
     }
@@ -484,60 +462,5 @@ NtGdiCreateSolidBrush(COLORREF Color,
     return IntGdiCreateSolidBrush(Color);
 }
 
-/**
- * \name NtGdiSetBrushOrg
- *
- * \brief Sets the brush origin that GDI assigns to
- * the next brush an application selects into the specified device context.
- *
- * @implemented
- */
-BOOL
-APIENTRY
-NtGdiSetBrushOrg(HDC hDC, INT XOrg, INT YOrg, LPPOINT Point)
-{
-    PDC dc;
-    PDC_ATTR pdcattr;
-
-    dc = DC_LockDc(hDC);
-    if (dc == NULL)
-    {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        return FALSE;
-    }
-    pdcattr = dc->pdcattr;
-
-    if (Point != NULL)
-    {
-        NTSTATUS Status = STATUS_SUCCESS;
-        POINT SafePoint;
-        SafePoint.x = pdcattr->ptlBrushOrigin.x;
-        SafePoint.y = pdcattr->ptlBrushOrigin.y;
-        _SEH2_TRY
-        {
-            ProbeForWrite(Point, sizeof(POINT), 1);
-            *Point = SafePoint;
-        }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        {
-            Status = _SEH2_GetExceptionCode();
-        }
-        _SEH2_END;
-
-        if (!NT_SUCCESS(Status))
-        {
-            DC_UnlockDc(dc);
-            SetLastNtError(Status);
-            return FALSE;
-        }
-    }
-
-    pdcattr->ptlBrushOrigin.x = XOrg;
-    pdcattr->ptlBrushOrigin.y = YOrg;
-    IntptlBrushOrigin(dc, XOrg, YOrg );
-    DC_UnlockDc(dc);
-
-    return TRUE;
-}
 
 /* EOF */

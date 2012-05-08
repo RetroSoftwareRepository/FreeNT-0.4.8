@@ -188,7 +188,7 @@ NtUserCallOneParam(
              RtlZeroMemory(psmwp->acvr, count * sizeof(CVR));
              psmwp->bHandle = TRUE;
              psmwp->ccvr = 0;          // actualCount
-             psmwp->ccvrAlloc = count; // suggestedCount             
+             psmwp->ccvrAlloc = count; // suggestedCount
              RETURN((DWORD_PTR)hDwp);
          }
 
@@ -634,7 +634,7 @@ NtUserCallHwnd(
          UserRefObjectCo(Window, &Ref);
 
          HelpId = IntGetProp(Window, gpsi->atomContextHelpIdProp);
-         
+
          UserDerefObjectCo(Window);
          UserLeave();
          return (DWORD)HelpId->Data;
@@ -648,6 +648,17 @@ NtUserCallHwnd(
          if (IntIsWindow(hWnd))
             return IntDeRegisterShellHookWindow(hWnd);
          return FALSE;
+      case HWND_ROUTINE_SETMSGBOX:
+      {
+         PWND Window;
+         UserEnterExclusive();
+         if ((Window = UserGetWindowObject(hWnd)))
+         {
+            Window->state |= WNDS_MSGBOX;
+         }
+         UserLeave();
+         return FALSE;
+      }
    }
    STUB;
 
@@ -665,7 +676,7 @@ NtUserCallHwndParam(
    switch (Routine)
    {
       case HWNDPARAM_ROUTINE_KILLSYSTEMTIMER:
-          return IntKillTimer(hWnd, (UINT_PTR)Param, TRUE);
+          return IntKillTimer(UserGetWindowObject(hWnd), (UINT_PTR)Param, TRUE);
 
       case HWNDPARAM_ROUTINE_SETWNDCONTEXTHLPID:
       {
@@ -702,7 +713,7 @@ NtUserCallHwndParam(
          UserRefObjectCo(pWnd, &Ref);
 
          if (pWnd->head.pti->ppi == PsGetCurrentProcessWin32Process() &&
-             pWnd->cbwndExtra == DLGWINDOWEXTRA && 
+             pWnd->cbwndExtra == DLGWINDOWEXTRA &&
              !(pWnd->state & WNDS_SERVERSIDEWINDOWPROC))
          {
             if (Param)
@@ -716,7 +727,7 @@ NtUserCallHwndParam(
                pWnd->state &= ~WNDS_DIALOGWINDOW;
             }
          }
-         
+
          UserDerefObjectCo(pWnd);
          UserLeave();
          return 0;

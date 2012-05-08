@@ -6,11 +6,6 @@ add_definitions(
 
 include_directories(BEFORE ${REACTOS_SOURCE_DIR}/include/reactos/wine)
 
-if(MSVC)
-    add_definitions(-Disnan=_isnan)
-    add_definitions(-Disinf=!_finite)
-endif()
-
 spec2def(wined3d.dll wined3d.spec ADD_IMPORTLIB)
 
 list(APPEND SOURCE
@@ -41,12 +36,6 @@ list(APPEND SOURCE
     volume.c
     wined3d_main.c
     ${CMAKE_CURRENT_BINARY_DIR}/wined3d.def)
-
-if(ARCH MATCHES amd64)
-list(APPEND SOURCE
-     powf.c
-     sqrtf.c)
-endif()
 
 add_library(wined3d SHARED
     ${SOURCE}

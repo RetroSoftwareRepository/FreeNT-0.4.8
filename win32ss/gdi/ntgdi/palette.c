@@ -83,7 +83,8 @@ InitPaletteImpl()
         palPtr->palPalEntry[i].peFlags = 0;
     }
 
-    hpalette = NtGdiCreatePaletteInternal(palPtr,NB_RESERVED_COLORS);
+    hpalette = GreCreatePaletteInternal(palPtr,NB_RESERVED_COLORS);
+    ASSERT(hpalette);
     ExFreePoolWithTag(palPtr, TAG_PALETTE);
 
     /*  palette_size = visual->map_entries; */
@@ -144,152 +145,116 @@ VOID FASTCALL PALETTE_ValidateFlags(PALETTEENTRY* lpPalE, INT size)
         lpPalE[i].peFlags = PC_SYS_USED | (lpPalE[i].peFlags & 0x07);
 }
 
+
 PPALETTE
 NTAPI
-PALETTE_AllocPalette2(ULONG Mode,
-                     ULONG NumColors,
-                     ULONG *Colors,
-                     ULONG Red,
-                     ULONG Green,
-                     ULONG Blue)
+PALETTE_AllocPalette(
+    _In_ ULONG iMode,
+    _In_ ULONG cColors,
+    _In_opt_ PULONG pulColors,
+    _In_ FLONG flRed,
+    _In_ FLONG flGreen,
+    _In_ FLONG flBlue)
 {
-    PPALETTE PalGDI;
+    PPALETTE ppal;
+    ULONG fl = 0, cjSize = sizeof(PALETTE);
 
-    PalGDI = (PPALETTE)GDIOBJ_AllocateObject(GDIObjType_PAL_TYPE,
-                                             sizeof(PALETTE),
-                                             BASEFLAG_LOOKASIDE);
-    if (!PalGDI)
+    /* Check if the palette has entries */
+    if (iMode == PAL_INDEXED)
     {
-        DPRINT1("Could not allocate a palette.\n");
+        /* Check color count */
+        if ((cColors == 0) || (cColors > 1024)) return NULL;
+
+        /* Allocate enough space for the palete entries */
+        cjSize += cColors * sizeof(PALETTEENTRY);
+    }
+    else
+    {
+        /* There are no palette entries */
+        cColors = 0;
+
+        /* We can use the lookaside list */
+        fl |= BASEFLAG_LOOKASIDE;
+    }
+
+    /* Allocate the object (without a handle!) */
+    ppal = (PPALETTE)GDIOBJ_AllocateObject(GDIObjType_PAL_TYPE, cjSize, fl);
+    if (!ppal)
+    {
         return NULL;
     }
 
-    PalGDI->Self = PalGDI->BaseObject.hHmgr;
-    PalGDI->flFlags = Mode;
+    /* Set mode, color count and entry pointer */
+    ppal->flFlags = iMode;
+    ppal->NumColors = cColors;
+    ppal->IndexedColors = ppal->apalColors;
 
-    if (NULL != Colors)
+    /* Check what kind of palette this is */
+    if (iMode & PAL_INDEXED)
     {
-        PalGDI->IndexedColors = ExAllocatePoolWithTag(PagedPool,
-                                                      sizeof(PALETTEENTRY) * NumColors,
-                                                      TAG_PALETTE);
-        if (NULL == PalGDI->IndexedColors)
+        /* Check if we got a color array */
+        if (pulColors)
         {
-            GDIOBJ_vDeleteObject(&PalGDI->BaseObject);
-            return NULL;
+            /* Copy the entries */
+            RtlCopyMemory(ppal->IndexedColors,
+                          pulColors,
+                          cColors * sizeof(ULONG));
         }
-        RtlCopyMemory(PalGDI->IndexedColors, Colors, sizeof(PALETTEENTRY) * NumColors);
     }
-
-    if (Mode & PAL_INDEXED)
+    else if (iMode & PAL_BITFIELDS)
     {
-        PalGDI->NumColors = NumColors;
-    }
-    else if (Mode & PAL_BITFIELDS)
-    {
-        PalGDI->RedMask = Red;
-        PalGDI->GreenMask = Green;
-        PalGDI->BlueMask = Blue;
+        /* Copy the color masks */
+        ppal->RedMask = flRed;
+        ppal->GreenMask = flGreen;
+        ppal->BlueMask = flBlue;
 
-        if (Red == 0x7c00 && Green == 0x3E0 && Blue == 0x1F)
-            PalGDI->flFlags |= PAL_RGB16_555;
-        else if (Red == 0xF800 && Green == 0x7E0 && Blue == 0x1F)
-            PalGDI->flFlags |= PAL_RGB16_565;
-        else if (Red == 0xFF0000 && Green == 0xFF00 && Blue == 0xFF)
-            PalGDI->flFlags |= PAL_BGR;
-        else if (Red == 0xFF && Green == 0xFF00 && Blue == 0xFF0000)
-            PalGDI->flFlags |= PAL_RGB;
+        /* Check what masks we have and set optimization flags */
+        if ((flRed == 0x7c00) && (flGreen == 0x3E0) && (flBlue == 0x1F))
+            ppal->flFlags |= PAL_RGB16_555;
+        else if ((flRed == 0xF800) && (flGreen == 0x7E0) && (flBlue == 0x1F))
+            ppal->flFlags |= PAL_RGB16_565;
+        else if ((flRed == 0xFF0000) && (flGreen == 0xFF00) && (flBlue == 0xFF))
+            ppal->flFlags |= PAL_BGR;
+        else if ((flRed == 0xFF) && (flGreen == 0xFF00) && (flBlue == 0xFF0000))
+            ppal->flFlags |= PAL_RGB;
     }
 
-    return PalGDI;
+    return ppal;
 }
 
-HPALETTE
-FASTCALL
-PALETTE_AllocPalette(ULONG Mode,
-                     ULONG NumColors,
-                     ULONG *Colors,
-                     ULONG Red,
-                     ULONG Green,
-                     ULONG Blue)
+PPALETTE
+NTAPI
+PALETTE_AllocPalWithHandle(
+    _In_ ULONG iMode,
+    _In_ ULONG cColors,
+    _In_ PULONG pulColors,
+    _In_ FLONG flRed,
+    _In_ FLONG flGreen,
+    _In_ FLONG flBlue)
 {
     PPALETTE ppal;
-    HPALETTE hpal;
 
-    ppal = PALETTE_AllocPalette2(Mode, NumColors, Colors, Red, Green, Blue);
+    /* Allocate the palette without a handle */
+    ppal = PALETTE_AllocPalette(iMode, cColors, pulColors, flRed, flGreen, flBlue);
     if (!ppal) return NULL;
 
-    hpal = GDIOBJ_hInsertObject(&ppal->BaseObject, GDI_OBJ_HMGR_POWNED);
-    if (!hpal)
+    /* Insert the palette into the handle table */
+    if (!GDIOBJ_hInsertObject(&ppal->BaseObject, GDI_OBJ_HMGR_POWNED))
     {
         DPRINT1("Could not insert palette into handle table.\n");
         GDIOBJ_vFreeObject(&ppal->BaseObject);
         return NULL;
     }
 
-    PALETTE_UnlockPalette(ppal);
-
-    return hpal;
+    return ppal;
 }
 
-HPALETTE
-FASTCALL
-PALETTE_AllocPaletteIndexedRGB(ULONG NumColors,
-                               CONST RGBQUAD *Colors)
-{
-    HPALETTE NewPalette;
-    PPALETTE PalGDI;
-    UINT i;
-
-    PalGDI = (PPALETTE)GDIOBJ_AllocateObject(GDIObjType_PAL_TYPE,
-                                           sizeof(PALETTE),
-                                           BASEFLAG_LOOKASIDE);
-    if (!PalGDI)
-    {
-        DPRINT1("Could not allocate a palette.\n");
-        return NULL;
-    }
-
-    if (!GDIOBJ_hInsertObject(&PalGDI->BaseObject, GDI_OBJ_HMGR_POWNED))
-    {
-        DPRINT1("Could not insert palette into handle table.\n");
-        GDIOBJ_vFreeObject(&PalGDI->BaseObject);
-        return NULL;
-    }
-
-    NewPalette = PalGDI->BaseObject.hHmgr;
-
-    PalGDI->Self = NewPalette;
-    PalGDI->flFlags = PAL_INDEXED;
-
-    PalGDI->IndexedColors = ExAllocatePoolWithTag(PagedPool,
-                                                  sizeof(PALETTEENTRY) * NumColors,
-                                                  TAG_PALETTE);
-    if (NULL == PalGDI->IndexedColors)
-    {
-        GDIOBJ_vDeleteObject(&PalGDI->BaseObject);
-        return NULL;
-    }
-
-    for (i = 0; i < NumColors; i++)
-    {
-        PalGDI->IndexedColors[i].peRed = Colors[i].rgbRed;
-        PalGDI->IndexedColors[i].peGreen = Colors[i].rgbGreen;
-        PalGDI->IndexedColors[i].peBlue = Colors[i].rgbBlue;
-        PalGDI->IndexedColors[i].peFlags = 0;
-    }
-
-    PalGDI->NumColors = NumColors;
-
-    PALETTE_UnlockPalette(PalGDI);
-
-    return NewPalette;
-}
-
-BOOL NTAPI
+BOOL
+NTAPI
 PALETTE_Cleanup(PVOID ObjectBody)
 {
     PPALETTE pPal = (PPALETTE)ObjectBody;
-    if (NULL != pPal->IndexedColors)
+    if (pPal->IndexedColors && pPal->IndexedColors != pPal->apalColors)
     {
         ExFreePoolWithTag(pPal->IndexedColors, TAG_PALETTE);
     }
@@ -297,7 +262,8 @@ PALETTE_Cleanup(PVOID ObjectBody)
     return TRUE;
 }
 
-INT FASTCALL
+INT
+FASTCALL
 PALETTE_GetObject(PPALETTE ppal, INT cbCount, LPLOGBRUSH lpBuffer)
 {
     if (!lpBuffer)
@@ -318,8 +284,8 @@ PALETTE_ulGetNearestPaletteIndex(PALETTE* ppal, ULONG iColor)
     ULONG i, ulBestIndex = 0;
     PALETTEENTRY peColor = *(PPALETTEENTRY)&iColor;
 
-    /* Loop all palette entries, break on exact match */
-    for (i = 0; i < ppal->NumColors && ulMinimalDiff != 0; i++)
+    /* Loop all palette entries */
+    for (i = 0; i < ppal->NumColors; i++)
     {
         /* Calculate distance in the color cube */
         ulDiff = peColor.peRed - ppal->IndexedColors[i].peRed;
@@ -334,6 +300,9 @@ PALETTE_ulGetNearestPaletteIndex(PALETTE* ppal, ULONG iColor)
         {
             ulBestIndex = i;
             ulMinimalDiff = ulColorDiff;
+
+            /* Break on exact match */
+            if (ulMinimalDiff == 0) break;
         }
     }
 
@@ -434,7 +403,7 @@ EngCreatePalette(
     PPALETTE ppal;
     HPALETTE hpal;
 
-    ppal = PALETTE_AllocPalette2(iMode, cColors, pulColors, flRed, flGreen, flBlue);
+    ppal = PALETTE_AllocPalette(iMode, cColors, pulColors, flRed, flGreen, flBlue);
     if (!ppal) return NULL;
 
     hpal = GDIOBJ_hInsertObject(&ppal->BaseObject, GDI_OBJ_HMGR_PUBLIC);
@@ -476,7 +445,6 @@ PALOBJ_cGetColors(PALOBJ *PalObj, ULONG Start, ULONG Colors, ULONG *PaletteEntry
     PALETTE *PalGDI;
 
     PalGDI = (PALETTE*)PalObj;
-   /* PalGDI = (PALETTE*)AccessInternalObjectFromUserObject(PalObj); */
 
     if (Start >= PalGDI->NumColors)
         return 0;
@@ -495,38 +463,74 @@ PALOBJ_cGetColors(PALOBJ *PalObj, ULONG Start, ULONG Colors, ULONG *PaletteEntry
 
 /** Systemcall Interface ******************************************************/
 
+HPALETTE
+NTAPI
+GreCreatePaletteInternal(
+    IN LPLOGPALETTE pLogPal,
+    IN UINT cEntries)
+{
+    HPALETTE hpal = NULL;
+    PPALETTE ppal;
+
+    pLogPal->palNumEntries = cEntries;
+    ppal = PALETTE_AllocPalWithHandle(PAL_INDEXED,
+                                      cEntries,
+                                      (PULONG)pLogPal->palPalEntry,
+                                      0, 0, 0);
+
+    if (ppal != NULL)
+    {
+        PALETTE_ValidateFlags(ppal->IndexedColors, ppal->NumColors);
+
+        hpal = ppal->BaseObject.hHmgr;
+        PALETTE_UnlockPalette(ppal);
+    }
+
+    return hpal;
+}
+
 /*
  * @implemented
  */
-HPALETTE APIENTRY
-NtGdiCreatePaletteInternal ( IN LPLOGPALETTE pLogPal, IN UINT cEntries )
+HPALETTE
+APIENTRY
+NtGdiCreatePaletteInternal(
+    IN LPLOGPALETTE plogpalUser,
+    IN UINT cEntries)
 {
-    PPALETTE PalGDI;
-    HPALETTE NewPalette;
+    HPALETTE hpal = NULL;
+    PPALETTE ppal;
+    ULONG i, cjSize;
 
-    pLogPal->palNumEntries = cEntries;
-    NewPalette = PALETTE_AllocPalette( PAL_INDEXED,
-                                       cEntries,
-                                       (PULONG)pLogPal->palPalEntry,
-                                       0, 0, 0);
-
-    if (NewPalette == NULL)
+    ppal = PALETTE_AllocPalWithHandle(PAL_INDEXED, cEntries, NULL, 0, 0, 0);
+    if (ppal == NULL)
     {
         return NULL;
     }
 
-    PalGDI = (PPALETTE) PALETTE_ShareLockPalette(NewPalette);
-    if (PalGDI != NULL)
+    cjSize = FIELD_OFFSET(LOGPALETTE, palPalEntry[cEntries]);
+
+    _SEH2_TRY
     {
-        PALETTE_ValidateFlags(PalGDI->IndexedColors, PalGDI->NumColors);
-        PALETTE_ShareUnlockPalette(PalGDI);
+        ProbeForRead(plogpalUser, cjSize, 1);
+
+        for (i = 0; i < cEntries; i++)
+        {
+            ppal->IndexedColors[i] = plogpalUser->palPalEntry[i];
+        }
     }
-    else
+    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
     {
-        /* FIXME: Handle PalGDI == NULL!!!! */
-        DPRINT1("PalGDI is NULL\n");
+        GDIOBJ_vDeleteObject(&ppal->BaseObject);
+        _SEH2_YIELD(return NULL);
     }
-  return NewPalette;
+    _SEH2_END;
+
+    PALETTE_ValidateFlags(ppal->IndexedColors, cEntries);
+    hpal = ppal->BaseObject.hHmgr;
+    PALETTE_UnlockPalette(ppal);
+
+    return hpal;
 }
 
 HPALETTE APIENTRY NtGdiCreateHalftonePalette(HDC  hDC)
@@ -629,7 +633,7 @@ HPALETTE APIENTRY NtGdiCreateHalftonePalette(HDC  hDC)
         }
     }
 
-   return NtGdiCreatePaletteInternal((LOGPALETTE *)&Palette, Palette.NumberOfEntries);
+   return GreCreatePaletteInternal((LOGPALETTE *)&Palette, Palette.NumberOfEntries);
 }
 
 BOOL

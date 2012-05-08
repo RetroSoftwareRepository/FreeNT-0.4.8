@@ -138,7 +138,7 @@ NtGdiAlphaBlend(
     DPRINT("Locking DCs\n");
     ahDC[0] = hDCDest;
     ahDC[1] = hDCSrc ;
-    if (!GDIOBJ_bLockMultipleObjects(2, ahDC, apObj, GDIObjType_DC_TYPE))
+    if (!GDIOBJ_bLockMultipleObjects(2, (HGDIOBJ*)ahDC, apObj, GDIObjType_DC_TYPE))
     {
         DPRINT1("Invalid dc handle (dest=0x%08x, src=0x%08x) passed to NtGdiAlphaBlend\n", hDCDest, hDCSrc);
         EngSetLastError(ERROR_INVALID_HANDLE);
@@ -286,7 +286,7 @@ NtGdiTransparentBlt(
     DPRINT("Locking DCs\n");
     ahDC[0] = hdcDst;
     ahDC[1] = hdcSrc ;
-    if (!GDIOBJ_bLockMultipleObjects(2, ahDC, apObj, GDIObjType_DC_TYPE))
+    if (!GDIOBJ_bLockMultipleObjects(2, (HGDIOBJ*)ahDC, apObj, GDIObjType_DC_TYPE))
     {
         DPRINT1("Invalid dc handle (dest=0x%08x, src=0x%08x) passed to NtGdiAlphaBlend\n", hdcDst, hdcSrc);
         EngSetLastError(ERROR_INVALID_HANDLE);
@@ -440,7 +440,7 @@ NtGdiMaskBlt(
     DPRINT("Locking DCs\n");
     ahDC[0] = hdcDest;
     ahDC[1] = UsesSource ? hdcSrc : NULL;
-    if (!GDIOBJ_bLockMultipleObjects(2, ahDC, apObj, GDIObjType_DC_TYPE))
+    if (!GDIOBJ_bLockMultipleObjects(2, (HGDIOBJ*)ahDC, apObj, GDIObjType_DC_TYPE))
     {
         DPRINT1("Invalid dc handle (dest=0x%08x, src=0x%08x) passed to NtGdiAlphaBlend\n", hdcDest, hdcSrc);
         EngSetLastError(ERROR_INVALID_HANDLE);
@@ -635,7 +635,7 @@ GreStretchBltMask(
     ahDC[0] = hDCDest;
     ahDC[1] = UsesSource ? hDCSrc : NULL;
     ahDC[2] = UsesMask ? hDCMask : NULL;
-    if (!GDIOBJ_bLockMultipleObjects(3, ahDC, apObj, GDIObjType_DC_TYPE))
+    if (!GDIOBJ_bLockMultipleObjects(3, (HGDIOBJ*)ahDC, apObj, GDIObjType_DC_TYPE))
     {
         DPRINT1("Invalid dc handle (dest=0x%08x, src=0x%08x) passed to NtGdiAlphaBlend\n", hDCDest, hDCSrc);
         EngSetLastError(ERROR_INVALID_HANDLE);
@@ -831,7 +831,7 @@ IntPatBlt(
 
     FIXUP_ROP(dwRop);
 
-    if (pbrush->flAttrs & GDIBRUSH_IS_NULL)
+    if (pbrush->flAttrs & BR_IS_NULL)
     {
         return TRUE;
     }
@@ -1160,34 +1160,36 @@ NtGdiGetPixel(
     }
 
     /* Allocate a surface */
-    psurfDest = SURFACE_AllocSurface(STYPE_BITMAP, 1, 1, BMF_32BPP);
+    psurfDest = SURFACE_AllocSurface(STYPE_BITMAP,
+                                     1,
+                                     1,
+                                     BMF_32BPP,
+                                     0,
+                                     0,
+                                     &ulRGBColor);
     if (psurfDest)
     {
-        /* Set the bitmap bits */
-        if (SURFACE_bSetBitmapBits(psurfDest, 0, 0, &ulRGBColor))
-        {
-            RECTL rclDest = {0, 0, 1, 1};
-            EXLATEOBJ exlo;
+        RECTL rclDest = {0, 0, 1, 1};
+        EXLATEOBJ exlo;
 
-            /* Translate from the source palette to RGB color */
-            EXLATEOBJ_vInitialize(&exlo,
-                                  psurfSrc->ppal,
-                                  &gpalRGB,
-                                  0,
-                                  RGB(0xff,0xff,0xff),
-                                  RGB(0,0,0));
+        /* Translate from the source palette to RGB color */
+        EXLATEOBJ_vInitialize(&exlo,
+                              psurfSrc->ppal,
+                              &gpalRGB,
+                              0,
+                              RGB(0xff,0xff,0xff),
+                              RGB(0,0,0));
 
-            /* Call the copy bits function */
-            EngCopyBits(&psurfDest->SurfObj,
-                        &psurfSrc->SurfObj,
-                        NULL,
-                        &exlo.xlo,
-                        &rclDest,
-                        &ptlSrc);
+        /* Call the copy bits function */
+        EngCopyBits(&psurfDest->SurfObj,
+                    &psurfSrc->SurfObj,
+                    NULL,
+                    &exlo.xlo,
+                    &rclDest,
+                    &ptlSrc);
 
-            /* Cleanup the XLATEOBJ */
-            EXLATEOBJ_vCleanup(&exlo);
-        }
+        /* Cleanup the XLATEOBJ */
+        EXLATEOBJ_vCleanup(&exlo);
 
         /* Delete the surface */
         GDIOBJ_vDeleteObject(&psurfDest->BaseObject);

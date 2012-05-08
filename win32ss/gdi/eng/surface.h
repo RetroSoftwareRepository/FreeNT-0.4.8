@@ -80,10 +80,7 @@ typedef struct _SURFACE
 #define ABORT_SURFACE             0x40000000
 #define PDEV_SURFACE              0x80000000
 
-
-#define BMF_DONT_FREE 0x100
-#define BMF_RLE_HACK  0x200
-
+#define BMF_POOLALLOC 0x100
 
 /*  Internal interface  */
 
@@ -99,31 +96,30 @@ typedef struct _SURFACE
 #define  SURFACE_ShareUnlockSurface(pBMObj)  \
   GDIOBJ_vDereferenceObject ((POBJ)pBMObj)
 
-BOOL NTAPI SURFACE_Cleanup(PVOID ObjectBody);
-
-PSURFACE
-NTAPI
-SURFACE_AllocSurface(
-    IN USHORT iType,
-    IN ULONG cx,
-    IN ULONG cy,
-    IN ULONG iFormat);
-
-BOOL
-NTAPI
-SURFACE_bSetBitmapBits(
-    IN PSURFACE psurf,
-    IN ULONG fjBitmap,
-    IN ULONG ulWidth,
-    IN PVOID pvBits OPTIONAL);
-
 #define GDIDEV(SurfObj) ((PDEVOBJ *)((SurfObj)->hdev))
 #define GDIDEVFUNCS(SurfObj) ((PDEVOBJ *)((SurfObj)->hdev))->DriverFunctions
 
-ULONG FASTCALL BitmapFormat(ULONG cBits, ULONG iCompression);
 extern UCHAR gajBitsPerFormat[];
 #define BitsPerFormat(Format) gajBitsPerFormat[Format]
 
 #define WIDTH_BYTES_ALIGN32(cx, bpp) ((((cx) * (bpp) + 31) & ~31) >> 3)
 #define WIDTH_BYTES_ALIGN16(cx, bpp) ((((cx) * (bpp) + 15) & ~15) >> 3)
 
+ULONG
+FASTCALL
+BitmapFormat(ULONG cBits, ULONG iCompression);
+
+BOOL
+NTAPI
+SURFACE_Cleanup(PVOID ObjectBody);
+
+PSURFACE
+NTAPI
+SURFACE_AllocSurface(
+    _In_ USHORT iType,
+    _In_ ULONG cx,
+    _In_ ULONG cy,
+    _In_ ULONG iFormat,
+    _In_ ULONG fjBitmap,
+    _In_opt_ ULONG cjWidth,
+    _In_opt_ PVOID pvBits);

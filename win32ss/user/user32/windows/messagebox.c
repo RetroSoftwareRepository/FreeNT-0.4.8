@@ -16,7 +16,7 @@
  *  along with this program; if not, write to the Free Software
  *  Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
-/* $Id$
+/*
  *
  * PROJECT:         ReactOS user32.dll
  * FILE:            lib/user32/windows/messagebox.c
@@ -63,11 +63,10 @@ WINE_DEFAULT_DEBUG_CHANNEL(user32);
 #define MSGBOXEX_MAXBTNS    (4)
 
 typedef struct _MSGBOXINFO {
+  MSGBOXPARAMSW; // Wine passes this too.
+  // ReactOS
   HICON Icon;
   HFONT Font;
-  DWORD ContextHelpId;
-  MSGBOXCALLBACK Callback;
-  DWORD Style;
   int DefBtn;
   int nButtons;
   LONG *Btns;
@@ -76,10 +75,118 @@ typedef struct _MSGBOXINFO {
 
 /* INTERNAL FUNCTIONS ********************************************************/
 
+static VOID MessageBoxTextToClipboard(HWND DialogWindow)
+{
+    HWND hwndText;
+    PMSGBOXINFO mbi;
+    int cchTotal, cchTitle, cchText, cchButton, i, n, cchBuffer;
+    LPWSTR pszBuffer, pszBufferPos, pMessageBoxText, pszTitle, pszText, pszButton;
+    WCHAR szButton[MSGBOXEX_MAXBTNSTR];
+    HGLOBAL hGlobal;
+    
+    static const WCHAR szLine[30] = 
+    {'-','-','-','-','-','-','-','-','-','-','-','-','-','-','-',
+    '-','-','-','-','-','-','-','-','-','-','-','-','\r','\n', 0};
+    
+    mbi = (PMSGBOXINFO)GetPropW(DialogWindow, L"ROS_MSGBOX");
+    hwndText = GetDlgItem(DialogWindow, MSGBOX_IDTEXT);
+    cchTitle = GetWindowTextLengthW(DialogWindow) + 1;
+    cchText = GetWindowTextLengthW(hwndText) + 1;
+    
+    if(!mbi)
+        return;
+    
+    pMessageBoxText = (LPWSTR)RtlAllocateHeap(GetProcessHeap(), 0, (cchTitle + cchText) * sizeof(WCHAR));
+    
+    if(pMessageBoxText == NULL)
+    {
+        RtlFreeHeap(GetProcessHeap(), 0, pMessageBoxText);
+        return;
+    }
+      
+    pszTitle = pMessageBoxText;
+    pszText = pMessageBoxText + cchTitle;
+    
+
+    
+    if(GetWindowTextW(DialogWindow, pszTitle, cchTitle) == 0 ||
+       GetWindowTextW(hwndText, pszText, cchText) == 0)
+    {
+        RtlFreeHeap(GetProcessHeap(), 0, pMessageBoxText);
+        return;
+    }
+    
+    /* 
+     * Calculate the total buffer size.
+     */
+    cchTotal = 6 + cchTitle + cchText + (lstrlenW(szLine) * 4) + (mbi->nButtons * MSGBOXEX_MAXBTNSTR + 3);
+    
+    hGlobal = GlobalAlloc(GHND, cchTotal * sizeof(WCHAR));
+    
+    pszBuffer = (LPWSTR)GlobalLock(hGlobal);
+    
+    if(pszBuffer == NULL)
+    {
+        RtlFreeHeap(GetProcessHeap(), 0, pMessageBoxText);
+        GlobalFree(hGlobal);
+        return;
+    }
+
+    /*
+     * First format title and text.
+     * ------------------
+     * Title
+     * ------------------
+     * Text
+     * ------------------
+     */
+    cchBuffer = wsprintfW(pszBuffer, L"%s%s\r\n%s%s\r\n%s", szLine, pszTitle, szLine, pszText, szLine);
+    pszBufferPos = pszBuffer + cchBuffer;
+    
+    for(i = 0; i < mbi->nButtons; i++)
+    {
+        GetDlgItemTextW(DialogWindow, mbi->Btns[i], szButton, MSGBOXEX_MAXBTNSTR);
+        
+        cchButton = strlenW(szButton);
+        pszButton = szButton;
+        
+        /* Skip '&' character. */
+        if(szButton[0] == '&')
+        {
+            pszButton = pszButton + 1;
+            cchButton = cchButton - 1;
+        }
+
+        for(n = 0; n < cchButton; n++)
+            *(pszBufferPos++) = pszButton[n];
+
+        /* Add spaces. */
+        *(pszBufferPos++) = L' ';
+        *(pszBufferPos++) = L' ';
+        *(pszBufferPos++) = L' ';
+    }
+    
+    wsprintfW(pszBufferPos, L"\r\n%s", szLine);
+    
+    GlobalUnlock(hGlobal);
+
+    if(OpenClipboard(DialogWindow))
+    {
+        EmptyClipboard();
+        SetClipboardData(CF_UNICODETEXT, hGlobal);
+        CloseClipboard();
+    }
+    else
+    {
+        GlobalFree(hGlobal);
+    }
+    RtlFreeHeap(GetProcessHeap(), 0, pMessageBoxText);
+}
+
 static INT_PTR CALLBACK MessageBoxProc( HWND hwnd, UINT message,
                                         WPARAM wParam, LPARAM lParam )
 {
-  int i;
+  int i, Alert;
   PMSGBOXINFO mbi;
   HELPINFO hi;
   HWND owner;
@@ -87,12 +194,42 @@ static INT_PTR CALLBACK MessageBoxProc( HWND hwnd, UINT message,
   switch(message) {
     case WM_INITDIALOG:
       mbi = (PMSGBOXINFO)lParam;
+
+      SetWindowLongPtrW(hwnd, GWLP_USERDATA, (LONG_PTR)mbi);
+      NtUserxSetMessageBox(hwnd);
+
       if(!GetPropW(hwnd, L"ROS_MSGBOX"))
       {
         SetPropW(hwnd, L"ROS_MSGBOX", (HANDLE)lParam);
-        if(mbi->Icon)
+
+        if (mbi->dwContextHelpId)
+          SetWindowContextHelpId(hwnd, mbi->dwContextHelpId);
+
+        if (mbi->Icon)
+        {
           SendDlgItemMessageW(hwnd, MSGBOX_IDICON, STM_SETICON, (WPARAM)mbi->Icon, 0);
-        SetWindowContextHelpId(hwnd, mbi->ContextHelpId);
+          Alert = ALERT_SYSTEM_WARNING;
+        }
+        else // Setup the rest of the alerts.
+        {
+          switch(mbi->dwStyle & MB_ICONMASK)
+          {
+             case MB_ICONWARNING:
+                Alert = ALERT_SYSTEM_WARNING;
+             break;
+             case MB_ICONERROR:
+                Alert = ALERT_SYSTEM_ERROR;
+             break;
+             case MB_ICONQUESTION:
+                Alert = ALERT_SYSTEM_QUERY;
+             break;
+             default:
+                Alert = ALERT_SYSTEM_INFORMATIONAL;
+             /* fall through */
+          }
+        }
+        /* Send out the alert notifications. */
+        NotifyWinEvent(EVENT_SYSTEM_ALERT, hwnd, OBJID_ALERT, Alert);
 
         /* set control fonts */
         SendDlgItemMessageW(hwnd, MSGBOX_IDTEXT, WM_SETFONT, (WPARAM)mbi->Font, 0);
@@ -100,7 +237,7 @@ static INT_PTR CALLBACK MessageBoxProc( HWND hwnd, UINT message,
         {
           SendDlgItemMessageW(hwnd, mbi->Btns[i], WM_SETFONT, (WPARAM)mbi->Font, 0);
         }
-        switch(mbi->Style & MB_TYPEMASK)
+        switch(mbi->dwStyle & MB_TYPEMASK)
         {
           case MB_ABORTRETRYIGNORE:
           case MB_YESNO:
@@ -139,6 +276,10 @@ static INT_PTR CALLBACK MessageBoxProc( HWND hwnd, UINT message,
           return 0;
       }
       return 0;
+    
+    case WM_COPY:
+        MessageBoxTextToClipboard(hwnd);
+        return 0;
 
     case WM_HELP:
       mbi = (PMSGBOXINFO)GetPropW(hwnd, L"ROS_MSGBOX");
@@ -147,8 +288,8 @@ static INT_PTR CALLBACK MessageBoxProc( HWND hwnd, UINT message,
       memcpy(&hi, (void *)lParam, sizeof(hi));
       hi.dwContextId = GetWindowContextHelpId(hwnd);
 
-      if (mbi->Callback)
-        mbi->Callback(&hi);
+      if (mbi->lpfnMsgBoxCallback)
+        mbi->lpfnMsgBoxCallback(&hi);
       else
       {
         owner = GetWindow(hwnd, GW_OWNER);
@@ -161,7 +302,7 @@ static INT_PTR CALLBACK MessageBoxProc( HWND hwnd, UINT message,
       mbi = (PMSGBOXINFO)GetPropW(hwnd, L"ROS_MSGBOX");
       if(!mbi)
         return 0;
-      switch(mbi->Style & MB_TYPEMASK)
+      switch(mbi->dwStyle & MB_TYPEMASK)
       {
         case MB_ABORTRETRYIGNORE:
         case MB_YESNO:
@@ -591,12 +732,21 @@ MessageBoxTimeoutIndirectW(
     /* finally show the messagebox */
     mbi.Icon = Icon;
     mbi.Font = hFont;
-    mbi.ContextHelpId = lpMsgBoxParams->dwContextHelpId;
-    mbi.Callback = lpMsgBoxParams->lpfnMsgBoxCallback;
-    mbi.Style = lpMsgBoxParams->dwStyle;
+    mbi.dwContextHelpId = lpMsgBoxParams->dwContextHelpId;
+    mbi.lpfnMsgBoxCallback = lpMsgBoxParams->lpfnMsgBoxCallback;
+    mbi.dwStyle = lpMsgBoxParams->dwStyle;
     mbi.nButtons = nButtons;
     mbi.Btns = &Buttons[0];
     mbi.Timeout = Timeout;
+
+    /* Pass on to Justin Case so he can peek the message? */
+    mbi.cbSize       = lpMsgBoxParams->cbSize;
+    mbi.hwndOwner    = lpMsgBoxParams->hwndOwner;
+    mbi.hInstance    = lpMsgBoxParams->hInstance;
+    mbi.lpszText     = lpMsgBoxParams->lpszText;
+    mbi.lpszCaption  = lpMsgBoxParams->lpszCaption;
+    mbi.lpszIcon     = lpMsgBoxParams->lpszIcon;
+    mbi.dwLanguageId = lpMsgBoxParams->dwLanguageId;
 
     if(hDC)
       DeleteDC(hDC);

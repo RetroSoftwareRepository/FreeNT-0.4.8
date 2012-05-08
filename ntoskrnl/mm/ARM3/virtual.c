@@ -30,6 +30,168 @@ MiProtectVirtualMemory(IN PEPROCESS Process,
 
 ULONG
 NTAPI
+MiCalculatePageCommitment(IN ULONG_PTR StartingAddress,
+                          IN ULONG_PTR EndingAddress,
+                          IN PMMVAD Vad,
+                          IN PEPROCESS Process)
+{
+    PMMPTE PointerPte, LastPte, PointerPde;
+    ULONG CommittedPages;
+
+    /* Compute starting and ending PTE and PDE addresses */
+    PointerPde = MiAddressToPde(StartingAddress);
+    PointerPte = MiAddressToPte(StartingAddress);
+    LastPte = MiAddressToPte(EndingAddress);
+
+    /* Handle commited pages first */
+    if (Vad->u.VadFlags.MemCommit == 1)
+    {
+        /* This is a committed VAD, so Assume the whole range is committed */
+        CommittedPages = BYTES_TO_PAGES(EndingAddress - StartingAddress);
+
+        /* Is the PDE demand-zero? */
+        PointerPde = MiAddressToPte(PointerPte);
+        if (PointerPde->u.Long != 0)
+        {
+            /* It is not. Is it valid? */
+            if (PointerPde->u.Hard.Valid == 0)
+            {
+                /* Fault it in */
+                PointerPte = MiPteToAddress(PointerPde);
+                MiMakeSystemAddressValid(PointerPte, Process);
+            }
+        }
+        else
+        {
+            /* It is, skip it and move to the next PDE, unless we're done */
+            PointerPde++;
+            PointerPte = MiPteToAddress(PointerPde);
+            if (PointerPte > LastPte) return CommittedPages;
+        }
+
+        /* Now loop all the PTEs in the range */
+        while (PointerPte <= LastPte)
+        {
+            /* Have we crossed a PDE boundary? */
+            if (MiIsPteOnPdeBoundary(PointerPte))
+            {
+                /* Is this PDE demand zero? */
+                PointerPde = MiAddressToPte(PointerPte);
+                if (PointerPde->u.Long != 0)
+                {
+                    /* It isn't -- is it valid? */
+                    if (PointerPde->u.Hard.Valid == 0)
+                    {
+                        /* Nope, fault it in */
+                        PointerPte = MiPteToAddress(PointerPde);
+                        MiMakeSystemAddressValid(PointerPte, Process);
+                    }
+                }
+                else
+                {
+                    /* It is, skip it and move to the next PDE */
+                    PointerPde++;
+                    PointerPte = MiPteToAddress(PointerPde);
+                    continue;
+                }
+            }
+
+            /* Is this PTE demand zero? */
+            if (PointerPte->u.Long != 0)
+            {
+                /* It isn't -- is it a decommited, invalid, or faulted PTE? */
+                if ((PointerPte->u.Soft.Protection == MM_DECOMMIT) &&
+                    (PointerPte->u.Hard.Valid == 0) &&
+                    ((PointerPte->u.Soft.Prototype == 0) ||
+                     (PointerPte->u.Soft.PageFileHigh == MI_PTE_LOOKUP_NEEDED)))
+                {
+                    /* It is, so remove it from the count of commited pages */
+                    CommittedPages--;
+                }
+            }
+
+            /* Move to the next PTE */
+            PointerPte++;
+        }
+
+        /* Return how many committed pages there still are */
+        return CommittedPages;
+    }
+
+    /* This is a non-commited VAD, so assume none of it is committed */
+    CommittedPages = 0;
+
+    /* Is the PDE demand-zero? */
+    PointerPde = MiAddressToPte(PointerPte);
+    if (PointerPde->u.Long != 0)
+    {
+        /* It isn't -- is it invalid? */
+        if (PointerPde->u.Hard.Valid == 0)
+        {
+            /* It is, so page it in */
+            PointerPte = MiPteToAddress(PointerPde);
+            MiMakeSystemAddressValid(PointerPte, Process);
+        }
+    }
+    else
+    {
+        /* It is, so skip it and move to the next PDE */
+        PointerPde++;
+        PointerPte = MiPteToAddress(PointerPde);
+        if (PointerPte > LastPte) return CommittedPages;
+    }
+
+    /* Loop all the PTEs in this PDE */
+    while (PointerPte <= LastPte)
+    {
+        /* Have we crossed a PDE boundary? */
+        if (MiIsPteOnPdeBoundary(PointerPte))
+        {
+            /* Is this new PDE demand-zero? */
+            PointerPde = MiAddressToPte(PointerPte);
+            if (PointerPde->u.Long != 0)
+            {
+                /* It isn't. Is it valid? */
+                if (PointerPde->u.Hard.Valid == 0)
+                {
+                    /* It isn't, so make it valid */
+                    PointerPte = MiPteToAddress(PointerPde);
+                    MiMakeSystemAddressValid(PointerPte, Process);
+                }
+            }
+            else
+            {
+                /* It is, so skip it and move to the next one */
+                PointerPde++;
+                PointerPte = MiPteToAddress(PointerPde);
+                continue;
+            }
+        }
+
+        /* Is this PTE demand-zero? */
+        if (PointerPte->u.Long != 0)
+        {
+            /* Nope. Is it a valid, non-decommited, non-paged out PTE? */
+            if ((PointerPte->u.Soft.Protection != MM_DECOMMIT) ||
+                (PointerPte->u.Hard.Valid == 1) ||
+                ((PointerPte->u.Soft.Prototype == 1) &&
+                 (PointerPte->u.Soft.PageFileHigh != MI_PTE_LOOKUP_NEEDED)))
+            {
+                /* It is! So we'll treat this as a committed page */
+                CommittedPages++;
+            }
+        }
+
+        /* Move to the next PTE */
+        PointerPte++;
+    }
+
+    /* Return how many committed pages we found in this VAD */
+    return CommittedPages;
+}
+
+ULONG
+NTAPI
 MiMakeSystemAddressValid(IN PVOID PageTableVirtualAddress,
                          IN PEPROCESS CurrentProcess)
 {
@@ -1118,18 +1280,19 @@ MiGetPageProtection(IN PMMPTE PointerPte)
 
     /* If we get here, the PTE is valid, so look up the page in PFN database */
     Pfn = MiGetPfnEntry(TempPte.u.Hard.PageFrameNumber);
-
     if (!Pfn->u3.e1.PrototypePte)
     {
         /* Return protection of the original pte */
+        ASSERT(Pfn->u4.AweAllocation == 0);
         return MmProtectToValue[Pfn->OriginalPte.u.Soft.Protection];
     }
 
-    /* This is hardware PTE */
-    UNIMPLEMENTED;
-    ASSERT(FALSE);
-
-    return PAGE_NOACCESS;
+    /* This is software PTE */
+    DPRINT1("Prototype PTE: %lx %p\n", TempPte.u.Hard.PageFrameNumber, Pfn);
+    DPRINT1("VA: %p\n", MiPteToAddress(&TempPte));
+    DPRINT1("Mask: %lx\n", TempPte.u.Soft.Protection);
+    DPRINT1("Mask2: %lx\n", Pfn->OriginalPte.u.Soft.Protection);
+    return MmProtectToValue[TempPte.u.Soft.Protection];
 }
 
 ULONG
@@ -1145,7 +1308,7 @@ MiQueryAddressState(IN PVOID Va,
     PMMPDE PointerPde;
     MMPTE TempPte;
     BOOLEAN DemandZeroPte = TRUE, ValidPte = FALSE;
-    ULONG State = MEM_RESERVE, Protect = 0, LockChange;
+    ULONG State = MEM_RESERVE, Protect = 0;
     ASSERT((Vad->StartingVpn <= ((ULONG_PTR)Va >> PAGE_SHIFT)) &&
            (Vad->EndingVpn >= ((ULONG_PTR)Va >> PAGE_SHIFT)));
 
@@ -1159,31 +1322,23 @@ MiQueryAddressState(IN PVOID Va,
     /* Return the next range */
     *NextVa = (PVOID)((ULONG_PTR)Va + PAGE_SIZE);
 
-    /* Loop to make sure the PDE is valid */
-    do
+    /* Is the PDE demand-zero? */
+    if (PointerPde->u.Long != 0)
     {
-        /* Try again */
-        LockChange = 0;
-
-        /* Is the PDE empty? */
-        if (!PointerPde->u.Long)
+        /* It is not. Is it valid? */
+        if (PointerPde->u.Hard.Valid == 0)
         {
-            /* No address in this range used yet, move to the next PDE range */
-            *NextVa = MiPdeToAddress(PointerPde + 1);
-            break;
+            /* Is isn't, fault it in */
+            PointerPte = MiPteToAddress(PointerPde);
+            MiMakeSystemAddressValid(PointerPte, TargetProcess);
+            ValidPte = TRUE;
         }
-
-        /* The PDE is not empty, but is it faulted in? */
-        if (!PointerPde->u.Hard.Valid)
-        {
-            /* It isn't, go ahead and do the fault */
-            LockChange = MiMakeSystemAddressValid(MiPdeToPte(PointerPde),
-                                                  TargetProcess);
-        }
-
-        /* Check if the PDE was faulted in, making the PTE readable */
-        if (!LockChange) ValidPte = TRUE;
-    } while (LockChange);
+    }
+    else
+    {
+        /* It is, skip it and move to the next PDE */
+        *NextVa = MiPdeToAddress(PointerPde + 1);
+    }
 
     /* Is it safe to try reading the PTE? */
     if (ValidPte)
@@ -1192,27 +1347,38 @@ MiQueryAddressState(IN PVOID Va,
 
         /* Capture the PTE */
         TempPte = *PointerPte;
-        if (TempPte.u.Long)
+        if (TempPte.u.Long != 0)
         {
             /* The PTE is valid, so it's not zeroed out */
             DemandZeroPte = FALSE;
 
-            /* Check if it's valid or has a valid protection mask */
-            ASSERT(TempPte.u.Soft.Prototype == 0);
-            if ((TempPte.u.Soft.Protection != MM_DECOMMIT) ||
-                (TempPte.u.Hard.Valid == 1))
+            /* Is it a decommited, invalid, or faulted PTE? */
+            if ((TempPte.u.Soft.Protection == MM_DECOMMIT) &&
+                (TempPte.u.Hard.Valid == 0) &&
+                ((TempPte.u.Soft.Prototype == 0) ||
+                 (TempPte.u.Soft.PageFileHigh == MI_PTE_LOOKUP_NEEDED)))
+            {
+                /* Otherwise our defaults should hold */
+                ASSERT(Protect == 0);
+                ASSERT(State == MEM_RESERVE);
+            }
+            else
             {
                 /* This means it's committed */
                 State = MEM_COMMIT;
 
                 /* Get protection state of this page */
                 Protect = MiGetPageProtection(PointerPte);
-            }
-            else
-            {
-                /* Otherwise our defaults should hold */
-                ASSERT(Protect == 0);
-                ASSERT(State == MEM_RESERVE);
+
+                /* Check if this is an image-backed VAD */
+                if ((TempPte.u.Soft.Valid == 0) &&
+                    (TempPte.u.Soft.Prototype == 1) &&
+                    (Vad->u.VadFlags.PrivateMemory == 0) &&
+                    (Vad->ControlArea))
+                {
+                    DPRINT1("Not supported\n");
+                    ASSERT(FALSE);
+                }
             }
         }
     }
@@ -1220,8 +1386,13 @@ MiQueryAddressState(IN PVOID Va,
     /* Check if this was a demand-zero PTE, since we need to find the state */
     if (DemandZeroPte)
     {
-        /* Check if the VAD is for committed memory */
-        if (Vad->u.VadFlags.MemCommit)
+        /* Check if this is private commited memory, or an image-backed VAD */
+        if ((Vad->u.VadFlags.PrivateMemory == 0) && (Vad->ControlArea))
+        {
+            DPRINT1("Not supported\n");
+            ASSERT(FALSE);
+        }
+        else if (Vad->u.VadFlags.MemCommit)
         {
             /* This is committed memory */
             State = MEM_COMMIT;
@@ -3579,7 +3750,7 @@ NtAllocateVirtualMemory(IN HANDLE ProcessHandle,
         //
         PointerPte = MI_GET_PROTOTYPE_PTE_FOR_VPN(FoundVad, StartingAddress >> PAGE_SHIFT);
         LastPte = MI_GET_PROTOTYPE_PTE_FOR_VPN(FoundVad, EndingAddress >> PAGE_SHIFT);
-        QuotaCharge = LastPte - PointerPte + 1;
+        QuotaCharge = (ULONG)(LastPte - PointerPte + 1);
         KeAcquireGuardedMutexUnsafe(&MmSectionCommitMutex);
 
         //
@@ -4049,11 +4220,13 @@ NtFreeVirtualMemory(IN HANDLE ProcessHandle,
                     // and then change the ending address of the VAD to be a bit
                     // smaller.
                     //
-                    // NOT YET IMPLEMENTED IN ARM3.
-                    //
-                    DPRINT1("Case C not handled\n");
-                    Status = STATUS_FREE_VM_NOT_AT_BASE;
-                    goto FailPath;
+                    MiLockWorkingSet(CurrentThread, AddressSpace);
+                    CommitReduction = MiCalculatePageCommitment(StartingAddress,
+                                                                EndingAddress,
+                                                                Vad,
+                                                                Process);
+                    Vad->u.VadFlags.CommitCharge -= CommitReduction;
+                    Vad->EndingVpn = ((ULONG_PTR)StartingAddress - 1) >> PAGE_SHIFT;
                 }
                 else
                 {

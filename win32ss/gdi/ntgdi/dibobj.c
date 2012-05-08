@@ -103,6 +103,160 @@ static const RGBQUAD DefLogPaletteTriples[20] =   /* Copy of Default Logical Pal
     { 0xff, 0xff, 0xff }
 };
 
+PPALETTE
+NTAPI
+CreateDIBPalette(
+    _In_ const BITMAPINFO *pbmi,
+    _In_ PDC pdc,
+    _In_ ULONG iUsage)
+{
+    PPALETTE ppal;
+    ULONG i, cColors;
+
+    /* Check if the colors are indexed */
+    if (pbmi->bmiHeader.biBitCount <= 8)
+    {
+        /* We create a "full" palette */
+        cColors = 1 << pbmi->bmiHeader.biBitCount;
+
+        /* Allocate the palette */
+        ppal = PALETTE_AllocPalette(PAL_INDEXED,
+                                    cColors,
+                                    NULL,
+                                    0,
+                                    0,
+                                    0);
+
+        /* Check if the BITMAPINFO specifies how many colors to use */
+        if (pbmi->bmiHeader.biClrUsed != 0)
+        {
+            /* This is how many colors we can actually process */
+            cColors = min(cColors, pbmi->bmiHeader.biClrUsed);
+        }
+
+        /* Check how to use the colors */
+        if (iUsage == DIB_PAL_COLORS)
+        {
+            COLORREF crColor;
+
+            /* The colors are an array of WORD indices into the DC palette */
+            PWORD pwColors = (PWORD)((PCHAR)pbmi + pbmi->bmiHeader.biSize);
+
+            /* Use the DCs palette or, if no DC is given, the default one */
+            PPALETTE ppalDC = pdc ? pdc->dclevel.ppal : gppalDefault;
+
+            /* Loop all color indices in the DIB */
+            for (i = 0; i < cColors; i++)
+            {
+                /* Get the palette index and handle wraparound when exceeding
+                   the number of colors in the DC palette */
+                WORD wIndex = pwColors[i] % ppalDC->NumColors;
+
+                /* USe the RGB value from the DC palette */
+                crColor = PALETTE_ulGetRGBColorFromIndex(ppalDC, wIndex);
+                PALETTE_vSetRGBColorForIndex(ppal, i, crColor);
+            }
+        }
+        else if (iUsage == DIB_PAL_BRUSHHACK)
+        {
+            /* The colors are an array of WORD indices into the DC palette */
+            PWORD pwColors = (PWORD)((PCHAR)pbmi + pbmi->bmiHeader.biSize);
+
+            /* Loop all color indices in the DIB */
+            for (i = 0; i < cColors; i++)
+            {
+                /* Set the index directly as the RGB color, the real palette
+                   containing RGB values will be calculated when the brush is
+                   realized */
+                PALETTE_vSetRGBColorForIndex(ppal, i, pwColors[i]);
+            }
+
+            /* Mark the palette as a brush hack palette */
+            ppal->flFlags |= PAL_BRUSHHACK;
+        }
+//        else if (iUsage == 2)
+//        {
+            // FIXME: this one is undocumented
+//            ASSERT(FALSE);
+//        }
+        else // if (iUsage == DIB_RGB_COLORS)
+        {
+            /* The colors are an array of RGBQUAD values */
+            RGBQUAD *prgb = (RGBQUAD*)((PCHAR)pbmi + pbmi->bmiHeader.biSize);
+
+            // FIXME: do we need to handle PALETTEINDEX / PALETTERGB macro?
+
+            /* Loop all color indices in the DIB */
+            for (i = 0; i < cColors; i++)
+            {
+                /* Get the color value and translate it to a COLORREF */
+                RGBQUAD rgb = prgb[i];
+                COLORREF crColor = RGB(rgb.rgbRed, rgb.rgbGreen, rgb.rgbBlue);
+
+                /* Set the RGB value in the palette */
+                PALETTE_vSetRGBColorForIndex(ppal, i, crColor);
+            }
+        }
+    }
+    else
+    {
+        /* This is a bitfield / RGB palette */
+        ULONG flRedMask, flGreenMask, flBlueMask;
+
+        /* Check if the DIB contains bitfield values */
+        if (pbmi->bmiHeader.biCompression == BI_BITFIELDS)
+        {
+            /* Check if we have a v4/v5 header */
+            if (pbmi->bmiHeader.biSize >= sizeof(BITMAPV4HEADER))
+            {
+                /* The masks are dedicated fields in the header */
+                PBITMAPV4HEADER pbmV4Header = (PBITMAPV4HEADER)&pbmi->bmiHeader;
+                flRedMask = pbmV4Header->bV4RedMask;
+                flGreenMask = pbmV4Header->bV4GreenMask;
+                flBlueMask = pbmV4Header->bV4BlueMask;
+            }
+            else
+            {
+                /* The masks are the first 3 values in the DIB color table */
+                PDWORD pdwColors = (PVOID)((PCHAR)pbmi + pbmi->bmiHeader.biSize);
+                flRedMask = pdwColors[0];
+                flGreenMask = pdwColors[1];
+                flBlueMask = pdwColors[2];
+            }
+        }
+        else
+        {
+            /* Check what bit depth we have. Note: optimization flags are
+               calculated in PALETTE_AllocPalette()  */
+            if (pbmi->bmiHeader.biBitCount == 16)
+            {
+                /* This is an RGB 555 palette */
+                flRedMask = 0x7C00;
+                flGreenMask = 0x03E0;
+                flBlueMask = 0x001F;
+            }
+            else
+            {
+                /* This is an RGB 888 palette */
+                flRedMask = 0xFF0000;
+                flGreenMask = 0x00FF00;
+                flBlueMask = 0x0000FF;
+            }
+        }
+
+        /* Allocate the bitfield palette */
+        ppal = PALETTE_AllocPalette(PAL_BITFIELDS,
+                                    0,
+                                    NULL,
+                                    flRedMask,
+                                    flGreenMask,
+                                    flBlueMask);
+    }
+
+    /* We're done, return the palette */
+    return ppal;
+}
+
 
 UINT
 APIENTRY
@@ -251,8 +405,9 @@ IntSetDIBits(
     RECT		rcDst;
     POINTL		ptSrc;
     EXLATEOBJ	exlo;
-    HPALETTE    hpalDIB = 0;
     PPALETTE    ppalDIB = 0;
+
+    if (!bmi) return 0;
 
     SourceBitmap = GreCreateBitmapEx(bmi->bmiHeader.biWidth,
                                      ScanLines,
@@ -280,18 +435,10 @@ IntSetDIBits(
     }
 
     /* Create a palette for the DIB */
-    hpalDIB = BuildDIBPalette(bmi);
-    if (!hpalDIB)
-    {
-        EngSetLastError(ERROR_NO_SYSTEM_RESOURCES);
-        goto cleanup;
-    }
-
-    /* Lock the DIB palette */
-    ppalDIB = PALETTE_ShareLockPalette(hpalDIB);
+    ppalDIB = CreateDIBPalette(bmi, DC, ColorUse);
     if (!ppalDIB)
     {
-        EngSetLastError(ERROR_INVALID_HANDLE);
+        EngSetLastError(ERROR_NO_SYSTEM_RESOURCES);
         goto cleanup;
     }
 
@@ -323,7 +470,6 @@ IntSetDIBits(
 
 cleanup:
     if (ppalDIB) PALETTE_ShareUnlockPalette(ppalDIB);
-    if (hpalDIB) GreDeleteObject(hpalDIB);
     if(psurfSrc) SURFACE_ShareUnlockSurface(psurfSrc);
     if(psurfDst) SURFACE_ShareUnlockSurface(psurfDst);
     GreDeleteObject(SourceBitmap);
@@ -364,7 +510,6 @@ NtGdiSetDIBitsToDeviceInternal(
     SIZEL SourceSize;
     EXLATEOBJ exlo;
     PPALETTE ppalDIB = NULL;
-    HPALETTE hpalDIB = NULL;
     LPBITMAPINFO pbmiSafe;
 
     if (!Bits) return 0;
@@ -455,20 +600,11 @@ NtGdiSetDIBitsToDeviceInternal(
     ASSERT(pSurf->ppal);
 
     /* Create a palette for the DIB */
-    hpalDIB = BuildDIBPalette(bmi);
-    if (!hpalDIB)
+    ppalDIB = CreateDIBPalette(bmi, pDC, ColorUse);
+    if (!ppalDIB)
     {
         EngSetLastError(ERROR_NO_SYSTEM_RESOURCES);
         Status = STATUS_NO_MEMORY;
-        goto Exit;
-    }
-
-    /* Lock the DIB palette */
-    ppalDIB = PALETTE_ShareLockPalette(hpalDIB);
-    if (!ppalDIB)
-    {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        Status = STATUS_UNSUCCESSFUL;
         goto Exit;
     }
 
@@ -509,7 +645,6 @@ Exit:
 
     if (pSourceSurf) EngUnlockSurface(pSourceSurf);
     if (hSourceBitmap) EngDeleteSurface((HSURF)hSourceBitmap);
-    if (hpalDIB) GreDeleteObject(hpalDIB);
     DC_UnlockDc(pDC);
 Exit2:
     ExFreePool(pbmiSafe);
@@ -1010,7 +1145,6 @@ NtGdiStretchDIBitsInternal(
     PDC pdc;
     HBITMAP hbmTmp = 0;
     PSURFACE psurfTmp = 0, psurfDst = 0;
-    HPALETTE hpalDIB = 0;
     PPALETTE ppalDIB = 0;
     EXLATEOBJ exlo;
     PVOID pvBits;
@@ -1118,15 +1252,7 @@ NtGdiStretchDIBitsInternal(
     }
 
     /* Create a palette for the DIB */
-    hpalDIB = BuildDIBPalette(pbmi);
-    if (!hpalDIB)
-    {
-        bResult = FALSE;
-        goto cleanup;
-    }
-
-    /* Lock the DIB palette */
-    ppalDIB = PALETTE_ShareLockPalette(hpalDIB);
+    ppalDIB = CreateDIBPalette(pbmi, pdc, dwUsage);
     if (!ppalDIB)
     {
         bResult = FALSE;
@@ -1162,7 +1288,6 @@ NtGdiStretchDIBitsInternal(
     EXLATEOBJ_vCleanup(&exlo);
 cleanup:
     if (ppalDIB) PALETTE_ShareUnlockPalette(ppalDIB);
-    if (hpalDIB) GreDeleteObject(hpalDIB);
     if (psurfTmp) SURFACE_ShareUnlockSurface(psurfTmp);
     if (hbmTmp) GreDeleteObject(hbmTmp);
     if (pdc) DC_UnlockDc(pdc);
@@ -1257,6 +1382,7 @@ NtGdiCreateDIBitmapInternal(
 
     if(pjInit && (fInit == CBM_INIT))
     {
+        if (cjMaxBits == 0) return NULL;
         safeBits = ExAllocatePoolWithTag(PagedPool, cjMaxBits, TAG_DIB);
         if(!safeBits)
         {
@@ -1294,6 +1420,7 @@ NtGdiCreateDIBitmapInternal(
                                            pbmi,
                                            iUsage,
                                            fl,
+                                           cjMaxBits,
                                            hcmXform);
 
 cleanup:
@@ -1302,7 +1429,7 @@ cleanup:
 }
 
 HBITMAP
-FASTCALL
+NTAPI
 GreCreateDIBitmapInternal(
     IN HDC hDc,
     IN INT cx,
@@ -1312,6 +1439,7 @@ GreCreateDIBitmapInternal(
     IN OPTIONAL PBITMAPINFO pbmi,
     IN DWORD iUsage,
     IN FLONG fl,
+    IN UINT cjMaxBits,
     IN HANDLE hcmXform)
 {
     PDC Dc;
@@ -1437,7 +1565,7 @@ DIB_CreateDIBSection(
     HBITMAP res = 0;
     SURFACE *bmp = NULL;
     void *mapBits = NULL;
-    HPALETTE hpal ;
+    PPALETTE ppalDIB;
 
     // Fill BITMAP32 structure with DIB data
     CONST BITMAPINFOHEADER *bi = &bmi->bmiHeader;
@@ -1532,33 +1660,6 @@ DIB_CreateDIBSection(
 //  hSecure = MmSecureVirtualMemory(bm.bmBits, totalSize, PAGE_READWRITE);
     hSecure = (HANDLE)0x1; // HACK OF UNIMPLEMENTED KERNEL STUFF !!!!
 
-    if (usage == DIB_PAL_COLORS)
-    {
-        if(dc)
-        {
-            PPALETTE ppalDc;
-            ppalDc = PALETTE_ShareLockPalette(dc->dclevel.hpal);
-            hpal = DIB_MapPaletteColors(ppalDc, bmi);
-            PALETTE_ShareUnlockPalette(ppalDc);
-        }
-        else
-        {
-            /* For DIB Brushes */
-            DPRINT1("FIXME: Unsupported DIB_PAL_COLORS without a DC to map colors.\n");
-            /* HACK */
-            hpal = (HPALETTE) 0xFFFFFFFF;
-        }
-    }
-    else
-    {
-        hpal = BuildDIBPalette(bmi);
-    }
-
-    if(!hpal)
-    {
-        DPRINT1("Error: Could not create a palette for the DIB.\n");
-        goto cleanup;
-    }
 
     // Create Device Dependent Bitmap and add DIB pointer
     //Size.cx = bm.bmWidth;
@@ -1595,14 +1696,13 @@ DIB_CreateDIBSection(
     bmp->dwOffset = offset;
     bmp->flags = API_BITMAP;
     bmp->biClrImportant = bi->biClrImportant;
-    bmp->SurfObj.fjBitmap &= ~BMF_DONT_FREE;
 
-    /* HACK */
-    if(hpal != (HPALETTE)0xFFFFFFFF)
+    /* Create a palette for the DIB */
+    ppalDIB = CreateDIBPalette(bmi, dc, usage);
+    if (ppalDIB)
     {
-        bmp->ppal = PALETTE_ShareLockPalette(hpal);
-        /* Lazy delete hpal, it will be freed at surface release */
-        GreDeleteObject(hpal);
+        if (bmp->ppal) PALETTE_ShareUnlockPalette(bmp->ppal);
+        bmp->ppal = ppalDIB;
     }
 
     // Clean up in case of errors
@@ -1726,14 +1826,14 @@ INT FASTCALL DIB_BitmapInfoSize(const BITMAPINFO * info, WORD coloruse)
 
 HPALETTE
 FASTCALL
-DIB_MapPaletteColors(PPALETTE ppal, CONST BITMAPINFO* lpbmi)
+DIB_MapPaletteColors(PPALETTE ppalDc, CONST BITMAPINFO* lpbmi)
 {
-    PALETTEENTRY* ppalEntries;
+    PPALETTE ppalNew;
     ULONG nNumColors,i;
     USHORT *lpIndex;
     HPALETTE hpal;
 
-    if (!(ppal->flFlags & PAL_INDEXED))
+    if (!(ppalDc->flFlags & PAL_INDEXED))
     {
         return NULL;
     }
@@ -1744,10 +1844,10 @@ DIB_MapPaletteColors(PPALETTE ppal, CONST BITMAPINFO* lpbmi)
         nNumColors = min(nNumColors, lpbmi->bmiHeader.biClrUsed);
     }
 
-    ppalEntries = ExAllocatePoolWithTag(PagedPool, sizeof(PALETTEENTRY) * nNumColors, TAG_COLORMAP);
-    if (ppalEntries == NULL)
+    ppalNew = PALETTE_AllocPalWithHandle(PAL_INDEXED, nNumColors, NULL, 0, 0, 0);
+    if (ppalNew == NULL)
     {
-        DPRINT1("Could not allocate palette entries\n");
+        DPRINT1("Could not allocate palette\n");
         return NULL;
     }
 
@@ -1755,98 +1855,15 @@ DIB_MapPaletteColors(PPALETTE ppal, CONST BITMAPINFO* lpbmi)
 
     for (i = 0; i < nNumColors; i++)
     {
-        ppalEntries[i] = ppal->IndexedColors[*lpIndex % ppal->NumColors];
-
+        ULONG iColorIndex = *lpIndex % ppalDc->NumColors;
+        ppalNew->IndexedColors[i] = ppalDc->IndexedColors[iColorIndex];
         lpIndex++;
     }
 
-    hpal = PALETTE_AllocPalette(PAL_INDEXED, nNumColors, (ULONG*)ppalEntries, 0, 0, 0);
-
-    ExFreePoolWithTag(ppalEntries, TAG_COLORMAP);
+    hpal = ppalNew->BaseObject.hHmgr;
+    PALETTE_UnlockPalette(ppalNew);
 
     return hpal;
-}
-
-HPALETTE
-FASTCALL
-BuildDIBPalette(CONST BITMAPINFO *bmi)
-{
-    WORD bits;
-    ULONG ColorCount;
-    HPALETTE hPal;
-    ULONG RedMask = 0, GreenMask = 0, BlueMask = 0;
-    PDWORD pdwColors = (PDWORD)((PBYTE)bmi + bmi->bmiHeader.biSize);
-    INT paletteType;
-
-    // Determine Bits Per Pixel
-    bits = bmi->bmiHeader.biBitCount;
-
-    // Determine paletteType from Bits Per Pixel
-    if (bits <= 8)
-    {
-        paletteType = PAL_INDEXED;
-        RedMask = GreenMask = BlueMask = 0;
-    }
-    else if (bmi->bmiHeader.biCompression == BI_BITFIELDS)
-    {
-        paletteType = PAL_BITFIELDS;
-        if (bmi->bmiHeader.biSize >= sizeof(BITMAPV4HEADER))
-        {
-            PBITMAPV4HEADER pV4Header = (PBITMAPV4HEADER)&bmi->bmiHeader;
-            RedMask = pV4Header->bV4RedMask;
-            GreenMask = pV4Header->bV4GreenMask;
-            BlueMask = pV4Header->bV4BlueMask;
-        }
-        else
-        {
-            RedMask = pdwColors[0];
-            GreenMask = pdwColors[1];
-            BlueMask = pdwColors[2];
-        }
-    }
-    else
-    {
-        paletteType = PAL_BITFIELDS;
-        switch (bits)
-        {
-        case 16:
-            paletteType |= PAL_RGB16_555;
-            RedMask = 0x7C00;
-            GreenMask = 0x03E0;
-            BlueMask = 0x001F;
-            break;
-
-        case 24:
-        case 32:
-            paletteType |= PAL_BGR;
-            RedMask = 0xFF0000;
-            GreenMask = 0x00FF00;
-            BlueMask = 0x0000FF;
-            break;
-        }
-    }
-
-    if (bmi->bmiHeader.biClrUsed == 0)
-    {
-        ColorCount = 1 << bmi->bmiHeader.biBitCount;
-    }
-    else
-    {
-        ColorCount = bmi->bmiHeader.biClrUsed;
-    }
-
-    if (PAL_INDEXED == paletteType)
-    {
-        hPal = PALETTE_AllocPaletteIndexedRGB(ColorCount, (RGBQUAD*)pdwColors);
-    }
-    else
-    {
-        hPal = PALETTE_AllocPalette(paletteType, 0,
-                                    NULL,
-                                    RedMask, GreenMask, BlueMask);
-    }
-
-    return hPal;
 }
 
 /* Converts a BITMAPCOREINFO to a BITMAPINFO structure,

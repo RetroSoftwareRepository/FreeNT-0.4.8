@@ -476,6 +476,9 @@ GDIOBJ_vDereferenceObject(POBJ pobj)
 {
     ULONG cRefs, ulIndex;
 
+    /* Log the event */
+    DBG_LOGEVENT(&pobj->slhLog, EVENT_DEREFERENCE, cRefs);
+
     /* Check if the object has a handle */
     if (GDI_HANDLE_GET_INDEX(pobj->hHmgr))
     {
@@ -484,11 +487,14 @@ GDIOBJ_vDereferenceObject(POBJ pobj)
 
         /* Decrement reference count */
         ASSERT((gpaulRefCount[ulIndex] & REF_MASK_COUNT) > 0);
-        cRefs = InterlockedDecrement((LONG*)&gpaulRefCount[ulIndex]) & REF_MASK_INUSE;
+        cRefs = InterlockedDecrement((LONG*)&gpaulRefCount[ulIndex]);
 
         /* Check if we reached 0 and handle bit is not set */
-        if (cRefs == 0)
+        if ((cRefs & REF_MASK_INUSE) == 0)
         {
+            /* Make sure it's ok to delete the object */
+            ASSERT(pobj->BaseFlags & BASEFLAG_READY_TO_DIE);
+
             /* Check if the handle was process owned */
             if (gpentHmgr[ulIndex].ObjectOwner.ulObj != GDI_OBJ_HMGR_PUBLIC &&
                 gpentHmgr[ulIndex].ObjectOwner.ulObj != GDI_OBJ_HMGR_NONE)
@@ -501,6 +507,9 @@ GDIOBJ_vDereferenceObject(POBJ pobj)
 
             /* Push entry to the free list */
             ENTRY_vPushFreeEntry(&gpentHmgr[ulIndex]);
+
+            /* Free the object */
+            GDIOBJ_vFreeObject(pobj);
         }
     }
     else
@@ -508,18 +517,13 @@ GDIOBJ_vDereferenceObject(POBJ pobj)
         /* Decrement the objects reference count */
         ASSERT(pobj->ulShareCount > 0);
         cRefs = InterlockedDecrement((LONG*)&pobj->ulShareCount);
-    }
 
-    DBG_LOGEVENT(&pobj->slhLog, EVENT_DEREFERENCE, cRefs);
-
-    /* Check if we reached 0 */
-    if (cRefs == 0)
-    {
-        /* Make sure it's ok to delete the object */
-        ASSERT(pobj->BaseFlags & BASEFLAG_READY_TO_DIE);
-
-        /* Free the object */
-        GDIOBJ_vFreeObject(pobj);
+        /* Check if we reached 0 */
+        if (cRefs == 0)
+        {
+            /* Free the object */
+            GDIOBJ_vFreeObject(pobj);
+        }
     }
 }
 
@@ -647,11 +651,13 @@ VOID
 NTAPI
 GDIOBJ_vUnlockObject(POBJ pobj)
 {
+    ULONG cRefs, ulIndex;
     ASSERT(pobj->cExclusiveLock > 0);
 
     /* Decrease lock count */
     pobj->cExclusiveLock--;
     DBG_DECREASE_LOCK_COUNT(PsGetCurrentProcessWin32Process(), pobj->hHmgr);
+    DBG_LOGEVENT(&pobj->slhLog, EVENT_UNLOCK, 0);
 
     /* Check if this was the last lock */
     if (pobj->cExclusiveLock == 0)
@@ -664,9 +670,13 @@ GDIOBJ_vUnlockObject(POBJ pobj)
         KeLeaveCriticalRegion();
     }
 
-    /* Dereference the object */
-    DBG_LOGEVENT(&pobj->slhLog, EVENT_UNLOCK, 0);
-    GDIOBJ_vDereferenceObject(pobj);
+    /* Calculate the index */
+    ulIndex = GDI_HANDLE_GET_INDEX(pobj->hHmgr);
+
+    /* Decrement reference count */
+    ASSERT((gpaulRefCount[ulIndex] & REF_MASK_COUNT) > 0);
+    cRefs = InterlockedDecrement((LONG*)&gpaulRefCount[ulIndex]);
+    ASSERT(cRefs & REF_MASK_VALID);
 }
 
 HGDIOBJ

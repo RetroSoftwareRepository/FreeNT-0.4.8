@@ -12,7 +12,41 @@
 #define NDEBUG
 #include <debug.h>
 
+static const ULONG gaulHatchBrushes[HS_DDI_MAX][8] =
+{
+    {0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0xFF, 0xFF, 0xFF}, /* HS_HORIZONTAL */
+    {0xF7, 0xF7, 0xF7, 0xF7, 0xF7, 0xF7, 0xF7, 0xF7}, /* HS_VERTICAL   */
+    {0xFE, 0xFD, 0xFB, 0xF7, 0xEF, 0xDF, 0xBF, 0x7F}, /* HS_FDIAGONAL  */
+    {0x7F, 0xBF, 0xDF, 0xEF, 0xF7, 0xFB, 0xFD, 0xFE}, /* HS_BDIAGONAL  */
+    {0xF7, 0xF7, 0xF7, 0xF7, 0x00, 0xF7, 0xF7, 0xF7}, /* HS_CROSS      */
+    {0x7E, 0xBD, 0xDB, 0xE7, 0xE7, 0xDB, 0xBD, 0x7E}  /* HS_DIAGCROSS  */
+};
+
+HSURF gahsurfHatch[HS_DDI_MAX];
+
 /** Internal functions ********************************************************/
+
+INIT_FUNCTION
+NTSTATUS
+NTAPI
+InitBrushImpl(VOID)
+{
+    ULONG i;
+    SIZEL sizl = {8, 8};
+
+    /* Loop all hatch styles */
+    for (i = 0; i < HS_DDI_MAX; i++)
+    {
+        /* Create a default hatch bitmap */
+        gahsurfHatch[i] = (HSURF)EngCreateBitmap(sizl,
+                                                 0,
+                                                 BMF_1BPP,
+                                                 0,
+                                                 (PVOID)gaulHatchBrushes[i]);
+    }
+
+    return STATUS_SUCCESS;
+}
 
 VOID
 NTAPI
@@ -38,13 +72,15 @@ EBRUSHOBJ_vInit(EBRUSHOBJ *pebo, PBRUSH pbrush, PDC pdc)
 
     pebo->ppalSurf = pebo->psurfTrg->ppal;
     GDIOBJ_vReferenceObjectByPointer(&pebo->ppalSurf->BaseObject);
+    pebo->ppalDC = pdc->dclevel.ppal;
+    GDIOBJ_vReferenceObjectByPointer(&pebo->ppalDC->BaseObject);
 
-    if (pbrush->flAttrs & GDIBRUSH_IS_NULL)
+    if (pbrush->flAttrs & BR_IS_NULL)
     {
         /* NULL brushes don't need a color */
         pebo->BrushObject.iSolidColor = 0;
     }
-    else if (pbrush->flAttrs & GDIBRUSH_IS_SOLID)
+    else if (pbrush->flAttrs & BR_IS_SOLID)
     {
         /* Set the RGB color */
         EBRUSHOBJ_vSetSolidRGBColor(pebo, pbrush->BrushAttr.lbColor);
@@ -55,7 +91,7 @@ EBRUSHOBJ_vInit(EBRUSHOBJ *pebo, PBRUSH pbrush, PDC pdc)
         pebo->BrushObject.iSolidColor = 0xFFFFFFFF;
 
         /* Use foreground color of hatch brushes */
-        if (pbrush->flAttrs & GDIBRUSH_IS_HATCH)
+        if (pbrush->flAttrs & BR_IS_HATCH)
             pebo->crCurrentText = pbrush->BrushAttr.lbColor;
     }
 }
@@ -68,7 +104,7 @@ EBRUSHOBJ_vSetSolidRGBColor(EBRUSHOBJ *pebo, COLORREF crColor)
     EXLATEOBJ exlo;
 
     /* Never use with non-solid brushes */
-    ASSERT(pebo->flattrs & GDIBRUSH_IS_SOLID);
+    ASSERT(pebo->flattrs & BR_IS_SOLID);
 
     /* Set the RGB color */
     pebo->crRealize = crColor;
@@ -110,7 +146,10 @@ EBRUSHOBJ_vCleanup(EBRUSHOBJ *pebo)
         pebo->BrushObject.pvRbrush = NULL;
     }
 
+    /* Dereference the palettes */
     PALETTE_ShareUnlockPalette(pebo->ppalSurf);
+    PALETTE_ShareUnlockPalette(pebo->ppalDC);
+    if (pebo->ppalDIB) PALETTE_ShareUnlockPalette(pebo->ppalDIB);
 }
 
 VOID
@@ -164,7 +203,7 @@ EngRealizeBrush(
     psurfRealize = SURFACE_ShareLockSurface(hbmpRealize);
 
     /* Already delete the pattern bitmap (will be kept until dereferenced) */
-    EngDeleteSurface(hbmpRealize);
+    EngDeleteSurface((HSURF)hbmpRealize);
 
     if (!psurfRealize)
     {
@@ -185,6 +224,41 @@ EngRealizeBrush(
     return TRUE;
 }
 
+static
+PPALETTE
+FixupDIBBrushPalette(
+    _In_ PPALETTE ppalDIB,
+    _In_ PPALETTE ppalDC)
+{
+    PPALETTE ppalNew;
+    ULONG i, iPalIndex, crColor;
+
+    /* Allocate a new palette */
+    ppalNew = PALETTE_AllocPalette(PAL_INDEXED,
+                                   ppalDIB->NumColors,
+                                   NULL,
+                                   0,
+                                   0,
+                                   0);
+
+    /* Loop all colors */
+    for (i = 0; i < ppalDIB->NumColors; i++)
+    {
+        /* Get the RGB color, which is the index into the DC palette */
+        iPalIndex = PALETTE_ulGetRGBColorFromIndex(ppalDIB, i);
+
+        /* Roll over when index is too big */
+        iPalIndex %= ppalDC->NumColors;
+
+        /* Set the indexed DC color as the new color */
+        crColor = PALETTE_ulGetRGBColorFromIndex(ppalDC, iPalIndex);
+        PALETTE_vSetRGBColorForIndex(ppalNew, i, crColor);
+    }
+
+    /* Return the new palette */
+    return ppalNew;
+}
+
 BOOL
 NTAPI
 EBRUSHOBJ_bRealizeBrush(EBRUSHOBJ *pebo, BOOL bCallDriver)
@@ -192,31 +266,62 @@ EBRUSHOBJ_bRealizeBrush(EBRUSHOBJ *pebo, BOOL bCallDriver)
     BOOL bResult;
     PFN_DrvRealizeBrush pfnRealzizeBrush = NULL;
     PSURFACE psurfPattern, psurfMask;
-    PPDEVOBJ ppdev = NULL;
+    PPDEVOBJ ppdev;
     EXLATEOBJ exlo;
+    PPALETTE ppalPattern;
+    PBRUSH pbr = pebo->pbrush;
+    HBITMAP hbmPattern;
+    ULONG iHatch;
 
     /* All EBRUSHOBJs have a surface, see EBRUSHOBJ_vInit */
     ASSERT(pebo->psurfTrg);
 
     ppdev = (PPDEVOBJ)pebo->psurfTrg->SurfObj.hdev;
+    if (!ppdev) ppdev = gppdevPrimary;
 
-    // FIXME: all SURFACEs need a PDEV
-    if (ppdev && bCallDriver)
+    if (bCallDriver)
         pfnRealzizeBrush = ppdev->DriverFunctions.RealizeBrush;
 
     if (!pfnRealzizeBrush)
         pfnRealzizeBrush = EngRealizeBrush;
 
-    psurfPattern = SURFACE_ShareLockSurface(pebo->pbrush->hbmPattern);
+    /* Check if this is a hatch brush */
+    if (pbr->flAttrs & BR_IS_HATCH)
+    {
+        /* Get the hatch brush pattern from the PDEV */
+        hbmPattern = (HBITMAP)ppdev->ahsurf[pbr->ulStyle];
+        iHatch = pbr->ulStyle;
+    }
+    else
+    {
+        /* Use the brushes pattern */
+        hbmPattern = pbr->hbmPattern;
+        iHatch = -1;
+    }
+
+    psurfPattern = SURFACE_ShareLockSurface(hbmPattern);
     ASSERT(psurfPattern);
     ASSERT(psurfPattern->ppal);
 
     /* FIXME: implement mask */
     psurfMask = NULL;
 
+    /* DIB brushes with DIB_PAL_COLORS usage need a new palette */
+    if (pbr->flAttrs & BR_IS_DIBPALCOLORS)
+    {
+        /* Create a palette with the colors from the DC */
+        ppalPattern = FixupDIBBrushPalette(psurfPattern->ppal, pebo->ppalDC);
+        pebo->ppalDIB = ppalPattern;
+    }
+    else
+    {
+        /* The palette is already as it should be */
+        ppalPattern = psurfPattern->ppal;
+    }
+
     /* Initialize XLATEOBJ for the brush */
     EXLATEOBJ_vInitialize(&exlo,
-                          psurfPattern->ppal,
+                          ppalPattern,
                           pebo->psurfTrg->ppal,
                           0,
                           pebo->crCurrentBack,
@@ -228,7 +333,7 @@ EBRUSHOBJ_bRealizeBrush(EBRUSHOBJ *pebo, BOOL bCallDriver)
                                &psurfPattern->SurfObj,
                                psurfMask ? &psurfMask->SurfObj : NULL,
                                &exlo.xlo,
-                               -1); // FIXME: what about hatch brushes?
+                               iHatch);
 
     /* Cleanup the XLATEOBJ */
     EXLATEOBJ_vCleanup(&exlo);
