@@ -1,9 +1,5 @@
 #pragma once
 
-/* Internal interface */
-
-#define NB_HATCH_STYLES  6
-
 /*
  * The layout of this structure is taken from "Windows Graphics Programming"
  * book written by Feng Yuan.
@@ -19,7 +15,7 @@ typedef struct _BRUSH
 
    ULONG ulStyle;
    HBITMAP hbmPattern;
-   HBITMAP hbmClient;
+   HANDLE hbmClient;
    ULONG flAttrs;
 
    ULONG ulBrushUnique;
@@ -55,9 +51,9 @@ typedef struct _EBRUSHOBJ
 //    DWORD       dwUnknown2c;
 //    DWORD       dwUnknown30;
     SURFACE *   psurfTrg;
-    struct _PALETTE *   ppalSurf;
-    struct _PALETTE *   ppalDC;
-    struct _PALETTE *   ppalDIB;
+    PPALETTE    ppalSurf;
+    PPALETTE    ppalDC;
+    PPALETTE    ppalDIB;
 //    DWORD       dwUnknown44;
     BRUSH *     pbrush;
     FLONG       flattrs;
@@ -86,15 +82,14 @@ typedef struct _EBRUSHOBJ
 #define BR_CACHED_ENGINE    0x00040000
 #define BR_CACHED_IS_SOLID  0x80000000
 
-#define  BRUSH_AllocBrush() ((PBRUSH) GDIOBJ_AllocObj(GDIObjType_BRUSH_TYPE))
-#define  BRUSH_AllocBrushWithHandle() ((PBRUSH) GDIOBJ_AllocObjWithHandle(GDI_OBJECT_TYPE_BRUSH, sizeof(BRUSH)))
-#define  BRUSH_FreeBrush(pBrush) GDIOBJ_FreeObj((POBJ)pBrush, GDIObjType_BRUSH_TYPE)
-#define  BRUSH_FreeBrushByHandle(hBrush) GDIOBJ_FreeObjByHandle((HGDIOBJ)hBrush, GDI_OBJECT_TYPE_BRUSH)
 #define  BRUSH_ShareLockBrush(hBrush) ((PBRUSH)GDIOBJ_ShareLockObj((HGDIOBJ)hBrush, GDI_OBJECT_TYPE_BRUSH))
 #define  BRUSH_ShareUnlockBrush(pBrush) GDIOBJ_vDereferenceObject((POBJ)pBrush)
 
-INT FASTCALL BRUSH_GetObject (PBRUSH GdiObject, INT Count, LPLOGBRUSH Buffer);
-BOOL NTAPI BRUSH_Cleanup(PVOID ObjectBody);
+#define GDIObjType_PEN_TYPE 0x30
+#define GDIObjType_EXTPEN_TYPE 0x50
+
+#define DIB_DEFPAL_COLORS 2 /* Colors are indices into the default palette */
+#define DIB_PAL_BRUSHHACK 3 /* Used as iUsage to create a PAL_BRUSHHACK palete */
 
 extern HSURF gahsurfHatch[HS_DDI_MAX];
 
@@ -145,19 +140,69 @@ EBRUSHOBJ_iSetSolidColor(EBRUSHOBJ *pebo, ULONG iSolidColor)
     return iOldColor;
 }
 
-BOOL FASTCALL IntGdiSetBrushOwner(PBRUSH,DWORD);
-BOOL FASTCALL GreSetBrushOwner(HBRUSH,DWORD);
 
-HBRUSH APIENTRY
-IntGdiCreatePatternBrush(
-   HBITMAP hBitmap);
+PBRUSH
+NTAPI
+BRUSH_AllocBrushOrPen(UCHAR objt);
 
-HBRUSH APIENTRY
-IntGdiCreateSolidBrush(
-   COLORREF Color);
+#define BRUSH_AllocBrush() \
+    BRUSH_AllocBrushOrPen(GDIObjType_BRUSH_TYPE)
 
-HBRUSH APIENTRY
-IntGdiCreateNullBrush(VOID);
+PBRUSH
+NTAPI
+BRUSH_AllocBrushOrPenWithHandle(UCHAR objt, ULONG ulOwner);
 
-VOID FASTCALL
-IntGdiSetSolidBrushColor(HBRUSH hBrush, COLORREF Color);
+#define BRUSH_AllocBrushWithHandle(ulOwner) \
+    BRUSH_AllocBrushOrPenWithHandle(GDIObjType_BRUSH_TYPE, ulOwner)
+
+INT
+FASTCALL
+BRUSH_GetObject(PBRUSH GdiObject, INT Count, LPLOGBRUSH Buffer);
+
+BOOL
+NTAPI
+BRUSH_Cleanup(PVOID ObjectBody);
+
+BOOL
+NTAPI
+BRUSH_bSetBrushOwner(PBRUSH pbr, ULONG ulOwner);
+
+BOOL
+NTAPI
+GreSetBrushOwner(HBRUSH,DWORD);
+
+HBRUSH
+NTAPI
+GreCreatePatternBrushEx(
+    _In_ HBITMAP hbmPattern,
+    _In_ FLONG flAttrs,
+    _In_ BOOL bPen,
+    _In_ BOOL b8X8, // FIXME: do we need this?
+    _In_ BOOL bGlobal);
+
+HBRUSH
+FORCEINLINE
+GreCreatePatternBrush(
+    _In_ HBITMAP hbmPattern,
+    _In_ BOOL bGlobal)
+{
+    return GreCreatePatternBrushEx(hbmPattern, 0, 0, 0, bGlobal);
+}
+
+HBRUSH
+NTAPI
+GreCreateNullBrush(VOID);
+
+VOID
+NTAPI
+GreSetSolidBrushColor(HBRUSH hbr, COLORREF crColor);
+
+#define InterlockedIncrementUL(x) InterlockedIncrement((LONG*)(x))
+#define GreGetBitmapInfoSize(pbmi, iUsage) DIB_BitmapInfoSize(pbmi, (WORD)iUsage)
+
+#define IntGdiSetBrushOwner BRUSH_bSetBrushOwner
+#define IntGdiCreatePatternBrush(hbmp) NtGdiCreatePatternBrushInternal(hbmp, 0, 0)
+#define IntGdiCreateSolidBrush(color) NtGdiCreateSolidBrush(color, 0)
+#define IntGdiSetSolidBrushColor GreSetSolidBrushColor
+#define IntGdiCreateNullBrush GreCreateNullBrush
+

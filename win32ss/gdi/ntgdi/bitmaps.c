@@ -323,6 +323,8 @@ IntCreateCompatibleBitmap(
                 }
             }
 
+            __debugbreak();
+#if 0
             Bmp = DIB_CreateDIBSection(Dc,
                                        bi,
                                        DIB_RGB_COLORS,
@@ -330,6 +332,7 @@ IntCreateCompatibleBitmap(
                                        NULL,
                                        0,
                                        0);
+#endif
             return Bmp;
         }
     }

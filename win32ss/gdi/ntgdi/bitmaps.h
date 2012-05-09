@@ -24,16 +24,3 @@ GreCreateBitmapEx(
     _In_opt_ PVOID pvBits,
     _In_ FLONG flags);
 
-HBITMAP
-NTAPI
-GreCreateDIBitmapInternal(
-    IN HDC hDc,
-    IN INT cx,
-    IN INT cy,
-    IN DWORD fInit,
-    IN OPTIONAL LPBYTE pjInit,
-    IN OPTIONAL PBITMAPINFO pbmi,
-    IN DWORD iUsage,
-    IN FLONG fl,
-    IN UINT cjMaxBits,
-    IN HANDLE hcmXform);

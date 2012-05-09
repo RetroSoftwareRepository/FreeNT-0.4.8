@@ -155,8 +155,8 @@ UserLoadImage(PCWSTR pwszName)
     NTSTATUS Status = STATUS_SUCCESS;
     HANDLE hFile, hSection;
     BITMAPFILEHEADER *pbmfh;
-    LPBITMAPINFO pbmi;
-    PVOID pvBits;
+  //  LPBITMAPINFO pbmi;
+  //  PVOID pvBits;
     HBITMAP hbmp = 0;
 
     DPRINT("Enter UserLoadImage(%ls)\n", pwszName);
@@ -184,19 +184,23 @@ UserLoadImage(PCWSTR pwszName)
         return NULL;
     }
 
-    /* Get a pointer to the BITMAPINFO */
-    pbmi = (LPBITMAPINFO)(pbmfh + 1);
-
+__debugbreak();
+#if 0
 	_SEH2_TRY
 	{
 		ProbeForRead(&pbmfh->bfSize, sizeof(DWORD), 1);
 		ProbeForRead(pbmfh, pbmfh->bfSize, 1);
+		cjHeader =
 	}
 	_SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
 	{
 		Status = _SEH2_GetExceptionCode();
 	}
 	_SEH2_END
+
+    /* Get a pointer to the BITMAPINFO */
+    pbmi = ProbeAndConvertBitmapInfo((LPBITMAPINFO)(pbmfh + 1), cjHeader);
+    (LPBITMAPINFO)(pbmfh + 1);
 
 	if(!NT_SUCCESS(Status))
 	{
@@ -239,8 +243,8 @@ UserLoadImage(PCWSTR pwszName)
 	{
 		DPRINT1("Unknown file type!\n");
 	}
-
-leave:
+#endif
+//leave:
     /* Unmap our section, we don't need it anymore */
     ZwUnmapViewOfSection(NtCurrentProcess(), pbmfh);
 

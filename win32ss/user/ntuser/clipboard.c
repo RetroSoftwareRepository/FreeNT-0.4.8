@@ -148,6 +148,8 @@ IntSynthesizeDib(PWINSTATION_OBJECT pWinStaObj, HBITMAP hBm)
     if (!hdc)
         return;
 
+    // FIXME: use a less cheesy way to calculate the size of the bitmap!
+
     psurf = SURFACE_ShareLockSurface(hBm);
     if (!psurf)
         goto cleanup;
@@ -165,7 +167,7 @@ IntSynthesizeDib(PWINSTATION_OBJECT pWinStaObj, HBITMAP hBm)
     bi.bmiHeader.biYPelsPerMeter = 0;
     bi.bmiHeader.biClrUsed = 0;
 
-    NtGdiGetDIBitsInternal(hdc, hBm, 0, bm.bmHeight, NULL, &bi, DIB_RGB_COLORS, 0, 0);
+    GreGetDIBitsInternal(hdc, hBm, 0, bm.bmHeight, NULL, &bi, DIB_RGB_COLORS, 0, 0);
 
     pMemObj = (PCLIPBOARDDATA)UserCreateObject(gHandleTable, NULL, &hMem, otClipBoardData,
                                                sizeof(BITMAPINFOHEADER) + bi.bmiHeader.biSizeImage);
@@ -173,7 +175,7 @@ IntSynthesizeDib(PWINSTATION_OBJECT pWinStaObj, HBITMAP hBm)
     {
         pMemObj->cbData = sizeof(BITMAPINFOHEADER) + bi.bmiHeader.biSizeImage;
         memcpy(pMemObj->Data, &bi, sizeof(BITMAPINFOHEADER));
-        NtGdiGetDIBitsInternal(hdc, hBm, 0, bm.bmHeight, (LPBYTE)pMemObj->Data + sizeof(BITMAPINFOHEADER), &bi, DIB_RGB_COLORS, 0, 0);
+        GreGetDIBitsInternal(hdc, hBm, 0, bm.bmHeight, (LPBYTE)pMemObj->Data + sizeof(BITMAPINFOHEADER), &bi, DIB_RGB_COLORS, 0, 0);
         IntAddFormatedData(pWinStaObj, CF_DIB, hMem, TRUE, TRUE);
     }
 
@@ -230,6 +232,7 @@ IntSynthesizeBitmap(PWINSTATION_OBJECT pWinStaObj, PCLIP pBmEl)
 
     if (hBm)
     {
+        // FIXME: this is broken!
         GreSetObjectOwner(hBm, GDI_OBJ_HMGR_PUBLIC);
         pBmEl->hData = hBm;
     }
