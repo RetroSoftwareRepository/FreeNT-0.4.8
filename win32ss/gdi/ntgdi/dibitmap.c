@@ -616,6 +616,8 @@ NtGdiCreateDIBitmapInternal(
     HANDLE hSecure;
     HBITMAP hbmp;
 
+__debugbreak();
+
     if (fInit & CBM_INIT)
     {
         if (pjInit)
@@ -663,9 +665,96 @@ cleanup:
     return hbmp;
 }
 
+ULONG
+SURFACE_iCompression(
+    _In_ PSURFACE psurf)
+{
+    /* Check what compression the surface has */
+    if (psurf->SurfObj.iBitmapFormat == BMF_4RLE) return BI_RLE4;
+    if (psurf->SurfObj.iBitmapFormat == BMF_8RLE) return BI_RLE8;
+    if (psurf->SurfObj.iBitmapFormat == BMF_JPEG) return BI_JPEG;
+    if (psurf->SurfObj.iBitmapFormat == BMF_PNG) return BI_PNG;
+
+    /* Check the type of the palette */
+    if (psurf->ppal->flFlags & (PAL_INDEXED|PAL_RGB|PAL_RGB16_555))
+        return PAL_RGB;
+
+    /* Everything else must be bitfields */
+    ASSERT(psurf->ppal->flFlags & PAL_BITFIELDS);
+    return BI_BITFIELDS;
+}
+
 INT
 APIENTRY
-GreGetDIBitsInternal(
+GreGetDIBitmapInfo(
+    _In_ HBITMAP hbm,
+    _Inout_ LPBITMAPINFO pbmi,
+    _In_ UINT iUsage,
+    _In_ UINT cjMaxInfo)
+{
+    PSURFACE psurf;
+
+    /* Lock the bitmap */
+    psurf = SURFACE_ShareLockSurface(hbm);
+    if (!psurf)
+    {
+        return 0;
+    }
+
+    /* Fill the bitmap info header */
+    pbmi->bmiHeader.biWidth = psurf->SurfObj.sizlBitmap.cx;
+    if (psurf->SurfObj.fjBitmap & BMF_TOPDOWN)
+        pbmi->bmiHeader.biHeight = -psurf->SurfObj.sizlBitmap.cy;
+    else
+        pbmi->bmiHeader.biHeight = psurf->SurfObj.sizlBitmap.cy;
+    pbmi->bmiHeader.biPlanes = 1;
+    pbmi->bmiHeader.biCompression = SURFACE_iCompression(psurf);
+    pbmi->bmiHeader.biSizeImage = psurf->SurfObj.cjBits;
+    pbmi->bmiHeader.biXPelsPerMeter = psurf->sizlDim.cx;
+    pbmi->bmiHeader.biYPelsPerMeter = psurf->sizlDim.cy;
+
+    /* Check if the caller requests a color table */
+    if (pbmi->bmiHeader.biBitCount != 0)
+    {
+        /* Synthesize a color table */
+        __debugbreak();
+    }
+    else
+    {
+        /* Just return the bit depth */
+        pbmi->bmiHeader.biBitCount =
+            gajBitsPerFormat[psurf->SurfObj.iBitmapFormat];
+    }
+
+    /* Set the number of colors */
+    pbmi->bmiHeader.biClrUsed = 1 << pbmi->bmiHeader.biBitCount;
+    pbmi->bmiHeader.biClrImportant = pbmi->bmiHeader.biClrUsed;
+
+    if (pbmi->bmiHeader.biSize >= sizeof(BITMAPV4HEADER))
+    {
+        PBITMAPV4HEADER pbV4Header = (PBITMAPV4HEADER)pbmi;
+
+        pbV4Header->bV4RedMask = 0;
+        pbV4Header->bV4GreenMask = 0;
+        pbV4Header->bV4BlueMask = 0;
+        pbV4Header->bV4AlphaMask = 0;
+        pbV4Header->bV4CSType = 0;
+        //pbV4Header->bV4Endpoints;
+        pbV4Header->bV4GammaRed = 0;
+        pbV4Header->bV4GammaGreen = 0;
+        pbV4Header->bV4GammaBlue = 0;
+    }
+
+    /* Unlock the bitmap surface */
+    SURFACE_ShareUnlockSurface(psurf);
+
+    return 1;
+}
+
+
+INT
+APIENTRY
+GreGetDIBits(
     _In_ HDC hdc,
     _In_ HBITMAP hbm,
     _In_ UINT iStartScan,
@@ -676,11 +765,94 @@ GreGetDIBitsInternal(
     _In_ UINT cjMaxBits,
     _In_ UINT cjMaxInfo)
 {
+    PDC pdc;
+    PSURFACE psurf;
+    ULONG iCompression, cBitsPixel, cjLine;
+    LONG lDeltaDst;
+    PBYTE pjSrc;
 
-    __debugbreak();
+    /* Lock the DC */
+    pdc = DC_LockDc(hdc);
+    if (!pdc)
+    {
+        return 0;
+    }
 
+    /* Lock the bitmap */
+    psurf = SURFACE_ShareLockSurface(hbm);
+    if (!psurf)
+    {
 
-    return 0;
+        return 0;
+    }
+
+    /* Check if there is anything to do */
+    if (iStartScan < (ULONG)psurf->SurfObj.sizlBitmap.cy)
+    {
+        /* Get the bit depth of the bitmap */
+        cBitsPixel = gajBitsPerFormat[psurf->SurfObj.iBitmapFormat];
+
+        /* Get the compression of the bitmap */
+        iCompression = SURFACE_iCompression(psurf);
+
+        /* Check if the requested format matches the actual one */
+        if ((cBitsPixel == pbmi->bmiHeader.biBitCount) &&
+            (iCompression == pbmi->bmiHeader.biCompression))
+        {
+            /* Calculate width of one dest line */
+            lDeltaDst = WIDTH_BYTES_ALIGN32(pbmi->bmiHeader.biWidth, cBitsPixel);
+
+            /* Calculate the maximum number of scan lines to be copied */
+            cScans = min(cScans, psurf->SurfObj.sizlBitmap.cy - iStartScan);
+            cScans = min(cScans, cjMaxBits / lDeltaDst);
+
+            /* Calculate the maximum length of a line */
+            cjLine = min(lDeltaDst, abs(psurf->SurfObj.lDelta));
+
+            /* Check for top-down bitmaps */
+            if (pbmi->bmiHeader.biHeight > 0)
+            {
+                /* Adjust lDelta and start position */
+                lDeltaDst = -lDeltaDst;
+                pjBits += (cScans - 1) * lDeltaDst;
+            }
+
+            /* Calculate the start address from where to copy */
+            pjSrc = psurf->SurfObj.pvScan0;
+            pjSrc += iStartScan * psurf->SurfObj.lDelta;
+
+            /* Loop all scan lines */
+            while (cScans--)
+            {
+                /* Copy one scan line */
+                RtlCopyMemory(pjBits, pjSrc, cjLine);
+
+                /* go to the next scan line */
+                pjSrc += psurf->SurfObj.lDelta;
+                pjBits += lDeltaDst;
+            }
+
+            {
+                // TODO: create color table
+            }
+        }
+        else
+        {
+            __debugbreak();
+        }
+    }
+    else
+    {
+        /* There is nothing to copy */
+        cScans = 0;
+    }
+
+    /* Unlock the bitmap surface */
+    SURFACE_ShareUnlockSurface(psurf);
+
+    DC_UnlockDc(pdc);
+
+    return cScans;
 }
 
 INT
@@ -691,13 +863,84 @@ NtGdiGetDIBitsInternal(
     _In_ UINT iStartScan,
     _In_ UINT cScans,
     _Out_opt_ LPBYTE pjBits,
-    _Inout_ LPBITMAPINFO pbmi,
+    _Inout_ LPBITMAPINFO pbmiUser,
     _In_ UINT iUsage,
     _In_ UINT cjMaxBits,
     _In_ UINT cjMaxInfo)
 {
+    PBITMAPINFO pbmi;
+    HANDLE hSecure;
+    INT iResult;
+    //ULONG cjHeader;
+
     __debugbreak();
-    return 0;
+
+    /* Check if the size of the bitmap info is large enough */
+    if (cjMaxInfo < sizeof(BITMAPINFOHEADER))
+    {
+        return 0;
+    }
+
+    if (pjBits)
+    {
+        hSecure = EngSecureMem(pjBits, cjMaxBits);
+        if (!hSecure)
+        {
+            return 0;
+        }
+    }
+
+    pbmi = ExAllocatePoolWithTag(PagedPool, cjMaxInfo, GDITAG_BITMAPINFO);
+    if (!pbmi)
+    {
+        __debugbreak();
+    }
+
+    _SEH2_TRY
+    {
+        ProbeForWrite(pbmiUser, cjMaxInfo, 1);
+        RtlCopyMemory(pbmi, pbmiUser, cjMaxInfo);
+    }
+    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+    {
+        __debugbreak();
+    }
+    _SEH2_END;
+
+    // FIXME: check pbmi size
+
+    if (pjBits)
+    {
+        /* Call the internal functiomn */
+        iResult = GreGetDIBits(hdc,
+                               hbm,
+                               iStartScan,
+                               cScans,
+                               pjBits,
+                               pbmi,
+                               iUsage,
+                               cjMaxBits,
+                               cjMaxInfo);
+    }
+    else
+    {
+        iResult = GreGetDIBitmapInfo(hbm, pbmi, iUsage, cjMaxInfo);
+    }
+
+    _SEH2_TRY
+    {
+        RtlCopyMemory(pbmiUser, pbmi, cjMaxInfo);
+    }
+    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+    {
+    }
+    _SEH2_END;
+
+
+    ExFreePoolWithTag(pbmi, GDITAG_BITMAPINFO);
+
+
+    return iResult;
 }
 
 INT
