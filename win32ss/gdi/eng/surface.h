@@ -123,3 +123,20 @@ SURFACE_AllocSurface(
     _In_ ULONG fjBitmap,
     _In_opt_ ULONG cjWidth,
     _In_opt_ PVOID pvBits);
+
+ULONG
+NTAPI
+SURFACE_iCompression(
+    _In_ PSURFACE psurf);
+
+VOID
+FORCEINLINE
+SURFACE_vSetPalette(
+    _In_ PSURFACE psurf,
+    _In_ PPALETTE ppal)
+{
+    /* Dereference the old and set the new palette */
+    GDIOBJ_vDereferenceObject((POBJ)psurf->ppal);
+    psurf->ppal = ppal;
+}
+

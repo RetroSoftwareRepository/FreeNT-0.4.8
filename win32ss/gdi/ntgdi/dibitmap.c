@@ -665,24 +665,6 @@ cleanup:
     return hbmp;
 }
 
-ULONG
-SURFACE_iCompression(
-    _In_ PSURFACE psurf)
-{
-    /* Check what compression the surface has */
-    if (psurf->SurfObj.iBitmapFormat == BMF_4RLE) return BI_RLE4;
-    if (psurf->SurfObj.iBitmapFormat == BMF_8RLE) return BI_RLE8;
-    if (psurf->SurfObj.iBitmapFormat == BMF_JPEG) return BI_JPEG;
-    if (psurf->SurfObj.iBitmapFormat == BMF_PNG) return BI_PNG;
-
-    /* Check the type of the palette */
-    if (psurf->ppal->flFlags & (PAL_INDEXED|PAL_BGR|PAL_RGB16_555))
-        return BI_RGB;
-
-    /* Everything else must be bitfields */
-    return BI_BITFIELDS;
-}
-
 INT
 APIENTRY
 GreGetDIBitmapInfo(
@@ -821,7 +803,7 @@ GreGetDIBits(
             pjSrc = psurf->SurfObj.pvScan0;
             pjSrc += iStartScan * psurf->SurfObj.lDelta;
 
-            /* Save number of scan lines being copied */
+            /* Save number of copied scans */
             iResult = cScans;
 
             /* Loop all scan lines */
