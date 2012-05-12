@@ -565,7 +565,10 @@ GreCreateDIBitmapInternal(
     _In_ HANDLE hcmXform)
 {
     PDC pdc;
-    PSURFACE psurfDIB;
+    PSURFACE psurfDIB, psurfDC, psurfBmp;
+    ULONG iFormat;
+    PPALETTE ppalBmp;
+    HBITMAP hbmp;
 
     /* Check if we got a DC */
     if (hdc)
@@ -576,6 +579,8 @@ GreCreateDIBitmapInternal(
         {
             return NULL;
         }
+
+        psurfDC = pdc->dclevel.pSurface;
     }
     else
     {
@@ -593,6 +598,82 @@ GreCreateDIBitmapInternal(
                                        cjMaxBits);
     }
 
+
+    if (fInit & CBM_CREATDIB)
+    {
+        if (iUsage == 2) goto cleanup;
+
+        /* Need a DC for DIB_PAL_COLORS */
+        if ((iUsage == DIB_PAL_COLORS) && !pdc) goto cleanup;
+
+        iFormat = psurfDIB->SurfObj.iBitmapFormat;
+
+        if (psurfDIB)
+        {
+            ppalBmp = psurfDIB->ppal;
+            GDIOBJ_vReferenceObjectByPointer(&ppalBmp->BaseObject);
+        }
+        else
+        {
+            ppalBmp = CreateDIBPalette(pbmi, pdc, iUsage);
+        }
+    }
+    else
+    {
+        if (psurfDC)
+        {
+            /* Use the same format as the DC surface */
+            iFormat = psurfDC->SurfObj.iBitmapFormat;
+            ppalBmp = psurfDC->ppal;
+        }
+        else
+        {
+            __debugbreak();
+        }
+
+        GDIOBJ_vReferenceObjectByPointer(&ppalBmp->BaseObject);
+    }
+
+    /* Allocate a surface for the bitmap */
+    psurfBmp = SURFACE_AllocSurface(STYPE_BITMAP, cx, cy, iFormat, 0, 0, NULL);
+    if (psurfBmp)
+    {
+        /* Set new palette for the bitmap */
+        SURFACE_vSetPalette(psurfBmp, ppalBmp);
+
+        if (pjInit)
+        {
+            RECTL rclDest = {0, 0, cx, cy};
+            POINTL ptlSrc = {0, 0};
+            EXLATEOBJ exlo;
+
+            /* Initialize XLATEOBJ */
+            EXLATEOBJ_vInitialize(&exlo,
+                                  psurfBmp->ppal,
+                                  psurfDIB->ppal,
+                                  RGB(0xff, 0xff, 0xff),
+                                  RGB(0xff, 0xff, 0xff),
+                                  RGB(0x00, 0x00, 0x00));
+
+            EngCopyBits(&psurfBmp->SurfObj,
+                        &psurfDIB->SurfObj,
+                        NULL,
+                        &exlo.xlo,
+                        &rclDest,
+                        &ptlSrc);
+
+            EXLATEOBJ_vCleanup(&exlo);
+        }
+
+        /* Get the bitmap handle and unlock the bitmap */
+        hbmp = psurfBmp->BaseObject.hHmgr;
+        SURFACE_UnlockSurface(psurfBmp);
+    }
+
+
+cleanup:
+
+    if (ppalBmp) PALETTE_ShareUnlockPalette(ppalBmp);
 
     return 0;
 }
