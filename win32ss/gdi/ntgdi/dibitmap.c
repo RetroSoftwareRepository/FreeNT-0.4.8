@@ -676,11 +676,10 @@ SURFACE_iCompression(
     if (psurf->SurfObj.iBitmapFormat == BMF_PNG) return BI_PNG;
 
     /* Check the type of the palette */
-    if (psurf->ppal->flFlags & (PAL_INDEXED|PAL_RGB|PAL_RGB16_555))
-        return PAL_RGB;
+    if (psurf->ppal->flFlags & (PAL_INDEXED|PAL_BGR|PAL_RGB16_555))
+        return BI_RGB;
 
     /* Everything else must be bitfields */
-    ASSERT(psurf->ppal->flFlags & PAL_BITFIELDS);
     return BI_BITFIELDS;
 }
 
@@ -770,6 +769,7 @@ GreGetDIBits(
     ULONG iCompression, cBitsPixel, cjLine;
     LONG lDeltaDst;
     PBYTE pjSrc;
+    INT iResult = 0;
 
     /* Lock the DC */
     pdc = DC_LockDc(hdc);
@@ -812,14 +812,17 @@ GreGetDIBits(
             /* Check for top-down bitmaps */
             if (pbmi->bmiHeader.biHeight > 0)
             {
-                /* Adjust lDelta and start position */
-                lDeltaDst = -lDeltaDst;
+                /* Adjust start position and lDelta */
                 pjBits += (cScans - 1) * lDeltaDst;
+                lDeltaDst = -lDeltaDst;
             }
 
             /* Calculate the start address from where to copy */
             pjSrc = psurf->SurfObj.pvScan0;
             pjSrc += iStartScan * psurf->SurfObj.lDelta;
+
+            /* Save number of scan lines being copied */
+            iResult = cScans;
 
             /* Loop all scan lines */
             while (cScans--)
@@ -844,7 +847,7 @@ GreGetDIBits(
     else
     {
         /* There is nothing to copy */
-        cScans = 0;
+        iResult = 0;
     }
 
     /* Unlock the bitmap surface */
@@ -852,7 +855,7 @@ GreGetDIBits(
 
     DC_UnlockDc(pdc);
 
-    return cScans;
+    return iResult;
 }
 
 INT
@@ -871,9 +874,6 @@ NtGdiGetDIBitsInternal(
     PBITMAPINFO pbmi;
     HANDLE hSecure;
     INT iResult;
-    //ULONG cjHeader;
-
-    __debugbreak();
 
     /* Check if the size of the bitmap info is large enough */
     if (cjMaxInfo < sizeof(BITMAPINFOHEADER))
