@@ -193,6 +193,10 @@ VOID
 NTAPI
 DC_vSetBrushOrigin(PDC pdc, LONG x, LONG y);
 
+BOOL
+NTAPI
+DC_bIsBitmapCompatible(PDC pdc, PSURFACE psurf);
+
 FORCEINLINE
 PDC
 DC_LockDc(HDC hdc)
