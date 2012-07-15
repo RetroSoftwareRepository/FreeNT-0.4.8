@@ -85,17 +85,17 @@ ScmCreateStartEvent(PHANDLE StartEvent)
 {
     HANDLE hEvent;
 
-    hEvent = CreateEvent(NULL,
-                         TRUE,
-                         FALSE,
-                         TEXT("SvcctrlStartEvent_A3752DX"));
+    hEvent = CreateEventW(NULL,
+                          TRUE,
+                          FALSE,
+                          L"SvcctrlStartEvent_A3752DX");
     if (hEvent == NULL)
     {
         if (GetLastError() == ERROR_ALREADY_EXISTS)
         {
-            hEvent = OpenEvent(EVENT_ALL_ACCESS,
-                               FALSE,
-                               TEXT("SvcctrlStartEvent_A3752DX"));
+            hEvent = OpenEventW(EVENT_ALL_ACCESS,
+                                FALSE,
+                                L"SvcctrlStartEvent_A3752DX");
             if (hEvent == NULL)
             {
                 return FALSE;
@@ -113,8 +113,8 @@ ScmCreateStartEvent(PHANDLE StartEvent)
 }
 
 
-static VOID
-ScmWaitForLsass(VOID)
+VOID
+ScmWaitForLsa(VOID)
 {
     HANDLE hEvent;
     DWORD dwError;
@@ -126,7 +126,7 @@ ScmWaitForLsass(VOID)
     if (hEvent == NULL)
     {
         dwError = GetLastError();
-        DPRINT("Failed to create the notication event (Error %lu)\n", dwError);
+        DPRINT1("Failed to create the notication event (Error %lu)\n", dwError);
 
         if (dwError == ERROR_ALREADY_EXISTS)
         {
@@ -146,6 +146,8 @@ ScmWaitForLsass(VOID)
     DPRINT("LSA server running!\n");
 
     CloseHandle(hEvent);
+
+    DPRINT("ScmWaitForLsa() done\n");
 }
 
 
@@ -225,7 +227,7 @@ ScmCreateNamedPipe(VOID)
 
     DPRINT("ScmCreateNamedPipe() - CreateNamedPipe(\"\\\\.\\pipe\\Ntsvcs\")\n");
 
-    hPipe = CreateNamedPipe(TEXT("\\\\.\\pipe\\Ntsvcs"),
+    hPipe = CreateNamedPipeW(L"\\\\.\\pipe\\Ntsvcs",
               PIPE_ACCESS_DUPLEX,
               PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
               PIPE_UNLIMITED_INSTANCES,
@@ -374,7 +376,9 @@ wWinMain(HINSTANCE hInstance,
          LPWSTR lpCmdLine,
          int nShowCmd)
 {
-    HANDLE hScmStartEvent;
+    HANDLE hScmStartEvent = NULL;
+    SC_RPC_LOCK Lock = NULL;
+    BOOL bDeleteCriticalSection = FALSE;
     DWORD dwError;
 
     DPRINT("SERVICES: Service Control Manager\n");
@@ -383,23 +387,36 @@ wWinMain(HINSTANCE hInstance,
     if (!ScmCreateStartEvent(&hScmStartEvent))
     {
         DPRINT1("SERVICES: Failed to create start event\n");
-        ExitThread(0);
+        goto done;
     }
 
     DPRINT("SERVICES: created start event with handle %p.\n", hScmStartEvent);
+
+    /* Create the shutdown event */
+    hScmShutdownEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+    if (hScmShutdownEvent == NULL)
+    {
+        DPRINT1("SERVICES: Failed to create shutdown event\n");
+        goto done;
+    }
 
 //    ScmInitThreadManager();
 
     /* FIXME: more initialization */
 
+    /* Read the control set values */
+    if (!ScmGetControlSetValues())
+    {
+        DPRINT1("SERVICES: failed to read the control set values\n");
+        goto done;
+    }
 
     /* Create the service database */
     dwError = ScmCreateServiceDatabase();
     if (dwError != ERROR_SUCCESS)
     {
         DPRINT1("SERVICES: failed to create SCM database (Error %lu)\n", dwError);
-        CloseHandle(hScmStartEvent);
-        ExitThread(0);
+        goto done;
     }
 
     /* Update service database */
@@ -420,33 +437,46 @@ wWinMain(HINSTANCE hInstance,
     SetConsoleCtrlHandler(ShutdownHandlerRoutine, TRUE);
 
     /* Wait for the LSA server */
-    ScmWaitForLsass();
+    ScmWaitForLsa();
 
     /* Acquire privileges to load drivers */
     AcquireLoadDriverPrivilege();
 
     ScmInitNamedPipeCriticalSection();
+    bDeleteCriticalSection = TRUE;
+
+    /* Acquire the service start lock until autostart services have been started */
+    dwError = ScmAcquireServiceStartLock(TRUE, &Lock);
+    if (dwError != ERROR_SUCCESS)
+    {
+        DPRINT1("SERVICES: failed to acquire the service start lock (Error %lu)\n", dwError);
+        goto done;
+    }
 
     /* Start auto-start services */
     ScmAutoStartServices();
 
     /* FIXME: more to do ? */
 
+    /* Release the service start lock */
+    ScmReleaseServiceStartLock(&Lock);
 
     DPRINT("SERVICES: Running.\n");
 
-    /* Create the shutdown event and wait until it gets set */
-    hScmShutdownEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
-    if (hScmShutdownEvent)
-        WaitForSingleObject(hScmShutdownEvent, INFINITE);
+    /* Wait until the shutdown event gets signaled */
+    WaitForSingleObject(hScmShutdownEvent, INFINITE);
 
-    ScmDeleteNamedPipeCriticalSection();
+done:
+    if (bDeleteCriticalSection == TRUE)
+        ScmDeleteNamedPipeCriticalSection();
 
     /* Close the shutdown event */
-    CloseHandle(hScmShutdownEvent);
+    if (hScmShutdownEvent != NULL)
+        CloseHandle(hScmShutdownEvent);
 
     /* Close the start event */
-    CloseHandle(hScmStartEvent);
+    if (hScmStartEvent != NULL)
+        CloseHandle(hScmStartEvent);
 
     DPRINT("SERVICES: Finished.\n");
 

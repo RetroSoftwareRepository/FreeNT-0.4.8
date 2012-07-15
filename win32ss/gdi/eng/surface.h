@@ -10,7 +10,7 @@ typedef struct _SURFACE
     SURFOBJ     SurfObj;
     //XDCOBJ *   pdcoAA;
     FLONG       flags;
-    struct _PALETTE  *ppal;
+    struct _PALETTE  * const ppal; // Use SURFACE_vSetPalette to assign a palette
     //UINT       unk_050;
 
     union
@@ -129,14 +129,18 @@ NTAPI
 SURFACE_iCompression(
     _In_ PSURFACE psurf);
 
+
+
 VOID
 FORCEINLINE
 SURFACE_vSetPalette(
-    _In_ PSURFACE psurf,
+    _Inout_ PSURFACE psurf,
     _In_ PPALETTE ppal)
 {
-    /* Dereference the old and set the new palette */
-    GDIOBJ_vDereferenceObject((POBJ)psurf->ppal);
-    psurf->ppal = ppal;
+    if (psurf->ppal)
+        GDIOBJ_vDereferenceObject((POBJ)psurf->ppal);
+    if (ppal)
+        GDIOBJ_vReferenceObjectByPointer((POBJ)ppal);
+    *(PVOID*)&psurf->ppal = ppal;
 }
 

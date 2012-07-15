@@ -18,7 +18,7 @@ WINE_DEFAULT_DEBUG_CHANNEL(user32);
 
 LRESULT DefWndNCPaint(HWND hWnd, HRGN hRgn, BOOL Active);
 LRESULT DefWndNCCalcSize(HWND hWnd, BOOL CalcSizeStruct, RECT *Rect);
-LRESULT DefWndNCActivate(HWND hWnd, WPARAM wParam);
+LRESULT DefWndNCActivate(HWND hWnd, WPARAM wParam, LPARAM lParam);
 LRESULT DefWndNCHitTest(HWND hWnd, POINT Point);
 LRESULT DefWndNCLButtonDown(HWND hWnd, WPARAM wParam, LPARAM lParam);
 LRESULT DefWndNCLButtonDblClk(HWND hWnd, WPARAM wParam, LPARAM lParam);
@@ -1027,6 +1027,13 @@ User32DefWindowProc(HWND hWnd,
 		    LPARAM lParam,
 		    BOOL bUnicode)
 {
+    PWND pWnd = NULL;
+    if (hWnd)
+    {
+       pWnd = ValidateHwnd(hWnd);
+       if (!pWnd) return 0;
+    }
+
     switch (Msg)
     {
 	case WM_NCPAINT:
@@ -1053,7 +1060,7 @@ User32DefWindowProc(HWND hWnd,
 
         case WM_NCACTIVATE:
         {
-            return DefWndNCActivate(hWnd, wParam);
+            return DefWndNCActivate(hWnd, wParam, lParam);
         }
 
         case WM_NCHITTEST:
@@ -1209,13 +1216,21 @@ User32DefWindowProc(HWND hWnd,
         case WM_PAINT:
         {
             PAINTSTRUCT Ps;
-            HDC hDC = BeginPaint(hWnd, &Ps);
+            HDC hDC;
+
+            /* If already in Paint and Client area is not empty just return. */
+            if (pWnd->state2 & WNDS2_STARTPAINT && !IsRectEmpty(&pWnd->rcClient))
+            {
+               ERR("In Paint and Client area is not empty!\n");
+               return 0;
+            }
+
+            hDC = BeginPaint(hWnd, &Ps);
             if (hDC)
             {
                 HICON hIcon;
 
-                if (GetWindowLongPtrW(hWnd, GWL_STYLE) & WS_MINIMIZE &&
-                    (hIcon = (HICON)GetClassLongPtrW(hWnd, GCL_HICON)) != NULL)
+                if (IsIconic(hWnd) && ((hIcon = (HICON)GetClassLongPtrW( hWnd, GCLP_HICON))))
                 {
                     RECT ClientRect;
                     INT x, y;
@@ -1524,10 +1539,7 @@ User32DefWindowProc(HWND hWnd,
 
         case WM_ISACTIVEICON:
         {
-           PWND pWnd;
            BOOL isai;
-           pWnd = ValidateHwnd(hWnd);
-           if (!pWnd) return 0;
            isai = (pWnd->state & WNDS_ACTIVEFRAME) != 0;
            return isai;
         }

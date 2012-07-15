@@ -744,54 +744,29 @@ FindWindowExA(HWND hwndParent,
               LPCSTR lpszClass,
               LPCSTR lpszWindow)
 {
-    UNICODE_STRING ucClassName, *pucClassName = NULL;
-    UNICODE_STRING ucWindowName, *pucWindowName = NULL;
-    HWND Result;
+    LPWSTR titleW = NULL;
+    HWND hwnd = 0;
 
-    if (IS_ATOM(lpszClass))
+    if (lpszWindow)
     {
-        ucClassName.Buffer = (LPWSTR)lpszClass;
-        ucClassName.Length = 0;
-        pucClassName = &ucClassName;
-    }
-    else if (lpszClass != NULL)
-    {
-        if (!RtlCreateUnicodeStringFromAsciiz(&ucClassName,
-                                            (LPSTR)lpszClass))
-        {
-            SetLastError(ERROR_NOT_ENOUGH_MEMORY);
-            return NULL;
-        }
-        pucClassName = &ucClassName;
+        DWORD len = MultiByteToWideChar( CP_ACP, 0, lpszWindow, -1, NULL, 0 );
+        if (!(titleW = HeapAlloc( GetProcessHeap(), 0, len * sizeof(WCHAR) ))) return 0;
+        MultiByteToWideChar( CP_ACP, 0, lpszWindow, -1, titleW, len );
     }
 
-    if (lpszWindow != NULL)
+    if (!IS_INTRESOURCE(lpszClass))
     {
-        if (!RtlCreateUnicodeStringFromAsciiz(&ucWindowName,
-                                            (LPSTR)lpszWindow))
-        {
-            if (!IS_ATOM(lpszClass) && lpszClass != NULL)
-                RtlFreeUnicodeString(&ucWindowName);
-
-            SetLastError(ERROR_NOT_ENOUGH_MEMORY);
-            return NULL;
-        }
-
-        pucWindowName = &ucWindowName;
+        WCHAR classW[256];
+        if (MultiByteToWideChar( CP_ACP, 0, lpszClass, -1, classW, sizeof(classW)/sizeof(WCHAR) ))
+            hwnd = FindWindowExW( hwndParent, hwndChildAfter, classW, titleW );
+    }
+    else
+    {
+        hwnd = FindWindowExW( hwndParent, hwndChildAfter, (LPCWSTR)lpszClass, titleW );
     }
 
-    Result = NtUserFindWindowEx(hwndParent,
-                                hwndChildAfter,
-                                pucClassName,
-                                pucWindowName,
-                                0);
-
-    if (!IS_ATOM(lpszClass) && lpszClass != NULL)
-        RtlFreeUnicodeString(&ucClassName);
-    if (lpszWindow != NULL)
-        RtlFreeUnicodeString(&ucWindowName);
-
-    return Result;
+    HeapFree( GetProcessHeap(), 0, titleW );
+    return hwnd;
 }
 
 
@@ -1053,21 +1028,12 @@ GetParent(HWND hWnd)
 
 
 /*
- * @unimplemented
+ * @implemented
  */
 BOOL WINAPI
 GetProcessDefaultLayout(DWORD *pdwDefaultLayout)
 {
-    if (!pdwDefaultLayout)
-    {
-        SetLastError(ERROR_INVALID_PARAMETER);
-        return FALSE;
-    }
-
-    UNIMPLEMENTED;
-
-    *pdwDefaultLayout = 0;
-    return TRUE;
+return (BOOL)NtUserCallOneParam( (DWORD_PTR)pdwDefaultLayout, ONEPARAM_ROUTINE_GETPROCDEFLAYOUT);
 }
 
 
@@ -1535,7 +1501,9 @@ IsWindow(HWND hWnd)
     PWND Wnd = ValidateHwndNoErr(hWnd);
     if (Wnd != NULL)
     {
-        /* FIXME: If window is being destroyed return FALSE! */
+        if (Wnd->state & WNDS_DESTROYED ||
+            Wnd->state2 & WNDS2_INDESTROY)
+           return FALSE;
         return TRUE;
     }
 
@@ -1684,7 +1652,7 @@ HWND WINAPI
 RealChildWindowFromPoint(HWND hwndParent,
                          POINT ptParentClientCoords)
 {
-    return ChildWindowFromPointEx(hwndParent, ptParentClientCoords, CWP_SKIPTRANSPARENT | CWP_SKIPINVISIBLE);
+    return NtUserRealChildWindowFromPoint(hwndParent, ptParentClientCoords.x, ptParentClientCoords.y);
 }
 
 /*
@@ -1698,16 +1666,12 @@ SetForegroundWindow(HWND hWnd)
 
 
 /*
- * @unimplemented
+ * @implemented
  */
 BOOL WINAPI
 SetProcessDefaultLayout(DWORD dwDefaultLayout)
 {
-    if (dwDefaultLayout == 0)
-        return TRUE;
-
-    UNIMPLEMENTED;
-    return FALSE;
+return NtUserCallOneParam( (DWORD_PTR)dwDefaultLayout, ONEPARAM_ROUTINE_SETPROCDEFLAYOUT);
 }
 
 

@@ -44,7 +44,7 @@ add_subdirectory(getuname)
 add_subdirectory(glu32)
 add_subdirectory(hhctrl.ocx)
 add_subdirectory(hid)
-add_subdirectory(hlink) # FIXME: msvc build.
+add_subdirectory(hlink)
 add_subdirectory(hnetcfg)
 add_subdirectory(httpapi)
 add_subdirectory(iccvid)

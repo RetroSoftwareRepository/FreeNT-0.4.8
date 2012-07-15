@@ -221,6 +221,14 @@ NtUserGetThreadState(
       case THREADSTATE_GETINPUTSTATE:
          ret = LOWORD(IntGetQueueStatus(QS_POSTMESSAGE|QS_TIMER|QS_PAINT|QS_SENDMESSAGE|QS_INPUT)) & (QS_KEY | QS_MOUSEBUTTON);
          break;
+
+      case THREADSTATE_FOREGROUNDTHREAD:
+         ret = (gpqForeground == GetW32ThreadInfo()->MessageQueue);
+         break;
+      case THREADSTATE_GETCURSOR:
+         ret = (DWORD_PTR) (GetW32ThreadInfo()->MessageQueue->CursorObject ?
+                            UserHMGetHandle(GetW32ThreadInfo()->MessageQueue->CursorObject) : 0);
+         break;
    }
 
    TRACE("Leave NtUserGetThreadState, ret=%i\n", ret);
@@ -444,6 +452,48 @@ CLEANUP:
    TRACE("Leave NtUserGetGuiResources, ret=%i\n",_ret_);
    UserLeave();
    END_CLEANUP;
+}
+
+VOID FASTCALL
+IntSetWindowState(PWND pWnd, UINT Flag)
+{
+   UINT bit;
+   if (gptiCurrent->ppi != pWnd->head.pti->ppi) return;
+   bit = 1 << LOWORD(Flag);
+   TRACE("SWS %x\n",bit);
+   switch(HIWORD(Flag))
+   {
+      case 0:
+          pWnd->state |= bit;
+          break;
+      case 1:
+          pWnd->state2 |= bit;
+          break;
+      case 2:
+          pWnd->ExStyle2 |= bit;
+          break;
+   }
+}
+
+VOID FASTCALL
+IntClearWindowState(PWND pWnd, UINT Flag)
+{
+   UINT bit;
+   if (gptiCurrent->ppi != pWnd->head.pti->ppi) return;
+   bit = 1 << LOWORD(Flag);
+   TRACE("CWS %x\n",bit);
+   switch(HIWORD(Flag))
+   {
+      case 0:
+          pWnd->state &= ~bit;
+          break;
+      case 1:
+          pWnd->state2 &= ~bit;
+          break;
+      case 2:
+          pWnd->ExStyle2 &= ~bit;
+          break;
+   }
 }
 
 NTSTATUS FASTCALL

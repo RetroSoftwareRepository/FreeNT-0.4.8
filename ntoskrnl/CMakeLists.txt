@@ -1,4 +1,6 @@
 
+PROJECT(NTOS)
+
 spec2def(ntoskrnl.exe ntoskrnl.spec ADD_IMPORTLIB)
 
 include_directories(
@@ -130,7 +132,7 @@ list(APPEND SOURCE
     fstub/disksup.c
     fstub/fstubex.c
     fstub/halstub.c
-	fstub/translate.c
+    fstub/translate.c
     inbv/inbv.c
     inbv/inbvport.c
     io/iomgr/adapter.c

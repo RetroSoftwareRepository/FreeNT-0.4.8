@@ -283,7 +283,10 @@ UserCreateThreadInfo(struct _ETHREAD *Thread)
     pci->fsHooks = ptiCurrent->fsHooks;
     pci->dwTIFlags = ptiCurrent->TIF_flags;
     if (ptiCurrent->KeyboardLayout)
+    {
         pci->hKL = ptiCurrent->KeyboardLayout->hkl;
+        pci->CodePage = ptiCurrent->KeyboardLayout->CodePage;
+    }
 
     /* Assign a default window station and desktop to the process */
     /* Do not try to open a desktop or window station before winlogon initializes */
@@ -462,9 +465,19 @@ UserDestroyThreadInfo(struct _ETHREAD *Thread)
         }
     }
 
+    if (ptiCurrent->pqAttach && ptiCurrent->MessageQueue)
+    {
+       PTHREADINFO ptiTo;
+       ptiTo = PsGetThreadWin32Thread(ptiCurrent->MessageQueue->Thread);
+       TRACE_CH(UserThread,"Attached Thread is getting switched!\n");
+       UserAttachThreadInput( ptiCurrent, ptiTo, FALSE);
+    }
+
     /* Free the message queue */
     if(ptiCurrent->MessageQueue)
-        MsqDestroyMessageQueue(ptiCurrent->MessageQueue);
+    {
+       MsqDestroyMessageQueue(ptiCurrent->MessageQueue);
+    }
 
     /* Find the THREADINFO in the PROCESSINFO's list */
     ppti = &ppiCurrent->ptiList;

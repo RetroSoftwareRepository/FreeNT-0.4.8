@@ -59,6 +59,33 @@ PWND FASTCALL IntGetWindowObject(HWND hWnd)
    return Window;
 }
 
+PWND FASTCALL VerifyWnd(PWND pWnd)
+{
+   HWND hWnd;
+   UINT State, State2;
+
+   if (!pWnd) return NULL;
+
+   _SEH2_TRY
+   {
+      hWnd = UserHMGetHandle(pWnd);
+      State = pWnd->state;
+      State2 = pWnd->state2;
+   }
+   _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+   {
+      _SEH2_YIELD(return NULL);
+   }
+   _SEH2_END
+
+   if ( UserObjectInDestroy(hWnd) ||
+        State & WNDS_DESTROYED ||
+        State2 & WNDS2_INDESTROY )
+      return NULL;
+
+   return pWnd;
+}
+
 /* Temp HACK */
 PWND FASTCALL UserGetWindowObject(HWND hWnd)
 {
@@ -80,6 +107,17 @@ PWND FASTCALL UserGetWindowObject(HWND hWnd)
    return Window;
 }
 
+ULONG FASTCALL
+IntSetStyle( PWND pwnd, ULONG set_bits, ULONG clear_bits )
+{
+    ULONG styleOld, styleNew;
+    styleOld = pwnd->style;
+    styleNew = (pwnd->style | set_bits) & ~clear_bits;
+    if (styleNew == styleOld) return styleNew;
+    pwnd->style = styleNew;
+    if ((styleOld ^ styleNew) & WS_VISIBLE) DceResetActiveDCEs( pwnd );
+    return styleOld;
+}
 
 /*
  * IntIsWindow
@@ -133,7 +171,7 @@ IntGetParent(PWND Wnd)
 {
    if (Wnd->style & WS_POPUP)
    {
-       return Wnd->spwndOwner;
+      return Wnd->spwndOwner;
    }
    else if (Wnd->style & WS_CHILD)
    {
@@ -162,7 +200,7 @@ IntEnableWindow( HWND hWnd, BOOL bEnable )
 
     if (bEnable)
     {
-       pWnd->style &= ~WS_DISABLED;
+       IntSetStyle( pWnd, 0, WS_DISABLED );
     }
     else
     {
@@ -175,7 +213,7 @@ IntEnableWindow( HWND hWnd, BOOL bEnable )
        {
           co_UserSetFocus(NULL);
        }
-       pWnd->style |= WS_DISABLED;
+       IntSetStyle( pWnd, WS_DISABLED, 0 );
     }
 
     if (Update)
@@ -1027,6 +1065,8 @@ co_IntSetParent(PWND Wnd, PWND WndNewParent)
 {
    PWND WndOldParent, pWndExam;
    BOOL WasVisible;
+   POINT pt;
+   int swFlags = SWP_NOSIZE|SWP_NOZORDER;
 
    ASSERT(Wnd);
    ASSERT(WndNewParent);
@@ -1065,10 +1105,17 @@ co_IntSetParent(PWND Wnd, PWND WndNewParent)
    WasVisible = co_WinPosShowWindow(Wnd, SW_HIDE);
 
    /* Window must belong to current process */
-   if (Wnd->head.pti->pEThread->ThreadsProcess != PsGetCurrentProcess())
+   if (Wnd->head.pti->ppi != PsGetCurrentProcessWin32Process())
       return NULL;
 
    WndOldParent = Wnd->spwndParent;
+
+   if ( WndOldParent && 
+        WndOldParent->ExStyle & WS_EX_LAYOUTRTL)
+      pt.x = Wnd->rcWindow.right;
+   else
+      pt.x = Wnd->rcWindow.left;
+   pt.y = Wnd->rcWindow.top;
 
    if (WndOldParent) UserReferenceObject(WndOldParent); /* Caller must deref */
 
@@ -1080,10 +1127,23 @@ co_IntSetParent(PWND Wnd, PWND WndNewParent)
       /* Set the new parent */
       Wnd->spwndParent = WndNewParent;
 
+      if ( Wnd->style & WS_CHILD && 
+           Wnd->spwndOwner &&
+           Wnd->spwndOwner->ExStyle & WS_EX_TOPMOST )
+      {
+         ERR("SetParent Top Most from Pop up!\n");
+         Wnd->ExStyle |= WS_EX_TOPMOST;
+      }
+
       /* Link the window with its new siblings */
-      IntLinkHwnd(Wnd, HWND_TOP);
+      IntLinkHwnd( Wnd,
+                  ((0 == (Wnd->ExStyle & WS_EX_TOPMOST) &&
+                    WndNewParent == UserGetDesktopWindow() ) ? HWND_TOP : HWND_TOPMOST ) );
 
    }
+
+   if (WndOldParent == UserGetMessageWindow() || WndNewParent == UserGetMessageWindow())
+      swFlags |= SWP_NOACTIVATE;
 
    IntNotifyWinEvent(EVENT_OBJECT_PARENTCHANGE, Wnd ,OBJID_WINDOW, CHILDID_SELF, WEF_SETBYWNDPTI);
    /*
@@ -1091,14 +1151,10 @@ co_IntSetParent(PWND Wnd, PWND WndNewParent)
     * in the z-order and send the expected WM_WINDOWPOSCHANGING and
     * WM_WINDOWPOSCHANGED notification messages.
     */
-   co_WinPosSetWindowPos(Wnd, (0 == (Wnd->ExStyle & WS_EX_TOPMOST) ? HWND_TOP : HWND_TOPMOST),
-                         0, 0, 0, 0, SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE
-                         | (WasVisible ? SWP_SHOWWINDOW : 0));
+   co_WinPosSetWindowPos( Wnd,
+                         (0 == (Wnd->ExStyle & WS_EX_TOPMOST) ? HWND_TOP : HWND_TOPMOST),
+                          pt.x, pt.y, 0, 0, swFlags);
 
-   /*
-    * FIXME: A WM_MOVE is also generated (in the DefWindowProc handler
-    * for WM_WINDOWPOSCHANGED) in Windows, should probably remove SWP_NOMOVE.
-    */
    if (WasVisible) co_WinPosShowWindow(Wnd, SW_SHOWNORMAL);
 
    return WndOldParent;
@@ -1145,9 +1201,9 @@ co_UserSetParent(HWND hWndChild, HWND hWndNewParent)
 
    UserRefObjectCo(Wnd, &Ref);
    UserRefObjectCo(WndParent, &ParentRef);
-
+   //ERR("Enter co_IntSetParent\n");
    WndOldParent = co_IntSetParent(Wnd, WndParent);
-
+   //ERR("Leave co_IntSetParent\n");
    UserDerefObjectCo(WndParent);
    UserDerefObjectCo(Wnd);
 
@@ -1515,7 +1571,7 @@ PWND FASTCALL IntCreateWindow(CREATESTRUCTW* Cs,
          * Dialog boxes and message boxes do not inherit layout, so you must
          * set the layout explicitly.
          */
-         if ( Class->fnid != FNID_DIALOG)
+         if ( Class->fnid != FNID_DIALOG )
          {
             PPROCESSINFO ppi = PsGetCurrentProcessWin32Process();
             if (ppi->dwLayout & LAYOUT_RTL)
@@ -1780,6 +1836,7 @@ co_UserCreateWindowEx(CREATESTRUCTW* Cs,
                      PLARGE_STRING WindowName,
                      PVOID acbiBuffer)
 {
+   ULONG style;
    PWND Window = NULL, ParentWindow = NULL, OwnerWindow;
    HWND hWnd, hWndParent, hWndOwner, hwndInsertAfter;
    PWINSTATION_OBJECT WinSta;
@@ -2060,19 +2117,16 @@ co_UserCreateWindowEx(CREATESTRUCTW* Cs,
    }
 
    /* Show or maybe minimize or maximize the window. */
-   if (Window->style & (WS_MINIMIZE | WS_MAXIMIZE))
+
+   style = IntSetStyle( Window, 0, WS_MAXIMIZE | WS_MINIMIZE );
+   if (style & (WS_MINIMIZE | WS_MAXIMIZE))
    {
       RECTL NewPos;
-      UINT16 SwFlag;
+      UINT SwFlag = (style & WS_MINIMIZE) ? SW_MINIMIZE : SW_MAXIMIZE;
 
-      SwFlag = (Window->style & WS_MINIMIZE) ? SW_MINIMIZE : SW_MAXIMIZE;
-
-      co_WinPosMinMaximize(Window, SwFlag, &NewPos);
-
-      SwFlag = ((Window->style & WS_CHILD) || UserGetActiveWindow()) ?
-                SWP_NOACTIVATE | SWP_NOZORDER | SWP_FRAMECHANGED :
-                SWP_NOZORDER | SWP_FRAMECHANGED;
-
+      SwFlag = co_WinPosMinMaximize(Window, SwFlag, &NewPos);
+      SwFlag |= SWP_NOZORDER|SWP_FRAMECHANGED; /* Frame always gets changed */
+      if (!(style & WS_VISIBLE) || (style & WS_CHILD) || UserGetActiveWindow()) SwFlag |= SWP_NOACTIVATE;
       co_WinPosSetWindowPos(Window, 0, NewPos.left, NewPos.top,
                             NewPos.right, NewPos.bottom, SwFlag);
    }
@@ -2325,6 +2379,7 @@ BOOLEAN FASTCALL co_UserDestroyWindow(PWND Window)
    ASSERT_REFS_CO(Window); // FIXME: Temp HACK?
 
    hWnd = Window->head.h;
+   ti = PsGetCurrentThreadWin32Thread();
 
    TRACE("co_UserDestroyWindow \n");
 
@@ -2356,9 +2411,9 @@ BOOLEAN FASTCALL co_UserDestroyWindow(PWND Window)
     * be destroying.
     */
    if (!co_WinPosShowWindow(Window, SW_HIDE))
-   {
-      if (UserGetActiveWindow() == Window->head.h)
-      {
+   {  // Rule #1.
+      if (ti->MessageQueue->spwndActive == Window && ti->MessageQueue == IntGetFocusMessageQueue())
+      {  //ERR("DestroyWindow AOW\n");
          co_WinPosActivateOtherWindow(Window);
       }
    }
@@ -2367,14 +2422,14 @@ BOOLEAN FASTCALL co_UserDestroyWindow(PWND Window)
       Window->head.pti->MessageQueue->spwndActive = NULL;
    if (Window->head.pti->MessageQueue->spwndFocus == Window)
       Window->head.pti->MessageQueue->spwndFocus = NULL;
+   if (Window->head.pti->MessageQueue->spwndActivePrev == Window)
+      Window->head.pti->MessageQueue->spwndActivePrev = NULL;
    if (Window->head.pti->MessageQueue->CaptureWindow == Window->head.h)
       Window->head.pti->MessageQueue->CaptureWindow = NULL;
 
    /*
     * Check if this window is the Shell's Desktop Window. If so set hShellWindow to NULL
     */
-
-   ti = PsGetCurrentThreadWin32Thread();
 
    if ((ti != NULL) & (ti->pDeskInfo != NULL))
    {
@@ -2509,7 +2564,7 @@ IntFindWindow(PWND Parent,
 
    ASSERT(Parent);
 
-   CheckWindowName = WindowName->Length != 0;
+   CheckWindowName = WindowName->Buffer != 0;
 
    if((List = IntWinListChildren(Parent)))
    {
@@ -2588,6 +2643,7 @@ NtUserFindWindowEx(HWND hwndParent,
    PWND Parent, ChildAfter;
    UNICODE_STRING ClassName = {0}, WindowName = {0};
    HWND Desktop, Ret = NULL;
+   BOOL DoMessageWnd = FALSE;
    RTL_ATOM ClassAtom = (RTL_ATOM)0;
    DECLARE_RETURN(HWND);
 
@@ -2657,7 +2713,10 @@ NtUserFindWindowEx(HWND hwndParent,
    Desktop = IntGetCurrentThreadDesktopWindow();
 
    if(hwndParent == NULL)
+   {
       hwndParent = Desktop;
+      DoMessageWnd = TRUE;
+   }
    else if(hwndParent == HWND_MESSAGE)
    {
      hwndParent = IntGetMessageWindow();
@@ -2698,7 +2757,7 @@ NtUserFindWindowEx(HWND hwndParent,
                    ;
              }
 
-             CheckWindowName = WindowName.Length != 0;
+             CheckWindowName = WindowName.Buffer != 0;
 
              /* search children */
              while(*phWnd)
@@ -2741,15 +2800,13 @@ NtUserFindWindowEx(HWND hwndParent,
           }
        }
        else
-          Ret = IntFindWindow(Parent, ChildAfter, ClassAtom, &WindowName);
-
-#if 0
-
-       if(Ret == NULL && hwndParent == NULL && hwndChildAfter == NULL)
        {
-          /* FIXME:  If both hwndParent and hwndChildAfter are NULL, we also should
-                     search the message-only windows. Should this also be done if
-                     Parent is the desktop window??? */
+          ERR("FindWindowEx: Not Desktop Parent!\n");
+          Ret = IntFindWindow(Parent, ChildAfter, ClassAtom, &WindowName);
+       }
+
+       if (Ret == NULL && DoMessageWnd)
+       {
           PWND MsgWindows;
 
           if((MsgWindows = UserGetWindowObject(IntGetMessageWindow())))
@@ -2757,7 +2814,6 @@ NtUserFindWindowEx(HWND hwndParent,
              Ret = IntFindWindow(MsgWindows, ChildAfter, ClassAtom, &WindowName);
           }
        }
-#endif
    }
    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
    {
@@ -3077,7 +3133,7 @@ NtUserSetShellWindowEx(HWND hwndShell, HWND hwndListView)
        * -- Filip, 01/nov/2003
        */
 #if 0
-      co_WinPosSetWindowPos(hwndListView, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);
+      co_WinPosSetWindowPos(WndListView, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);
 #endif
 
       if (WndListView->ExStyle & WS_EX_TOPMOST)
@@ -3216,6 +3272,18 @@ CLEANUP:
    END_CLEANUP;
 }
 
+// Fixes wine Win test_window_styles and todo tests...
+static BOOL FASTCALL
+IntCheckFrameEdge(ULONG Style, ULONG ExStyle)
+{
+   if (ExStyle & WS_EX_DLGMODALFRAME)
+      return TRUE;
+   else if (!(ExStyle & WS_EX_STATICEDGE) && (Style & (WS_DLGFRAME | WS_THICKFRAME)))
+      return TRUE;
+   else
+      return FALSE;
+}
+
 LONG FASTCALL
 co_UserSetWindowLong(HWND hWnd, DWORD Index, LONG NewValue, BOOL Ansi)
 {
@@ -3264,6 +3332,8 @@ co_UserSetWindowLong(HWND hWnd, DWORD Index, LONG NewValue, BOOL Ansi)
             Style.styleOld = OldValue;
             Style.styleNew = NewValue;
 
+            co_IntSendMessage(hWnd, WM_STYLECHANGING, GWL_EXSTYLE, (LPARAM) &Style);
+
             /*
              * Remove extended window style bit WS_EX_TOPMOST for shell windows.
              */
@@ -3273,8 +3343,12 @@ co_UserSetWindowLong(HWND hWnd, DWORD Index, LONG NewValue, BOOL Ansi)
                if (hWnd == WindowStation->ShellWindow || hWnd == WindowStation->ShellListView)
                   Style.styleNew &= ~WS_EX_TOPMOST;
             }
+            /* WS_EX_WINDOWEDGE depends on some other styles */
+            if (IntCheckFrameEdge(Window->style, NewValue))
+               Style.styleNew |= WS_EX_WINDOWEDGE;
+            else
+               Style.styleNew &= ~WS_EX_WINDOWEDGE;
 
-            co_IntSendMessage(hWnd, WM_STYLECHANGING, GWL_EXSTYLE, (LPARAM) &Style);
             Window->ExStyle = (DWORD)Style.styleNew;
             co_IntSendMessage(hWnd, WM_STYLECHANGED, GWL_EXSTYLE, (LPARAM) &Style);
             break;
@@ -3284,6 +3358,15 @@ co_UserSetWindowLong(HWND hWnd, DWORD Index, LONG NewValue, BOOL Ansi)
             Style.styleOld = OldValue;
             Style.styleNew = NewValue;
             co_IntSendMessage(hWnd, WM_STYLECHANGING, GWL_STYLE, (LPARAM) &Style);
+
+           /* WS_CLIPSIBLINGS can't be reset on top-level windows */
+            if (Window->spwndParent == UserGetDesktopWindow()) Style.styleNew |= WS_CLIPSIBLINGS;
+            /* Fixes wine FIXME: changing WS_DLGFRAME | WS_THICKFRAME is supposed to change WS_EX_WINDOWEDGE too */
+            if (IntCheckFrameEdge(NewValue, Window->ExStyle))
+               Window->ExStyle |= WS_EX_WINDOWEDGE;
+            else
+               Window->ExStyle &= ~WS_EX_WINDOWEDGE;
+
             Window->style = (DWORD)Style.styleNew;
             co_IntSendMessage(hWnd, WM_STYLECHANGED, GWL_STYLE, (LPARAM) &Style);
             break;
@@ -3474,6 +3557,10 @@ NtUserQueryWindow(HWND hWnd, DWORD Index)
 
       case QUERY_WINDOW_REAL_ID:
          Result = (DWORD)pWnd->head.pti->pEThread->Cid.UniqueProcess;
+         break;
+
+      case QUERY_WINDOW_FOREGROUND:
+         Result = (pWnd->head.pti->MessageQueue == gpqForeground);
          break;
 
       default:

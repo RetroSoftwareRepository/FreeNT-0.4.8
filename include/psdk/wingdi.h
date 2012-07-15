@@ -570,6 +570,7 @@ extern "C" {
 #define HS_FDIAGONAL	2
 #define HS_HORIZONTAL	0
 #define HS_VERTICAL	1
+#define HS_API_MAX	12
 #define PS_GEOMETRIC	65536
 #define PS_COSMETIC	0
 #define PS_ALTERNATE	8
@@ -951,6 +952,7 @@ extern "C" {
 #define TCI_SRCCHARSET 1
 #define TCI_SRCCODEPAGE 2
 #define TCI_SRCFONTSIG 3
+#define TCI_SRCLOCALE 4096
 #if (_WIN32_WINNT >= 0x0500)
 #define SHADEBLENDCAPS    120
 #define COLORMGMTCAPS     121

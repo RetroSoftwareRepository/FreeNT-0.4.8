@@ -1,5 +1,5 @@
-#ifndef _WINNT_H
-#define _WINNT_H
+#ifndef _WINNT_
+#define _WINNT_
 
 #if !defined(__ROS_LONG64__)
 #ifdef __WINESRC__
@@ -109,12 +109,41 @@ extern "C" {
 #ifndef RC_INVOKED
 #include <string.h>
 
-/* FIXME: add more architectures. Is there a way to specify this in GCC? */
-#if defined(_M_AMD64)
-#undef UNALIGNED
+#if defined(_M_MRX000) || defined(_M_ALPHA) || defined(_M_PPC) || defined(_M_IA64) || defined(_M_AMD64)
+#define ALIGNMENT_MACHINE
 #define UNALIGNED __unaligned
+#if defined(_WIN64)
+#define UNALIGNED64 __unaligned
 #else
+#define UNALIGNED64
+#endif
+#else
+#undef ALIGNMENT_MACHINE
 #define UNALIGNED
+#define UNALIGNED64
+#endif
+
+#if defined(_WIN64) || defined(_M_ALPHA)
+#define MAX_NATURAL_ALIGNMENT sizeof(ULONGLONG)
+#define MEMORY_ALLOCATION_ALIGNMENT 16
+#else
+#define MAX_NATURAL_ALIGNMENT sizeof(ULONG)
+#define MEMORY_ALLOCATION_ALIGNMENT 8
+#endif
+
+/* Returns the type's alignment */
+#if defined(_MSC_VER) && (_MSC_VER >= 1300)
+#define TYPE_ALIGNMENT(t) __alignof(t)
+#else
+#define TYPE_ALIGNMENT(t) FIELD_OFFSET(struct { char x; t test; }, test)
+#endif
+
+#if defined(_AMD64_) || defined(_X86_)
+#define PROBE_ALIGNMENT(_s) TYPE_ALIGNMENT(ULONG)
+#elif defined(_IA64_) || defined(_ARM_)
+#define PROBE_ALIGNMENT(_s) max((TYPE_ALIGNMENT(_s), TYPE_ALIGNMENT(ULONG))
+#else
+#error "unknown architecture"
 #endif
 
 #ifndef DECLSPEC_NOVTABLE
@@ -1235,6 +1264,7 @@ typedef enum {
 #define LANG_USER_DEFAULT	MAKELANGID(LANG_NEUTRAL,SUBLANG_DEFAULT)
 #define LOCALE_NEUTRAL	MAKELCID(MAKELANGID(LANG_NEUTRAL,SUBLANG_NEUTRAL),SORT_DEFAULT)
 #define LOCALE_INVARIANT MAKELCID(MAKELANGID(LANG_INVARIANT, SUBLANG_NEUTRAL), SORT_DEFAULT)
+#define LOCALE_NAME_MAX_LENGTH 85
 #define ACL_REVISION	2
 #define ACL_REVISION_DS 4
 #define ACL_REVISION1 1
@@ -1345,6 +1375,7 @@ typedef enum {
 #define REG_WHOLE_HIVE_VOLATILE	1
 #define REG_REFRESH_HIVE	2
 #define REG_NO_LAZY_FLUSH	4
+#define REG_FORCE_RESTORE	8
 #define REG_OPTION_RESERVED	0
 #define REG_OPTION_NON_VOLATILE	0
 #define REG_OPTION_VOLATILE	1
@@ -5282,6 +5313,10 @@ InterlockedBitTestAndReset(IN LONG volatile *Base,
 
 #define BitScanForward _BitScanForward
 #define BitScanReverse _BitScanReverse
+#ifdef _M_AMD64
+#define BitScanForward64 _BitScanForward64
+#define BitScanReverse64 _BitScanReverse64
+#endif
 
 /* TODO: Other architectures than X86 */
 #if defined(_M_IX86)

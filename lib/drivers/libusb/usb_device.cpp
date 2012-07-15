@@ -76,7 +76,7 @@ protected:
     LONG m_Ref;
     PHUBCONTROLLER m_HubController;
     PUSBHARDWAREDEVICE m_Device;
-    PVOID m_Parent; 
+    PVOID m_Parent;
     ULONG m_Port;
     UCHAR m_DeviceAddress;
     PVOID m_Data;
@@ -103,9 +103,9 @@ CUSBDevice::QueryInterface(
 //----------------------------------------------------------------------------------------
 NTSTATUS
 CUSBDevice::Initialize(
-    IN PHUBCONTROLLER HubController, 
-    IN PUSBHARDWAREDEVICE Device, 
-    IN PVOID Parent, 
+    IN PHUBCONTROLLER HubController,
+    IN PUSBHARDWAREDEVICE Device,
+    IN PVOID Parent,
     IN ULONG Port,
     IN ULONG PortStatus)
 {
@@ -309,7 +309,7 @@ CUSBDevice::SetDeviceAddress(
     UCHAR OldAddress;
     UCHAR Index;
 
-    DPRINT1("CUSBDevice::SetDeviceAddress Address %d\n", DeviceAddress);
+    DPRINT1("CUSBDevice::SetDeviceAddress> Address %x\n", DeviceAddress);
 
     CtrlSetup = (PUSB_DEFAULT_PIPE_SETUP_PACKET)ExAllocatePoolWithTag(NonPagedPool, sizeof(USB_DEFAULT_PIPE_SETUP_PACKET), TAG_USBLIB);
     if (!CtrlSetup)
@@ -323,7 +323,7 @@ CUSBDevice::SetDeviceAddress(
     CtrlSetup->wValue.W = DeviceAddress;
 
     // set device address
-    Status = CommitSetupPacket(CtrlSetup, 0, 0, 0);
+    Status = CommitSetupPacket(CtrlSetup, NULL, 0, NULL);
 
     // free setup packet
     ExFreePoolWithTag(CtrlSetup, TAG_USBLIB);
@@ -332,7 +332,7 @@ CUSBDevice::SetDeviceAddress(
     if (!NT_SUCCESS(Status))
     {
         // failed to set device address
-        DPRINT1("CUSBDevice::SetDeviceAddress> failed to set device address with %x Address %x\n", Status, DeviceAddress);
+        DPRINT1("CUSBDevice::SetDeviceAddress> failed to set device address with %lx Address %x\n", Status, DeviceAddress);
         return Status;
     }
 
@@ -349,7 +349,7 @@ CUSBDevice::SetDeviceAddress(
     Status = CreateDeviceDescriptor();
     if (!NT_SUCCESS(Status))
     {
-        DPRINT1("CUSBbDevice::SetDeviceAddress> failed to retrieve device descriptor with device address set Error %x\n", Status);
+        DPRINT1("CUSBDevice::SetDeviceAddress> failed to retrieve device descriptor with device address set Error %lx\n", Status);
         // return error status
         return Status;
     }
@@ -360,7 +360,7 @@ CUSBDevice::SetDeviceAddress(
         m_DeviceDescriptor.bNumConfigurations == 0)
     {
         // failed to retrieve device descriptor
-        DPRINT1("CUSBbDevice::SetDeviceAddress> device returned bogus device descriptor\n");
+        DPRINT1("CUSBDevice::SetDeviceAddress> device returned bogus device descriptor\n");
         DumpDeviceDescriptor(&m_DeviceDescriptor);
 
         // return error status
@@ -380,7 +380,7 @@ CUSBDevice::SetDeviceAddress(
     RtlZeroMemory(m_ConfigurationDescriptors, sizeof(USB_CONFIGURATION) * m_DeviceDescriptor.bNumConfigurations);
 
     // retrieve the configuration descriptors
-    for(Index = 0; Index < m_DeviceDescriptor.bNumConfigurations; Index++)
+    for (Index = 0; Index < m_DeviceDescriptor.bNumConfigurations; Index++)
     {
         // retrieve configuration descriptors from device
         Status = CreateConfigurationDescriptor(Index);
@@ -430,7 +430,7 @@ CUSBDevice::CommitIrp(
         //
         // no queue, wtf?
         //
-        DPRINT1("CUSBDevice::CommitUrb> no queue / dma !!!\n");
+        DPRINT1("CUSBDevice::CommitIrp> no queue / dma !!!\n");
         return STATUS_UNSUCCESSFUL;
     }
 
@@ -443,7 +443,7 @@ CUSBDevice::CommitIrp(
         //
         // failed to build request
         //
-        DPRINT1("CUSBDevice::CommitSetupPacket> CreateUSBRequest failed with %x\n", Status);
+        DPRINT1("CUSBDevice::CommitIrp> CreateUSBRequest failed with %lx\n", Status);
         return Status;
     }
 
@@ -466,7 +466,7 @@ CUSBDevice::CommitIrp(
         //
         // failed to add request
         //
-        DPRINT1("CUSBDevice::CommitSetupPacket> failed add request to queue with %x\n", Status);
+        DPRINT1("CUSBDevice::CommitIrp> failed add request to queue with %lx\n", Status);
         Request->Release();
         return Status;
     }
@@ -502,12 +502,13 @@ CUSBDevice::SubmitIrp(
 
     return Status;
 }
+
 //----------------------------------------------------------------------------------------
 NTSTATUS
 CUSBDevice::CommitSetupPacket(
     IN PUSB_DEFAULT_PIPE_SETUP_PACKET Packet,
     IN OPTIONAL PUSB_ENDPOINT EndpointDescriptor,
-    IN ULONG BufferLength, 
+    IN ULONG BufferLength,
     IN OUT PMDL Mdl)
 {
     NTSTATUS Status;
@@ -639,7 +640,7 @@ CUSBDevice::CreateDeviceDescriptor()
     //
     // commit setup packet
     //
-    Status = CommitSetupPacket(&CtrlSetup, 0, sizeof(USB_DEVICE_DESCRIPTOR), Mdl);
+    Status = CommitSetupPacket(&CtrlSetup, NULL, sizeof(USB_DEVICE_DESCRIPTOR), Mdl);
 
     //
     // now free the mdl
@@ -669,7 +670,7 @@ CUSBDevice::CreateDeviceDescriptor()
 //----------------------------------------------------------------------------------------
 NTSTATUS
 CUSBDevice::GetConfigurationDescriptor(
-    IN UCHAR ConfigurationIndex, 
+    IN UCHAR ConfigurationIndex,
     IN USHORT BufferSize,
     IN PVOID Buffer)
 {
@@ -712,7 +713,7 @@ CUSBDevice::GetConfigurationDescriptor(
     //
     // commit packet
     //
-    Status = CommitSetupPacket(&CtrlSetup, 0, BufferSize, Mdl);
+    Status = CommitSetupPacket(&CtrlSetup, NULL, BufferSize, Mdl);
 
     //
     // free mdl
@@ -808,6 +809,8 @@ CUSBDevice::GetConfigurationDescriptors(
     IN ULONG BufferLength,
     OUT PULONG OutBufferLength)
 {
+    ULONG Length;
+
     // sanity check
     ASSERT(BufferLength >= sizeof(USB_CONFIGURATION_DESCRIPTOR));
     ASSERT(ConfigDescriptorBuffer);
@@ -820,8 +823,9 @@ CUSBDevice::GetConfigurationDescriptors(
     PC_ASSERT(m_DeviceDescriptor.bNumConfigurations == 1);
 
     // copy configuration descriptor
-    RtlCopyMemory(ConfigDescriptorBuffer, m_ConfigurationDescriptors[0].ConfigurationDescriptor, min(m_ConfigurationDescriptors[0].ConfigurationDescriptor->wTotalLength, BufferLength));
-    *OutBufferLength = m_ConfigurationDescriptors[0].ConfigurationDescriptor->wTotalLength;
+    Length = min(m_ConfigurationDescriptors[0].ConfigurationDescriptor->wTotalLength, BufferLength);
+    RtlCopyMemory(ConfigDescriptorBuffer, m_ConfigurationDescriptors[0].ConfigurationDescriptor, Length);
+    *OutBufferLength = Length;
 }
 
 //----------------------------------------------------------------------------------------
@@ -873,8 +877,8 @@ CUSBDevice::DumpConfigurationDescriptor(PUSB_CONFIGURATION_DESCRIPTOR Configurat
 //----------------------------------------------------------------------------------------
 NTSTATUS
 CUSBDevice::SubmitSetupPacket(
-    IN PUSB_DEFAULT_PIPE_SETUP_PACKET SetupPacket, 
-    IN OUT ULONG BufferLength, 
+    IN PUSB_DEFAULT_PIPE_SETUP_PACKET SetupPacket,
+    IN OUT ULONG BufferLength,
     OUT PVOID Buffer)
 {
     NTSTATUS Status;
@@ -903,7 +907,7 @@ CUSBDevice::SubmitSetupPacket(
     //
     // commit setup packet
     //
-    Status = CommitSetupPacket(SetupPacket, 0, BufferLength, Mdl);
+    Status = CommitSetupPacket(SetupPacket, NULL, BufferLength, Mdl);
 
     if (Mdl != NULL)
     {
@@ -965,7 +969,7 @@ CUSBDevice::BuildInterfaceDescriptor(
             if (EndpointDescriptor->bLength == 0 || EndpointDescriptor->bDescriptorType == USB_INTERFACE_DESCRIPTOR_TYPE)
             {
                 // bogus configuration descriptor
-                DPRINT1("[USBEHCI] Bogus descriptor found in InterfaceNumber %x Alternate %x EndpointIndex %x bLength %x bDescriptorType %x\n", InterfaceDescriptor->bInterfaceNumber, InterfaceDescriptor->bAlternateSetting, PipeIndex,
+                DPRINT1("[USBLIB] Bogus descriptor found in InterfaceNumber %x Alternate %x EndpointIndex %x bLength %x bDescriptorType %x\n", InterfaceDescriptor->bInterfaceNumber, InterfaceDescriptor->bAlternateSetting, PipeIndex,
                        EndpointDescriptor->bLength, EndpointDescriptor->bDescriptorType);
 
                 // failed
@@ -1025,7 +1029,7 @@ CUSBDevice::SelectConfiguration(
     if (ConfigurationDescriptor)
     {
         // find configuration index
-        for(Index = 0; Index < m_DeviceDescriptor.bNumConfigurations; Index++)
+        for (Index = 0; Index < m_DeviceDescriptor.bNumConfigurations; Index++)
         {
             if (m_ConfigurationDescriptors[Index].ConfigurationDescriptor->bConfigurationValue  == ConfigurationDescriptor->bConfigurationValue)
             {
@@ -1037,7 +1041,7 @@ CUSBDevice::SelectConfiguration(
 
         if (!Found)
         {
-            DPRINT1("[USBUHCI] invalid configuration value %lu\n", ConfigurationDescriptor->bConfigurationValue);
+            DPRINT1("[USBLIB] invalid configuration value %u\n", ConfigurationDescriptor->bConfigurationValue);
             return STATUS_INVALID_PARAMETER;
         }
 
@@ -1054,18 +1058,18 @@ CUSBDevice::SelectConfiguration(
     CtrlSetup.wValue.W = bConfigurationValue;
 
     // select configuration
-    Status = CommitSetupPacket(&CtrlSetup, 0, 0, 0);
+    Status = CommitSetupPacket(&CtrlSetup, NULL, 0, NULL);
 
     if (!ConfigurationDescriptor)
     {
         // unconfigure request
-        DPRINT1("CUsbDevice::SelectConfiguration Unconfigure Request Status %x\n", Status);
+        DPRINT1("CUSBDevice::SelectConfiguration Unconfigure Request Status %lx\n", Status);
         m_ConfigurationIndex = 0;
         return Status;
     }
 
     // informal debug print
-    DPRINT1("CUsbDevice::SelectConfiguration New Configuration %x Old Configuration %x Result %x\n", ConfigurationIndex, m_ConfigurationIndex, Status);
+    DPRINT1("CUSBDevice::SelectConfiguration New Configuration %x Old Configuration %x Result %lx\n", ConfigurationIndex, m_ConfigurationIndex, Status);
     if (!NT_SUCCESS(Status))
     {
         //
@@ -1075,7 +1079,7 @@ CUSBDevice::SelectConfiguration(
     }
 
     // destroy old interface info
-    while(!IsListEmpty(&m_ConfigurationDescriptors[m_ConfigurationIndex].InterfaceList))
+    while (!IsListEmpty(&m_ConfigurationDescriptors[m_ConfigurationIndex].InterfaceList))
     {
         // remove entry
         Entry = RemoveHeadList(&m_ConfigurationDescriptors[m_ConfigurationIndex].InterfaceList);
@@ -1161,7 +1165,7 @@ CUSBDevice::SelectInterface(
     if (!Found)
     {
         // invalid handle passed
-        DPRINT1("[USBEHCI] Invalid configuration handle passed %p\n", ConfigurationHandle);
+        DPRINT1("[USBLIB] Invalid configuration handle passed %p\n", ConfigurationHandle);
         return STATUS_INVALID_PARAMETER;
     }
 
@@ -1173,12 +1177,12 @@ CUSBDevice::SelectInterface(
     CtrlSetup.bmRequestType.B = 0x01;
 
     // issue request
-    Status = CommitSetupPacket(&CtrlSetup, 0, 0, 0);
+    Status = CommitSetupPacket(&CtrlSetup, NULL, 0, NULL);
 
     // informal debug print
-    DPRINT1("CUSBDevice::SelectInterface AlternateSetting %x InterfaceNumber %x Status %x\n", InterfaceInfo->AlternateSetting, InterfaceInfo->InterfaceNumber, Status);
+    DPRINT1("CUSBDevice::SelectInterface AlternateSetting %x InterfaceNumber %x Status %lx\n", InterfaceInfo->AlternateSetting, InterfaceInfo->InterfaceNumber, Status);
 #if 0
-	if (!NT_SUCCESS(Status))
+    if (!NT_SUCCESS(Status))
     {
         // failed to select interface
         return Status;
@@ -1187,11 +1191,10 @@ CUSBDevice::SelectInterface(
 
     Status = STATUS_SUCCESS;
 
-
     // find interface
     Found = FALSE;
     Entry = m_ConfigurationDescriptors[ConfigurationIndex].InterfaceList.Flink;
-    while(Entry != &m_ConfigurationDescriptors[ConfigurationIndex].InterfaceList)
+    while (Entry != &m_ConfigurationDescriptors[ConfigurationIndex].InterfaceList)
     {
         // grab interface descriptor
         UsbInterface = (PUSB_INTERFACE)CONTAINING_RECORD(Entry, USB_INTERFACE, ListEntry);
@@ -1237,7 +1240,7 @@ CUSBDevice::SelectInterface(
     InterfaceInfo->NumberOfPipes = UsbInterface->InterfaceDescriptor->bNumEndpoints;
 
     // copy pipe handles
-    for(PipeIndex = 0; PipeIndex < UsbInterface->InterfaceDescriptor->bNumEndpoints; PipeIndex++)
+    for (PipeIndex = 0; PipeIndex < UsbInterface->InterfaceDescriptor->bNumEndpoints; PipeIndex++)
     {
         // copy pipe handle
         DPRINT1("PipeIndex %lu\n", PipeIndex);
@@ -1246,7 +1249,7 @@ CUSBDevice::SelectInterface(
         DPRINT1("MaximumPacketSize %d\n", InterfaceInfo->Pipes[PipeIndex].MaximumPacketSize);
         DPRINT1("MaximumTransferSize %d\n", InterfaceInfo->Pipes[PipeIndex].MaximumTransferSize);
         DPRINT1("PipeFlags %d\n", InterfaceInfo->Pipes[PipeIndex].PipeFlags);
-        DPRINT1("PipeType %dd\n", InterfaceInfo->Pipes[PipeIndex].PipeType);
+        DPRINT1("PipeType %d\n", InterfaceInfo->Pipes[PipeIndex].PipeType);
         DPRINT1("UsbEndPoint %x\n", InterfaceInfo->Pipes[PipeIndex].EndpointAddress);
 
         // sanity checks
@@ -1259,7 +1262,6 @@ CUSBDevice::SelectInterface(
         // data toggle is reset on select interface requests
         UsbInterface->EndPoints[PipeIndex].DataToggle = FALSE;
     }
-
 
     //
     // done

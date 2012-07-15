@@ -59,9 +59,9 @@ BEGIN
         MENUITEM "&Износ...",    ID_REGISTRY_EXPORTREGISTRYFILE
 
         MENUITEM SEPARATOR
-		MENUITEM "Зареждане на рой...",				ID_REGISTRY_LOADHIVE, GRAYED
-		MENUITEM "Изоставяне на рой...",				ID_REGISTRY_UNLOADHIVE, GRAYED
-		MENUITEM SEPARATOR
+        MENUITEM "Зареждане на рой...",         ID_REGISTRY_LOADHIVE, GRAYED
+        MENUITEM "Изоставяне на рой...",        ID_REGISTRY_UNLOADHIVE, GRAYED
+        MENUITEM SEPARATOR
         MENUITEM "&Свързване с мрежов регистър...",
                                                 ID_REGISTRY_CONNECTNETWORKREGISTRY
 
@@ -366,8 +366,8 @@ END
 
 STRINGTABLE DISCARDABLE
 BEGIN
-    IDS_ERROR		    "Грешка"
-    IDS_WARNING		    "Предупреждение"
+    IDS_ERROR               "Грешка"
+    IDS_WARNING             "Предупреждение"
     IDS_BAD_KEY             "Невъзможно извличането на ключ '%s'"
     IDS_BAD_VALUE           "Невъзможно извличането на стойност '%s'"
     IDS_UNSUPPORTED_TYPE    "Промяната на ключове от този вид е невъзможна (%ld)"
@@ -383,6 +383,8 @@ BEGIN
     IDS_ERR_DELETEVALUE     "Изтриването на всички указани стойности е невъзможно!"
     IDS_ERR_RENVAL_CAPTION  "Грешка при преиманеуването"
     IDS_ERR_RENVAL_TOEMPTY  "Неуспешно преименуване на %s. Указаната стойност не е празна. Опитайте отново с друго име."
+    IDS_QUERY_IMPORT_HIVE_CAPTION "Confirm Key Restoration"
+    IDS_QUERY_IMPORT_HIVE_MSG     "A key will be restored on top of the currently selected key.\nAll values and subkeys of this key will be deleted.\nDo you want to continue the operation?"
     IDS_NEW_KEY             "Нов ключ #%d"
     IDS_NEW_VALUE           "Нова стойност #%d"
 END
@@ -404,9 +406,11 @@ END
 STRINGTABLE DISCARDABLE
 BEGIN
     IDS_FLT_REGFILE         "Вписващ файл"
-    IDS_FLT_REGFILES        "Вписващи (регистърни) файлове"
+    IDS_FLT_REGFILES        "Вписващи (регистърни) файлове (*.reg)"
     IDS_FLT_REGFILES_FLT    "*.reg"
-    IDS_FLT_REGEDIT4        "Win9x/NT4 вписващи файлове (REGEDIT4)"
+    IDS_FLT_HIVFILES        "Registry Hive Files (*.*)"
+    IDS_FLT_HIVFILES_FLT    "*.*"
+    IDS_FLT_REGEDIT4        "Win9x/NT4 вписващи файлове (REGEDIT4) (*.reg)"
     IDS_FLT_REGEDIT4_FLT    "*.reg"
     IDS_FLT_ALLFILES        "Всички файлове (*.*)"
     IDS_FLT_ALLFILES_FLT    "*.*"

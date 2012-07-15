@@ -443,7 +443,7 @@ SCOPE_ID
 IN4ADDR_SCOPE_ID(
   IN CONST SOCKADDR_IN *a)
 {
-  SCOPE_ID UnspecifiedScopeId = {0};
+  SCOPE_ID UnspecifiedScopeId = {{{0}}};
   UNREFERENCED_PARAMETER(a);
   return UnspecifiedScopeId;
 }
@@ -470,7 +470,7 @@ IN4ADDR_ISUNSPECIFIED(
 }
 
 #define INET_IS_ALIGNED(Pointer, Type) \
-   (((ULONG_PTR)Pointer & (__builtin_alignof(Type)-1)) == 0)
+   (((ULONG_PTR)Pointer & (TYPE_ALIGNMENT(Type)-1)) == 0)
 
 MSTCPIP_INLINE
 SCOPE_LEVEL
