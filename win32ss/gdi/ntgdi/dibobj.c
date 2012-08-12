@@ -433,12 +433,15 @@ NtGdiSetDIBitsToDeviceInternal(
         goto Exit2;
     }
 
+    ScanLines = min(ScanLines, abs(bmi->bmiHeader.biHeight) - StartScan);
+
     pDC = DC_LockDc(hDC);
     if (!pDC)
     {
         EngSetLastError(ERROR_INVALID_HANDLE);
         goto Exit2;
     }
+
     if (pDC->dctype == DC_TYPE_INFO)
     {
         DC_UnlockDc(pDC);
@@ -446,10 +449,14 @@ NtGdiSetDIBitsToDeviceInternal(
     }
 
     pSurf = pDC->dclevel.pSurface;
+    if (!pSurf)
+    {
+        DC_UnlockDc(pDC);
+        ret = ScanLines;
+        goto Exit2;
+    }
 
-    pDestSurf = pSurf ? &pSurf->SurfObj : NULL;
-
-    ScanLines = min(ScanLines, abs(bmi->bmiHeader.biHeight) - StartScan);
+    pDestSurf = &pSurf->SurfObj;
 
     rcDest.left = XDest;
     rcDest.top = YDest;
@@ -1174,6 +1181,7 @@ NtGdiStretchDIBitsInternal(
                                NULL,
                                pdc->rosdc.CombinedClip,
                                &exlo.xlo,
+                               &pdc->dclevel.ca,
                                &rcDst,
                                &rcSrc,
                                NULL,
@@ -1473,7 +1481,7 @@ DIB_CreateDIBSection(
     //SIZEL Size;
     HANDLE hSecure;
 
-    DPRINT("format (%ld,%ld), planes %d, bpp %d, size %ld, colors %ld (%s)\n",
+    DPRINT("format (%ld,%ld), planes %u, bpp %u, size %lu, colors %lu (%s)\n",
            bi->biWidth, bi->biHeight, bi->biPlanes, bi->biBitCount,
            bi->biSizeImage, bi->biClrUsed, usage == DIB_PAL_COLORS? "PAL" : "RGB");
 
@@ -1607,7 +1615,7 @@ DIB_CreateDIBSection(
 cleanup:
     if (!res || !bmp || !bm.bmBits)
     {
-        DPRINT("Got an error res=%08x, bmp=%p, bm.bmBits=%p\n", res, bmp, bm.bmBits);
+        DPRINT("Got an error res=%p, bmp=%p, bm.bmBits=%p\n", res, bmp, bm.bmBits);
         if (bm.bmBits)
         {
             // MmUnsecureVirtualMemory(hSecure); // FIXME: Implement this!
@@ -1676,7 +1684,7 @@ DIB_GetBitmapInfo( const BITMAPINFOHEADER *header, LONG *width,
         *size   = header->biSizeImage;
         return 1;
     }
-    DPRINT1("(%d): unknown/wrong size for header\n", header->biSize );
+    DPRINT1("(%u): unknown/wrong size for header\n", header->biSize );
     return -1;
 }
 

@@ -128,6 +128,7 @@ PFN_NUMBER MmSizeOfPagedPoolInPages = MI_MIN_INIT_PAGED_POOLSIZE / PAGE_SIZE;
 PVOID MiSessionSpaceEnd;    // 0xC0000000
 PVOID MiSessionImageEnd;    // 0xC0000000
 PVOID MiSessionImageStart;  // 0xBF800000
+PVOID MiSessionSpaceWs;
 PVOID MiSessionViewStart;   // 0xBE000000
 PVOID MiSessionPoolEnd;     // 0xBE000000
 PVOID MiSessionPoolStart;   // 0xBD000000
@@ -2108,10 +2109,17 @@ MmArmInitSystem(IN ULONG Phase,
         else
         {
             //
-            // Use the default, but check if we have more than 32MB of RAM
+            // Use the default
             //
             MmNumberOfSystemPtes = 11000;
             if (PageCount > MI_MIN_PAGES_FOR_SYSPTE_BOOST)
+            {
+                //
+                // Double the amount of system PTEs
+                //
+                MmNumberOfSystemPtes <<= 1;
+            }
+            if (PageCount > MI_MIN_PAGES_FOR_SYSPTE_BOOST_BOOST)
             {
                 //
                 // Double the amount of system PTEs

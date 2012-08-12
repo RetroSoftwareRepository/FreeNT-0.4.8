@@ -663,7 +663,7 @@ NtGdiRectangle(HDC  hDC,
     }
 
     /* Do we rotate or shear? */
-    if (!(dc->dclevel.mxWorldToDevice.flAccel & XFORM_SCALE))
+    if (!(dc->pdcattr->mxWorldToDevice.flAccel & XFORM_SCALE))
     {
         POINTL DestCoords[4];
         ULONG PolyCounts = 4;
@@ -820,7 +820,7 @@ NtGdiRoundRect(
     DC   *dc = DC_LockDc(hDC);
     BOOL  ret = FALSE; /* Default to failure */
 
-    DPRINT("NtGdiRoundRect(0x%x,%i,%i,%i,%i,%i,%i)\n",hDC,LeftRect,TopRect,RightRect,BottomRect,Width,Height);
+    DPRINT("NtGdiRoundRect(0x%p,%i,%i,%i,%i,%i,%i)\n",hDC,LeftRect,TopRect,RightRect,BottomRect,Width,Height);
     if ( !dc )
     {
         DPRINT1("NtGdiRoundRect() - hDC is invalid\n");

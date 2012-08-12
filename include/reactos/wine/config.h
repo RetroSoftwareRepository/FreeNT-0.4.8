@@ -1,5 +1,3 @@
-#include "reactos/buildno.h"
-
 #define __WINE_CONFIG_H
 
 /* Define to a function attribute for Microsoft hotpatch assembly prefix. */
@@ -1135,10 +1133,10 @@
 /* #undef HAVE_XRENDERSETPICTURETRANSFORM */
 
 /* Define to 1 if you have the `z' library (-lz). */
-/* #define HAVE_ZLIB 1 */
+#define HAVE_ZLIB 1
 
 /* Define to 1 if you have the <zlib.h> header file. */
-/* #define HAVE_ZLIB_H 1 */
+#define HAVE_ZLIB_H 1
 
 /* Define to 1 if you have the `_finite' function. */
 #define HAVE__FINITE 1

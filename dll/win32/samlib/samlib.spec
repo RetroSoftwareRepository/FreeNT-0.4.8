@@ -9,15 +9,15 @@
 @ stub SamConnectWithCreds
 @ stdcall SamCreateAliasInDomain(ptr ptr long ptr ptr)
 @ stdcall SamCreateGroupInDomain(ptr ptr long ptr ptr)
-@ stub SamCreateUser2InDomain
+@ stdcall SamCreateUser2InDomain(ptr ptr long long ptr ptr ptr)
 @ stdcall SamCreateUserInDomain(ptr ptr long ptr ptr)
 @ stub SamDeleteAlias
 @ stub SamDeleteGroup
 @ stub SamDeleteUser
 @ stdcall SamEnumerateAliasesInDomain(ptr ptr ptr long ptr)
 @ stdcall SamEnumerateDomainsInSamServer(ptr ptr ptr long ptr)
-@ stub SamEnumerateGroupsInDomain
-@ stub SamEnumerateUsersInDomain
+@ stdcall SamEnumerateGroupsInDomain(ptr ptr ptr long ptr)
+@ stdcall SamEnumerateUsersInDomain(ptr ptr long ptr long ptr)
 @ stdcall SamFreeMemory(ptr)
 @ stdcall SamGetAliasMembership(ptr long ptr ptr ptr)
 @ stub SamGetCompatibilityMode
@@ -26,7 +26,7 @@
 @ stdcall SamGetMembersInAlias(ptr ptr ptr)
 @ stub SamGetMembersInGroup
 @ stdcall SamLookupDomainInSamServer(ptr ptr ptr)
-@ stub SamLookupIdsInDomain
+@ stdcall SamLookupIdsInDomain(ptr long ptr ptr ptr)
 @ stdcall SamLookupNamesInDomain(ptr long ptr ptr ptr)
 @ stdcall SamOpenAlias(ptr long long ptr)
 @ stdcall SamOpenDomain(ptr long ptr ptr)

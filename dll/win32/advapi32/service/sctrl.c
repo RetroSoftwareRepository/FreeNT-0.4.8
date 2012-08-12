@@ -177,7 +177,7 @@ ScServiceMainStub(LPVOID Context)
         (lpService->ThreadParams.W.lpServiceMain)(lpService->ThreadParams.W.dwArgCount,
                                                   lpService->ThreadParams.W.lpArgVector);
 
-        if (lpService->ThreadParams.A.lpArgVector != NULL)
+        if (lpService->ThreadParams.W.lpArgVector != NULL)
         {
             HeapFree(GetProcessHeap(),
                      0,
@@ -574,10 +574,6 @@ ScServiceDispatcher(HANDLE hPipe,
         if (dwRunningServices == 0)
             break;
     }
-
-    HeapFree(GetProcessHeap(),
-             0,
-             ControlPacket);
 
     return TRUE;
 }

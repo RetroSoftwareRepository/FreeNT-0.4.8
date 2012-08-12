@@ -1292,11 +1292,11 @@
 @ stdcall ZwWriteRequestData(ptr ptr long ptr long ptr)
 @ stdcall ZwWriteVirtualMemory(long ptr ptr long ptr)
 @ stdcall ZwYieldExecution()
-;@ cdecl _CIcos
-;@ cdecl _CIlog
-;@ cdecl -private -arch=i386 _CIpow()
-;@ cdecl _CIsin
-;@ cdecl _CIsqrt
+@ cdecl -arch=i386 _CIcos()
+@ cdecl -arch=i386 _CIlog()
+@ cdecl -arch=i386 _CIpow()
+@ cdecl -arch=i386 _CIsin()
+@ cdecl -arch=i386 _CIsqrt()
 @ cdecl -arch=x86_64 __C_specific_handler(ptr long ptr ptr)
 @ cdecl __isascii(long)
 @ cdecl __iscsym(long)
@@ -1343,7 +1343,7 @@
 @ cdecl _ui64tow(double ptr long)
 @ cdecl _ultoa(long ptr long)
 @ cdecl _ultow(long ptr long)
-;@ cdecl _vscwprintf
+@ cdecl _vscwprintf(wstr ptr)
 @ cdecl _vsnprintf(ptr long str ptr)
 @ cdecl _vsnwprintf(ptr long wstr ptr)
 @ cdecl _wcsicmp(wstr wstr)

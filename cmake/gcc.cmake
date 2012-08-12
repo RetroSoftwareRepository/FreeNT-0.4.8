@@ -9,10 +9,6 @@ if(NOT DEFINED SEPARATE_DBG)
     set(SEPARATE_DBG FALSE)
 endif()
 
-if(SEPARATE_DBG)
-    file(MAKE_DIRECTORY ${REACTOS_BINARY_DIR}/symbols)
-endif()
-
 # Compiler Core
 add_compile_flags("-pipe -fms-extensions")
 
@@ -85,7 +81,7 @@ endif()
 add_compile_flags("-fno-strict-aliasing")
 
 if(ARCH MATCHES i386)
-    add_compile_flags("-mpreferred-stack-boundary=2 -fno-set-stack-executable -fno-optimize-sibling-calls -fno-omit-frame-pointer")
+    add_compile_flags("-mpreferred-stack-boundary=3 -fno-set-stack-executable -fno-optimize-sibling-calls -fno-omit-frame-pointer")
     if(OPTIMIZE STREQUAL "1")
         add_compile_flags("-ftracer -momit-leaf-frame-pointer")
     endif()
@@ -119,26 +115,33 @@ endif()
 
 if(SEPARATE_DBG)
     # PDB style debug puts all dwarf debug info in a separate dbg file
+    message(STATUS "Building separate debug symbols")
+    file(MAKE_DIRECTORY ${REACTOS_BINARY_DIR}/symbols)
+    if(CMAKE_GENERATOR MATCHES "Ninja")
+        set(SYMBOL_FILE <TARGET_PDB>)
+    else()
+        set(SYMBOL_FILE <TARGET>.gdb)
+    endif()
     set(OBJCOPY ${CMAKE_OBJCOPY})
     set(CMAKE_C_LINK_EXECUTABLE
         "<CMAKE_C_COMPILER> <CMAKE_C_LINK_FLAGS> <LINK_FLAGS> <OBJECTS> -o <TARGET> <LINK_LIBRARIES>"
-        "${OBJCOPY} --only-keep-debug <TARGET> ${REACTOS_BINARY_DIR}/symbols/<TARGET>.dbg"
+        "${OBJCOPY} --only-keep-debug <TARGET> ${REACTOS_BINARY_DIR}/symbols/${SYMBOL_FILE}"
         "${OBJCOPY} --strip-debug <TARGET>")
     set(CMAKE_CXX_LINK_EXECUTABLE
         "<CMAKE_CXX_COMPILER> <CMAKE_CXX_LINK_FLAGS> <LINK_FLAGS> <OBJECTS> -o <TARGET> <LINK_LIBRARIES>"
-        "${OBJCOPY} --only-keep-debug <TARGET> ${REACTOS_BINARY_DIR}/symbols/<TARGET>.dbg"
+        "${OBJCOPY} --only-keep-debug <TARGET> ${REACTOS_BINARY_DIR}/symbols/${SYMBOL_FILE}"
         "${OBJCOPY} --strip-debug <TARGET>")
     set(CMAKE_C_CREATE_SHARED_LIBRARY
         "<CMAKE_C_COMPILER> <CMAKE_SHARED_LIBRARY_C_FLAGS> <LINK_FLAGS> <CMAKE_SHARED_LIBRARY_CREATE_C_FLAGS> -o <TARGET> <OBJECTS> <LINK_LIBRARIES>"
-        "${OBJCOPY} --only-keep-debug <TARGET> ${REACTOS_BINARY_DIR}/symbols/<TARGET>.dbg"
+        "${OBJCOPY} --only-keep-debug <TARGET> ${REACTOS_BINARY_DIR}/symbols/${SYMBOL_FILE}"
         "${OBJCOPY} --strip-debug <TARGET>")
     set(CMAKE_CXX_CREATE_SHARED_LIBRARY
         "<CMAKE_CXX_COMPILER> <CMAKE_SHARED_LIBRARY_CXX_FLAGS> <LINK_FLAGS> <CMAKE_SHARED_LIBRARY_CREATE_CXX_FLAGS> -o <TARGET> <OBJECTS> <LINK_LIBRARIES>"
-        "${OBJCOPY} --only-keep-debug <TARGET> ${REACTOS_BINARY_DIR}/symbols/<TARGET>.dbg"
+        "${OBJCOPY} --only-keep-debug <TARGET> ${REACTOS_BINARY_DIR}/symbols/${SYMBOL_FILE}"
         "${OBJCOPY} --strip-debug <TARGET>")
     set(CMAKE_RC_CREATE_SHARED_LIBRARY
         "<CMAKE_C_COMPILER> <CMAKE_SHARED_LIBRARY_C_FLAGS> <LINK_FLAGS> <CMAKE_SHARED_LIBRARY_CREATE_C_FLAGS> -o <TARGET> <OBJECTS> <LINK_LIBRARIES>"
-        "${OBJCOPY} --only-keep-debug <TARGET> ${REACTOS_BINARY_DIR}/symbols/<TARGET>.dbg"
+        "${OBJCOPY} --only-keep-debug <TARGET> ${REACTOS_BINARY_DIR}/symbols/${SYMBOL_FILE}"
         "${OBJCOPY} --strip-debug <TARGET>")
 else()
     # Normal rsym build

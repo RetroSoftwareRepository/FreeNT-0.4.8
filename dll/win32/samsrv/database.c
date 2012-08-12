@@ -484,10 +484,10 @@ SampCloseDbObject(PSAM_DB_OBJECT DbObject)
 
 
 NTSTATUS
-SampSetDbObjectNameAlias(IN PSAM_DB_OBJECT DomainObject,
-                         IN LPCWSTR lpContainerName,
-                         IN LPCWSTR lpAliasName,
-                         IN ULONG ulAliasValue)
+SampSetAccountNameInDomain(IN PSAM_DB_OBJECT DomainObject,
+                           IN LPCWSTR lpContainerName,
+                           IN LPCWSTR lpAccountName,
+                           IN ULONG ulRelativeId)
 {
     OBJECT_ATTRIBUTES ObjectAttributes;
     UNICODE_STRING KeyName;
@@ -495,6 +495,8 @@ SampSetDbObjectNameAlias(IN PSAM_DB_OBJECT DomainObject,
     HANDLE ContainerKeyHandle = NULL;
     HANDLE NamesKeyHandle = NULL;
     NTSTATUS Status;
+
+    TRACE("SampSetAccountNameInDomain()\n");
 
     /* Open the container key */
     RtlInitUnicodeString(&KeyName, lpContainerName);
@@ -527,13 +529,13 @@ SampSetDbObjectNameAlias(IN PSAM_DB_OBJECT DomainObject,
         goto done;
 
     /* Set the alias value */
-    RtlInitUnicodeString(&ValueName, lpAliasName);
+    RtlInitUnicodeString(&ValueName, lpAccountName);
 
     Status = NtSetValueKey(NamesKeyHandle,
                            &ValueName,
                            0,
                            REG_DWORD,
-                           (LPVOID)&ulAliasValue,
+                           (LPVOID)&ulRelativeId,
                            sizeof(ULONG));
 
 done:
@@ -548,81 +550,118 @@ done:
 
 
 NTSTATUS
-SampCheckDbObjectNameAlias(IN PSAM_DB_OBJECT DomainObject,
-                           IN LPCWSTR lpContainerName,
-                           IN LPCWSTR lpAliasName,
-                           OUT PBOOL bAliasExists)
+SampCheckAccountNameInDomain(IN PSAM_DB_OBJECT DomainObject,
+                             IN LPWSTR lpAccountName)
 {
-    PKEY_VALUE_PARTIAL_INFORMATION ValueInfo;
-    OBJECT_ATTRIBUTES ObjectAttributes;
-    UNICODE_STRING KeyName;
-    UNICODE_STRING ValueName;
-    HANDLE ContainerKeyHandle = NULL;
-    HANDLE NamesKeyHandle = NULL;
-    ULONG BufferLength = sizeof(ULONG);
+    HANDLE AccountKey;
+    HANDLE NamesKey;
     NTSTATUS Status;
 
-    /* Open the container key */
-    RtlInitUnicodeString(&KeyName, lpContainerName);
+    TRACE("SampCheckAccountNameInDomain()\n");
 
-    InitializeObjectAttributes(&ObjectAttributes,
-                               &KeyName,
-                               OBJ_CASE_INSENSITIVE,
-                               DomainObject->KeyHandle,
-                               NULL);
+    Status = SampRegOpenKey(DomainObject->KeyHandle,
+                            L"Aliases",
+                            KEY_READ,
+                            &AccountKey);
+    if (NT_SUCCESS(Status))
+    {
+        Status = SampRegOpenKey(AccountKey,
+                                L"Names",
+                                KEY_READ,
+                                &NamesKey);
+        if (NT_SUCCESS(Status))
+        {
+            Status = SampRegQueryValue(NamesKey,
+                                       lpAccountName,
+                                       NULL,
+                                       NULL,
+                                       NULL);
+            if (Status == STATUS_SUCCESS)
+            {
+                SampRegCloseKey(NamesKey);
+                Status = STATUS_ALIAS_EXISTS;
+            }
+            else if (Status == STATUS_OBJECT_NAME_NOT_FOUND)
+                Status = STATUS_SUCCESS;
+        }
 
-    Status = NtOpenKey(&ContainerKeyHandle,
-                       KEY_ALL_ACCESS,
-                       &ObjectAttributes);
+        SampRegCloseKey(AccountKey);
+    }
+
     if (!NT_SUCCESS(Status))
+    {
+        TRACE("Checking for alias account failed (Status 0x%08lx)\n", Status);
         return Status;
+    }
 
-    /* Open the 'Names' key */
-    RtlInitUnicodeString(&KeyName, L"Names");
+    Status = SampRegOpenKey(DomainObject->KeyHandle,
+                            L"Groups",
+                            KEY_READ,
+                            &AccountKey);
+    if (NT_SUCCESS(Status))
+    {
+        Status = SampRegOpenKey(AccountKey,
+                                L"Names",
+                                KEY_READ,
+                                &NamesKey);
+        if (NT_SUCCESS(Status))
+        {
+            Status = SampRegQueryValue(NamesKey,
+                                       lpAccountName,
+                                       NULL,
+                                       NULL,
+                                       NULL);
+            if (Status == STATUS_SUCCESS)
+            {
+                SampRegCloseKey(NamesKey);
+                Status = STATUS_ALIAS_EXISTS;
+            }
+            else if (Status == STATUS_OBJECT_NAME_NOT_FOUND)
+                Status = STATUS_SUCCESS;
+        }
 
-    InitializeObjectAttributes(&ObjectAttributes,
-                               &KeyName,
-                               OBJ_CASE_INSENSITIVE,
-                               ContainerKeyHandle,
-                               NULL);
+        SampRegCloseKey(AccountKey);
+    }
 
-    Status = NtOpenKey(&NamesKeyHandle,
-                       KEY_ALL_ACCESS,
-                       &ObjectAttributes);
     if (!NT_SUCCESS(Status))
-        goto done;
+    {
+        TRACE("Checking for group account failed (Status 0x%08lx)\n", Status);
+        return Status;
+    }
 
-    /* Get the alias value */
-    RtlInitUnicodeString(&ValueName, lpAliasName);
+    Status = SampRegOpenKey(DomainObject->KeyHandle,
+                            L"Users",
+                            KEY_READ,
+                            &AccountKey);
+    if (NT_SUCCESS(Status))
+    {
+        Status = SampRegOpenKey(AccountKey,
+                                L"Names",
+                                KEY_READ,
+                                &NamesKey);
+        if (NT_SUCCESS(Status))
+        {
+            Status = SampRegQueryValue(NamesKey,
+                                       lpAccountName,
+                                       NULL,
+                                       NULL,
+                                       NULL);
+            if (Status == STATUS_SUCCESS)
+            {
+                SampRegCloseKey(NamesKey);
+                Status = STATUS_ALIAS_EXISTS;
+            }
+            else if (Status == STATUS_OBJECT_NAME_NOT_FOUND)
+                Status = STATUS_SUCCESS;
+        }
 
-    BufferLength += FIELD_OFFSET(KEY_VALUE_PARTIAL_INFORMATION, Data);
+        SampRegCloseKey(AccountKey);
+    }
 
-    /* Allocate memory for the value */
-    ValueInfo = RtlAllocateHeap(RtlGetProcessHeap(), 0, BufferLength);
-    if (ValueInfo == NULL)
-        return STATUS_NO_MEMORY;
-
-    /* Query the value */
-    Status = ZwQueryValueKey(NamesKeyHandle,
-                             &ValueName,
-                             KeyValuePartialInformation,
-                             ValueInfo,
-                             BufferLength,
-                             &BufferLength);
-
-    *bAliasExists = (Status != STATUS_OBJECT_NAME_NOT_FOUND);
-
-    Status = STATUS_SUCCESS;
-
-    /* Free the memory and return status */
-    RtlFreeHeap(RtlGetProcessHeap(), 0, ValueInfo);
-
-done:
-    if (NamesKeyHandle)
-        NtClose(NamesKeyHandle);
-
-    if (ContainerKeyHandle)
-        NtClose(ContainerKeyHandle);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("Checking for user account failed (Status 0x%08lx)\n", Status);
+    }
 
     return Status;
 }

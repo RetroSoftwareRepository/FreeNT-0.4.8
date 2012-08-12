@@ -11,6 +11,7 @@
 #define MI_MIN_PAGES_FOR_NONPAGED_POOL_TUNING   ((255 * _1MB) >> PAGE_SHIFT)
 #define MI_MIN_PAGES_FOR_SYSPTE_TUNING          ((19 * _1MB) >> PAGE_SHIFT)
 #define MI_MIN_PAGES_FOR_SYSPTE_BOOST           ((32 * _1MB) >> PAGE_SHIFT)
+#define MI_MIN_PAGES_FOR_SYSPTE_BOOST_BOOST     ((256 * _1MB) >> PAGE_SHIFT)
 #define MI_MAX_INIT_NONPAGED_POOL_SIZE          (128 * _1MB)
 #define MI_MAX_NONPAGED_POOL_SIZE               (128 * _1MB)
 #define MI_MAX_FREE_PAGE_LISTS                  4
@@ -49,6 +50,8 @@
 #define MM_HIGHEST_VAD_ADDRESS \
     (PVOID)((ULONG_PTR)MM_HIGHEST_USER_ADDRESS - (16 * PAGE_SIZE))
 #define MI_LOWEST_VAD_ADDRESS                   (PVOID)MM_LOWEST_USER_ADDRESS
+
+#define MI_DEFAULT_SYSTEM_PTE_COUNT             50000
 
 #endif /* !_M_AMD64 */
 
@@ -221,6 +224,11 @@ extern const ULONG MmProtectToValue[32];
 #define MM_SYSLDR_BOOT_LOADED  (PVOID)0xFFFFFFFF
 #define MM_SYSLDR_SINGLE_ENTRY 0x1
 
+//
+// Number of initial session IDs
+//
+#define MI_INITIAL_SESSION_IDS  64
+
 #if defined(_M_IX86) || defined(_M_ARM)
 //
 // PFN List Sentinel
@@ -269,6 +277,24 @@ extern const ULONG MmProtectToValue[32];
 #else
 #define MI_PTE_LOOKUP_NEEDED 0xFFFFF
 #endif
+
+//
+// Number of session lists in the MM_SESSIONS_SPACE structure
+//
+#if defined(_M_AMD64)
+#define SESSION_POOL_LOOKASIDES 21
+#elif defined(_M_IX86)
+#define SESSION_POOL_LOOKASIDES 26
+#else
+#error Not Defined!
+#endif
+
+//
+// Number of session data and tag pages
+//
+#define MI_SESSION_DATA_PAGES_MAXIMUM (MM_ALLOCATION_GRANULARITY / PAGE_SIZE)
+#define MI_SESSION_TAG_PAGES_MAXIMUM  (MM_ALLOCATION_GRANULARITY / PAGE_SIZE)
+
 
 //
 // System views are binned into 64K chunks
@@ -473,9 +499,70 @@ typedef struct _MMSESSION
     PRTL_BITMAP SystemSpaceBitMap;
 } MMSESSION, *PMMSESSION;
 
+typedef struct _MM_SESSION_SPACE_FLAGS
+{
+    ULONG Initialized:1;
+    ULONG DeletePending:1;
+    ULONG Filler:30;
+} MM_SESSION_SPACE_FLAGS;
+
+typedef struct _MM_SESSION_SPACE
+{
+    struct _MM_SESSION_SPACE *GlobalVirtualAddress;
+    LONG ReferenceCount;
+    union
+    {
+        ULONG LongFlags;
+        MM_SESSION_SPACE_FLAGS Flags;
+    } u;
+    ULONG SessionId;
+    LIST_ENTRY ProcessList;
+    LARGE_INTEGER LastProcessSwappedOutTime;
+    PFN_NUMBER SessionPageDirectoryIndex;
+    SIZE_T NonPageablePages;
+    SIZE_T CommittedPages;
+    PVOID PagedPoolStart;
+    PVOID PagedPoolEnd;
+    PMMPTE PagedPoolBasePde;
+    ULONG Color;
+    LONG ResidentProcessCount;
+    ULONG SessionPoolAllocationFailures[4];
+    LIST_ENTRY ImageList;
+    LCID LocaleId;
+    ULONG AttachCount;
+    KEVENT AttachEvent;
+    PEPROCESS LastProcess;
+    LONG ProcessReferenceToSession;
+    LIST_ENTRY WsListEntry;
+    GENERAL_LOOKASIDE Lookaside[SESSION_POOL_LOOKASIDES];
+    MMSESSION Session;
+    KGUARDED_MUTEX PagedPoolMutex;
+    MM_PAGED_POOL_INFO PagedPoolInfo;
+    MMSUPPORT Vm;
+    PMMWSLE Wsle;
+    PDRIVER_UNLOAD Win32KDriverUnload;
+    POOL_DESCRIPTOR PagedPool;
+#if defined (_M_AMD64)
+    MMPTE PageDirectory;
+#else
+    PMMPTE PageTables;
+#endif
+#if defined (_M_AMD64)
+    PMMPTE SpecialPoolFirstPte;
+    PMMPTE SpecialPoolLastPte;
+    PMMPTE NextPdeForSpecialPoolExpansion;
+    PMMPTE LastPdeForSpecialPoolExpansion;
+    PFN_NUMBER SpecialPagesInUse;
+#endif
+    LONG ImageLoadingCount;
+} MM_SESSION_SPACE, *PMM_SESSION_SPACE;
+
+extern PMM_SESSION_SPACE MmSessionSpace;
 extern MMPTE HyperTemplatePte;
 extern MMPDE ValidKernelPde;
 extern MMPTE ValidKernelPte;
+extern MMPDE ValidKernelPdeLocal;
+extern MMPTE ValidKernelPteLocal;
 extern MMPDE DemandZeroPde;
 extern MMPTE DemandZeroPte;
 extern MMPTE PrototypePte;
@@ -600,11 +687,13 @@ extern PVOID MiSystemViewStart;
 extern PVOID MiSessionPoolEnd;     // 0xBE000000
 extern PVOID MiSessionPoolStart;   // 0xBD000000
 extern PVOID MiSessionViewStart;   // 0xBE000000
+extern PVOID MiSessionSpaceWs;
 extern ULONG MmMaximumDeadKernelStacks;
 extern SLIST_HEADER MmDeadStackSListHead;
 extern MM_AVL_TABLE MmSectionBasedRoot;
 extern KGUARDED_MUTEX MmSectionBasedMutex;
 extern PVOID MmHighSectionBase;
+extern SIZE_T MmSystemLockPagesCount;
 
 BOOLEAN
 FORCEINLINE
@@ -896,6 +985,43 @@ MI_WS_OWNER(IN PEPROCESS Process)
 }
 
 //
+// New ARM3<->RosMM PAGE Architecture
+//
+BOOLEAN
+FORCEINLINE
+MiIsRosSectionObject(IN PVOID Section)
+{
+    PROS_SECTION_OBJECT RosSection = Section;
+    if ((RosSection->Type == 'SC') && (RosSection->Size == 'TN')) return TRUE;
+    return FALSE;
+}
+
+#ifdef _WIN64
+// HACK ON TOP OF HACK ALERT!!!
+#define MI_GET_ROS_DATA(x) \
+    (((x)->RosMmData == 0) ? NULL : ((PMMROSPFN)((ULONG64)(ULONG)((x)->RosMmData) | \
+                                    ((ULONG64)MmNonPagedPoolStart & 0xffffffff00000000ULL))))
+#else
+#define MI_GET_ROS_DATA(x)   ((PMMROSPFN)(x->RosMmData))
+#endif
+#define MI_IS_ROS_PFN(x)     (((x)->u4.AweAllocation == TRUE) && (MI_GET_ROS_DATA(x) != NULL))
+#define ASSERT_IS_ROS_PFN(x) ASSERT(MI_IS_ROS_PFN(x) == TRUE);
+typedef struct _MMROSPFN
+{
+    PMM_RMAP_ENTRY RmapListHead;
+    SWAPENTRY SwapEntry;
+} MMROSPFN, *PMMROSPFN;
+
+#define RosMmData            AweReferenceCount
+
+VOID
+NTAPI
+MiDecrementReferenceCount(
+    IN PMMPFN Pfn1,
+    IN PFN_NUMBER PageFrameIndex
+);
+
+//
 // Locks the working set for the given process
 //
 FORCEINLINE
@@ -972,9 +1098,10 @@ MiLockWorkingSet(IN PETHREAD Thread,
     }
     else if (WorkingSet->Flags.SessionSpace)
     {
-        /* We don't implement this yet */
-        UNIMPLEMENTED;
-        while (TRUE);
+        /* Own the session working set */
+        ASSERT((Thread->OwnsSessionWorkingSetExclusive == FALSE) &&
+               (Thread->OwnsSessionWorkingSetShared == FALSE));
+        Thread->OwnsSessionWorkingSetExclusive = TRUE;
     }
     else
     {
@@ -1006,9 +1133,10 @@ MiUnlockWorkingSet(IN PETHREAD Thread,
     }
     else if (WorkingSet->Flags.SessionSpace)
     {
-        /* We don't implement this yet */
-        UNIMPLEMENTED;
-        while (TRUE);
+        /* Release the session working set */
+        ASSERT((Thread->OwnsSessionWorkingSetExclusive == TRUE) ||
+               (Thread->OwnsSessionWorkingSetShared == TRUE));
+        Thread->OwnsSessionWorkingSetExclusive = 0;
     }
     else
     {
@@ -1051,6 +1179,237 @@ MI_PFN_ELEMENT(IN PFN_NUMBER Pfn)
     /* Get the entry */
     return &MmPfnDatabase[Pfn];
 };
+
+//
+// Drops a locked page without dereferencing it
+//
+FORCEINLINE
+VOID
+MiDropLockCount(IN PMMPFN Pfn1)
+{
+    /* This page shouldn't be locked, but it should be valid */
+    ASSERT(Pfn1->u3.e2.ReferenceCount != 0);
+    ASSERT(Pfn1->u2.ShareCount == 0);
+
+    /* Is this the last reference to the page */
+    if (Pfn1->u3.e2.ReferenceCount == 1)
+    {
+        /* It better not be valid */
+        ASSERT(Pfn1->u3.e1.PageLocation != ActiveAndValid);
+
+        /* Is it a prototype PTE? */
+        if ((Pfn1->u3.e1.PrototypePte == 1) &&
+            (Pfn1->OriginalPte.u.Soft.Prototype == 1))
+        {
+            /* We don't handle this */
+            ASSERT(FALSE);
+        }
+
+        /* Update the counter */
+        InterlockedDecrementSizeT(&MmSystemLockPagesCount);
+    }
+}
+
+//
+// Drops a locked page and dereferences it
+//
+FORCEINLINE
+VOID
+MiDereferencePfnAndDropLockCount(IN PMMPFN Pfn1)
+{
+    USHORT RefCount, OldRefCount;
+    PFN_NUMBER PageFrameIndex;
+
+    /* Loop while we decrement the page successfully */
+    do
+    {
+        /* There should be at least one reference */
+        OldRefCount = Pfn1->u3.e2.ReferenceCount;
+        ASSERT(OldRefCount != 0);
+
+        /* Are we the last one */
+        if (OldRefCount == 1)
+        {
+            /* The page shoudln't be shared not active at this point */
+            ASSERT(Pfn1->u3.e2.ReferenceCount == 1);
+            ASSERT(Pfn1->u3.e1.PageLocation != ActiveAndValid);
+            ASSERT(Pfn1->u2.ShareCount == 0);
+
+            /* Is it a prototype PTE? */
+            if ((Pfn1->u3.e1.PrototypePte == 1) &&
+                (Pfn1->OriginalPte.u.Soft.Prototype == 1))
+            {
+                /* We don't handle this */
+                ASSERT(FALSE);
+            }
+
+            /* Update the counter, and drop a reference the long way */
+            InterlockedDecrementSizeT(&MmSystemLockPagesCount);
+            PageFrameIndex = MiGetPfnEntryIndex(Pfn1);
+            MiDecrementReferenceCount(Pfn1, PageFrameIndex);
+            return;
+        }
+
+        /* Drop a reference the short way, and that's it */
+        RefCount = InterlockedCompareExchange16((PSHORT)&Pfn1->u3.e2.ReferenceCount,
+                                                OldRefCount - 1,
+                                                OldRefCount);
+        ASSERT(RefCount != 0);
+    } while (OldRefCount != RefCount);
+
+    /* If we got here, there should be more than one reference */
+    ASSERT(RefCount > 1);
+    if (RefCount == 2)
+    {
+        /* Is it still being shared? */
+        if (Pfn1->u2.ShareCount >= 1)
+        {
+            /* Then it should be valid */
+            ASSERT(Pfn1->u3.e1.PageLocation == ActiveAndValid);
+
+            /* Is it a prototype PTE? */
+            if ((Pfn1->u3.e1.PrototypePte == 1) &&
+                (Pfn1->OriginalPte.u.Soft.Prototype == 1))
+            {
+                /* We don't handle ethis */
+                ASSERT(FALSE);
+            }
+
+            /* Update the counter */
+            InterlockedDecrementSizeT(&MmSystemLockPagesCount);
+        }
+    }
+}
+
+//
+// References a locked page and updates the counter
+// Used in MmProbeAndLockPages to handle different edge cases
+//
+FORCEINLINE
+VOID
+MiReferenceProbedPageAndBumpLockCount(IN PMMPFN Pfn1)
+{
+    USHORT RefCount, OldRefCount;
+
+    /* Sanity check */
+    ASSERT(Pfn1->u3.e2.ReferenceCount != 0);
+
+    /* Does ARM3 own the page? */
+    if (MI_IS_ROS_PFN(Pfn1))
+    {
+        /* ReactOS Mm doesn't track share count */
+        ASSERT(Pfn1->u3.e1.PageLocation == ActiveAndValid);
+    }
+    else
+    {
+        /* On ARM3 pages, we should see a valid share count */
+        ASSERT((Pfn1->u2.ShareCount != 0) && (Pfn1->u3.e1.PageLocation == ActiveAndValid));
+
+        /* We don't support mapping a prototype page yet */
+        ASSERT((Pfn1->u3.e1.PrototypePte == 0) && (Pfn1->OriginalPte.u.Soft.Prototype == 0));
+    }
+
+    /* More locked pages! */
+    InterlockedIncrementSizeT(&MmSystemLockPagesCount);
+
+    /* Loop trying to update the reference count */
+    do
+    {
+        /* Get the current reference count, make sure it's valid */
+        OldRefCount = Pfn1->u3.e2.ReferenceCount;
+        ASSERT(OldRefCount != 0);
+        ASSERT(OldRefCount < 2500);
+
+        /* Bump it up by one */
+        RefCount = InterlockedCompareExchange16((PSHORT)&Pfn1->u3.e2.ReferenceCount,
+                                                OldRefCount + 1,
+                                                OldRefCount);
+        ASSERT(RefCount != 0);
+    } while (OldRefCount != RefCount);
+
+    /* Was this the first lock attempt? If not, undo our bump */
+    if (OldRefCount != 1) InterlockedDecrementSizeT(&MmSystemLockPagesCount);
+}
+
+//
+// References a locked page and updates the counter
+// Used in all other cases except MmProbeAndLockPages
+//
+FORCEINLINE
+VOID
+MiReferenceUsedPageAndBumpLockCount(IN PMMPFN Pfn1)
+{
+    USHORT NewRefCount;
+
+    /* Is it a prototype PTE? */
+    if ((Pfn1->u3.e1.PrototypePte == 1) &&
+        (Pfn1->OriginalPte.u.Soft.Prototype == 1))
+    {
+        /* We don't handle this */
+        ASSERT(FALSE);
+    }
+
+    /* More locked pages! */
+    InterlockedIncrementSizeT(&MmSystemLockPagesCount);
+
+    /* Update the reference count */
+    NewRefCount = InterlockedIncrement16((PSHORT)&Pfn1->u3.e2.ReferenceCount);
+    if (NewRefCount == 2)
+    {
+        /* Is it locked or shared? */
+        if (Pfn1->u2.ShareCount)
+        {
+            /* It's shared, so make sure it's active */
+            ASSERT(Pfn1->u3.e1.PageLocation == ActiveAndValid);
+        }
+        else
+        {
+            /* It's locked, so we shouldn't lock again */
+            InterlockedDecrementSizeT(&MmSystemLockPagesCount);
+        }
+    }
+    else
+    {
+        /* Someone had already locked the page, so undo our bump */
+        ASSERT(NewRefCount < 2500);
+        InterlockedDecrementSizeT(&MmSystemLockPagesCount);
+    }
+}
+
+//
+// References a locked page and updates the counter
+// Used in all other cases except MmProbeAndLockPages
+//
+FORCEINLINE
+VOID
+MiReferenceUnusedPageAndBumpLockCount(IN PMMPFN Pfn1)
+{
+    USHORT NewRefCount;
+
+    /* Make sure the page isn't used yet */
+    ASSERT(Pfn1->u2.ShareCount == 0);
+    ASSERT(Pfn1->u3.e1.PageLocation != ActiveAndValid);
+
+    /* Is it a prototype PTE? */
+    if ((Pfn1->u3.e1.PrototypePte == 1) &&
+        (Pfn1->OriginalPte.u.Soft.Prototype == 1))
+    {
+        /* We don't handle this */
+        ASSERT(FALSE);
+    }
+
+    /* More locked pages! */
+    InterlockedIncrementSizeT(&MmSystemLockPagesCount);
+
+    /* Update the reference count */
+    NewRefCount = InterlockedIncrement16((PSHORT)&Pfn1->u3.e2.ReferenceCount);
+    if (NewRefCount != 1)
+    {
+        /* Someone had already locked the page, so undo our bump */
+        ASSERT(NewRefCount < 2500);
+        InterlockedDecrementSizeT(&MmSystemLockPagesCount);
+    }
+}
 
 BOOLEAN
 NTAPI
@@ -1182,6 +1541,24 @@ InitializePool(           //
     IN ULONG Threshold    //
 );                        //
 
+// FIXFIX: THIS ONE TOO
+VOID
+NTAPI
+INIT_FUNCTION
+ExInitializePoolDescriptor(
+    IN PPOOL_DESCRIPTOR PoolDescriptor,
+    IN POOL_TYPE PoolType,
+    IN ULONG PoolIndex,
+    IN ULONG Threshold,
+    IN PVOID PoolLock
+);
+
+NTSTATUS
+NTAPI
+MiInitializeSessionPool(
+    VOID
+);
+
 VOID
 NTAPI
 MiInitializeSystemPtes(
@@ -1289,6 +1666,15 @@ MiInitializePfn(
     IN BOOLEAN Modified
 );
 
+NTSTATUS
+NTAPI
+MiInitializeAndChargePfn(
+    OUT PPFN_NUMBER PageFrameIndex,
+    IN PMMPTE PointerPde,
+    IN PFN_NUMBER ContainingPageFrame,
+    IN BOOLEAN SessionAllocation
+);
+
 VOID
 NTAPI
 MiInitializePfnAndMakePteValid(
@@ -1308,13 +1694,6 @@ MiInitializePfnForOtherProcess(
 VOID
 NTAPI
 MiDecrementShareCount(
-    IN PMMPFN Pfn1,
-    IN PFN_NUMBER PageFrameIndex
-);
-
-VOID
-NTAPI
-MiDecrementReferenceCount(
     IN PMMPFN Pfn1,
     IN PFN_NUMBER PageFrameIndex
 );
@@ -1493,7 +1872,32 @@ MiGetNextNode(
 BOOLEAN
 NTAPI
 MiInitializeSystemSpaceMap(
-    IN PVOID InputSession OPTIONAL
+    IN PMMSESSION InputSession OPTIONAL
+);
+
+VOID
+NTAPI
+MiSessionRemoveProcess(
+    VOID
+);
+
+VOID
+NTAPI
+MiReleaseProcessReferenceToSessionDataPage(
+    IN PMM_SESSION_SPACE SessionGlobal
+);
+
+VOID
+NTAPI
+MiSessionAddProcess(
+    IN PEPROCESS NewProcess
+);
+
+NTSTATUS
+NTAPI
+MiSessionCommitPageTables(
+    IN PVOID StartVa,
+    IN PVOID EndVa
 );
 
 ULONG
@@ -1596,35 +2000,5 @@ MiRemoveZeroPageSafe(IN ULONG Color)
     if (MmFreePagesByColor[ZeroedPageList][Color].Flink != LIST_HEAD) return MiRemoveZeroPage(Color);
     return 0;
 }
-
-//
-// New ARM3<->RosMM PAGE Architecture
-//
-BOOLEAN
-FORCEINLINE
-MiIsRosSectionObject(IN PVOID Section)
-{
-    PROS_SECTION_OBJECT RosSection = Section;
-    if ((RosSection->Type == 'SC') && (RosSection->Size == 'TN')) return TRUE;
-    return FALSE;
-}
-
-#ifdef _WIN64
-// HACK ON TOP OF HACK ALERT!!!
-#define MI_GET_ROS_DATA(x) \
-    (((x)->RosMmData == 0) ? NULL : ((PMMROSPFN)((ULONG64)(ULONG)((x)->RosMmData) | \
-                                    ((ULONG64)MmNonPagedPoolStart & 0xffffffff00000000ULL))))
-#else
-#define MI_GET_ROS_DATA(x)   ((PMMROSPFN)(x->RosMmData))
-#endif
-#define MI_IS_ROS_PFN(x)     (((x)->u4.AweAllocation == TRUE) && (MI_GET_ROS_DATA(x) != NULL))
-#define ASSERT_IS_ROS_PFN(x) ASSERT(MI_IS_ROS_PFN(x) == TRUE);
-typedef struct _MMROSPFN
-{
-    PMM_RMAP_ENTRY RmapListHead;
-    SWAPENTRY SwapEntry;
-} MMROSPFN, *PMMROSPFN;
-
-#define RosMmData            AweReferenceCount
 
 /* EOF */

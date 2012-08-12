@@ -179,9 +179,6 @@ DC_vInitDc(
         /* Non-direct DCs don't have a surface by default */
         pdc->dclevel.pSurface = NULL;
 
-        // FIXME: HACK, because our code expects a surface
-        pdc->dclevel.pSurface = SURFACE_ShareLockSurface(StockObjects[DEFAULT_BITMAP]);
-
         pdc->erclBounds.left = 0;
         pdc->erclBounds.top = 0;
         pdc->erclBounds.right = 0;
@@ -340,6 +337,7 @@ DC_vInitDc(
     if (defaultDCstate == NULL)
     {
         defaultDCstate = ExAllocatePoolWithTag(PagedPool, sizeof(DC), TAG_DC);
+        ASSERT(defaultDCstate);
         RtlZeroMemory(defaultDCstate, sizeof(DC));
         defaultDCstate->pdcattr = &defaultDCstate->dcattr;
         DC_vCopyState(pdc, defaultDCstate, TRUE);
@@ -424,9 +422,8 @@ DC_vSetOwner(PDC pdc, ULONG ulOwner)
     pdc->dclevel.pbrFill = BRUSH_ShareLockBrush(pdc->pdcattr->hbrush);
     pdc->dclevel.pbrLine = PEN_ShareLockPen(pdc->pdcattr->hpen);
 
-    /* Update the EBRUSHOBJs */
-    EBRUSHOBJ_vUpdate(&pdc->eboFill, pdc->dclevel.pbrFill, pdc);
-    EBRUSHOBJ_vUpdate(&pdc->eboLine, pdc->dclevel.pbrLine, pdc);
+    /* Mark them as dirty */
+    pdc->pdcattr->ulDirty_ |= DIRTY_FILL|DIRTY_LINE;
 
     /* Allocate or free DC attribute */
     if (ulOwner == GDI_OBJ_HMGR_PUBLIC || ulOwner == GDI_OBJ_HMGR_NONE)
@@ -603,7 +600,7 @@ GreOpenDCW(
     PDC pdc;
     HDC hdc;
 
-    DPRINT("GreOpenDCW(%S, iType=%ld)\n",
+    DPRINT("GreOpenDCW(%S, iType=%lu)\n",
            pustrDevice ? pustrDevice->Buffer : NULL, iType);
 
     /* Get a PDEVOBJ for the device */
@@ -729,6 +726,7 @@ NtGdiOpenDCW(
         _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
         {
             /* Ignore error */
+            (void)0;
         }
         _SEH2_END
     }
@@ -795,9 +793,6 @@ NtGdiCreateCompatibleDC(HDC hdc)
     /* Allocate a dc attribute */
     DC_bAllocDcAttr(pdcNew);
 
-    // HACK!
-    DC_vSelectSurface(pdcNew, psurfDefaultBitmap);
-
     DC_UnlockDc(pdcNew);
 
     DPRINT("Leave NtGdiCreateCompatibleDC hdcNew = %p\n", hdcNew);
@@ -855,7 +850,7 @@ IntGdiDeleteDC(HDC hDC, BOOL Force)
     }
     else
     {
-        DPRINT1("Attempted to Delete 0x%x currently being destroyed!!!\n", hDC);
+        DPRINT1("Attempted to Delete 0x%p currently being destroyed!!!\n", hDC);
     }
 
     return TRUE;

@@ -1,6 +1,6 @@
 /*++
 
-Copyright (c) 2008-2011 Alexandr A. Telyatnikov (Alter)
+Copyright (c) 2008-2012 Alexandr A. Telyatnikov (Alter)
 
 Module Name:
     id_probe.cpp
@@ -123,6 +123,14 @@ UniataAhciInit(
     IN PVOID HwDeviceExtension
     );
 
+#if DBG
+VOID
+NTAPI
+UniataDumpAhciPortRegs(
+    IN PHW_CHANNEL chan
+    );
+#endif
+
 BOOLEAN
 NTAPI
 UniataAhciDetect(
@@ -149,8 +157,14 @@ UniataAhciSetupFIS_H2D(
     IN UCHAR command,
     IN ULONGLONG lba,
     IN USHORT count,
-    IN USHORT feature,
-    IN ULONG flags
+    IN USHORT feature
+    );
+
+UCHAR
+NTAPI
+UniataAhciWaitCommandReady(
+    IN PHW_CHANNEL chan,
+    IN ULONG timeout
     );
 
 UCHAR
@@ -159,8 +173,32 @@ UniataAhciSendCommand(
     IN PVOID HwDeviceExtension,
     IN ULONG lChannel,
     IN ULONG DeviceNumber,
+    IN USHORT ahci_flags,
+    IN ULONG timeout
+    );
+
+UCHAR
+NTAPI
+UniataAhciSendPIOCommand(
+    IN PVOID HwDeviceExtension,
+    IN ULONG lChannel,
+    IN ULONG DeviceNumber,
+    IN PSCSI_REQUEST_BLOCK Srb,
+    IN PUCHAR data,
+    IN ULONG length,
+    IN UCHAR command,
+    IN ULONGLONG lba,
+    IN USHORT count,
+    IN USHORT feature,
+    IN USHORT ahci_flags,
     IN ULONG flags,
     IN ULONG timeout
+    );
+
+BOOLEAN
+NTAPI
+UniataAhciAbortOperation(
+    IN PHW_CHANNEL chan
     );
 
 ULONG
@@ -199,7 +237,7 @@ UniataAhciStartFR(
     IN PHW_CHANNEL chan
     );
 
-VOID
+BOOLEAN
 NTAPI
 UniataAhciStopFR(
     IN PHW_CHANNEL chan
@@ -211,13 +249,13 @@ UniataAhciStart(
     IN PHW_CHANNEL chan
     );
 
-VOID
+BOOLEAN
 NTAPI
 UniataAhciCLO(
     IN PHW_CHANNEL chan
     );
 
-VOID
+BOOLEAN
 NTAPI
 UniataAhciStop(
     IN PHW_CHANNEL chan
@@ -289,7 +327,32 @@ UniataAhciUlongFromRFIS(
 	     (((ULONG)(RCV_FIS[5])) << 16) |
 	     (((ULONG)(RCV_FIS[4])) << 8) |
 	      ((ULONG)(RCV_FIS[12])) );
-}
+} // end UniataAhciUlongFromRFIS()
+
+__inline
+USHORT
+UniAtaAhciAdjustIoFlags(
+    IN UCHAR command,
+    IN USHORT ahci_flags,
+    IN ULONG fis_size,
+    IN ULONG DeviceNumber
+    )
+{
+    ahci_flags |= (fis_size / sizeof(ULONG)) | (DeviceNumber << 12);
+    if(!command) {
+        return ahci_flags;
+    }
+
+    if(AtaCommandFlags[command] & ATA_CMD_FLAG_Out) {
+        ahci_flags |= ATA_AHCI_CMD_WRITE;
+    }
+/*
+    if(AtaCommandFlags[command] & ATA_CMD_FLAG_In) {
+        ahci_flags |= ATA_AHCI_CMD_READ;
+    }
+*/
+    return ahci_flags;
+} // end UniAtaAhciAdjustIoFlags()
 
 BOOLEAN
 NTAPI
@@ -312,6 +375,16 @@ UniataAhciWritePM(
 VOID
 UniataAhciSetupCmdPtr(
 IN OUT PATA_REQ AtaReq
+    );
+
+PSCSI_REQUEST_BLOCK
+NTAPI
+BuildAhciInternalSrb (
+    IN PVOID HwDeviceExtension,
+    IN ULONG DeviceNumber,
+    IN ULONG lChannel,
+    IN PUCHAR Buffer = NULL,
+    IN ULONG Length = 0
     );
 
 #endif //__UNIATA_SATA__H__

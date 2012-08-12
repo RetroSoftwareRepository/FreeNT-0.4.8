@@ -394,6 +394,26 @@ NtUserBlockInput(
     return ret;
 }
 
+PTHREADINFO FASTCALL
+IsThreadAttach(PTHREADINFO ptiTo)
+{
+    PATTACHINFO pai;
+
+    if (!gpai) return NULL;
+
+    pai = gpai;
+    do
+    {
+        if (pai->pti2 == ptiTo) break;
+        pai = pai->paiNext;
+    } while (pai);
+
+    if (!pai) return NULL;
+
+    // Return ptiFrom.
+    return pai->pti1;
+}
+
 BOOL FASTCALL
 UserAttachThreadInput(PTHREADINFO ptiFrom, PTHREADINFO ptiTo, BOOL fAttach)
 {
@@ -409,6 +429,10 @@ UserAttachThreadInput(PTHREADINFO ptiFrom, PTHREADINFO ptiTo, BOOL fAttach)
             ptiFrom->rpdesk != ptiTo->rpdesk)
         return FALSE;
 
+    /* MSDN Note:
+       Keyboard and mouse events received by both threads are processed by the thread specified by the idAttachTo.
+     */
+
     /* If Attach set, allocate and link. */
     if (fAttach)
     {
@@ -419,7 +443,7 @@ UserAttachThreadInput(PTHREADINFO ptiFrom, PTHREADINFO ptiTo, BOOL fAttach)
         pai->pti1 = ptiFrom;
         pai->pti2 = ptiTo;
         gpai = pai;
-        TRACE("Attach Allocated! ptiFrom 0x%p  ptiTo 0x%p\n",ptiFrom,ptiTo);
+        ERR("Attach Allocated! ptiFrom 0x%p  ptiTo 0x%p\n",ptiFrom,ptiTo);
 
         ptiTo->MessageQueue->iCursorLevel -= ptiFrom->iCursorLevel;
         ptiFrom->pqAttach = ptiFrom->MessageQueue;
@@ -455,9 +479,10 @@ UserAttachThreadInput(PTHREADINFO ptiFrom, PTHREADINFO ptiTo, BOOL fAttach)
         if (!pai) return FALSE;
 
         if (paiprev) paiprev->paiNext = pai->paiNext;
+        else if (!pai->paiNext) gpai = NULL;
 
         ExFreePoolWithTag(pai, USERTAG_ATTACHINFO);
-        TRACE("Attach Free! ptiFrom 0x%p  ptiTo 0x%p\n",ptiFrom,ptiTo);
+        ERR("Attach Free! ptiFrom 0x%p  ptiTo 0x%p\n",ptiFrom,ptiTo);
 
         ptiFrom->MessageQueue = ptiFrom->pqAttach;
         // FIXME: conditions?

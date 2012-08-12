@@ -158,7 +158,7 @@ NtGdiCreateBitmap(
     if ((iFormat == 0) || (nWidth <= 0) || (nWidth >= 0x8000000) || (nHeight <= 0) ||
         (cBitsPixel > 32) || (cPlanes > 32) || (cjSize >= 0x100000000ULL))
     {
-        DPRINT1("Invalid bitmap format! Width=%d, Height=%d, Bpp=%d, Planes=%d\n",
+        DPRINT1("Invalid bitmap format! Width=%d, Height=%d, Bpp=%u, Planes=%u\n",
                 nWidth, nHeight, cBitsPixel, cPlanes);
         EngSetLastError(ERROR_INVALID_PARAMETER);
         return NULL;
@@ -259,6 +259,7 @@ IntCreateCompatibleBitmap(
         DIBSECTION dibs;
         INT Count;
         PSURFACE psurf = Dc->dclevel.pSurface;
+        if(!psurf) psurf = psurfDefaultBitmap;
         Count = BITMAP_GetObject(psurf, sizeof(dibs), &dibs);
 
         if (Count == sizeof(BITMAP))
@@ -367,7 +368,7 @@ NtGdiCreateCompatibleBitmap(
 
     Dc = DC_LockDc(hDC);
 
-    DPRINT("NtGdiCreateCompatibleBitmap(%04x,%d,%d, bpp:%d) = \n",
+    DPRINT("NtGdiCreateCompatibleBitmap(%p,%d,%d, bpp:%u) = \n",
            hDC, Width, Height, Dc->ppdev->gdiinfo.cBitsPixel);
 
     if (NULL == Dc)
@@ -378,7 +379,6 @@ NtGdiCreateCompatibleBitmap(
 
     Bmp = IntCreateCompatibleBitmap(Dc, Width, Height);
 
-    DPRINT("\t\t%04x\n", Bmp);
     DC_UnlockDc(Dc);
     return Bmp;
 }

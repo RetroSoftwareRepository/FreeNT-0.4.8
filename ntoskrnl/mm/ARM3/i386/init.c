@@ -18,8 +18,13 @@
 /* GLOBALS ********************************************************************/
 
 /* Template PTE and PDE for a kernel page */
+ /* FIXME: These should be PTE_GLOBAL */
 MMPTE ValidKernelPde = {{PTE_VALID|PTE_READWRITE|PTE_DIRTY|PTE_ACCESSED}};
 MMPTE ValidKernelPte = {{PTE_VALID|PTE_READWRITE|PTE_DIRTY|PTE_ACCESSED}};
+
+/* The same, but for local pages */
+MMPTE ValidKernelPdeLocal = {{PTE_VALID|PTE_READWRITE|PTE_DIRTY|PTE_ACCESSED}};
+MMPTE ValidKernelPteLocal = {{PTE_VALID|PTE_READWRITE|PTE_DIRTY|PTE_ACCESSED}};
 
 /* Template PDE for a demand-zero page */
 MMPDE DemandZeroPde  = {{MM_READWRITE << MM_PTE_SOFTWARE_PROTECTION_BITS}};
@@ -105,7 +110,14 @@ MiInitializeSessionSpaceLayout()
     MiSessionImagePteStart = MiAddressToPte(MiSessionImageStart);
     MiSessionImagePteEnd = MiAddressToPte(MiSessionImageEnd);
     MiSessionBasePte = MiAddressToPte(MmSessionBase);
+    MiSessionSpaceWs = (PVOID)((ULONG_PTR)MiSessionViewStart + MmSessionViewSize);
     MiSessionLastPte = MiAddressToPte(MiSessionSpaceEnd);
+
+    /* Initialize session space */
+    MmSessionSpace = (PMM_SESSION_SPACE)((ULONG_PTR)MmSessionBase +
+                                         MmSessionSize -
+                                         MmSessionImageSize -
+                                         MM_ALLOCATION_GRANULARITY);
 }
 
 VOID

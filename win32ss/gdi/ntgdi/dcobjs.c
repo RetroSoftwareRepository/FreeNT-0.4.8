@@ -159,6 +159,7 @@ DC_vSetBrushOrigin(PDC pdc, LONG x, LONG y)
  *
  * @implemented
  */
+_Success_(return != FALSE)
 BOOL
 APIENTRY
 NtGdiSetBrushOrg(
@@ -230,9 +231,10 @@ GdiSelectPalette(
     }
 
     /* Is this a valid palette for this depth? */
-	if ((BitsPerFormat(pdc->dclevel.pSurface->SurfObj.iBitmapFormat) <= 8
-					&& (ppal->flFlags & PAL_INDEXED)) ||
-			(BitsPerFormat(pdc->dclevel.pSurface->SurfObj.iBitmapFormat) > 8))
+	if ((!pdc->dclevel.pSurface) ||
+        (BitsPerFormat(pdc->dclevel.pSurface->SurfObj.iBitmapFormat) <= 8
+            && (ppal->flFlags & PAL_INDEXED)) ||
+        (BitsPerFormat(pdc->dclevel.pSurface->SurfObj.iBitmapFormat) > 8))
     {
         /* Get old palette, set new one */
         oldPal = pdc->dclevel.hpal;
@@ -402,9 +404,6 @@ NtGdiSelectBitmap(
         /* Default bitmap is 1x1 pixel */
         pdc->dclevel.sizl.cx = 1;
         pdc->dclevel.sizl.cy = 1;
-
-        // HACK
-        psurfNew = SURFACE_ShareLockSurface(hbmp);
     }
     else
     {
@@ -589,7 +588,7 @@ NtGdiGetDCObject(HDC hDC, INT ObjectType)
         case GDI_OBJECT_TYPE_BITMAP:
         {
             SURFACE *psurf = pdc->dclevel.pSurface;
-            SelObject = psurf ? psurf->BaseObject.hHmgr : NULL;
+            SelObject = psurf ? psurf->BaseObject.hHmgr : StockObjects[DEFAULT_BITMAP];
             break;
         }
 

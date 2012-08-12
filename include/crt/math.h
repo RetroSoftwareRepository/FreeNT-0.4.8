@@ -260,3 +260,42 @@ extern "C++" {
 #define M_SQRT1_2 0.707106781186547524401
 
 #endif /* _USE_MATH_DEFINES */
+
+#ifndef __NO_ISOCEXT
+#if (defined (__STDC_VERSION__) && __STDC_VERSION__ >= 199901L) \
+  || !defined __STRICT_ANSI__ || defined __GLIBCPP__
+  
+  /* Inverse hyperbolic trig functions  */ 
+  /* 7.12.5.1 */
+  extern double __cdecl acosh (double);
+  extern float __cdecl acoshf (float);
+  extern long double __cdecl acoshl (long double);
+
+  /* 7.12.5.2 */
+  extern double __cdecl asinh (double);
+  extern float __cdecl asinhf (float);
+  extern long double __cdecl asinhl (long double);
+
+  /* 7.12.5.3 */
+  extern double __cdecl atanh (double);
+  extern float __cdecl atanhf  (float);
+  extern long double __cdecl atanhl (long double);
+  
+  /* 7.12.6.2 */
+  extern double __cdecl exp2(double);
+  extern float __cdecl exp2f(float);
+  extern long double __cdecl exp2l(long double);
+  
+  /* 7.12.6.10 */
+  extern double __cdecl log2 (double);
+  extern float __cdecl log2f (float);
+  extern long double __cdecl log2l (long double);
+  
+  /* 7.12.9.8 */
+  /* round towards zero, regardless of fpu control word settings */
+  extern double __cdecl trunc (double);
+  extern float __cdecl truncf (float);
+  extern long double __cdecl truncl (long double);
+
+#endif /* __STDC_VERSION__ >= 199901L */
+#endif /* __NO_ISOCEXT */

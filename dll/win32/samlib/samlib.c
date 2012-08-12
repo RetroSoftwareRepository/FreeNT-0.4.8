@@ -159,7 +159,7 @@ SamConnect(IN OUT PUNICODE_STRING ServerName,
 {
     NTSTATUS Status;
 
-    TRACE("SamConnect(%p,%p,0x%08x,%p)\n",
+    TRACE("SamConnect(%p %p 0x%08x %p)\n",
           ServerName, ServerHandle, DesiredAccess, ObjectAttributes);
 
     RpcTryExcept
@@ -188,8 +188,11 @@ SamCreateAliasInDomain(IN SAM_HANDLE DomainHandle,
 {
     NTSTATUS Status;
 
-    TRACE("SamCreateAliasInDomain(%p,%p,0x%08x,%p,%p)\n",
+    TRACE("SamCreateAliasInDomain(%p %p 0x%08x %p %p)\n",
           DomainHandle, AccountName, DesiredAccess, AliasHandle, RelativeId);
+
+    *AliasHandle = NULL;
+    *RelativeId = 0;
 
     RpcTryExcept
     {
@@ -219,8 +222,11 @@ SamCreateGroupInDomain(IN SAM_HANDLE DomainHandle,
 {
     NTSTATUS Status;
 
-    TRACE("SamCreateGroupInDomain(%p,%p,0x%08x,%p,%p)\n",
+    TRACE("SamCreateGroupInDomain(%p %p 0x%08x %p %p)\n",
           DomainHandle, AccountName, DesiredAccess, GroupHandle, RelativeId);
+
+    *GroupHandle = NULL;
+    *RelativeId = 0;
 
     RpcTryExcept
     {
@@ -242,6 +248,46 @@ SamCreateGroupInDomain(IN SAM_HANDLE DomainHandle,
 
 NTSTATUS
 NTAPI
+SamCreateUser2InDomain(IN SAM_HANDLE DomainHandle,
+                       IN PUNICODE_STRING AccountName,
+                       IN ULONG AccountType,
+                       IN ACCESS_MASK DesiredAccess,
+                       OUT PSAM_HANDLE UserHandle,
+                       OUT PULONG GrantedAccess,
+                       OUT PULONG RelativeId)
+{
+    NTSTATUS Status;
+
+    TRACE("SamCreateUser2InDomain(%p %p %lu 0x%08x %p %p %p)\n",
+          DomainHandle, AccountName, AccountType, DesiredAccess,
+          UserHandle, GrantedAccess, RelativeId);
+
+    *UserHandle = NULL;
+    *RelativeId = 0;
+
+    RpcTryExcept
+    {
+        Status = SamrCreateUser2InDomain((SAMPR_HANDLE)DomainHandle,
+                                         (PRPC_UNICODE_STRING)AccountName,
+                                         AccountType,
+                                         DesiredAccess,
+                                         (SAMPR_HANDLE *)UserHandle,
+                                         GrantedAccess,
+                                         RelativeId);
+
+    }
+    RpcExcept(EXCEPTION_EXECUTE_HANDLER)
+    {
+        Status = I_RpcMapWin32Status(RpcExceptionCode());
+    }
+    RpcEndExcept;
+
+    return Status;
+}
+
+
+NTSTATUS
+NTAPI
 SamCreateUserInDomain(IN SAM_HANDLE DomainHandle,
                       IN PUNICODE_STRING AccountName,
                       IN ACCESS_MASK DesiredAccess,
@@ -250,8 +296,11 @@ SamCreateUserInDomain(IN SAM_HANDLE DomainHandle,
 {
     NTSTATUS Status;
 
-    TRACE("SamCreateUserInDomain(%p,%p,0x%08x,%p,%p)\n",
+    TRACE("SamCreateUserInDomain(%p %p 0x%08x %p %p)\n",
           DomainHandle, AccountName, DesiredAccess, UserHandle, RelativeId);
+
+    *UserHandle = NULL;
+    *RelativeId = 0;
 
     RpcTryExcept
     {
@@ -282,7 +331,7 @@ SamEnumerateAliasesInDomain(IN SAM_HANDLE DomainHandle,
     PSAMPR_ENUMERATION_BUFFER EnumBuffer = NULL;
     NTSTATUS Status;
 
-    TRACE("SamEnumerateAliasesInDomain(%p,%p,%p,%lu,%p)\n",
+    TRACE("SamEnumerateAliasesInDomain(%p %p %p %lu %p)\n",
           DomainHandle, EnumerationContext, Buffer, PreferedMaximumLength,
           CountReturned);
 
@@ -332,7 +381,7 @@ SamEnumerateDomainsInSamServer(IN SAM_HANDLE ServerHandle,
     PSAMPR_ENUMERATION_BUFFER EnumBuffer = NULL;
     NTSTATUS Status;
 
-    TRACE("SamEnumerateDomainsInSamServer(%p,%p,%p,%lu,%p)\n",
+    TRACE("SamEnumerateDomainsInSamServer(%p %p %p %lu %p)\n",
           ServerHandle, EnumerationContext, Buffer, PreferedMaximumLength,
           CountReturned);
 
@@ -360,6 +409,101 @@ SamEnumerateDomainsInSamServer(IN SAM_HANDLE ServerHandle,
 
             midl_user_free(EnumBuffer);
         }
+    }
+    RpcExcept(EXCEPTION_EXECUTE_HANDLER)
+    {
+        Status = I_RpcMapWin32Status(RpcExceptionCode());
+    }
+    RpcEndExcept;
+
+    return Status;
+}
+
+
+NTSTATUS
+NTAPI
+SamEnumerateGroupsInDomain(IN SAM_HANDLE DomainHandle,
+                           IN OUT PSAM_ENUMERATE_HANDLE EnumerationContext,
+                           IN PVOID *Buffer,
+                           IN ULONG PreferedMaximumLength,
+                           OUT PULONG CountReturned)
+{
+    PSAMPR_ENUMERATION_BUFFER EnumBuffer = NULL;
+    NTSTATUS Status;
+
+    TRACE("SamEnumerateGroupsInDomain(%p %p %p %lu %p)\n",
+          DomainHandle, EnumerationContext, Buffer,
+          PreferedMaximumLength, CountReturned);
+
+    if (EnumerationContext == NULL || Buffer == NULL || CountReturned == NULL)
+        return STATUS_INVALID_PARAMETER;
+
+    *Buffer = NULL;
+
+    RpcTryExcept
+    {
+        Status = SamrEnumerateGroupsInDomain((SAMPR_HANDLE)DomainHandle,
+                                             EnumerationContext,
+                                             (PSAMPR_ENUMERATION_BUFFER *)&EnumBuffer,
+                                             PreferedMaximumLength,
+                                             CountReturned);
+        if (EnumBuffer != NULL)
+        {
+            if (EnumBuffer->Buffer != NULL)
+                *Buffer = EnumBuffer->Buffer;
+
+            midl_user_free(EnumBuffer);
+        }
+    }
+    RpcExcept(EXCEPTION_EXECUTE_HANDLER)
+    {
+        Status = I_RpcMapWin32Status(RpcExceptionCode());
+    }
+    RpcEndExcept;
+
+    return Status;
+}
+
+
+NTSTATUS
+NTAPI
+SamEnumerateUsersInDomain(IN SAM_HANDLE DomainHandle,
+                          IN OUT PSAM_ENUMERATE_HANDLE EnumerationContext,
+                          IN ULONG UserAccountControl,
+                          OUT PVOID *Buffer,
+                          IN ULONG PreferedMaximumLength,
+                          OUT PULONG CountReturned)
+{
+    PSAMPR_ENUMERATION_BUFFER EnumBuffer = NULL;
+    NTSTATUS Status;
+
+    TRACE("SamEnumerateUsersInDomain(%p %p %lx %p %lu %p)\n",
+          DomainHandle, EnumerationContext, UserAccountControl, Buffer,
+          PreferedMaximumLength, CountReturned);
+
+    if (EnumerationContext == NULL || Buffer == NULL || CountReturned == NULL)
+        return STATUS_INVALID_PARAMETER;
+
+    *Buffer = NULL;
+
+    RpcTryExcept
+    {
+        Status = SamrEnumerateUsersInDomain((SAMPR_HANDLE)DomainHandle,
+                                            EnumerationContext,
+                                            UserAccountControl,
+                                            (PSAMPR_ENUMERATION_BUFFER *)&EnumBuffer,
+                                            PreferedMaximumLength,
+                                            CountReturned);
+        if (EnumBuffer != NULL)
+        {
+            if (EnumBuffer->Buffer != NULL)
+            {
+                *Buffer = EnumBuffer->Buffer;
+            }
+
+            midl_user_free(EnumBuffer);
+        }
+
     }
     RpcExcept(EXCEPTION_EXECUTE_HANDLER)
     {
@@ -483,7 +627,7 @@ SamLookupDomainInSamServer(IN SAM_HANDLE ServerHandle,
 {
     NTSTATUS Status;
 
-    TRACE("SamLookupDomainInSamServer(%p,%p,%p)\n",
+    TRACE("SamLookupDomainInSamServer(%p %p %p)\n",
           ServerHandle, Name, DomainId);
 
     RpcTryExcept
@@ -504,14 +648,188 @@ SamLookupDomainInSamServer(IN SAM_HANDLE ServerHandle,
 
 NTSTATUS
 NTAPI
+SamLookupIdsInDomain(IN SAM_HANDLE DomainHandle,
+                     IN ULONG Count,
+                     IN PULONG RelativeIds,
+                     OUT PUNICODE_STRING *Names,
+                     OUT PSID_NAME_USE *Use)
+{
+    SAMPR_RETURNED_USTRING_ARRAY NamesBuffer = {0, NULL};
+    SAMPR_ULONG_ARRAY UseBuffer = {0, NULL};
+    ULONG i;
+    NTSTATUS Status;
+
+    TRACE("SamLookupIdsInDomain(%p %lu %p %p %p)\n",
+          DomainHandle, Count, RelativeIds, Names, Use);
+
+    *Names = NULL;
+    *Use = NULL;
+
+    RpcTryExcept
+    {
+        Status = SamrLookupIdsInDomain((SAMPR_HANDLE)DomainHandle,
+                                       Count,
+                                       RelativeIds,
+                                       &NamesBuffer,
+                                       &UseBuffer);
+    }
+    RpcExcept(EXCEPTION_EXECUTE_HANDLER)
+    {
+        Status = I_RpcMapWin32Status(RpcExceptionCode());
+    }
+    RpcEndExcept;
+
+    if (NT_SUCCESS(Status))
+    {
+        *Names = midl_user_allocate(Count * sizeof(RPC_UNICODE_STRING));
+        if (*Names == NULL)
+        {
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto done;
+        }
+
+        for (i = 0; i < Count; i++)
+        {
+            (*Names)[i].Buffer = midl_user_allocate(NamesBuffer.Element[i].MaximumLength);
+            if ((*Names)[i].Buffer == NULL)
+            {
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto done;
+            }
+        }
+
+        *Use = midl_user_allocate(Count * sizeof(SID_NAME_USE));
+        if (*Use == NULL)
+        {
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto done;
+        }
+
+        for (i = 0; i < Count; i++)
+        {
+            (*Names)[i].Length = NamesBuffer.Element[i].Length;
+            (*Names)[i].MaximumLength = NamesBuffer.Element[i].MaximumLength;
+
+            RtlCopyMemory((*Names)[i].Buffer,
+                          NamesBuffer.Element[i].Buffer,
+                          NamesBuffer.Element[i].Length);
+        }
+
+        RtlCopyMemory(*Use,
+                      UseBuffer.Element,
+                      Count * sizeof(SID_NAME_USE));
+    }
+
+done:
+    if (!NT_SUCCESS(Status))
+    {
+        if (*Names != NULL)
+        {
+            for (i = 0; i < Count; i++)
+            {
+                if ((*Names)[i].Buffer != NULL)
+                    midl_user_free((*Names)[i].Buffer);
+            }
+
+            midl_user_free(*Names);
+        }
+
+        if (*Use != NULL)
+            midl_user_free(*Use);
+    }
+
+    if (NamesBuffer.Element != NULL)
+    {
+        for (i = 0; i < NamesBuffer.Count; i++)
+        {
+            if (NamesBuffer.Element[i].Buffer != NULL)
+                midl_user_free(NamesBuffer.Element[i].Buffer);
+        }
+
+        midl_user_free(NamesBuffer.Element);
+    }
+
+    if (UseBuffer.Element != NULL)
+        midl_user_free(UseBuffer.Element);
+
+    return 0;
+}
+
+
+NTSTATUS
+NTAPI
 SamLookupNamesInDomain(IN SAM_HANDLE DomainHandle,
                        IN ULONG Count,
                        IN PUNICODE_STRING Names,
                        OUT PULONG *RelativeIds,
                        OUT PSID_NAME_USE *Use)
 {
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
+    SAMPR_ULONG_ARRAY RidBuffer = {0, NULL};
+    SAMPR_ULONG_ARRAY UseBuffer = {0, NULL};
+    NTSTATUS Status;
+
+    TRACE("SamLookupNamesInDomain(%p %lu %p %p %p)\n",
+          DomainHandle, Count, Names, RelativeIds, Use);
+
+    *RelativeIds = NULL;
+    *Use = NULL;
+
+    RpcTryExcept
+    {
+        Status = SamrLookupNamesInDomain((SAMPR_HANDLE)DomainHandle,
+                                         Count,
+                                         (PRPC_UNICODE_STRING)Names,
+                                         &RidBuffer,
+                                         &UseBuffer);
+    }
+    RpcExcept(EXCEPTION_EXECUTE_HANDLER)
+    {
+        Status = I_RpcMapWin32Status(RpcExceptionCode());
+    }
+    RpcEndExcept;
+
+    if (NT_SUCCESS(Status))
+    {
+        *RelativeIds = midl_user_allocate(Count * sizeof(ULONG));
+        if (*RelativeIds == NULL)
+        {
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto done;
+        }
+
+        *Use = midl_user_allocate(Count * sizeof(SID_NAME_USE));
+        if (*Use == NULL)
+        {
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto done;
+        }
+
+        RtlCopyMemory(*RelativeIds,
+                      RidBuffer.Element,
+                      Count * sizeof(ULONG));
+
+        RtlCopyMemory(*Use,
+                      UseBuffer.Element,
+                      Count * sizeof(SID_NAME_USE));
+    }
+
+done:
+    if (!NT_SUCCESS(Status))
+    {
+        if (*RelativeIds != NULL)
+            midl_user_free(*RelativeIds);
+
+        if (*Use != NULL)
+            midl_user_free(*Use);
+    }
+
+    if (RidBuffer.Element != NULL)
+        midl_user_free(RidBuffer.Element);
+
+    if (UseBuffer.Element != NULL)
+        midl_user_free(UseBuffer.Element);
+
+    return Status;
 }
 
 
@@ -553,7 +871,7 @@ SamOpenDomain(IN SAM_HANDLE ServerHandle,
 {
     NTSTATUS Status;
 
-    TRACE("SamOpenDomain(%p,0x%08x,%p,%p)\n",
+    TRACE("SamOpenDomain(%p 0x%08x %p %p)\n",
           ServerHandle, DesiredAccess, DomainId, DomainHandle);
 
     RpcTryExcept
@@ -582,7 +900,7 @@ SamOpenGroup(IN SAM_HANDLE DomainHandle,
 {
     NTSTATUS Status;
 
-    TRACE("SamOpenGroup(%p,0x%08x,%p,%p)\n",
+    TRACE("SamOpenGroup(%p 0x%08x %p %p)\n",
           DomainHandle, DesiredAccess, GroupId, GroupHandle);
 
     RpcTryExcept
@@ -611,7 +929,7 @@ SamOpenUser(IN SAM_HANDLE DomainHandle,
 {
     NTSTATUS Status;
 
-    TRACE("SamOpenUser(%p,0x%08x,%lx,%p)\n",
+    TRACE("SamOpenUser(%p 0x%08x %lx %p)\n",
           DomainHandle, DesiredAccess, UserId, UserHandle);
 
     RpcTryExcept
@@ -770,18 +1088,18 @@ NTSTATUS
 NTAPI
 SamSetInformationDomain(IN SAM_HANDLE DomainHandle,
                         IN DOMAIN_INFORMATION_CLASS DomainInformationClass,
-                        IN PVOID DomainInformation)
+                        IN PVOID Buffer)
 {
     NTSTATUS Status;
 
     TRACE("SamSetInformationDomain(%p %lu %p)\n",
-          DomainHandle, DomainInformationClass, DomainInformation);
+          DomainHandle, DomainInformationClass, Buffer);
 
     RpcTryExcept
     {
         Status = SamrSetInformationDomain((SAMPR_HANDLE)DomainHandle,
                                           DomainInformationClass,
-                                          DomainInformation);
+                                          Buffer);
     }
     RpcExcept(EXCEPTION_EXECUTE_HANDLER)
     {
