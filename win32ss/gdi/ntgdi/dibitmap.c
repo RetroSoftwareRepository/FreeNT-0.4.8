@@ -26,6 +26,7 @@ DibGetBitmapFormat(
         pbmf->sizel.cy = pbch->bcHeight;
         pbmf->cBitsPixel = pbch->bcBitCount * pbch->bcPlanes;
         pbmf->iCompression = BI_RGB;
+        pbmf->cjImageSize = 0;
     }
     else
     {
@@ -33,6 +34,7 @@ DibGetBitmapFormat(
         pbmf->sizel.cy = pbmi->bmiHeader.biHeight;
         pbmf->cBitsPixel = pbmi->bmiHeader.biBitCount * pbmi->bmiHeader.biPlanes;
         pbmf->iCompression = pbmi->bmiHeader.biCompression;
+        pbmf->cjImageSize = pbmi->bmiHeader.biSizeImage;
     }
 
     /* Get the bitmap format */
@@ -43,6 +45,18 @@ DibGetBitmapFormat(
     {
         DPRINT1("Invalid format\n");
         return FALSE;
+    }
+
+    /* Check if this is an uncompressed format */
+    if (pbmf->iFormat <= BMF_32BPP)
+    {
+        /* Calculate the image size */
+        pbmf->cjWidthBytes = WIDTH_BYTES_ALIGN32(pbmf->sizel.cx, pbmf->cBitsPixel);
+        pbmf->cjImageSize = abs(pbmf->sizel.cy) * pbmf->cjWidthBytes;
+    }
+    else
+    {
+        pbmf->cjWidthBytes = 0;
     }
 
     /* Check compressed format and top-down */
@@ -155,7 +169,7 @@ DibProbeAndCaptureBitmapInfo(
     /* Normalize the size to the maximum possible */
     cjInfo = min(cjInfo, sizeof(BITMAPV5HEADER) + 256 * sizeof(RGBQUAD));
 
-    /* Check if the size is at least big enough for a core info */
+    /* Check if the size is at least big enough for a core header */
     if (cjInfo < sizeof(BITMAPCOREHEADER))
     {
         return NULL;
@@ -181,8 +195,9 @@ DibProbeAndCaptureBitmapInfo(
     }
     _SEH2_END;
 
-    /* Check if we have at least as much as the actual header size */
-    if (cjInfo >= pbmi->bmiHeader.biSize)
+    /* Check if the header size is in the valid range */
+    if ((pbmi->bmiHeader.biSize >= sizeof(BITMAPCOREHEADER)) &&
+        (pbmi->bmiHeader.biSize <= cjInfo))
     {
         /* Calculate the real size of the bitmap info */
         cjInfo = DibGetBitmapInfoSize(pbmi, iUsage);
@@ -414,6 +429,17 @@ DibCreateDIBSurface(
         return NULL;
     }
 
+    /* Check if we have bitmap bits */
+    if (pvBits)
+    {
+        /* Check if the image size is too large */
+        if (bitmapformat.cjImageSize > cjMaxBits)
+        {
+            __debugbreak();
+            return NULL;
+        }
+    }
+
     /* Handle top-down bitmaps */
     if (bitmapformat.sizel.cy < 0) fjBitmap |= BMF_TOPDOWN;
 
@@ -439,9 +465,8 @@ DibCreateDIBSurface(
         return NULL;
     }
 
-    /* Dereference the old palette and set the new */
-    PALETTE_ShareUnlockPalette(psurf->ppal);
-    psurf->ppal = ppal;
+    /* Set new palette for the surface */
+    SURFACE_vSetPalette(psurf, ppal);
 
     /* Return the surface */
     return psurf;
@@ -454,7 +479,7 @@ HBITMAP
 APIENTRY
 NtGdiCreateDIBSection(
     _In_ HDC hdc,
-    _In_ OPTIONAL HANDLE hSectionApp,
+    _In_opt_ HANDLE hSectionApp,
     _In_ DWORD dwOffset,
     _In_ LPBITMAPINFO pbmiUser,
     _In_ DWORD iUsage,
@@ -571,10 +596,10 @@ GreCreateDIBitmapInternal(
     _In_ HANDLE hcmXform)
 {
     PDC pdc;
-    PSURFACE psurfDIB, psurfDC, psurfBmp;
+    PSURFACE psurfDIB = NULL, psurfDC, psurfBmp;
     ULONG iFormat;
-    PPALETTE ppalBmp;
-    HBITMAP hbmp;
+    PPALETTE ppalBmp = NULL;
+    HBITMAP hbmp = NULL;
 
     /* Check if we got a DC */
     if (hdc)
@@ -592,22 +617,28 @@ GreCreateDIBitmapInternal(
     {
         /* No DC */
         pdc = NULL;
+        psurfDC = NULL;
     }
 
     if (pjInit)
     {
+        if (!pbmi) goto cleanup;
+
+        /* Create a surface from the DIB */
         psurfDIB = DibCreateDIBSurface(pbmi,
                                        pdc,
                                        iUsage,
                                        0,
                                        pjInit,
                                        cjMaxBits);
-    }
 
+        if (!psurfDIB) goto cleanup;
+    }
 
     if (fInit & CBM_CREATDIB)
     {
         if (iUsage == 2) goto cleanup;
+        if (!psurfDIB) goto cleanup;
 
         /* Need a DC for DIB_PAL_COLORS */
         if ((iUsage == DIB_PAL_COLORS) && !pdc) goto cleanup;
@@ -634,7 +665,9 @@ GreCreateDIBitmapInternal(
         }
         else
         {
-            __debugbreak();
+            // FIXME: use default PDEV surface?
+            iFormat = BMF_32BPP;
+            ppalBmp = &gpalRGB;
         }
 
         GDIOBJ_vReferenceObjectByPointer(&ppalBmp->BaseObject);
@@ -646,6 +679,7 @@ GreCreateDIBitmapInternal(
     {
         /* Set new palette for the bitmap */
         SURFACE_vSetPalette(psurfBmp, ppalBmp);
+        ppalBmp = NULL;
 
         if (pjInit)
         {
@@ -678,10 +712,11 @@ GreCreateDIBitmapInternal(
 
 
 cleanup:
-
+    if (psurfDIB) GDIOBJ_vDeleteObject(&psurfDIB->BaseObject);
     if (ppalBmp) PALETTE_ShareUnlockPalette(ppalBmp);
+    if (pdc) DC_UnlockDc(pdc);
 
-    return 0;
+    return hbmp;
 }
 
 HBITMAP
@@ -705,6 +740,12 @@ NtGdiCreateDIBitmapInternal(
 
 //__debugbreak();
 
+    if (iUsage >= 2)
+    {
+        EngSetLastError(ERROR_INVALID_PARAMETER);
+        return NULL;
+    }
+
     if (fInit & CBM_INIT)
     {
         if (pjInit)
@@ -712,6 +753,10 @@ NtGdiCreateDIBitmapInternal(
             hSecure = EngSecureMem(pjInit, cjMaxBits);
             if (!hSecure)
                 return NULL;
+        }
+        else
+        {
+            fInit &= ~CBM_INIT;
         }
     }
     else
@@ -1216,6 +1261,7 @@ GreStretchDIBitsInternal(
                                NULL,
                                pdc->rosdc.CombinedClip,
                                &exlo.xlo,
+                               &pdc->dclevel.ca,
                                &rcDst,
                                &rcSrc,
                                NULL,
@@ -1232,6 +1278,14 @@ GreStretchDIBitsInternal(
     return bResult ? cySrc : 0;
 }
 
+/*!
+ *  \brief
+ *  \param [in] iStartScan - Specifies the number of the starting scanline for
+ *      the part of the dib that is contained in the buffer that pjBits points
+ *      to. A value of 0 refers to the pixel row in the dib with the highest
+ *      y coordinate.
+ *
+ */
 INT
 APIENTRY
 NtGdiSetDIBitsToDeviceInternal(
@@ -1244,7 +1298,7 @@ NtGdiSetDIBitsToDeviceInternal(
     _In_ INT ySrc,
     _In_ DWORD iStartScan,
     _In_ DWORD cNumScan,
-    _In_ LPBYTE pjInitBits,
+    _In_ LPBYTE pjBits,
     _In_ LPBITMAPINFO pbmiUser,
     _In_ DWORD iUsage,
     _In_ UINT cjMaxBits,
@@ -1254,7 +1308,20 @@ NtGdiSetDIBitsToDeviceInternal(
 {
     PBITMAPINFO pbmi;
     HANDLE hSecure;
-    INT iResult = 0;
+    ULONG cyDIB;
+    INT yTop, iResult;
+__debugbreak();
+    /* Check if parameters are valid */
+    if ((cNumScan == 0) || (cx >= INT_MAX) || (cy >= INT_MAX))
+    {
+        return 0;
+    }
+
+    /* Check if the bitmap buffer is not NULL and DWORD aligned */
+    if (!pjBits || ((ULONG_PTR)pjBits & (sizeof(DWORD) - 1)))
+    {
+        return 0;
+    }
 
     /* Capture a safe copy of the bitmap info */
     pbmi = DibProbeAndCaptureBitmapInfo(pbmiUser, iUsage, &cjMaxInfo);
@@ -1265,32 +1332,79 @@ NtGdiSetDIBitsToDeviceInternal(
     }
 
     /* Secure the user mode buffer for the bits */
-    hSecure = EngSecureMemForRead(pjInitBits, cjMaxBits);
-    if (hSecure)
+    hSecure = EngSecureMemForRead(pjBits, cjMaxBits);
+    if (!hSecure)
     {
-        /* Call the internal function with the secure pointers */
-        iResult = GreStretchDIBitsInternal(hdcDest,
-                                           xDst,
-                                           yDst,
-                                           cx,
-                                           cy,
-                                           xSrc,
-                                           ySrc,
-                                           cx,
-                                           cy,
-                                           pjInitBits,
-                                           pbmi,
-                                           iUsage,
-                                           MAKEROP4(SRCCOPY, SRCCOPY),
-                                           cjMaxInfo,
-                                           cjMaxBits,
-                                           bTransformCoordinates,
-                                           hcmXform);
-
-        /* Unsecure the memory */
-        EngUnsecureMem(hSecure);
+        iResult = 0;
+        goto leave;
     }
 
+    /* Even when nothing is copied, the function returns the scanlines */
+    iResult = cNumScan;
+
+    /* Get the absolute height of the DIB */
+    cyDIB = abs(pbmi->bmiHeader.biHeight);
+
+    /* Bail out if the scanlines are outside of the DIB */
+    if (iStartScan >= cyDIB) goto leave;
+
+    /* Limit the number of scanlines to the DIB size */
+    cNumScan = min(cNumScan, cyDIB - iStartScan);
+
+    /* Calculate the y-origin of the given DIB data */
+    yTop = cyDIB - (iStartScan + cNumScan);
+
+    /* Bail out if the intersecion between scanlines and copy area is empty */
+    if ((ySrc > yTop + cNumScan) || (ySrc + (INT)cy < yTop)) goto leave;
+
+    /* Check if the copy area starts below or at the topmost scanline */
+    if (ySrc >= yTop)
+    {
+        /* Compensate the source y-origin for the scanline offset */
+        ySrc -= yTop;
+    }
+    else
+    {
+        /* Start at the top-most scanline in the buffer, adjust the destination
+           coordinates and crop the size accordingly. */
+        yDst += (yTop - ySrc);
+        cy -= (yTop - ySrc);
+        ySrc = 0;
+    }
+
+    /* Check if the DIB is top-down */
+    if (pbmi->bmiHeader.biHeight < 0)
+    {
+        pbmi->bmiHeader.biHeight = -(LONG)cNumScan;
+    }
+    else
+    {
+        pbmi->bmiHeader.biHeight = cNumScan;
+    }
+
+    /* Call the internal function with the secure pointers */
+    iResult = GreStretchDIBitsInternal(hdcDest,
+                                       xDst,
+                                       yDst,
+                                       cx,
+                                       cy,
+                                       xSrc,
+                                       ySrc,
+                                       cx,
+                                       cy,
+                                       pjBits,
+                                       pbmi,
+                                       iUsage,
+                                       MAKEROP4(SRCCOPY, SRCCOPY),
+                                       cjMaxInfo,
+                                       cjMaxBits,
+                                       bTransformCoordinates,
+                                       hcmXform);
+
+    /* Unsecure the memory */
+    EngUnsecureMem(hSecure);
+
+leave:
     /* Free the bitmap info */
     DibFreeBitmapInfo(pbmi);
 
@@ -1317,7 +1431,7 @@ NtGdiStretchDIBitsInternal(
     _In_ DWORD dwRop, // ms ntgdi.h says dwRop4(?)
     _In_ UINT cjMaxInfo,
     _In_ UINT cjMaxBits,
-    _In_ HANDLE hcmXform)
+    _In_opt_ HANDLE hcmXform)
 {
     PBITMAPINFO pbmi;
     HANDLE hSecure;

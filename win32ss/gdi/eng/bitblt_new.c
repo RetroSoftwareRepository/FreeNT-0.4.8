@@ -5,12 +5,14 @@ DBG_DEFAULT_CHANNEL(GdiFont);
 
 #define SURFOBJ_flags(pso) (CONTAINING_RECORD(pso, SURFACE, SurfObj)->flags)
 
+#if 0
 // FIXME this needs to be updated, once we use the new structure
 XCLIPOBJ gxcoTrivial =
 {
     {0, {LONG_MIN, LONG_MIN, LONG_MAX, LONG_MAX}, DC_TRIVIAL, FC_RECT, TC_RECTANGLES, 0},
     0, 0, 0
 };
+#endif
 
 
 static

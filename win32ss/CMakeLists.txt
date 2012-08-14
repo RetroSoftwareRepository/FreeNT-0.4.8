@@ -1,5 +1,5 @@
 
-set(USE_DIBLIB FALSE)
+set(USE_DIBLIB TRUE)
 
 # Give WIN32 subsystem its own project.
 PROJECT(WIN32SS)
@@ -150,6 +150,7 @@ list(APPEND SOURCE
     gdi/ntgdi/dcstate.c
     gdi/ntgdi/dcutil.c
     gdi/ntgdi/device.c
+    gdi/ntgdi/dibobj.c
     gdi/ntgdi/dibitmap.c
     gdi/ntgdi/drawing.c
     gdi/ntgdi/fillshap.c
