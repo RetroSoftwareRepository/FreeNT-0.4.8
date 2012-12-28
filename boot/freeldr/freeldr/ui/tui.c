@@ -48,8 +48,8 @@ int TuiPrintf(const char *Format, ...)
 
 BOOLEAN TuiInitialize(VOID)
 {
-	MachVideoClearScreen(ATTR(COLOR_WHITE, COLOR_BLACK));
 	MachVideoHideShowTextCursor(FALSE);
+	MachVideoClearScreen(ATTR(COLOR_GRAY, COLOR_BLACK));
 
 	TextVideoBuffer = VideoAllocateOffScreenBuffer();
 	if (TextVideoBuffer == NULL)
@@ -71,7 +71,7 @@ VOID TuiUnInitialize(VOID)
 		MachVideoSetDisplayMode(NULL, FALSE);
 	}
 
-	//VideoClearScreen();
+	MachVideoClearScreen(ATTR(COLOR_GRAY, COLOR_BLACK));
 	MachVideoHideShowTextCursor(TRUE);
 }
 
@@ -128,15 +128,10 @@ VOID TuiDrawBackdrop(VOID)
 	//
 	// Draw title text
 	//
-	TuiDrawText( (UiScreenWidth / 2) - ((ULONG)strlen(UiTitleBoxTitleText) / 2),
+	TuiDrawText((UiScreenWidth - (ULONG)strlen(UiTitleBoxTitleText)) / 2,
 			2,
 			UiTitleBoxTitleText,
 			ATTR(UiTitleBoxFgColor, UiTitleBoxBgColor));
-
-	//
-	// Draw status bar
-	//
-	TuiDrawStatusText("Welcome to FreeLoader!");
 
 	//
 	// Update the date & time
@@ -153,7 +148,7 @@ VOID TuiDrawBackdrop(VOID)
 VOID TuiFillArea(ULONG Left, ULONG Top, ULONG Right, ULONG Bottom, CHAR FillChar, UCHAR Attr /* Color Attributes */)
 {
 	PUCHAR	ScreenMemory = (PUCHAR)TextVideoBuffer;
-	ULONG		i, j;
+	ULONG	i, j;
 
 	// Clip the area to the screen
 	if ((Left >= UiScreenWidth) || (Top >= UiScreenHeight))
@@ -188,7 +183,7 @@ VOID TuiFillArea(ULONG Left, ULONG Top, ULONG Right, ULONG Bottom, CHAR FillChar
 VOID TuiDrawShadow(ULONG Left, ULONG Top, ULONG Right, ULONG Bottom)
 {
 	PUCHAR	ScreenMemory = (PUCHAR)TextVideoBuffer;
-	ULONG		Idx;
+	ULONG	Idx;
 
 	// Shade the bottom of the area
 	if (Bottom < (UiScreenHeight - 1))
@@ -320,7 +315,7 @@ VOID TuiDrawBox(ULONG Left, ULONG Top, ULONG Right, ULONG Bottom, UCHAR VertStyl
 VOID TuiDrawText(ULONG X, ULONG Y, PCSTR Text, UCHAR Attr)
 {
 	PUCHAR	ScreenMemory = (PUCHAR)TextVideoBuffer;
-	ULONG		i, j;
+	ULONG	i, j;
 
 	// Draw the text
 	for (i=X, j=0; Text[j]  && i<UiScreenWidth; i++,j++)
@@ -332,16 +327,16 @@ VOID TuiDrawText(ULONG X, ULONG Y, PCSTR Text, UCHAR Attr)
 
 VOID TuiDrawCenteredText(ULONG Left, ULONG Top, ULONG Right, ULONG Bottom, PCSTR TextString, UCHAR Attr)
 {
-	SIZE_T		TextLength;
-	ULONG		BoxWidth;
-	ULONG		BoxHeight;
-	ULONG		LineBreakCount;
-	SIZE_T		Index;
-	SIZE_T		LastIndex;
-	ULONG		RealLeft;
-	ULONG		RealTop;
-	ULONG		X;
-	ULONG		Y;
+	SIZE_T	TextLength;
+	ULONG	BoxWidth;
+	ULONG	BoxHeight;
+	ULONG	LineBreakCount;
+	SIZE_T	Index;
+	SIZE_T	LastIndex;
+	ULONG	RealLeft;
+	ULONG	RealTop;
+	ULONG	X;
+	ULONG	Y;
 	CHAR	Temp[2];
 
 	TextLength = strlen(TextString);
@@ -393,7 +388,7 @@ VOID TuiDrawCenteredText(ULONG Left, ULONG Top, ULONG Right, ULONG Bottom, PCSTR
 
 VOID TuiDrawStatusText(PCSTR StatusText)
 {
-	SIZE_T		i;
+	SIZE_T	i;
 
 	TuiDrawText(0, UiScreenHeight-1, " ", ATTR(UiStatusBarFgColor, UiStatusBarBgColor));
 	TuiDrawText(1, UiScreenHeight-1, StatusText, ATTR(UiStatusBarFgColor, UiStatusBarBgColor));
@@ -504,7 +499,7 @@ VOID TuiUpdateDateTime(VOID)
 VOID TuiSaveScreen(PUCHAR Buffer)
 {
 	PUCHAR	ScreenMemory = (PUCHAR)TextVideoBuffer;
-	ULONG		i;
+	ULONG	i;
 
 	for (i=0; i < (UiScreenWidth * UiScreenHeight * 2); i++)
 	{
@@ -515,7 +510,7 @@ VOID TuiSaveScreen(PUCHAR Buffer)
 VOID TuiRestoreScreen(PUCHAR Buffer)
 {
 	PUCHAR	ScreenMemory = (PUCHAR)TextVideoBuffer;
-	ULONG		i;
+	ULONG	i;
 
 	for (i=0; i < (UiScreenWidth * UiScreenHeight * 2); i++)
 	{
@@ -630,12 +625,11 @@ VOID TuiMessageBoxCritical(PCSTR MessageText)
 
 }
 
-
 VOID TuiDrawProgressBarCenter(ULONG Position, ULONG Range, PCHAR ProgressText)
 {
-	ULONG		Left, Top, Right, Bottom;
-	ULONG		Width = 50; // Allow for 50 "bars"
-	ULONG		Height = 2;
+	ULONG	Left, Top, Right, Bottom;
+	ULONG	Width = 50; // Allow for 50 "bars"
+	ULONG	Height = 2;
 
 	Left = (UiScreenWidth - Width - 4) / 2;
 	Right = Left + Width + 3;
@@ -648,8 +642,8 @@ VOID TuiDrawProgressBarCenter(ULONG Position, ULONG Range, PCHAR ProgressText)
 
 VOID TuiDrawProgressBar(ULONG Left, ULONG Top, ULONG Right, ULONG Bottom, ULONG Position, ULONG Range, PCHAR ProgressText)
 {
-	ULONG		i;
-	ULONG		ProgressBarWidth = (Right - Left) - 3;
+	ULONG	i;
+	ULONG	ProgressBarWidth = (Right - Left) - 3;
 
 	// First make sure the progress bar text fits
 	UiTruncateStringEllipsis(ProgressText, ProgressBarWidth - 4);

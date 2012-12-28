@@ -39,6 +39,7 @@ list(APPEND SOURCE
     nls.c
     path.c
     ppb.c
+    priv.c
     process.c
     propvar.c
     random.c
@@ -63,7 +64,7 @@ list(APPEND SOURCE
     wait.c
     workitem.c)
 
-if(ARCH MATCHES i386)
+if(ARCH STREQUAL "i386")
     list(APPEND SOURCE
         i386/debug_asm.S
         i386/except_asm.s
@@ -73,7 +74,7 @@ if(ARCH MATCHES i386)
         i386/rtlswap.S
         i386/res_asm.s
         i386/thread.c)
-elseif(ARCH MATCHES amd64)
+elseif(ARCH STREQUAL "amd64")
     list(APPEND SOURCE
         byteswap.c
         amd64/debug_asm.S
@@ -82,12 +83,12 @@ elseif(ARCH MATCHES amd64)
         amd64/unwind.c
         amd64/stubs.c
         mem.c)
-elseif(ARCH MATCHES arm)
+elseif(ARCH STREQUAL "arm")
     list(APPEND SOURCE
         byteswap.c
         arm/debug_asm.S
         mem.c)
-elseif(ARCH MATCHES powerpc)
+elseif(ARCH STREQUAL "powerpc")
     list(APPEND SOURCE
         byteswap.c
         powerpc/debug.c

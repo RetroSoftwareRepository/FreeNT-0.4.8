@@ -97,7 +97,16 @@ KdpServiceDispatcher(ULONG Service,
             KeRosDumpStackFrames((PULONG)Buffer1, Buffer1Length);
             break;
         }
-#endif
+
+#if KDBG
+        /* Register KDBG CLI callback */
+        case 'RbdK':
+        {
+            Result = KdbRegisterCliCallback(Buffer1, Buffer1Length);
+            break;
+        }
+#endif /* KDBG */
+#endif /* DBG */
         default:
             HalDisplayString ("Invalid debug service call!\n");
             break;

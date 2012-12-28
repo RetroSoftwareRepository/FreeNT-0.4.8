@@ -123,7 +123,7 @@ NtUserCallNoParam(DWORD Routine)
       case NOPARAM_ROUTINE_ZAPACTIVEANDFOUS:
       {
          PTHREADINFO pti = PsGetCurrentThreadWin32Thread();
-         ERR("Zapping the Active and Focus window out of the Queue!\n");
+         TRACE("Zapping the Active and Focus window out of the Queue!\n");
          pti->MessageQueue->spwndFocus = NULL;
          pti->MessageQueue->spwndActive = NULL;
          RETURN(0);
@@ -183,7 +183,8 @@ NtUserCallOneParam(
              if (count == 0) count = 8;
 
              psmwp = (PSMWP) UserCreateObject( gHandleTable,
-                                               NULL,
+                                               NULL, 
+                                               NULL, 
                                               (PHANDLE)&hDwp,
                                                otSMWP,
                                                sizeof(SMWP));
@@ -247,7 +248,7 @@ NtUserCallOneParam(
             PCURICON_OBJECT CurIcon;
 			DWORD_PTR Result ;
 
-            if (!(CurIcon = IntCreateCurIconHandle()))
+            if (!(CurIcon = IntCreateCurIconHandle((DWORD)Param)))
             {
                EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
                RETURN(0);
@@ -256,25 +257,6 @@ NtUserCallOneParam(
             Result = (DWORD_PTR)CurIcon->Self;
 			UserDereferenceObject(CurIcon);
 			RETURN(Result);
-         }
-
-      case ONEPARAM_ROUTINE_GETCURSORPOSITION:
-         {
-             BOOL ret = TRUE;
-
-            _SEH2_TRY
-            {
-               ProbeForWrite((POINT*)Param,sizeof(POINT),1);
-               RtlCopyMemory((POINT*)Param,&gpsi->ptCursor,sizeof(POINT));
-            }
-            _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-            {
-                SetLastNtError(_SEH2_GetExceptionCode());
-                ret = FALSE;
-            }
-            _SEH2_END;
-
-            RETURN (ret);
          }
 
       case ONEPARAM_ROUTINE_ENABLEPROCWNDGHSTING:
@@ -333,9 +315,10 @@ NtUserCallOneParam(
           BOOL Ret = TRUE;
           PPOINTL pptl;
           PTHREADINFO pti = PsGetCurrentThreadWin32Thread();
-          if (pti->hdesk != InputDesktopHandle) RETURN(FALSE);
+          if (pti->rpdesk != IntGetActiveDesktop()) RETURN(FALSE);
           _SEH2_TRY
           {
+              ProbeForWrite((POINT*)Param,sizeof(POINT),1);
              pptl = (PPOINTL)Param;
              *pptl = gpsi->ptCursor;
           }
@@ -572,7 +555,7 @@ NtUserCallHwndLock(
                                 SWP_FRAMECHANGED );
          if (!Window->spwndOwner && !IntGetParent(Window))
          {
-            co_IntShellHookNotify(HSHELL_REDRAW, (LPARAM) hWnd);
+            co_IntShellHookNotify(HSHELL_REDRAW, (WPARAM) hWnd, FALSE); // FIXME Flashing?
          }
          Ret = TRUE;
          break;

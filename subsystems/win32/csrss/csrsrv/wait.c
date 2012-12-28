@@ -1,7 +1,7 @@
 /*
  * COPYRIGHT:       See COPYING in the top level directory
  * PROJECT:         ReactOS CSR Sub System
- * FILE:            subsys/csr/csrsrv/wait.c
+ * FILE:            subsystems/win32/csrss/csrsrv/wait.c
  * PURPOSE:         CSR Server DLL Wait Implementation
  * PROGRAMMERS:     Emanuele Aliberti
  *                  Alex Ionescu (alex@relsoft.net)
@@ -40,7 +40,7 @@ RTL_CRITICAL_SECTION CsrWaitListsLock;
  * @param NewWaitBlock
  *        Pointed to the initialized CSR Wait Block for this wait.
  *
- * @return TRUE in case of success, FALSE othwerwise.
+ * @return TRUE in case of success, FALSE otherwise.
  *
  * @remarks None.
  *
@@ -262,7 +262,7 @@ CsrCreateWait(IN PLIST_ENTRY WaitList,
  * @name CsrDereferenceWait
  * @implemented NT4
  *
- * The CsrDereferenceWait routine derefences a CSR Wait Block.
+ * The CsrDereferenceWait routine dereferences a CSR Wait Block.
  *
  * @param WaitList
  *        Pointer to the Wait List associated to the wait.
@@ -394,7 +394,7 @@ CsrMoveSatisfiedWait(IN PLIST_ENTRY NewEntry,
  * @param WaitArgument[1-2]
  *        User-defined argument to pass on to the wait function.
  *
- * @return TRUE in case of success, FALSE othwerwise.
+ * @return TRUE in case of success, FALSE otherwise.
  *
  * @remarks None.
  *

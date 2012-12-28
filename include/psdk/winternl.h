@@ -755,6 +755,26 @@ typedef enum _SYSTEM_INFORMATION_CLASS {
     SystemVerifierInformation = 51,
     SystemAddVerifier = 52,
     SystemSessionProcessesInformation	= 53,
+    Unknown54,
+    Unknown55,
+    Unknown56,
+    Unknown57,
+    Unknown58,
+    Unknown59,
+    Unknown60,
+    Unknown61,
+    Unknown62,
+    Unknown63,
+    Unknown64,
+    Unknown65,
+    Unknown66,
+    Unknown67,
+    Unknown68,
+    Unknown69,
+    Unknown70,
+    Unknown71,
+    Unknown72,
+    SystemLogicalProcessorInformation = 73,
     SystemInformationClassMax
 } SYSTEM_INFORMATION_CLASS, *PSYSTEM_INFORMATION_CLASS;
 
@@ -1817,6 +1837,7 @@ NTSTATUS  WINAPI LdrGetDllHandleEx(ULONG,PWSTR,PULONG,PUNICODE_STRING,PVOID);
 NTSTATUS  WINAPI LdrGetProcedureAddress(HMODULE, const ANSI_STRING*, ULONG, void**);
 void      WINAPI LdrInitializeThunk(HANDLE,ULONG,ULONG,ULONG);
 NTSTATUS  WINAPI LdrLoadDll(LPCWSTR, DWORD, const UNICODE_STRING*, HMODULE*);
+NTSTATUS  WINAPI LdrAddRefDll(ULONG, HMODULE);
 void      WINAPI LdrShutdownProcess(void);
 void      WINAPI LdrShutdownThread(void);
 NTSTATUS  WINAPI NtAcceptConnectPort(PHANDLE,ULONG,PLPC_MESSAGE,BOOLEAN,PLPC_SECTION_WRITE,PLPC_SECTION_READ);
@@ -2282,7 +2303,7 @@ BOOLEAN   WINAPI RtlTimeToSecondsSince1970(const LARGE_INTEGER *,LPDWORD);
 BOOLEAN   WINAPI RtlTimeToSecondsSince1980(const LARGE_INTEGER *,LPDWORD);
 BOOL      WINAPI RtlTryEnterCriticalSection(RTL_CRITICAL_SECTION *);
 
-ULONGLONG __cdecl RtlUlonglongByteSwap(ULONGLONG);
+ULONGLONG __fastcall RtlUlonglongByteSwap(ULONGLONG);
 DWORD     WINAPI RtlUnicodeStringToAnsiSize(const UNICODE_STRING*);
 NTSTATUS  WINAPI RtlUnicodeStringToAnsiString(PANSI_STRING,PCUNICODE_STRING,BOOLEAN);
 NTSTATUS  WINAPI RtlUnicodeStringToInteger(const UNICODE_STRING *,ULONG,ULONG *);

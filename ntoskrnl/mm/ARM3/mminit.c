@@ -1172,7 +1172,7 @@ MmFreeLoaderBlock(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     KeFlushCurrentTb();
 
     /* Free our run structure */
-    ExFreePool(Buffer);
+    ExFreePoolWithTag(Buffer, 'lMmM');
 }
 
 VOID
@@ -2004,6 +2004,11 @@ MmArmInitSystem(IN ULONG Phase,
     PVOID Bitmap;
     PPHYSICAL_MEMORY_RUN Run;
     PFN_NUMBER PageCount;
+#if DBG
+    ULONG j;
+    PMMPTE PointerPte, TestPte;
+    MMPTE TempPte;
+#endif
 
     /* Dump memory descriptors */
     if (MiDbgEnableMdDump) MiDbgDumpMemoryDescriptors();
@@ -2063,9 +2068,43 @@ MmArmInitSystem(IN ULONG Phase,
 
         /* Initialize session space address layout */
         MiInitializeSessionSpaceLayout();
-        
+
         /* Set the based section highest address */
         MmHighSectionBase = (PVOID)((ULONG_PTR)MmHighestUserAddress - 0x800000);
+
+#if DBG
+        /* The subection PTE format depends on things being 8-byte aligned */
+        ASSERT((sizeof(CONTROL_AREA) % 8) == 0);
+        ASSERT((sizeof(SUBSECTION) % 8) == 0);
+
+        /* Prototype PTEs are assumed to be in paged pool, so check if the math works */
+        PointerPte = (PMMPTE)MmPagedPoolStart;
+        MI_MAKE_PROTOTYPE_PTE(&TempPte, PointerPte);
+        TestPte = MiProtoPteToPte(&TempPte);
+        ASSERT(PointerPte == TestPte);
+
+        /* Try the last nonpaged pool address */
+        PointerPte = (PMMPTE)MI_NONPAGED_POOL_END;
+        MI_MAKE_PROTOTYPE_PTE(&TempPte, PointerPte);
+        TestPte = MiProtoPteToPte(&TempPte);
+        ASSERT(PointerPte == TestPte);
+
+        /* Try a bunch of random addresses near the end of the address space */
+        PointerPte = (PMMPTE)0xFFFC8000;
+        for (j = 0; j < 20; j += 1)
+        {
+            MI_MAKE_PROTOTYPE_PTE(&TempPte, PointerPte);
+            TestPte = MiProtoPteToPte(&TempPte);
+            ASSERT(PointerPte == TestPte);
+            PointerPte++;
+        }
+
+        /* Subsection PTEs are always in nonpaged pool, pick a random address to try */
+        PointerPte = (PMMPTE)0xFFAACBB8;
+        MI_MAKE_SUBSECTION_PTE(&TempPte, PointerPte);
+        TestPte = MiSubsectionPteToSubsection(&TempPte);
+        ASSERT(PointerPte == TestPte);
+#endif
 
         /* Loop all 8 standby lists */
         for (i = 0; i < 8; i++)
@@ -2359,7 +2398,7 @@ MmArmInitSystem(IN ULONG Phase,
         }
         else
         {
-            /* Check for LanMan server */
+            /* Check for LanMan server (La for LanmanNT) */
             if (MmProductType == '\0a\0L')
             {
                 /* This is a domain controller */
@@ -2367,7 +2406,7 @@ MmArmInitSystem(IN ULONG Phase,
             }
             else
             {
-                /* Otherwise it must be a normal server */
+                /* Otherwise it must be a normal server (Se for ServerNT) */
                 SharedUserData->NtProductType = NtProductServer;
             }
 

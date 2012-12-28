@@ -95,8 +95,8 @@ NtGdiSetDIBitsToDeviceInternal(
     _In_ INT ySrc,
     _In_ DWORD iStartScan,
     _In_ DWORD cNumScan,
-    IN LPBYTE pInitBits,
-    IN LPBITMAPINFO pbmi,
+    _In_reads_bytes_(cjMaxBits) LPBYTE pInitBits,
+    _In_reads_bytes_(cjMaxInfo) LPBITMAPINFO pbmi,
     _In_ DWORD iUsage,
     _In_ UINT cjMaxBits,
     _In_ UINT cjMaxInfo,
@@ -108,12 +108,12 @@ W32KAPI
 BOOL
 APIENTRY
 NtGdiGetFontResourceInfoInternalW(
-    IN LPWSTR pwszFiles,
+    _In_reads_z_(cwc) LPWSTR pwszFiles,
     _In_ ULONG cwc,
     _In_ ULONG cFiles,
-    _In_ UINT cjIn,
-    OUT LPDWORD pdwBytes,
-    OUT LPVOID pvBuf,
+    _In_ UINT cjBuf,
+    _Out_ LPDWORD pdwBytes,
+    _Out_writes_bytes_(cjBuf) LPVOID pvBuf,
     _In_ DWORD iType
 );
 
@@ -193,8 +193,9 @@ NtGdiGetOutlineTextMetricsInternalW(
     _Out_opt_ OUTLINETEXTMETRICW *potmw,
     _Out_ TMDIFF *ptmd);
 
+_Success_(return != FALSE)
 W32KAPI
-BOOL _Success_(return != FALSE)
+BOOL
 APIENTRY
 NtGdiGetAndSetDCDword(
     _In_ HDC hdc,
@@ -404,8 +405,9 @@ NtGdiGetWidthTable(
     OUT FLONG *pflInfo
 );
 
+_Success_(return != 0)
 W32KAPI
-INT _Success_(return != 0)
+INT
 APIENTRY
 NtGdiDescribePixelFormat(
     _In_ HDC hdc,
@@ -1646,8 +1648,9 @@ NtGdiSetFontXform(
     _In_ DWORD dwxScale,
     _In_ DWORD dwyScale);
 
+_Success_(return != FALSE)
 W32KAPI
-BOOL _Success_(return != FALSE)
+BOOL
 APIENTRY
 NtGdiGetMiterLimit(
     _In_ HDC hdc,
@@ -1993,6 +1996,7 @@ NtGdiGetDCDword(
     OUT DWORD *Result
 );
 
+_Success_(return!=FALSE)
 W32KAPI
 BOOL
 APIENTRY
@@ -2043,6 +2047,7 @@ NtGdiSetSizeDevice(
     _In_ INT cxVirtualDevice,
     _In_ INT cyVirtualDevice);
 
+_Success_(return !=FALSE)
 W32KAPI
 BOOL
 APIENTRY
@@ -2357,8 +2362,9 @@ NtGdiLineTo(
     _In_ INT x,
     _In_ INT y);
 
+_Success_(return != FALSE)
 W32KAPI
-BOOL _Success_(return != FALSE)
+BOOL
 APIENTRY
 NtGdiMoveTo(
     _In_ HDC hdc,
@@ -2381,6 +2387,7 @@ NtGdiGetDeviceCaps(
     _In_ HDC hdc,
     _In_ INT i);
 
+_Success_(return!=FALSE)
 W32KAPI
 BOOL
 APIENTRY
@@ -2405,8 +2412,9 @@ NtGdiStretchBlt(
     _In_ DWORD dwRop,
     _In_ DWORD dwBackColor);
 
+_Success_(return != FALSE)
 W32KAPI
-BOOL _Success_(return != FALSE)
+BOOL
 APIENTRY
 NtGdiSetBrushOrg(
     _In_ HDC hdc,
@@ -2502,6 +2510,7 @@ NtGdiOffsetRgn(
     _In_ INT cx,
     _In_ INT cy);
 
+_Success_(return!=ERROR)
 W32KAPI
 INT
 APIENTRY
@@ -2517,6 +2526,7 @@ NtGdiRectInRegion(
     IN OUT LPRECT prcl
 );
 
+_Success_(return!=0)
 W32KAPI
 DWORD
 APIENTRY
@@ -2553,13 +2563,14 @@ NtGdiSetSystemPaletteUse(
     _In_ HDC hdc,
     _In_ UINT ui);
 
+_Success_(return!=0)
 W32KAPI
-DWORD
+ULONG
 APIENTRY
 NtGdiGetRegionData(
     _In_ HRGN hrgn,
-    _In_ DWORD nCount,
-    _Out_opt_ LPRGNDATA lpRgnData);
+    _In_ ULONG cjBuffer,
+    _Out_opt_bytecap_(cjBuffer) LPRGNDATA lpRgnData);
 
 W32KAPI
 BOOL

@@ -118,7 +118,7 @@ CompareBacktraces(ULONG idx1, ULONG idx2)
 
 VOID
 NTAPI
-DbgDumpGdiHandleTable(void)
+DbgDumpGdiHandleTableWithBT(void)
 {
     static int leak_reported = 0;
     int i, j, idx, nTraces = 0;
@@ -246,7 +246,7 @@ DbgGdiHTIntegrityCheck()
 	while (i)
 	{
 		pEntry = &GdiHandleTable->Entries[i];
-		if (i > GDI_HANDLE_COUNT)
+		if (i >= GDI_HANDLE_COUNT)
 		{
 		    DPRINT1("nDeleted=%lu\n", nDeleted);
 		    ASSERT(FALSE);
@@ -423,6 +423,7 @@ DbgLogEvent(PSLIST_HEADER pslh, LOG_EVENT_TYPE nEventType, LPARAM lParam)
 #define REL_ADDR(va) ((ULONG_PTR)va - (ULONG_PTR)&__ImageBase)
 
 VOID
+NTAPI
 DbgPrintEvent(PLOGENTRY pLogEntry)
 {
     PSTR pstr;
@@ -465,7 +466,6 @@ DbgDumpEventList(PSLIST_HEADER pslh)
         pLogEntry = CONTAINING_RECORD(psle, LOGENTRY, sleLink);
         DbgPrintEvent(pLogEntry);
     }
-
 }
 
 VOID
@@ -729,6 +729,7 @@ BOOL DbgInitDebugChannels()
     return ret;
 }
 
-#endif
+
+#endif // DBG
 
 /* EOF */

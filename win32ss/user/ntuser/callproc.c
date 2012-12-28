@@ -35,6 +35,7 @@ CreateCallProc(IN PDESKTOP Desktop,
 
     NewCallProc = (PCALLPROCDATA)UserCreateObject(gHandleTable,
                                              Desktop,
+                                             NULL,
                                              &Handle,
                                              otCallProc,
                                              sizeof(CALLPROCDATA));
@@ -44,6 +45,9 @@ CreateCallProc(IN PDESKTOP Desktop,
         NewCallProc->wType |= Unicode ? UserGetCPDA2U : UserGetCPDU2A ;
         NewCallProc->spcpdNext = NULL;
     }
+
+    /* Release the extra reference (UserCreateObject added 2 references) */
+    UserDereferenceObject(NewCallProc);
 
     return NewCallProc;
 }

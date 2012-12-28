@@ -740,6 +740,12 @@ CHubController::HandlePnp(
             Status = STATUS_SUCCESS;
             break;
         }
+        case IRP_MN_SURPRISE_REMOVAL:
+        {
+            DPRINT("[USBLIB] HandlePnp IRP_MN_SURPRISE_REMOVAL\n");
+            Status = STATUS_SUCCESS;
+            break;
+        }
         default:
         {
             //
@@ -1038,6 +1044,7 @@ CHubController::HandleSelectConfiguration(
 {
     PUSBDEVICE UsbDevice;
     PUSBD_INTERFACE_INFORMATION InterfaceInfo;
+    NTSTATUS Status;
 
     //
     // is the request for the Root Hub
@@ -1104,7 +1111,13 @@ CHubController::HandleSelectConfiguration(
         //
         // select configuration
         //
-        return UsbDevice->SelectConfiguration(Urb->UrbSelectConfiguration.ConfigurationDescriptor, &Urb->UrbSelectConfiguration.Interface, &Urb->UrbSelectConfiguration.ConfigurationHandle);
+        Status = UsbDevice->SelectConfiguration(Urb->UrbSelectConfiguration.ConfigurationDescriptor, &Urb->UrbSelectConfiguration.Interface, &Urb->UrbSelectConfiguration.ConfigurationHandle);
+        if (NT_SUCCESS(Status)) 
+        {
+            // successfully configured device
+            Urb->UrbSelectConfiguration.Hdr.Status = USBD_STATUS_SUCCESS;
+        }
+        return Status;
     }
 }
 
@@ -1479,7 +1492,10 @@ CHubController::HandleGetDescriptorFromInterface(
     // submit setup packet
     //
     Status = UsbDevice->SubmitSetupPacket(&CtrlSetup, Urb->UrbControlDescriptorRequest.TransferBufferLength, Urb->UrbControlDescriptorRequest.TransferBuffer);
-    ASSERT(Status == STATUS_SUCCESS);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("[USBLIB] HandleGetDescriptorFromInterface failed with %x\n", Status);
+    }
 
     //
     // done
@@ -1494,13 +1510,12 @@ CHubController::HandleGetDescriptor(
     IN OUT PURB Urb)
 {
     NTSTATUS Status = STATUS_NOT_IMPLEMENTED;
-    PUSB_CONFIGURATION_DESCRIPTOR ConfigurationDescriptor;
     USB_DEFAULT_PIPE_SETUP_PACKET CtrlSetup;
     PUCHAR Buffer;
     PUSBDEVICE UsbDevice;
-    ULONG Length;
+    ULONG Length, BufferLength;
 
-    DPRINT("[USBLIB] HandleGetDescriptor\n");
+    DPRINT("[USBLIB] HandleGetDescriptor Type %x\n", Urb->UrbControlDescriptorRequest.DescriptorType);
 
     //
     // check descriptor type
@@ -1521,6 +1536,8 @@ CHubController::HandleGetDescriptor(
                 // copy root hub device descriptor
                 //
                 RtlCopyMemory((PUCHAR)Urb->UrbControlDescriptorRequest.TransferBuffer, &m_DeviceDescriptor, sizeof(USB_DEVICE_DESCRIPTOR));
+                Irp->IoStatus.Information = sizeof(USB_DEVICE_DESCRIPTOR);
+                Urb->UrbControlDescriptorRequest.Hdr.Status = USBD_STATUS_SUCCESS;
                 Status = STATUS_SUCCESS;
             }
             else
@@ -1547,6 +1564,8 @@ CHubController::HandleGetDescriptor(
                 // retrieve device descriptor from device
                 //
                 UsbDevice->GetDeviceDescriptor((PUSB_DEVICE_DESCRIPTOR)Urb->UrbControlDescriptorRequest.TransferBuffer);
+                Irp->IoStatus.Information = sizeof(USB_DEVICE_DESCRIPTOR);
+                Urb->UrbControlDescriptorRequest.Hdr.Status = USBD_STATUS_SUCCESS;
                 Status = STATUS_SUCCESS;
             }
             break;
@@ -1557,44 +1576,70 @@ CHubController::HandleGetDescriptor(
             // sanity checks
             //
             PC_ASSERT(Urb->UrbControlDescriptorRequest.TransferBuffer);
-            PC_ASSERT(Urb->UrbControlDescriptorRequest.TransferBufferLength >= sizeof(USB_CONFIGURATION_DESCRIPTOR));
+            //
+            // From MSDN
+            // The caller must allocate a buffer large enough to hold all of this information or the data is truncated without error.
+            //
+            BufferLength = Urb->UrbControlDescriptorRequest.TransferBufferLength;
+            Buffer = (PUCHAR) Urb->UrbControlDescriptorRequest.TransferBuffer;
 
             if (Urb->UrbHeader.UsbdDeviceHandle == PVOID(this))
             {
                 //
                 // request is for the root bus controller
                 //
-                RtlCopyMemory(Urb->UrbControlDescriptorRequest.TransferBuffer, &ROOTHUB2_CONFIGURATION_DESCRIPTOR, sizeof(USB_CONFIGURATION_DESCRIPTOR));
-
+                Length = BufferLength > sizeof(USB_CONFIGURATION_DESCRIPTOR) ?
+                    sizeof(USB_CONFIGURATION_DESCRIPTOR) : BufferLength;
+                RtlCopyMemory(Buffer, &ROOTHUB2_CONFIGURATION_DESCRIPTOR, Length);
+                
                 //
-                // get configuration descriptor, very retarded!
+                // Check if we still have some space left
                 //
-                ConfigurationDescriptor = (PUSB_CONFIGURATION_DESCRIPTOR)Urb->UrbControlDescriptorRequest.TransferBuffer;
-
-                //
-                // check if buffer can hold interface and endpoint descriptor
-                //
-                if (ConfigurationDescriptor->wTotalLength > Urb->UrbControlDescriptorRequest.TransferBufferLength)
+                if(Length == BufferLength)
                 {
                     //
-                    // buffer too small
+                    // We copied all we could
                     //
                     Status = STATUS_SUCCESS;
-                    ASSERT(FALSE);
                     break;
                 }
+                //
+                // Go further
+                //
+                Buffer += Length;
+                BufferLength -= Length;
 
                 //
                 // copy interface descriptor template
                 //
-                Buffer = (PUCHAR)(ConfigurationDescriptor + 1);
-                RtlCopyMemory(Buffer, &ROOTHUB2_INTERFACE_DESCRIPTOR, sizeof(USB_INTERFACE_DESCRIPTOR));
-
+                Length = BufferLength > sizeof(USB_INTERFACE_DESCRIPTOR) ?
+                    sizeof(USB_INTERFACE_DESCRIPTOR) : BufferLength;
+                RtlCopyMemory(Buffer, &ROOTHUB2_INTERFACE_DESCRIPTOR, Length);
+                
+                //
+                // Check if we still have some space left
+                //
+                if(Length == BufferLength)
+                {
+                    //
+                    // We copied all we could
+                    //
+                    Status = STATUS_SUCCESS;
+                    break;
+                }
+                //
+                // Go further
+                //
+                Buffer += Length;
+                BufferLength -= Length;
+                
+                
                 //
                 // copy end point descriptor template
                 //
-                Buffer += sizeof(USB_INTERFACE_DESCRIPTOR);
-                RtlCopyMemory(Buffer, &ROOTHUB2_ENDPOINT_DESCRIPTOR, sizeof(USB_ENDPOINT_DESCRIPTOR));
+                Length = BufferLength > sizeof(USB_ENDPOINT_DESCRIPTOR) ?
+                    sizeof(USB_ENDPOINT_DESCRIPTOR) : BufferLength;
+                RtlCopyMemory(Buffer, &ROOTHUB2_ENDPOINT_DESCRIPTOR, Length);
 
                 //
                 // done
@@ -1621,30 +1666,41 @@ CHubController::HandleGetDescriptor(
                 // get device
                 //
                 UsbDevice = PUSBDEVICE(Urb->UrbHeader.UsbdDeviceHandle);
-
-                if (sizeof(USB_CONFIGURATION_DESCRIPTOR) > Urb->UrbControlDescriptorRequest.TransferBufferLength)
+                
+                //
+                // Allocate temporary buffer
+                //
+                BufferLength = UsbDevice->GetConfigurationDescriptorsLength();
+                Buffer = (PUCHAR)ExAllocatePoolWithTag(NonPagedPool, BufferLength, TAG_USBLIB);
+                if(!Buffer)
                 {
-                    //
-                    // buffer too small
-                    //
-                    Urb->UrbControlDescriptorRequest.TransferBufferLength = UsbDevice->GetConfigurationDescriptorsLength();
-
-                    //
-                    // bail out
-                    //
-                    Status = STATUS_SUCCESS;
+                    Status = STATUS_NO_MEMORY;
                     break;
                 }
 
                 //
                 // perform work in IUSBDevice
                 //
-                UsbDevice->GetConfigurationDescriptors((PUSB_CONFIGURATION_DESCRIPTOR)Urb->UrbControlDescriptorRequest.TransferBuffer, Urb->UrbControlDescriptorRequest.TransferBufferLength, &Length);
+                UsbDevice->GetConfigurationDescriptors((PUSB_CONFIGURATION_DESCRIPTOR)Buffer, BufferLength, &Length);
+                
+                //
+                // Copy what we can
+                //
+                Length = Urb->UrbControlDescriptorRequest.TransferBufferLength > Length ? 
+                    Length : Urb->UrbControlDescriptorRequest.TransferBufferLength;
+                RtlCopyMemory(Urb->UrbControlDescriptorRequest.TransferBuffer, Buffer, Length);
+                
+                //
+                // Free temporary buffer
+                //
+                ExFreePoolWithTag(Buffer, TAG_USBLIB);
 
                 //
                 // store result size
                 //
+                Irp->IoStatus.Information = Length;
                 Urb->UrbControlDescriptorRequest.TransferBufferLength = Length;
+                Urb->UrbControlDescriptorRequest.Hdr.Status = USBD_STATUS_SUCCESS;
                 Status = STATUS_SUCCESS;
             }
             break;
@@ -1794,7 +1850,7 @@ CHubController::HandleVendorDevice(
     PUSBDEVICE UsbDevice;
     USB_DEFAULT_PIPE_SETUP_PACKET CtrlSetup;
 
-    DPRINT("CHubController::HandleVendorDevice Request %x\n", Urb->UrbControlVendorClassRequest.Request);
+    //DPRINT("CHubController::HandleVendorDevice Request %x\n", Urb->UrbControlVendorClassRequest.Request);
 
     //
     // sanity check
@@ -1842,7 +1898,12 @@ CHubController::HandleVendorDevice(
     // issue request
     //
     Status = UsbDevice->SubmitSetupPacket(&CtrlSetup, Urb->UrbControlVendorClassRequest.TransferBufferLength, Urb->UrbControlVendorClassRequest.TransferBuffer);
-    PC_ASSERT(NT_SUCCESS(Status));
+    if (NT_SUCCESS(Status))
+    {
+        // success
+        Urb->UrbControlVendorClassRequest.Hdr.Status = USBD_STATUS_SUCCESS;
+        Irp->IoStatus.Information = Urb->UrbControlVendorClassRequest.TransferBufferLength;
+    }
 
     return Status;
 }

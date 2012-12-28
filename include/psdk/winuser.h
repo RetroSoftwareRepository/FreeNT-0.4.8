@@ -222,7 +222,7 @@ extern "C" {
 #define DESKTOP_READOBJECTS	1
 #define DESKTOP_SWITCHDESKTOP	256
 #define DESKTOP_WRITEOBJECTS	128
-#define CW_USEDEFAULT	0x80000000
+#define CW_USEDEFAULT	((int)0x80000000)
 #define WS_BORDER	0x800000
 #define WS_CAPTION	0xc00000
 #define WS_CHILD	0x40000000
@@ -613,13 +613,16 @@ extern "C" {
 #define ISOLATIONAWARE_MANIFEST_RESOURCE_ID 2
 #define ISOLATIONAWARE_NOSTATICIMPORT_MANIFEST_RESOURCE_ID 3
 #endif
-#define EWX_FORCE 4
+#define EWX_FORCE 0x00000004
 #define EWX_LOGOFF 0
-#define EWX_POWEROFF 8
-#define EWX_REBOOT 2
-#define EWX_SHUTDOWN 1
+#define EWX_POWEROFF 0x00000008
+#define EWX_REBOOT 0x00000002
+#define EWX_SHUTDOWN 0x00000001
 #if (_WIN32_WINNT >= 0x0500)
-#define EWX_FORCEIFHUNG 16
+#define EWX_FORCEIFHUNG 0x00000010
+#endif
+#if (_WIN32_WINNT > 0x06010000)
+#define EWX_HYBRID_SHUTDOWN 0x00400000
 #endif
 #define CS_BYTEALIGNCLIENT 4096
 #define CS_BYTEALIGNWINDOW 8192
@@ -2498,6 +2501,9 @@ extern "C" {
 #define SW_SCROLLCHILDREN 1
 #define SW_INVALIDATE 2
 #define SW_ERASE 4
+#if(WINVER >= 0x0500)
+#define SW_SMOOTHSCROLL 16
+#endif
 #define SC_SIZE 0xF000
 #define SC_MOVE 0xF010
 #define SC_MINIMIZE 0xF020
@@ -4264,20 +4270,22 @@ DWORD WINAPI DrawMenuBarTemp(HWND,HDC,LPRECT,HMENU,HFONT);
 BOOL WINAPI DrawStateA(_In_ HDC, _In_opt_ HBRUSH, _In_opt_ DRAWSTATEPROC, _In_ LPARAM, _In_ WPARAM, _In_ int, _In_ int, _In_ int, _In_ int, _In_ UINT);
 BOOL WINAPI DrawStateW(_In_ HDC, _In_opt_ HBRUSH, _In_opt_ DRAWSTATEPROC, _In_ LPARAM, _In_ WPARAM, _In_ int, _In_ int, _In_ int, _In_ int, _In_ UINT);
 
+_Success_(return)
 int
 WINAPI
 DrawTextA(
   _In_ HDC hdc,
-  _Inout_updates_opt_(cchText) LPCSTR lpchText,
+  _At_((LPSTR)lpchText, _Inout_updates_opt_(cchText)) LPCSTR lpchText,
   _In_ int cchText,
   _Inout_ LPRECT lprc,
   _In_ UINT format);
 
+_Success_(return)
 int
 WINAPI
 DrawTextW(
   _In_ HDC hdc,
-  _Inout_updates_opt_(cchText) LPCWSTR lpchText,
+  _At_((LPWSTR)lpchText, _Inout_updates_opt_(cchText)) LPCWSTR lpchText,
   _In_ int cchText,
   _Inout_ LPRECT lprc,
   _In_ UINT format);

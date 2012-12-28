@@ -118,7 +118,11 @@ MiCreatePebOrTeb(IN PEPROCESS Process,
                                                  Base,
                                                  &Parent);
         /* Bail out, if still nothing free was found */
-        if (Result == TableFoundNode) return STATUS_NO_MEMORY;
+        if (Result == TableFoundNode)
+        {
+            ExFreePoolWithTag(Vad, 'ldaV');
+            return STATUS_NO_MEMORY;
+        }
     }
 
     /* Validate that it came from the VAD ranges */
@@ -135,7 +139,7 @@ MiCreatePebOrTeb(IN PEPROCESS Process,
     Status = STATUS_SUCCESS;
 
     /* Pretend as if we own the working set */
-    MiLockProcessWorkingSet(Process, Thread);
+    MiLockProcessWorkingSetUnsafe(Process, Thread);
 
     /* Insert the VAD */
     ASSERT(Vad->EndingVpn >= Vad->StartingVpn);
@@ -147,7 +151,7 @@ MiCreatePebOrTeb(IN PEPROCESS Process,
     MiInsertNode(&Process->VadRoot, (PVOID)Vad, Parent, Result);
 
     /* Release the working set */
-    MiUnlockProcessWorkingSet(Process, Thread);
+    MiUnlockProcessWorkingSetUnsafe(Process, Thread);
 
     /* Release the address space lock */
     KeReleaseGuardedMutex(&Process->AddressCreationLock);
@@ -195,7 +199,7 @@ MmDeleteTeb(IN PEPROCESS Process,
         ASSERT(Vad->u2.VadFlags2.MultipleSecured == FALSE);
 
         /* Lock the working set */
-        MiLockProcessWorkingSet(Process, Thread);
+        MiLockProcessWorkingSetUnsafe(Process, Thread);
 
         /* Remove this VAD from the tree */
         ASSERT(VadTree->NumberGenericTableElements >= 1);
@@ -205,7 +209,7 @@ MmDeleteTeb(IN PEPROCESS Process,
         MiDeleteVirtualAddresses((ULONG_PTR)Teb, TebEnd, NULL);
 
         /* Release the working set */
-        MiUnlockProcessWorkingSet(Process, Thread);
+        MiUnlockProcessWorkingSetUnsafe(Process, Thread);
 
         /* Remove the VAD */
         ExFreePool(Vad);
@@ -674,7 +678,7 @@ MmCreatePeb(IN PEPROCESS Process,
         Peb->OSMajorVersion = NtMajorVersion;
         Peb->OSMinorVersion = NtMinorVersion;
         Peb->OSBuildNumber = (USHORT)(NtBuildNumber & 0x3FFF);
-        Peb->OSPlatformId = 2; /* VER_PLATFORM_WIN32_NT */
+        Peb->OSPlatformId = VER_PLATFORM_WIN32_NT;
         Peb->OSCSDVersion = (USHORT)CmNtCSDVersion;
 
         //
@@ -1338,9 +1342,11 @@ MmCleanProcessAddressSpace(IN PEPROCESS Process)
 
     /* Lock the process address space from changes */
     MmLockAddressSpace(&Process->Vm);
+    MiLockProcessWorkingSetUnsafe(Process, Thread);
 
     /* VM is deleted now */
     Process->VmDeleted = TRUE;
+    MiUnlockProcessWorkingSetUnsafe(Process, Thread);
 
     /* Enumerate the VADs */
     VadTree = &Process->VadRoot;
@@ -1350,7 +1356,7 @@ MmCleanProcessAddressSpace(IN PEPROCESS Process)
         Vad = (PMMVAD)VadTree->BalancedRoot.RightChild;
 
         /* Lock the working set */
-        MiLockProcessWorkingSet(Process, Thread);
+        MiLockProcessWorkingSetUnsafe(Process, Thread);
 
         /* Remove this VAD from the tree */
         ASSERT(VadTree->NumberGenericTableElements >= 1);
@@ -1373,7 +1379,7 @@ MmCleanProcessAddressSpace(IN PEPROCESS Process)
                                      Vad);
 
             /* Release the working set */
-            MiUnlockProcessWorkingSet(Process, Thread);
+            MiUnlockProcessWorkingSetUnsafe(Process, Thread);
         }
 
         /* Skip ARM3 fake VADs, they'll be freed by MmDeleteProcessAddresSpace */
@@ -1388,8 +1394,16 @@ MmCleanProcessAddressSpace(IN PEPROCESS Process)
         ExFreePool(Vad);
     }
 
+    /* Lock the working set */
+    MiLockProcessWorkingSetUnsafe(Process, Thread);
+    ASSERT(Process->CloneRoot == NULL);
+    ASSERT(Process->PhysicalVadRoot == NULL);
+
     /* Delete the shared user data section */
     MiDeleteVirtualAddresses(USER_SHARED_DATA, USER_SHARED_DATA, NULL);
+
+    /* Release the working set */
+    MiUnlockProcessWorkingSetUnsafe(Process, Thread);
 
     /* Release the address space */
     MmUnlockAddressSpace(&Process->Vm);
@@ -1847,6 +1861,7 @@ MiSessionCreateInternal(OUT PULONG SessionId)
     {
         /* We ran out of session IDs, we should expand */
         DPRINT1("Too many sessions created. Expansion not yet supported\n");
+        ExFreePoolWithTag(PageTables, 'tHmM');
         return STATUS_NO_MEMORY;
     }
 

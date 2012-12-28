@@ -31,7 +31,7 @@ BOOL
 IntLoadHookModule(int iHookID, HHOOK hHook, BOOL Unload)
 {
    PPROCESSINFO ppi;
-   HMODULE hmod;
+   BOOL bResult;
 
    ppi = PsGetCurrentProcessWin32Process();
 
@@ -49,26 +49,24 @@ IntLoadHookModule(int iHookID, HHOOK hHook, BOOL Unload)
             ppi->W32PF_flags |= W32PF_APIHOOKLOADED;
 
             /* Call ClientLoadLibrary in user32 */
-            hmod = co_IntClientLoadLibrary(&strUahModule, &strUahInitFunc, Unload, TRUE);
-            TRACE("co_IntClientLoadLibrary returned %d\n", hmod );
-            if(hmod == 0)
+            bResult = co_IntClientLoadLibrary(&strUahModule, &strUahInitFunc, Unload, TRUE);
+            TRACE("co_IntClientLoadLibrary returned %d\n", bResult );
+            if (!bResult)
             {
                 /* Remove the flag we set before */
                 ppi->W32PF_flags &= ~W32PF_APIHOOKLOADED;
-                return FALSE;
             }
-            return TRUE;
+            return bResult;
         }
         else if(Unload && (ppi->W32PF_flags & W32PF_APIHOOKLOADED))
         {
             /* Call ClientLoadLibrary in user32 */
-            hmod = co_IntClientLoadLibrary(NULL, NULL, Unload, TRUE);
-            if(hmod != 0)
+            bResult = co_IntClientLoadLibrary(NULL, NULL, Unload, TRUE);
+            if (bResult)
             {
                 ppi->W32PF_flags &= ~W32PF_APIHOOKLOADED;
-                return TRUE;
             }
-            return FALSE;
+            return bResult;
         }
 
         return TRUE;
@@ -131,7 +129,7 @@ IntHookModuleUnloaded(PDESKTOP pdesk, int iHookID, HHOOK hHook)
 
 BOOL
 FASTCALL
-UserLoadApiHook()
+UserLoadApiHook(VOID)
 {
     return IntLoadHookModule(WH_APIHOOK, 0, FALSE);
 }
@@ -206,7 +204,7 @@ UserRegisterUserApiHook(
 
 BOOL
 FASTCALL
-UserUnregisterUserApiHook()
+UserUnregisterUserApiHook(VOID)
 {
     PTHREADINFO pti;
 
@@ -252,8 +250,8 @@ co_IntCallLowLevelHook(PHOOK Hook,
     BOOL Block = FALSE;
     ULONG_PTR uResult = 0;
 
-    if (Hook->Thread)
-       pti = Hook->Thread->Tcb.Win32Thread;
+    if (Hook->ptiHooked)
+       pti = Hook->ptiHooked;
     else
        pti = Hook->head.pti;
 
@@ -500,7 +498,7 @@ co_IntCallDebugHook(PHOOK Hook,
         if (BadChk)
         {
             ERR("HOOK WH_DEBUG read from Debug.lParam ERROR!\n");
-            ExFreePool(HooklParam);
+            ExFreePoolWithTag(HooklParam, TAG_HOOK);
             return lResult;
         }
     }
@@ -992,9 +990,9 @@ IntGetNextHook(PHOOK Hook)
     PLIST_ENTRY pLastHead, pElem;
     PTHREADINFO pti;
 
-    if (Hook->Thread)
+    if (Hook->ptiHooked)
     {
-       pti = ((PTHREADINFO)Hook->Thread->Tcb.Win32Thread);
+       pti = Hook->ptiHooked;
        pLastHead = &pti->aphkStart[HOOKID_TO_INDEX(HookId)];
     }
     else
@@ -1037,9 +1035,9 @@ IntRemoveHook(PHOOK Hook)
 
     HookId = Hook->HookId;
 
-    if (Hook->Thread) // Local
+    if (Hook->ptiHooked) // Local
     {
-       pti = ((PTHREADINFO)Hook->Thread->Tcb.Win32Thread);
+       pti = Hook->ptiHooked;
 
        IntFreeHook( Hook);
 
@@ -1052,6 +1050,8 @@ IntRemoveHook(PHOOK Hook)
           }
           _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
           {
+              /* Do nothing */
+              (void)0;
           }
           _SEH2_END;
        }
@@ -1243,6 +1243,8 @@ co_HOOK_CallHooks( INT HookId,
           }
           _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
           {
+              /* Do nothing */
+              (void)0;
           }
           _SEH2_END;
        }
@@ -1498,8 +1500,6 @@ NtUserSetWindowsHookEx( HINSTANCE Mod,
 
        ptiHook = Thread->Tcb.Win32Thread;
 
-       ObDereferenceObject(Thread);
-
        if ( ptiHook->rpdesk != pti->rpdesk) // gptiCurrent->rpdesk)
        {
           ERR("Local hook wrong desktop HookId: %d\n",HookId);
@@ -1571,7 +1571,7 @@ NtUserSetWindowsHookEx( HINSTANCE Mod,
     }
     ObDereferenceObject(WinStaObj);
 
-    Hook = UserCreateObject(gHandleTable, NULL, (PHANDLE)&Handle, otHook, sizeof(HOOK));
+    Hook = UserCreateObject(gHandleTable, NULL, NULL, (PHANDLE)&Handle, otHook, sizeof(HOOK));
 
     if (!Hook)
     {
@@ -1579,7 +1579,6 @@ NtUserSetWindowsHookEx( HINSTANCE Mod,
     }
 
     Hook->ihmod   = (INT)Mod; // Module Index from atom table, Do this for now.
-    Hook->Thread  = Thread; /* Set Thread, Null is Global. */
     Hook->HookId  = HookId;
     Hook->rpdesk  = ptiHook->rpdesk;
     Hook->phkNext = NULL; /* Dont use as a chain! Use link lists for chaining. */
@@ -1686,6 +1685,7 @@ NtUserSetWindowsHookEx( HINSTANCE Mod,
 
 CLEANUP:
     TRACE("Leave NtUserSetWindowsHookEx, ret=%i\n",_ret_);
+    if (Thread) ObDereferenceObject(Thread);
     UserLeave();
     END_CLEANUP;
 }

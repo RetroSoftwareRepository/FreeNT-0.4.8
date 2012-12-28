@@ -18,7 +18,7 @@ DBG_DEFAULT_CHANNEL(UserClipbrd);
 #define IS_DATA_SYNTHESIZED(ce) ((ce)->hData == DATA_SYNTH_USER || (ce)->hData == DATA_SYNTH_KRNL)
 
 PWINSTATION_OBJECT static FASTCALL
-IntGetWinStaForCbAccess()
+IntGetWinStaForCbAccess(VOID)
 {
     HWINSTA hWinSta;
     PWINSTATION_OBJECT pWinStaObj;
@@ -140,11 +140,16 @@ IntSynthesizeDib(
     HBITMAP hbm)
 {
     HDC hdc;
-    BITMAPINFO bmi;
     ULONG cjInfoSize, cjDataSize;
     PCLIPBOARDDATA pClipboardData;
     HANDLE hMem;
     INT iResult;
+    struct
+    {
+        BITMAPINFOHEADER bmih;
+        RGBQUAD rgbColors[256];
+    } bmiBuffer;
+    PBITMAPINFO pbmi = (PBITMAPINFO)&bmiBuffer;
 
     /* Get the display DC */
     hdc = UserGetDCEx(NULL, NULL, DCX_USESTYLE);
@@ -154,21 +159,22 @@ IntSynthesizeDib(
     }
 
     /* Get information about the bitmap format */
-    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    iResult = GreGetDIBitmapInfo(hbm, &bmi, DIB_RGB_COLORS, sizeof(bmi));
+    pbmi->bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    iResult = GreGetDIBitmapInfo(hbm, pbmi, DIB_RGB_COLORS, sizeof(bmiBuffer));
     if (iResult == 0)
     {
        goto cleanup;
     }
 
     /* Get the size for a full BITMAPINFO */
-    cjInfoSize = DibGetBitmapInfoSize(&bmi, DIB_RGB_COLORS);
+    cjInfoSize = DibGetBitmapInfoSize(pbmi, DIB_RGB_COLORS);
 
     /* Calculate the size of the clipboard data, which is a packed DIB */
-    cjDataSize = cjInfoSize + bmi.bmiHeader.biSizeImage;
+    cjDataSize = cjInfoSize + pbmi->bmiHeader.biSizeImage;
 
     /* Create the clipboard data */
     pClipboardData = (PCLIPBOARDDATA)UserCreateObject(gHandleTable,
+                                                      NULL,
                                                       NULL,
                                                       &hMem,
                                                       otClipBoardData,
@@ -182,21 +188,24 @@ IntSynthesizeDib(
     pClipboardData->cbData = cjDataSize;
 
     /* Copy the BITMAPINFOHEADER */
-    memcpy(pClipboardData->Data, &bmi, sizeof(BITMAPINFOHEADER));
+    memcpy(pClipboardData->Data, pbmi, sizeof(BITMAPINFOHEADER));
 
     /* Get the bitmap bits and the color table */
     iResult = GreGetDIBits(hdc,
                            hbm,
                            0,
-                           abs(bmi.bmiHeader.biHeight),
+                           abs(pbmi->bmiHeader.biHeight),
                            (LPBYTE)pClipboardData->Data + cjInfoSize,
                            (LPBITMAPINFO)pClipboardData->Data,
                            DIB_RGB_COLORS,
-                           bmi.bmiHeader.biSizeImage,
+                           pbmi->bmiHeader.biSizeImage,
                            cjInfoSize);
 
     /* Add the clipboard data */
     IntAddFormatedData(pWinStaObj, CF_DIB, hMem, TRUE, TRUE);
+
+    /* Release the extra reference (UserCreateObject added 2 references) */
+    UserDereferenceObject(pClipboardData);
 
 cleanup:
     UserReleaseDC(NULL, hdc, FALSE);
@@ -275,7 +284,7 @@ IntAddSynthesizedFormats(PWINSTATION_OBJECT pWinStaObj)
         PCLIPBOARDDATA pMemObj;
         HANDLE hMem;
 
-        pMemObj = (PCLIPBOARDDATA)UserCreateObject(gHandleTable, NULL, &hMem, otClipBoardData,
+        pMemObj = (PCLIPBOARDDATA)UserCreateObject(gHandleTable, NULL, NULL, &hMem, otClipBoardData,
                                                    sizeof(CLIPBOARDDATA) + sizeof(LCID));
         if (pMemObj)
         {
@@ -283,6 +292,9 @@ IntAddSynthesizedFormats(PWINSTATION_OBJECT pWinStaObj)
             *((LCID*)pMemObj->Data) = NtCurrentTeb()->CurrentLocale;
             IntAddFormatedData(pWinStaObj, CF_LOCALE, hMem, TRUE, TRUE);
         }
+
+        /* Release the extra reference (UserCreateObject added 2 references) */
+        UserDereferenceObject(pMemObj);
     }
 
     /* Add CF_TEXT. Note: it is synthesized in user32.dll */
@@ -1062,7 +1074,7 @@ NtUserConvertMemHandle(
     UserEnterExclusive();
 
     /* Create Clipboard data object */
-    pMemObj = UserCreateObject(gHandleTable, NULL, &hMem, otClipBoardData, sizeof(CLIPBOARDDATA) + cbData);
+    pMemObj = UserCreateObject(gHandleTable, NULL, NULL, &hMem, otClipBoardData, sizeof(CLIPBOARDDATA) + cbData);
     if (!pMemObj)
         goto cleanup;
 
@@ -1079,6 +1091,9 @@ NtUserConvertMemHandle(
         pMemObj = NULL;
     }
     _SEH2_END;
+
+    /* Release the extra reference (UserCreateObject added 2 references) */
+    UserDereferenceObject(pMemObj);
 
     /* If we failed to copy data, remove handle */
     if (!pMemObj)

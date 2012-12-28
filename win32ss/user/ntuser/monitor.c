@@ -32,7 +32,7 @@ static
 PMONITOR
 IntCreateMonitorObject()
 {
-    return UserCreateObject(gHandleTable, NULL, NULL, otMonitor, sizeof(MONITOR));
+    return UserCreateObject(gHandleTable, NULL, NULL, NULL, otMonitor, sizeof(MONITOR));
 }
 
 /* IntDestroyMonitorObject
@@ -139,7 +139,7 @@ UserAttachMonitor(IN HDEV hDev)
         TRACE("Couldnt create monitor object\n");
         return STATUS_INSUFFICIENT_RESOURCES;
     }
-    
+
     pMonitor->hDev = hDev;
     pMonitor->cWndStack = 0;
 
@@ -185,7 +185,7 @@ UserDetachMonitor(IN HDEV hDev)
     {
         if (pMonitor->hDev == hDev)
             break;
-    
+
         pLink = &pMonitor->pMonitorNext;
         pMonitor = pMonitor->pMonitorNext;
     }

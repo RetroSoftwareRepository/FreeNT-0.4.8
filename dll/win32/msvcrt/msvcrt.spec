@@ -131,9 +131,9 @@
 @ cdecl __RTtypeid(ptr) MSVCRT___RTtypeid
 @ cdecl __STRINGTOLD(ptr ptr str long)
 @ cdecl ___lc_codepage_func()
-# @ cdecl ___lc_collate_cp_func()
+@ cdecl ___lc_collate_cp_func()
 @ cdecl ___lc_handle_func()
-# @ cdecl ___mb_cur_max_func() MSVCRT___mb_cur_max_func
+@ cdecl ___mb_cur_max_func()
 @ cdecl ___setlc_active_func()
 @ cdecl ___unguarded_readlc_active_add_func()
 @ extern __argc
@@ -143,8 +143,8 @@
 @ cdecl __crtCompareStringW(long long wstr long wstr long) kernel32.CompareStringW
 @ cdecl __crtGetLocaleInfoW(long long ptr long) kernel32.GetLocaleInfoW
 @ cdecl __crtGetStringTypeW(long long wstr long ptr)
-@ cdecl __crtLCMapStringA(long long str long ptr long long long)
-# stub __crtLCMapStringW
+@ cdecl __crtLCMapStringA(long long str long str long long long)
+@ cdecl __crtLCMapStringW(long long wstr long wstr long long long)
 @ cdecl __daylight() __p__daylight
 @ cdecl __dllonexit(ptr ptr ptr)
 @ cdecl __doserrno()
@@ -156,7 +156,7 @@
 @ cdecl __isascii(long)
 @ cdecl __iscsym(long)
 @ cdecl __iscsymf(long)
-@ extern __lc_codepage MSVCRT___lc_codepage
+@ extern __lc_codepage
 # @ stub __lc_collate # not in XP / 7
 @ extern __lc_collate_cp MSVCRT___lc_collate_cp
 @ extern __lc_handle MSVCRT___lc_handle
@@ -302,7 +302,7 @@
 @ extern _commode
 @ cdecl _control87(long long)
 @ cdecl _controlfp(long long)
-# @ cdecl _controlfp_s(ptr long long)
+@ cdecl _controlfp_s(ptr long long)
 @ cdecl _copysign( double double )
 @ varargs _cprintf(str)
 # stub _cprintf_l
@@ -435,7 +435,7 @@
 # stub _get_fmode
 # @ cdecl _get_heap_handle()
 @ cdecl _get_osfhandle(long)
-@ cdecl _get_osplatform(ptr) 
+@ cdecl _get_osplatform(ptr)
 # stub _get_osver
 @ cdecl _get_output_format()
 @ cdecl _get_pgmptr(ptr)
@@ -477,9 +477,9 @@
 @ cdecl _heapwalk(ptr)
 @ cdecl _hypot(double double)
 @ cdecl _i64toa(long long ptr long)
-@ cdecl _i64toa_s(long long ptr long long) 
+@ cdecl _i64toa_s(long long ptr long long)
 @ cdecl _i64tow(long long ptr long)
-@ cdecl _i64tow_s(long long ptr long long) 
+@ cdecl _i64tow_s(long long ptr long long)
 @ cdecl _initterm(ptr ptr)
 @ cdecl _initterm_e(ptr ptr)
 @ cdecl -arch=i386 _inp(long) MSVCRT__inp
@@ -492,7 +492,7 @@
 @ cdecl _isatty(long)
 # stub _iscntrl_l
 @ cdecl _isctype(long long)
-# stub _isctype_l
+@ cdecl _isctype_l(long long ptr)
 # stub _isdigit_l
 # stub _isgraph_l
 # stub _isleadbyte_l
@@ -1042,7 +1042,7 @@
 @ cdecl _wcstoi64(wstr ptr long)
 # @ cdecl _wcstoi64_l(wstr ptr long ptr)
 # stub _wcstol_l
-# stub _wcstombs_l
+@ cdecl _wcstombs_l(ptr ptr long ptr)
 # @ cdecl _wcstombs_s_l(ptr ptr long wstr long ptr)
 @ cdecl _wcstoui64(wstr ptr long)
 # @ cdecl _wcstoui64_l(wstr ptr long ptr)
@@ -1266,13 +1266,13 @@
 @ cdecl -i386 longjmp(ptr long)
 @ cdecl malloc(long)
 @ cdecl mblen(ptr long)
-# stub mbrlen
+@ cdecl mbrlen(ptr long ptr)
 # stub mbrtowc
 # stub mbsdup_dbg
 # stub mbsrtowcs
 # stub mbsrtowcs_s
 @ cdecl mbstowcs(ptr str long)
-# stub mbstowcs_s
+@ cdecl mbstowcs_s(ptr ptr long str long)
 @ cdecl mbtowc(wstr str long)
 @ cdecl memchr(ptr long long)
 @ cdecl memcmp(ptr ptr long)
@@ -1396,7 +1396,7 @@
 @ cdecl wcsncmp(wstr wstr long)
 @ cdecl wcsncpy(ptr wstr long)
 @ cdecl wcsncpy_s(ptr long wstr long)
-# stub wcsnlen
+@ cdecl wcsnlen(wstr long)
 @ cdecl wcspbrk(wstr wstr)
 @ cdecl wcsrchr(wstr long)
 # stub wcsrtombs
@@ -1408,7 +1408,7 @@
 @ cdecl wcstok_s(ptr wstr ptr)
 @ cdecl wcstol(wstr ptr long)
 @ cdecl wcstombs(ptr ptr long)
-# @ cdecl wcstombs_s(ptr ptr long wstr long)
+@ cdecl wcstombs_s(ptr ptr long wstr long)
 @ cdecl wcstoul(wstr ptr long)
 @ cdecl wcsxfrm(ptr wstr long)
 # stub wctob

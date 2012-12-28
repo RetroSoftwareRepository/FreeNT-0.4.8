@@ -26,10 +26,15 @@ IntGdiUnreferencePdev(PPDEVOBJ ppdev, DWORD CleanUpType)
 }
 
 BOOL FASTCALL
-IntCreatePrimarySurface()
+IntCreatePrimarySurface(VOID)
 {
     SIZEL SurfSize;
     SURFOBJ *pso;
+    PDESKTOP rpDesk;
+
+    /* Create surface */
+    pso = &PDEVOBJ_pSurface(gppdevPrimary)->SurfObj;
+    SurfSize = pso->sizlBitmap;
 
     /* Attach monitor */
     UserAttachMonitor((HDEV)gppdevPrimary);
@@ -37,15 +42,22 @@ IntCreatePrimarySurface()
     DPRINT("IntCreatePrimarySurface, gppdevPrimary=%p, gppdevPrimary->pSurface = %p\n",
         gppdevPrimary, gppdevPrimary->pSurface);
 
-    /* Create surface */
-    pso = &PDEVOBJ_pSurface(gppdevPrimary)->SurfObj;
-    SurfSize = pso->sizlBitmap;
-
     /* Put the pointer in the center of the screen */
     gpsi->ptCursor.x = pso->sizlBitmap.cx / 2;
     gpsi->ptCursor.y = pso->sizlBitmap.cy / 2;
 
-    co_IntShowDesktop(IntGetActiveDesktop(), SurfSize.cx, SurfSize.cy);
+    rpDesk = IntGetActiveDesktop();
+    if (!rpDesk)
+    { /* First time going in from winlogon and starting up application desktop and
+        haven't switch to winlogon desktop. Also still in WM_CREATE. */
+       PTHREADINFO pti = PsGetCurrentThreadWin32Thread();
+       rpDesk = pti->rpdesk;
+       if (!rpDesk)
+       {
+          DPRINT1("No DESKTOP Window!!!!!\n");
+       }
+    }
+    co_IntShowDesktop(rpDesk, SurfSize.cx, SurfSize.cy);
 
     // Init Primary Displays Device Capabilities.
     PDEVOBJ_vGetDeviceCaps(gppdevPrimary, &GdiHandleTable->DevCaps);
@@ -54,7 +66,7 @@ IntCreatePrimarySurface()
 }
 
 VOID FASTCALL
-IntDestroyPrimarySurface()
+IntDestroyPrimarySurface(VOID)
 {
     UNIMPLEMENTED;
 }

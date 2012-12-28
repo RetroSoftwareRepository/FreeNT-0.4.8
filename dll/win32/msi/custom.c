@@ -184,25 +184,21 @@ static LPWSTR msi_get_deferred_action(LPCWSTR action, LPCWSTR actiondata,
     return deferred;
 }
 
-static void set_deferred_action_props(MSIPACKAGE *package, LPWSTR deferred_data)
+static void set_deferred_action_props( MSIPACKAGE *package, const WCHAR *deferred_data )
 {
-    LPWSTR end, beg = deferred_data + 1;
-
     static const WCHAR sep[] = {'<','=','>',0};
+    const WCHAR *end, *beg = deferred_data + 1;
 
     end = strstrW(beg, sep);
-    *end = '\0';
-    msi_set_property(package->db, szCustomActionData, beg);
+    msi_set_property( package->db, szCustomActionData, beg, end - beg );
     beg = end + 3;
 
     end = strstrW(beg, sep);
-    *end = '\0';
-    msi_set_property(package->db, szUserSID, beg);
+    msi_set_property( package->db, szUserSID, beg, end - beg );
     beg = end + 3;
 
     end = strchrW(beg, ']');
-    *end = '\0';
-    msi_set_property(package->db, szProductCode, beg);
+    msi_set_property( package->db, szProductCode, beg, end - beg );
 }
 
 static MSIBINARY *create_temp_binary( MSIPACKAGE *package, LPCWSTR source, BOOL dll )
@@ -935,13 +931,15 @@ static UINT HANDLE_CustomType50(MSIPACKAGE *package, LPCWSTR source,
 static UINT HANDLE_CustomType34(MSIPACKAGE *package, LPCWSTR source,
                                 LPCWSTR target, const INT type, LPCWSTR action)
 {
-    const WCHAR *workingdir;
+    const WCHAR *workingdir = NULL;
     HANDLE handle;
     WCHAR *cmd;
 
-    workingdir = msi_get_target_folder( package, source );
-    if (!workingdir) return ERROR_FUNCTION_FAILED;
-
+    if (source)
+    {
+        workingdir = msi_get_target_folder( package, source );
+        if (!workingdir) return ERROR_FUNCTION_FAILED;
+    }
     deformat_string( package, target, &cmd );
     if (!cmd) return ERROR_FUNCTION_FAILED;
 
@@ -957,7 +955,7 @@ static DWORD ACTION_CallScript( const GUID *guid )
 {
     msi_custom_action_info *info;
     MSIHANDLE hPackage;
-    UINT r;
+    UINT r = ERROR_FUNCTION_FAILED;
 
     info = find_action_by_guid( guid );
     if (!info)
@@ -979,13 +977,13 @@ static DWORD ACTION_CallScript( const GUID *guid )
         ERR("failed to create handle for %p\n", info->package );
 
     release_custom_action_data( info );
-    return S_OK;
+    return r;
 }
 
 static DWORD WINAPI ScriptThread( LPVOID arg )
 {
     LPGUID guid = arg;
-    DWORD rc = 0;
+    DWORD rc;
 
     TRACE("custom action (%x) started\n", GetCurrentThreadId() );
 
@@ -1227,23 +1225,20 @@ UINT ACTION_CustomAction(MSIPACKAGE *package, LPCWSTR action, UINT script, BOOL 
     UINT rc = ERROR_SUCCESS;
     MSIRECORD *row;
     UINT type;
-    LPCWSTR source, target;
-    LPWSTR ptr, deferred_data = NULL;
-    LPWSTR deformated = NULL, action_copy = strdupW(action);
+    const WCHAR *source, *target, *ptr, *deferred_data = NULL;
+    WCHAR *deformated = NULL;
+    int len;
 
     /* deferred action: [properties]Action */
-    if ((ptr = strrchrW(action_copy, ']')))
+    if ((ptr = strrchrW(action, ']')))
     {
-        deferred_data = action_copy;
+        deferred_data = action;
         action = ptr + 1;
     }
 
     row = MSI_QueryGetRecord( package->db, query, action );
     if (!row)
-    {
-        msi_free(action_copy);
         return ERROR_CALL_NOT_IMPLEMENTED;
-    }
 
     type = MSI_RecordGetInteger(row,2);
     source = MSI_RecordGetString(row,3);
@@ -1282,9 +1277,9 @@ UINT ACTION_CustomAction(MSIPACKAGE *package, LPCWSTR action, UINT script, BOOL 
             if (deferred_data)
                 set_deferred_action_props(package, deferred_data);
             else if (actiondata)
-                msi_set_property(package->db, szCustomActionData, actiondata);
+                msi_set_property( package->db, szCustomActionData, actiondata, -1 );
             else
-                msi_set_property(package->db, szCustomActionData, szEmpty);
+                msi_set_property( package->db, szCustomActionData, szEmpty, -1 );
 
             msi_free(actiondata);
         }
@@ -1332,8 +1327,8 @@ UINT ACTION_CustomAction(MSIPACKAGE *package, LPCWSTR action, UINT script, BOOL 
             if (!source)
                 break;
 
-            deformat_string(package,target,&deformated);
-            rc = msi_set_property( package->db, source, deformated );
+            len = deformat_string( package, target, &deformated );
+            rc = msi_set_property( package->db, source, deformated, len );
             if (rc == ERROR_SUCCESS && !strcmpW( source, szSourceDir ))
                 msi_reset_folders( package, TRUE );
             msi_free(deformated);
@@ -1363,7 +1358,6 @@ end:
     package->scheduled_action_running = FALSE;
     package->commit_action_running = FALSE;
     package->rollback_action_running = FALSE;
-    msi_free(action_copy);
     msiobj_release(&row->hdr);
     return rc;
 }
@@ -1437,7 +1431,7 @@ static HRESULT WINAPI mcr_QueryInterface( IWineMsiRemoteCustomAction *iface,
     if( IsEqualCLSID( riid, &IID_IUnknown ) ||
         IsEqualCLSID( riid, &IID_IWineMsiRemoteCustomAction ) )
     {
-        IUnknown_AddRef( iface );
+        IWineMsiRemoteCustomAction_AddRef( iface );
         *ppobj = iface;
         return S_OK;
     }

@@ -56,7 +56,8 @@ typedef enum _USER_OBJECT_TYPE
   otHidData,
   otDeviceInfo,
   otTouchInput,
-  otGestureInfo
+  otGestureInfo,
+  USER_HANDLE_TYPE_COUNT
 } USER_OBJECT_TYPE;
 
 typedef enum _USERTHREADINFOCLASS
@@ -199,7 +200,6 @@ typedef struct tagHOOK
   struct _DESKTOP *rpdesk;
   /* ReactOS */
   LIST_ENTRY     Chain;      /* Hook chain entry */
-  struct _ETHREAD* Thread;   /* Thread owning the hook */
   HOOKPROC       Proc;       /* Hook function */
   BOOLEAN        Ansi;       /* Is it an Ansi hook? */
   UNICODE_STRING ModuleName; /* Module name for global hooks */
@@ -976,6 +976,43 @@ typedef struct tagSETCLIPBDATA
     BOOL fIncSerialNumber;
 } SETCLIPBDATA, *PSETCLIPBDATA;
 
+// Used with NtUserSetCursorIconData, last parameter.
+typedef struct tagCURSORDATA
+{
+   LPWSTR lpName;
+   LPWSTR lpModName;
+   USHORT rt;
+   USHORT dummy;
+   ULONG CURSORF_flags;
+   SHORT xHotspot;
+   SHORT yHotspot;
+   HBITMAP hbmMask;
+   HBITMAP hbmColor;
+   HBITMAP hbmAlpha;
+   RECT rcBounds;
+   HBITMAP hbmUserAlpha; // Could be in W7U, not in W2k
+   ULONG bpp;
+   ULONG cx;
+   ULONG cy;
+   INT cpcur;
+   INT cicur;
+   struct tagCURSORDATA * aspcur;
+   DWORD * aicur;
+   INT * ajifRate;
+   INT iicur;
+} CURSORDATA, *PCURSORDATA; /* !dso CURSORDATA */
+
+// CURSORF_flags:
+#define CURSORF_FROMRESOURCE 0x0001
+#define CURSORF_GLOBAL       0x0002
+#define CURSORF_LRSHARED     0x0004
+#define CURSORF_ACON         0x0008
+#define CURSORF_WOWCLEANUP   0x0010
+#define CURSORF_ACONFRAME    0x0040
+#define CURSORF_SECRET       0x0080
+#define CURSORF_LINKED       0x0100
+#define CURSORF_CURRENT      0x0200
+
 DWORD
 NTAPI
 NtUserAssociateInputContext(
@@ -1659,8 +1696,8 @@ NtUserDestroyAcceleratorTable(
 BOOL
 NTAPI
 NtUserDestroyCursor(
-  HANDLE Handle,
-  DWORD Unknown);
+  _In_  HANDLE Handle,
+  _In_  BOOL bForce);
 
 DWORD
 NTAPI
@@ -1818,14 +1855,6 @@ NtUserFillWindow(
   HDC  hDC,
   HBRUSH hBrush);
 
-HICON
-NTAPI
-NtUserFindExistingCursorIcon(
-  HMODULE hModule,
-  HRSRC hRsrc,
-  LONG cx,
-  LONG cy);
-
 HWND
 NTAPI
 NtUserFindWindowEx(
@@ -1864,11 +1893,13 @@ NTAPI
 NtUserGetAsyncKeyState(
   INT Key);
 
-DWORD
-NTAPI
+_Success_(return!=0)
+_At_(pustrName->Buffer, _Out_z_bytecap_post_bytecount_(pustrName->MaximumLength, return*2+2))
+ULONG
+APIENTRY
 NtUserGetAtomName(
-    ATOM nAtom,
-    PUNICODE_STRING pBuffer);
+    _In_ ATOM atom,
+    _Inout_ PUNICODE_STRING pustrName);
 
 UINT
 NTAPI
@@ -1995,15 +2026,16 @@ NtUserGetGUIThreadInfo(
   DWORD idThread,
   LPGUITHREADINFO lpgui);
 
+_Success_(return!=FALSE)
 BOOL
 NTAPI
 NtUserGetIconInfo(
-   HANDLE hCurIcon,
-   PICONINFO IconInfo,
-   PUNICODE_STRING lpInstName,
-   PUNICODE_STRING lpResName,
-   LPDWORD pbpp,
-   BOOL bInternal);
+   _In_      HANDLE hCurIcon,
+   _Out_opt_ PICONINFO IconInfo,
+   _Inout_opt_ PUNICODE_STRING lpInstName,
+   _Inout_opt_ PUNICODE_STRING lpResName,
+   _Out_opt_ LPDWORD pbpp,
+   _In_      BOOL bInternal);
 
 BOOL
 NTAPI
@@ -2738,14 +2770,46 @@ NtUserSetCursorContents(
   HANDLE Handle,
   PICONINFO IconInfo);
 
-#if 0 // Correct type.
+#ifdef NEW_CURSORICON
 BOOL
 NTAPI
 NtUserSetCursorIconData(
-  HCURSOR hCursor,
-  PUNICODE_STRING ModuleName,
-  PUNICODE_STRING ResourceName,
-  PCURSORDATA pCursorData);
+  _In_ HCURSOR hCursor,
+  _In_ PUNICODE_STRING pustrModule,
+  _In_ PUNICODE_STRING puSrcName,
+  _In_ PCURSORDATA pCursorData);
+
+typedef struct _tagFINDEXISTINGCURICONPARAM
+{
+    BOOL bIcon;
+    LONG cx;
+    LONG cy;
+} FINDEXISTINGCURICONPARAM;
+
+HICON
+NTAPI
+NtUserFindExistingCursorIcon(
+  _In_  PUNICODE_STRING pustrModule,
+  _In_  PUNICODE_STRING pustrRsrc,
+  _In_  FINDEXISTINGCURICONPARAM* param);
+#else
+BOOL
+NTAPI
+NtUserSetCursorIconData(
+  HANDLE Handle,
+  PBOOL fIcon,
+  POINT *Hotspot,
+  HMODULE hModule,
+  HRSRC hRsrc,
+  HRSRC hGroupRsrc);
+
+HICON
+NTAPI
+NtUserFindExistingCursorIcon(
+  HMODULE hModule,
+  HRSRC hRsrc,
+  LONG cx,
+  LONG cy);
 #endif
 
 DWORD
@@ -3241,7 +3305,6 @@ typedef struct tagKMDDELPARAM
 #define ONEPARAM_ROUTINE_SWITCHCARETSHOWING   0xfffe0008
 #define ONEPARAM_ROUTINE_ENABLEPROCWNDGHSTING 0xfffe000d
 #define ONEPARAM_ROUTINE_GETDESKTOPMAPPING    0xfffe000e
-#define ONEPARAM_ROUTINE_GETCURSORPOSITION    0xfffe0048 // use ONEPARAM_ or TWOPARAM routine ?
 #define TWOPARAM_ROUTINE_SETMENUBARHEIGHT   0xfffd0050
 #define TWOPARAM_ROUTINE_SETGUITHRDHANDLE   0xfffd0052
   #define MSQ_STATE_CAPTURE	0x1
@@ -3359,16 +3422,6 @@ NTAPI
 NtUserMonitorFromWindow(
   IN HWND hWnd,
   IN DWORD dwFlags);
-
-BOOL
-NTAPI
-NtUserSetCursorIconData(
-  HANDLE Handle,
-  PBOOL fIcon,
-  POINT *Hotspot,
-  HMODULE hModule,
-  HRSRC hRsrc,
-  HRSRC hGroupRsrc);
 
 typedef struct _SETSCROLLBARINFO
 {

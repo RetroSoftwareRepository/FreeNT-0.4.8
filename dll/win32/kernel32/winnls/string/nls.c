@@ -1,4 +1,4 @@
-/* $Id$
+/* $Id: nls.c 52854 2011-07-24 23:42:09Z ion $
  *
  * COPYRIGHT:       See COPYING in the top level directory
  * PROJECT:         ReactOS system libraries
@@ -359,7 +359,7 @@ IntMultiByteToWideCharUTF8(DWORD Flags,
     WCHAR WideChar;
     LONG Count;
 
-    if (Flags != 0)
+    if (Flags != 0 && Flags != MB_ERR_INVALID_CHARS)
     {
         SetLastError(ERROR_INVALID_FLAGS);
         return 0;

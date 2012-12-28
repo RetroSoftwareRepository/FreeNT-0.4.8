@@ -225,7 +225,10 @@ FASTCALL
 BRUSH_GetObject(PBRUSH pbrush, INT cjSize, LPLOGBRUSH plogbrush)
 {
     /* Check if only size is requested */
-    if ((plogbrush == NULL) || (cjSize == 0)) return sizeof(LOGBRUSH);
+    if (plogbrush == NULL) return sizeof(LOGBRUSH);
+
+    /* Check if size is ok */
+    if (cjSize == 0) return 0;
 
     /* Set colour */
     plogbrush->lbColor = pbrush->BrushAttr.lbColor;

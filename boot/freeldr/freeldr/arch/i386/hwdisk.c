@@ -37,7 +37,7 @@ typedef struct tagDISKCONTEXT
 
 extern ULONG reactos_disk_count;
 extern ARC_DISK_SIGNATURE reactos_arc_disk_info[];
-extern char reactos_arc_strings[32][256];
+extern CHAR reactos_arc_strings[32][256];
 
 static CHAR Hex[] = "0123456789abcdef";
 UCHAR PcBiosDiskCount = 0;
@@ -114,31 +114,45 @@ static LONG DiskRead(ULONG FileId, VOID* Buffer, ULONG N, ULONG* Count)
 {
     DISKCONTEXT* Context = FsGetDeviceSpecific(FileId);
     UCHAR* Ptr = (UCHAR*)Buffer;
-    ULONG i, Length;
+    ULONG Length, TotalSectors, MaxSectors, ReadSectors;
     BOOLEAN ret;
+    ULONGLONG SectorOffset;
 
-    *Count = 0;
-    i = 0;
-    while (N > 0)
+    TotalSectors = (N + Context->SectorSize - 1) / Context->SectorSize;
+    MaxSectors   = DISKREADBUFFER_SIZE / Context->SectorSize;
+    SectorOffset = Context->SectorNumber + Context->SectorOffset;
+
+    ret = 1;
+
+    while (TotalSectors)
     {
-        Length = N;
-        if (Length > Context->SectorSize)
-            Length = Context->SectorSize;
+        ReadSectors = TotalSectors;
+        if (ReadSectors > MaxSectors)
+            ReadSectors = MaxSectors;
+
         ret = MachDiskReadLogicalSectors(
             Context->DriveNumber,
-            Context->SectorNumber + Context->SectorOffset + i,
-            1,
+            SectorOffset,
+            ReadSectors,
             (PVOID)DISKREADBUFFER);
         if (!ret)
-            return EIO;
+            break;
+
+        Length = ReadSectors * Context->SectorSize;
+        if (Length > N)
+            Length = N;
+
         RtlCopyMemory(Ptr, (PVOID)DISKREADBUFFER, Length);
+
         Ptr += Length;
-        *Count += Length;
         N -= Length;
-        i++;
+        SectorOffset += ReadSectors;
+        TotalSectors -= ReadSectors;
     }
 
-    return ESUCCESS;
+    *Count = (ULONG)(Ptr - (UCHAR*)Buffer);
+
+    return (!ret) ? EIO : ESUCCESS;
 }
 
 static LONG DiskSeek(ULONG FileId, LARGE_INTEGER* Position, SEEKMODE SeekMode)

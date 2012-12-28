@@ -562,9 +562,9 @@ typedef struct _IDE_AHCI_PORT_REGISTERS {
         ULONG Reg;           // signature
         struct {
             UCHAR SectorCount;
-            UCHAR LbaLow;
-            UCHAR LbaMid;
-            UCHAR LbaHigh;
+            UCHAR LbaLow;       // IDX_IO1_i_BlockNumber
+            UCHAR LbaMid;       // IDX_IO1_i_CylinderLow
+            UCHAR LbaHigh;      // IDX_IO1_i_CylinderHigh
         };
     } SIG;  // 0x100 + 0x80*c + 0x0024
     union {
@@ -623,6 +623,9 @@ typedef struct _IDE_AHCI_PORT_REGISTERS {
 #define IDX_AHCI_P_TFD                    (FIELD_OFFSET(IDE_AHCI_PORT_REGISTERS, TFD))
 #define IDX_AHCI_P_SIG                    (FIELD_OFFSET(IDE_AHCI_PORT_REGISTERS, SIG))
 #define IDX_AHCI_P_CMD                    (FIELD_OFFSET(IDE_AHCI_PORT_REGISTERS, CMD))
+#define IDX_AHCI_P_SStatus                (FIELD_OFFSET(IDE_AHCI_PORT_REGISTERS, SStatus))
+#define IDX_AHCI_P_SControl               (FIELD_OFFSET(IDE_AHCI_PORT_REGISTERS, SControl))
+#define IDX_AHCI_P_SError                 (FIELD_OFFSET(IDE_AHCI_PORT_REGISTERS, SError))
 #define IDX_AHCI_P_ACT                    (FIELD_OFFSET(IDE_AHCI_PORT_REGISTERS, SACT))
 
 #define IDX_AHCI_P_SNTF                   (FIELD_OFFSET(IDE_AHCI_PORT_REGISTERS, SNTF))
@@ -1060,6 +1063,7 @@ typedef struct _HW_CHANNEL {
 #define CTRFLAGS_DSC_BSY                0x0080
 #define CTRFLAGS_NO_SLAVE               0x0100
 //#define CTRFLAGS_PATA                   0x0200
+//#define CTRFLAGS_NOT_PRESENT            0x0200
 #define CTRFLAGS_AHCI_PM                0x0400
 #define CTRFLAGS_AHCI_PM2               0x0800
 
@@ -1085,13 +1089,14 @@ typedef struct _HW_LU_EXTENSION {
     ULONG          DiscsPresent;   // Indicates number of platters on changer-ish devices.
     BOOLEAN        DWordIO;        // Indicates use of 32-bit PIO
     UCHAR          ReturningMediaStatus;
+    UCHAR          MaximumBlockXfer;
+    UCHAR          PowerState;
 
     UCHAR          TransferMode;          // current transfer mode
     UCHAR          LimitedTransferMode;   // user-defined or IDE cable limitation
     UCHAR          OrigTransferMode;      // transfer mode, returned by device IDENTIFY (can be changed via IOCTL)
+    UCHAR          PhyTransferMode;       // phy transfer mode (actual bus transfer mode for PATA DMA and SATA)
 
-    UCHAR          MaximumBlockXfer;
-    UCHAR          Padding0[2];    // padding
     ULONG          ErrorCount;     // Count of errors. Used to turn off features.
  //   ATA_QUEUE      cmd_queue;
     LONGLONG       ReadCmdCost;
@@ -1116,8 +1121,10 @@ typedef struct _HW_LU_EXTENSION {
     BOOLEAN        opt_ReadCacheEnable;
     BOOLEAN        opt_WriteCacheEnable;
     UCHAR          opt_ReadOnly;
-    // padding
-    BOOLEAN        opt_reserved[1];
+    UCHAR          opt_AdvPowerMode;
+    UCHAR          opt_AcousticMode;
+    UCHAR          opt_StandbyTimer;
+    UCHAR          opt_Padding[2]; // padding
 
     struct _SBadBlockListItem* bbListDescr;
     struct _SBadBlockRange* arrBadBlocks;
@@ -1215,6 +1222,9 @@ typedef struct _HW_DEVICE_EXTENSION {
     BOOLEAN MasterDev;
     BOOLEAN Host64;
     BOOLEAN DWordIO;         // Indicates use of 32-bit PIO
+/*    // Indicates, that HW Initialized is already called for this controller
+    // 0 bit for Primary, 1 - for Secondary. Is used to manage AltInit under w2k+
+    UCHAR   Initialized;     */
     UCHAR   Reserved1[2];
 
     LONG  ReCheckIntr;
@@ -1237,6 +1247,7 @@ typedef struct _HW_DEVICE_EXTENSION {
     IORES          BaseIoAHCI_0;
     //PIDE_AHCI_PORT_REGISTERS  BaseIoAHCIPort[AHCI_MAX_PORT];
     ULONG          AHCI_CAP;
+    ULONG          AHCI_PI;
     PATA_REQ       AhciInternalAtaReq0;
     PSCSI_REQUEST_BLOCK AhciInternalSrb0;
 
@@ -1259,6 +1270,9 @@ typedef struct _ISR2_DEVICE_EXTENSION {
     ULONG DevIndex;
 } ISR2_DEVICE_EXTENSION, *PISR2_DEVICE_EXTENSION;
 
+typedef ISR2_DEVICE_EXTENSION   PCIIDE_DEVICE_EXTENSION;
+typedef PISR2_DEVICE_EXTENSION  PPCIIDE_DEVICE_EXTENSION;
+
 #define HBAFLAGS_DMA_DISABLED           0x01
 #define HBAFLAGS_DMA_DISABLED_LBA48     0x02
 
@@ -1267,6 +1281,7 @@ extern PBUSMASTER_CONTROLLER_INFORMATION BMList;
 extern ULONG         BMListLen;
 extern ULONG         IsaCount;
 extern ULONG         MCACount;
+extern UNICODE_STRING SavedRegPath;
 
 //extern const CHAR retry_Wdma[MAX_RETRIES+1];
 //extern const CHAR retry_Udma[MAX_RETRIES+1];
@@ -1321,14 +1336,10 @@ UniataFindBusMasterController(
     OUT PBOOLEAN Again
     );
 
-extern ULONG NTAPI
-UniataFindFakeBusMasterController(
-    IN PVOID HwDeviceExtension,
-    IN PVOID Context,
-    IN PVOID BusInformation,
-    IN PCHAR ArgumentString,
-    IN OUT PPORT_CONFIGURATION_INFORMATION ConfigInfo,
-    OUT PBOOLEAN Again
+extern NTSTATUS
+NTAPI
+UniataClaimLegacyPCIIDE(
+    ULONG i
     );
 
 extern NTSTATUS
@@ -1505,6 +1516,14 @@ AtapiGetIoRange(
     IN ULONG rid,
     IN ULONG offset,
     IN ULONG length //range id
+    );
+
+extern USHORT
+NTAPI
+UniataEnableIoPCI(
+    IN  ULONG                  busNumber,
+    IN  ULONG                  slotNumber,
+ IN OUT PPCI_COMMON_CONFIG     pciData
     );
 
 /****************** 1 *****************/

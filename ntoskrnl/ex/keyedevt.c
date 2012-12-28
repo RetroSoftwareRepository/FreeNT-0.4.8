@@ -25,10 +25,13 @@ typedef struct _EX_KEYED_EVENT
     } HashTable[NUM_KEY_HASH_BUCKETS];
 } EX_KEYED_EVENT, *PEX_KEYED_EVENT;
 
-VOID
+NTSTATUS
 NTAPI
-ExpInitializeKeyedEvent(
-    _Out_ PEX_KEYED_EVENT KeyedEvent);
+ZwCreateKeyedEvent(
+    _Out_ PHANDLE OutHandle,
+    _In_ ACCESS_MASK AccessMask,
+    _In_ POBJECT_ATTRIBUTES ObjectAttributes,
+    _In_ ULONG Flags);
 
 #define KeGetCurrentProcess() ((PKPROCESS)PsGetCurrentProcess())
 
@@ -42,61 +45,59 @@ GENERIC_MAPPING ExpKeyedEventMapping =
 {
     STANDARD_RIGHTS_READ | EVENT_QUERY_STATE,
     STANDARD_RIGHTS_WRITE | EVENT_MODIFY_STATE,
-    STANDARD_RIGHTS_EXECUTE | EVENT_QUERY_STATE,
+    STANDARD_RIGHTS_EXECUTE,
     EVENT_ALL_ACCESS
 };
 
-
 /* FUNCTIONS *****************************************************************/
 
-VOID
+_IRQL_requires_max_(APC_LEVEL)
+BOOLEAN
+INIT_FUNCTION
 NTAPI
 ExpInitializeKeyedEventImplementation(VOID)
 {
     OBJECT_TYPE_INITIALIZER ObjectTypeInitializer = {0};
     UNICODE_STRING TypeName = RTL_CONSTANT_STRING(L"KeyedEvent");
+    UNICODE_STRING Name = RTL_CONSTANT_STRING(L"\\KernelObjects\\CritSecOutOfMemoryEvent");
     NTSTATUS Status;
+    HANDLE EventHandle;
+    OBJECT_ATTRIBUTES ObjectAttributes;
 
     /* Set up the object type initializer */
     ObjectTypeInitializer.Length = sizeof(ObjectTypeInitializer);
     ObjectTypeInitializer.GenericMapping = ExpKeyedEventMapping;
-    ObjectTypeInitializer.PoolType = NonPagedPool;
-    //ObjectTypeInitializer.DeleteProcedure = ???;
-    //ObjectTypeInitializer.OkayToCloseProcedure = ???;
+    ObjectTypeInitializer.PoolType = PagedPool;
+    ObjectTypeInitializer.ValidAccessMask = EVENT_ALL_ACCESS;
+    ObjectTypeInitializer.UseDefaultObject = TRUE;
 
     /* Create the keyed event object type */
     Status = ObCreateObjectType(&TypeName,
                                 &ObjectTypeInitializer,
                                 NULL,
                                 &ExKeyedEventObjectType);
+    if (!NT_SUCCESS(Status)) return FALSE;
 
-    /* Check for success */
-    if (!NT_SUCCESS(Status))
+    /* Create the out of memory event for critical sections */
+    InitializeObjectAttributes(&ObjectAttributes, &Name, OBJ_PERMANENT, NULL, NULL);
+    Status = ZwCreateKeyedEvent(&EventHandle,
+                                EVENT_ALL_ACCESS,
+                                &ObjectAttributes,
+                                0);
+    if (NT_SUCCESS(Status))
     {
-        // FIXME
-        KeBugCheck(0);
+        /* Take a reference so we can get rid of the handle */
+        Status = ObReferenceObjectByHandle(EventHandle,
+                                           EVENT_ALL_ACCESS,
+                                           ExKeyedEventObjectType,
+                                           KernelMode,
+                                           (PVOID*)&ExpCritSecOutOfMemoryEvent,
+                                           NULL);
+        ZwClose(EventHandle);
+        return TRUE;
     }
 
-    /* Create the global keyed event for critical sections on low memory */
-    Status = ObCreateObject(KernelMode,
-                            ExKeyedEventObjectType,
-                            NULL,
-                            UserMode,
-                            NULL,
-                            sizeof(EX_KEYED_EVENT),
-                            0,
-                            0,
-                            (PVOID*)&ExpCritSecOutOfMemoryEvent);
-
-    /* Check for success */
-    if (!NT_SUCCESS(Status))
-    {
-        // FIXME
-        KeBugCheck(0);
-    }
-
-    /* Initalize the keyed event */
-    ExpInitializeKeyedEvent(ExpCritSecOutOfMemoryEvent);
+    return FALSE;
 }
 
 VOID
@@ -116,6 +117,7 @@ ExpInitializeKeyedEvent(
     }
 }
 
+_IRQL_requires_max_(APC_LEVEL)
 NTSTATUS
 NTAPI
 ExpReleaseOrWaitForKeyedEvent(
@@ -203,6 +205,7 @@ ExpReleaseOrWaitForKeyedEvent(
     return STATUS_SUCCESS;
 }
 
+_IRQL_requires_max_(APC_LEVEL)
 NTSTATUS
 NTAPI
 ExpWaitForKeyedEvent(
@@ -219,6 +222,7 @@ ExpWaitForKeyedEvent(
                                          FALSE);
 }
 
+_IRQL_requires_max_(APC_LEVEL)
 NTSTATUS
 NTAPI
 ExpReleaseKeyedEvent(
@@ -235,6 +239,7 @@ ExpReleaseKeyedEvent(
                                          TRUE);
 }
 
+_IRQL_requires_max_(APC_LEVEL)
 NTSTATUS
 NTAPI
 NtCreateKeyedEvent(
@@ -311,6 +316,7 @@ NtCreateKeyedEvent(
     return Status;
 }
 
+_IRQL_requires_max_(APC_LEVEL)
 NTSTATUS
 NTAPI
 NtOpenKeyedEvent(
@@ -359,6 +365,7 @@ NtOpenKeyedEvent(
     return Status;
 }
 
+_IRQL_requires_max_(APC_LEVEL)
 NTSTATUS
 NTAPI
 NtWaitForKeyedEvent(
@@ -401,6 +408,7 @@ NtWaitForKeyedEvent(
     return Status;
 }
 
+_IRQL_requires_max_(APC_LEVEL)
 NTSTATUS
 NTAPI
 NtReleaseKeyedEvent(

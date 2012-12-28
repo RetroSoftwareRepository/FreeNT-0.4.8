@@ -7,17 +7,18 @@
  * PROGRAMMERS:     Eric Kohl
  */
 
-/* INCLUDES ****************************************************************/
+/* INCLUDES ******************************************************************/
 
 #include "samsrv.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(samsrv);
 
-/* GLOBALS ********************************************************************/
+/* GLOBALS *******************************************************************/
 
 static SID_IDENTIFIER_AUTHORITY NtSidAuthority = {SECURITY_NT_AUTHORITY};
 
-/* FUNCTIONS ***************************************************************/
+
+/* FUNCTIONS *****************************************************************/
 
 VOID
 SampStartRpcServer(VOID)
@@ -154,6 +155,7 @@ SamrShutdownSamServer(IN SAMPR_HANDLE ServerHandle)
     return STATUS_NOT_IMPLEMENTED;
 }
 
+
 /* Function 5 */
 NTSTATUS
 NTAPI
@@ -262,6 +264,7 @@ SamrLookupDomainInSamServer(IN SAMPR_HANDLE ServerHandle,
 
     return Status;
 }
+
 
 /* Function 6 */
 NTSTATUS
@@ -3051,6 +3054,8 @@ done:
         Use->Count = 0;
     }
 
+    TRACE("Returned Status %lx\n", Status);
+
     return Status;
 }
 
@@ -3145,8 +3150,8 @@ SamrLookupIdsInDomain(IN SAMPR_HANDLE DomainHandle,
 
                     if (NT_SUCCESS(Status))
                     {
-                        Names->Element[i].MaximumLength = DataLength;
-                        Names->Element[i].Length = DataLength - sizeof(WCHAR);
+                        Names->Element[i].MaximumLength = (USHORT)DataLength;
+                        Names->Element[i].Length = (USHORT)(DataLength - sizeof(WCHAR));
 
                         Status = SampRegQueryValue(AccountKeyHandle,
                                                    L"Name",
@@ -3201,8 +3206,8 @@ SamrLookupIdsInDomain(IN SAMPR_HANDLE DomainHandle,
 
                     if (NT_SUCCESS(Status))
                     {
-                        Names->Element[i].MaximumLength = DataLength;
-                        Names->Element[i].Length = DataLength - sizeof(WCHAR);
+                        Names->Element[i].MaximumLength = (USHORT)DataLength;
+                        Names->Element[i].Length = (USHORT)(DataLength - sizeof(WCHAR));
 
                         Status = SampRegQueryValue(AccountKeyHandle,
                                                    L"Name",
@@ -3259,8 +3264,8 @@ SamrLookupIdsInDomain(IN SAMPR_HANDLE DomainHandle,
 
                     if (NT_SUCCESS(Status))
                     {
-                        Names->Element[i].MaximumLength = DataLength;
-                        Names->Element[i].Length = DataLength - sizeof(WCHAR);
+                        Names->Element[i].MaximumLength = (USHORT)DataLength;
+                        Names->Element[i].Length = (USHORT)(DataLength - sizeof(WCHAR));
 
                         Status = SampRegQueryValue(AccountKeyHandle,
                                                    L"Name",
@@ -3865,17 +3870,24 @@ SampQueryAliasGeneral(PSAM_DB_OBJECT AliasObject,
                             L"Members",
                             KEY_READ,
                             &MembersKeyHandle);
-    if (!NT_SUCCESS(Status))
+    if (NT_SUCCESS(Status))
     {
-        TRACE("Status 0x%08lx\n", Status);
-        goto done;
+        /* Retrieve the number of members of the alias */
+        Status = SampRegQueryKeyInfo(MembersKeyHandle,
+                                     NULL,
+                                     &InfoBuffer->General.MemberCount);
+        if (!NT_SUCCESS(Status))
+        {
+            TRACE("Status 0x%08lx\n", Status);
+            goto done;
+        }
     }
-
-    /* Retrieve the number of members of the alias */
-    Status = SampRegQueryKeyInfo(MembersKeyHandle,
-                                 NULL,
-                                 &InfoBuffer->General.MemberCount);
-    if (!NT_SUCCESS(Status))
+    else if (Status == STATUS_OBJECT_NAME_NOT_FOUND)
+    {
+        InfoBuffer->General.MemberCount = 0;
+        Status = STATUS_SUCCESS;
+    }
+    else
     {
         TRACE("Status 0x%08lx\n", Status);
         goto done;
@@ -4184,9 +4196,125 @@ NTAPI
 SamrRemoveMemberFromAlias(IN SAMPR_HANDLE AliasHandle,
                           IN PRPC_SID MemberId)
 {
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
+    PSAM_DB_OBJECT AliasObject;
+    LPWSTR MemberIdString = NULL;
+    HANDLE MembersKeyHandle = NULL;
+    HANDLE MemberKeyHandle = NULL;
+    ULONG ulValueCount;
+    NTSTATUS Status;
+
+    TRACE("SamrRemoveMemberFromAlias(%p %p)\n",
+          AliasHandle, MemberId);
+
+    /* Validate the alias handle */
+    Status = SampValidateDbObject(AliasHandle,
+                                  SamDbAliasObject,
+                                  ALIAS_REMOVE_MEMBER,
+                                  &AliasObject);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("failed with status 0x%08lx\n", Status);
+        return Status;
+    }
+
+    ConvertSidToStringSidW(MemberId, &MemberIdString);
+    TRACE("Member SID: %S\n", MemberIdString);
+
+    Status = SampRegOpenKey(AliasObject->MembersKeyHandle,
+                            MemberIdString,
+                            KEY_WRITE | KEY_QUERY_VALUE,
+                            &MemberKeyHandle);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SampRegOpenKey failed with status 0x%08lx\n", Status);
+        goto done;
+    }
+
+    Status = SampRegDeleteValue(MemberKeyHandle,
+                                AliasObject->Name);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SampRegDeleteValue failed with status 0x%08lx\n", Status);
+        goto done;
+    }
+
+    Status = SampRegQueryKeyInfo(MemberKeyHandle,
+                                 NULL,
+                                 &ulValueCount);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SampRegQueryKeyInfo failed with status 0x%08lx\n", Status);
+        goto done;
+    }
+
+    if (ulValueCount == 0)
+    {
+        SampRegCloseKey(MemberKeyHandle);
+        MemberKeyHandle = NULL;
+
+        Status = SampRegDeleteKey(AliasObject->MembersKeyHandle,
+                                  MemberIdString);
+        if (!NT_SUCCESS(Status))
+        {
+            TRACE("SampRegDeleteKey failed with status 0x%08lx\n", Status);
+            goto done;
+        }
+    }
+
+    Status = SampRegOpenKey(AliasObject->KeyHandle,
+                            L"Members",
+                            KEY_WRITE | KEY_QUERY_VALUE,
+                            &MembersKeyHandle);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SampRegOpenKey failed with status 0x%08lx\n", Status);
+        goto done;
+    }
+
+    Status = SampRegDeleteValue(MembersKeyHandle,
+                                MemberIdString);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SampRegDeleteValue failed with status 0x%08lx\n", Status);
+        goto done;
+    }
+
+    Status = SampRegQueryKeyInfo(MembersKeyHandle,
+                                 NULL,
+                                 &ulValueCount);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SampRegQueryKeyInfo failed with status 0x%08lx\n", Status);
+        goto done;
+    }
+
+    if (ulValueCount == 0)
+    {
+        SampRegCloseKey(MembersKeyHandle);
+        MembersKeyHandle = NULL;
+
+        Status = SampRegDeleteKey(AliasObject->KeyHandle,
+                                  L"Members");
+        if (!NT_SUCCESS(Status))
+        {
+            TRACE("SampRegDeleteKey failed with status 0x%08lx\n", Status);
+            goto done;
+        }
+    }
+
+done:
+    if (MemberKeyHandle != NULL)
+        SampRegCloseKey(MemberKeyHandle);
+
+    if (MembersKeyHandle != NULL)
+        SampRegCloseKey(MembersKeyHandle);
+
+    if (MemberIdString != NULL)
+        LocalFree(MemberIdString);
+
+    return Status;
 }
+
 
 /* Function 33 */
 NTSTATUS
@@ -4319,6 +4447,7 @@ done:
     return Status;
 }
 
+
 /* Function 34 */
 NTSTATUS
 NTAPI
@@ -4366,6 +4495,7 @@ SamrOpenUser(IN SAMPR_HANDLE DomainHandle,
 
     return STATUS_SUCCESS;
 }
+
 
 /* Function 35 */
 NTSTATUS
@@ -4676,8 +4806,6 @@ done:
 
     return Status;
 }
-
-
 
 
 static
@@ -6283,6 +6411,7 @@ SamrCreateUser2InDomain(IN SAMPR_HANDLE DomainHandle,
     return Status;
 }
 
+
 /* Function 51 */
 NTSTATUS
 NTAPI
@@ -6299,15 +6428,34 @@ SamrQueryDisplayInformation3(IN SAMPR_HANDLE DomainHandle,
     return STATUS_NOT_IMPLEMENTED;
 }
 
+
 /* Function 52 */
 NTSTATUS
 NTAPI
 SamrAddMultipleMembersToAlias(IN SAMPR_HANDLE AliasHandle,
                               IN PSAMPR_PSID_ARRAY MembersBuffer)
 {
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
+    ULONG i;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    TRACE("SamrAddMultipleMembersToAlias(%p %p)\n",
+          AliasHandle, MembersBuffer);
+
+    for (i = 0; i < MembersBuffer->Count; i++)
+    {
+        Status = SamrAddMemberToAlias(AliasHandle,
+                                      ((PSID *)MembersBuffer->Sids)[i]);
+
+        if (Status == STATUS_MEMBER_IN_ALIAS)
+            Status = STATUS_SUCCESS;
+
+        if (!NT_SUCCESS(Status))
+            break;
+    }
+
+    return Status;
 }
+
 
 /* Function 53 */
 NTSTATUS
@@ -6315,9 +6463,27 @@ NTAPI
 SamrRemoveMultipleMembersFromAlias(IN SAMPR_HANDLE AliasHandle,
                                    IN PSAMPR_PSID_ARRAY MembersBuffer)
 {
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
+    ULONG i;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    TRACE("SamrRemoveMultipleMembersFromAlias(%p %p)\n",
+          AliasHandle, MembersBuffer);
+
+    for (i = 0; i < MembersBuffer->Count; i++)
+    {
+        Status = SamrRemoveMemberFromAlias(AliasHandle,
+                                           ((PSID *)MembersBuffer->Sids)[i]);
+
+        if (Status == STATUS_MEMBER_IN_ALIAS)
+            Status = STATUS_SUCCESS;
+
+        if (!NT_SUCCESS(Status))
+            break;
+    }
+
+    return Status;
 }
+
 
 /* Function 54 */
 NTSTATUS

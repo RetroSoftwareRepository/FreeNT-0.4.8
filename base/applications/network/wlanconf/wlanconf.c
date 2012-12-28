@@ -14,14 +14,32 @@
 #include <nuiouser.h>
 #include <iphlpapi.h>
 
+#include "resource.h"
+
+#define COUNT_OF(a) (sizeof(a) / sizeof(a[0]))
+#define MAX_BUFFER_SIZE     5024
+
 BOOL bScan = FALSE;
 
 BOOL bConnect = FALSE;
-char* sSsid = NULL;
-char* sWepKey = NULL;
+char *sSsid = NULL;
+char *sWepKey = NULL;
 BOOL bAdhoc = FALSE;
 
 BOOL bDisconnect = FALSE;
+
+/* This takes strings from a resource stringtable and outputs it to
+the command prompt. */
+VOID PrintResourceString(INT resID, ...)
+{
+    TCHAR szMsgBuf[MAX_BUFFER_SIZE];
+    va_list arg_ptr;
+
+    va_start(arg_ptr, resID);
+    LoadString(GetModuleHandle(NULL), resID, szMsgBuf, MAX_BUFFER_SIZE);
+    _vtprintf(szMsgBuf, arg_ptr);
+    va_end(arg_ptr);
+}
 
 DWORD DoFormatMessage(DWORD ErrorCode)
 {
@@ -68,7 +86,7 @@ OpenDriverHandle(VOID)
                           NULL);
     if (hDriver == INVALID_HANDLE_VALUE)
         return INVALID_HANDLE_VALUE;
-    
+
     /* Wait for binds */
     bSuccess = DeviceIoControl(hDriver,
                                IOCTL_NDISUIO_BIND_WAIT,
@@ -83,7 +101,7 @@ OpenDriverHandle(VOID)
         CloseHandle(hDriver);
         return INVALID_HANDLE_VALUE;
     }
-    
+
     return hDriver;
 }
 
@@ -119,14 +137,15 @@ OpenAdapterHandle(DWORD Index, HANDLE *hAdapter, IP_ADAPTER_INDEX_MAP *IpInfo)
     DWORD dwBytesReturned;
     DWORD QueryBindingSize = sizeof(NDISUIO_QUERY_BINDING) + (1024 * sizeof(WCHAR));
     PNDISUIO_QUERY_BINDING QueryBinding;
-    DWORD dwStatus, dwSize, i;
+    DWORD dwStatus, dwSize;
+    LONG i;
     PIP_INTERFACE_INFO InterfaceInfo = NULL;
-    
+
     /* Open the driver handle */
     hDriver = OpenDriverHandle();
     if (hDriver == INVALID_HANDLE_VALUE)
         return FALSE;
-    
+
     /* Allocate the binding struct */
     QueryBinding = HeapAlloc(GetProcessHeap(), 0, QueryBindingSize);
     if (!QueryBinding)
@@ -152,7 +171,7 @@ OpenAdapterHandle(DWORD Index, HANDLE *hAdapter, IP_ADAPTER_INDEX_MAP *IpInfo)
         CloseHandle(hDriver);
         return FALSE;
     }
-    
+
     /* Bind to the adapter */
     bSuccess = DeviceIoControl(hDriver,
                                IOCTL_NDISUIO_OPEN_DEVICE,
@@ -174,7 +193,7 @@ OpenAdapterHandle(DWORD Index, HANDLE *hAdapter, IP_ADAPTER_INDEX_MAP *IpInfo)
     dwSize = sizeof(IP_INTERFACE_INFO);
     do {
         if (InterfaceInfo) HeapFree(GetProcessHeap(), 0, InterfaceInfo);
-        InterfaceInfo = HeapAlloc(GetProcessHeap(), 0, sizeof(IP_INTERFACE_INFO));
+        InterfaceInfo = HeapAlloc(GetProcessHeap(), 0, dwSize);
         if (!InterfaceInfo)
         {
             HeapFree(GetProcessHeap(), 0, QueryBinding);
@@ -183,14 +202,15 @@ OpenAdapterHandle(DWORD Index, HANDLE *hAdapter, IP_ADAPTER_INDEX_MAP *IpInfo)
         }
         dwStatus = GetInterfaceInfo(InterfaceInfo, &dwSize);
     } while (dwStatus == ERROR_INSUFFICIENT_BUFFER);
-    
+
     if (dwStatus != NO_ERROR)
     {
         HeapFree(GetProcessHeap(), 0, QueryBinding);
         HeapFree(GetProcessHeap(), 0, InterfaceInfo);
+        CloseHandle(hDriver);
         return FALSE;
     }
-    
+
     for (i = 0; i < InterfaceInfo->NumAdapters; i++)
     {
         if (wcsstr((PWCHAR)((PUCHAR)QueryBinding + QueryBinding->DeviceNameOffset),
@@ -198,10 +218,10 @@ OpenAdapterHandle(DWORD Index, HANDLE *hAdapter, IP_ADAPTER_INDEX_MAP *IpInfo)
         {
             *IpInfo = InterfaceInfo->Adapter[i];
             *hAdapter = hDriver;
-            
+
             HeapFree(GetProcessHeap(), 0, QueryBinding);
             HeapFree(GetProcessHeap(), 0, InterfaceInfo);
-            
+
             return TRUE;
         }
     }
@@ -223,7 +243,7 @@ OpenWlanAdapter(HANDLE *hAdapter, IP_ADAPTER_INDEX_MAP *IpInfo)
     {
         if (!OpenAdapterHandle(dwCurrentIndex, hAdapter, IpInfo))
             break;
-        
+
         if (IsWlanAdapter(*hAdapter))
             return TRUE;
         else
@@ -239,7 +259,7 @@ WlanDisconnect(HANDLE hAdapter, PIP_ADAPTER_INDEX_MAP IpInfo)
     BOOL bSuccess;
     DWORD dwBytesReturned;
     NDISUIO_SET_OID SetOid;
-    
+
     /* Release this IP address */
     IpReleaseAddress(IpInfo);
 
@@ -256,7 +276,7 @@ WlanDisconnect(HANDLE hAdapter, PIP_ADAPTER_INDEX_MAP IpInfo)
     if (!bSuccess)
         return FALSE;
 
-    _tprintf(_T("The operation completed successfully.\n"));
+    PrintResourceString(IDS_SUCCESS);
     return TRUE;
 }
 
@@ -265,7 +285,7 @@ UCHAR
 CharToHex(CHAR Char)
 {
     Char = toupper(Char);
-    
+
     switch (Char)
     {
         case '0':
@@ -315,12 +335,13 @@ WlanPrintCurrentStatus(HANDLE hAdapter)
     PNDIS_802_11_SSID SsidInfo;
     CHAR SsidBuffer[NDIS_802_11_LENGTH_SSID + 1];
     DWORD i;
-    
+    TCHAR szMsgBuf[128];
+
     QueryOidSize = FIELD_OFFSET(NDISUIO_QUERY_OID, Data) + sizeof(NDIS_802_11_SSID);
     QueryOid = HeapAlloc(GetProcessHeap(), 0, QueryOidSize);
     if (!QueryOid)
         return FALSE;
-    
+
     QueryOid->Oid = OID_802_11_SSID;
     SsidInfo = (PNDIS_802_11_SSID)QueryOid->Data;
 
@@ -337,7 +358,7 @@ WlanPrintCurrentStatus(HANDLE hAdapter)
         HeapFree(GetProcessHeap(), 0, QueryOid);
         return FALSE;
     }
-    
+
     /* Copy the SSID to our internal buffer and terminate it */
     RtlCopyMemory(SsidBuffer, SsidInfo->Ssid, SsidInfo->SsidLength);
     SsidBuffer[SsidInfo->SsidLength] = 0;
@@ -349,7 +370,7 @@ WlanPrintCurrentStatus(HANDLE hAdapter)
         return FALSE;
 
     QueryOid->Oid = OID_802_11_BSSID;
-    
+
     bSuccess = DeviceIoControl(hAdapter,
                                IOCTL_NDISUIO_QUERY_OID_VALUE,
                                QueryOid,
@@ -360,16 +381,16 @@ WlanPrintCurrentStatus(HANDLE hAdapter)
                                NULL);
     if (SsidInfo->SsidLength == 0 || !bSuccess)
     {
-        _tprintf(_T("\nWLAN disconnected\n"));
+        PrintResourceString(IDS_WLAN_DISCONNECT);
         HeapFree(GetProcessHeap(), 0, QueryOid);
         return TRUE;
     }
     else
     {
-        _tprintf(_T("\nCurrent wireless configuration information:\n\n"));
+        PrintResourceString(IDS_MSG_CURRENT_WIRELESS);
     }
 
-    _tprintf(_T("SSID: %s\n"), SsidBuffer);
+    _tprintf(_T("SSID: %hs\n"), SsidBuffer);
 
     _tprintf(_T("BSSID: "));
     for (i = 0; i < sizeof(NDIS_802_11_MAC_ADDRESS); i++)
@@ -382,15 +403,15 @@ WlanPrintCurrentStatus(HANDLE hAdapter)
             _tprintf(_T(":"));
     }
     _tprintf(_T("\n"));
-    
+
     HeapFree(GetProcessHeap(), 0, QueryOid);
     QueryOidSize = sizeof(NDISUIO_QUERY_OID);
     QueryOid = HeapAlloc(GetProcessHeap(), 0, QueryOidSize);
     if (!QueryOid)
         return FALSE;
-    
+
     QueryOid->Oid = OID_802_11_INFRASTRUCTURE_MODE;
-    
+
     bSuccess = DeviceIoControl(hAdapter,
                                IOCTL_NDISUIO_QUERY_OID_VALUE,
                                QueryOid,
@@ -404,11 +425,15 @@ WlanPrintCurrentStatus(HANDLE hAdapter)
         HeapFree(GetProcessHeap(), 0, QueryOid);
         return FALSE;
     }
-    
-    _tprintf(_T("Network mode: %s\n"), (*(PUINT)QueryOid->Data == Ndis802_11IBSS) ? "Adhoc" : "Infrastructure");
-    
+
+    LoadString(GetModuleHandle(NULL),
+               *(PUINT)QueryOid->Data == Ndis802_11IBSS ? IDS_ADHOC : IDS_INFRASTRUCTURE,
+               szMsgBuf,
+               COUNT_OF(szMsgBuf));
+    PrintResourceString(IDS_MSG_NETWORK_MODE, szMsgBuf);
+
     QueryOid->Oid = OID_802_11_WEP_STATUS;
-    
+
     bSuccess = DeviceIoControl(hAdapter,
                                IOCTL_NDISUIO_QUERY_OID_VALUE,
                                QueryOid,
@@ -422,12 +447,16 @@ WlanPrintCurrentStatus(HANDLE hAdapter)
         HeapFree(GetProcessHeap(), 0, QueryOid);
         return FALSE;
     }
-    
-    _tprintf(_T("WEP enabled: %s\n"), (*(PUINT)QueryOid->Data == Ndis802_11WEPEnabled) ? "Yes" : "No");
-    
-    _tprintf("\n");
+
+    LoadString(GetModuleHandle(NULL),
+               *(PUINT)QueryOid->Data == Ndis802_11WEPEnabled ? IDS_YES : IDS_NO,
+               szMsgBuf,
+               COUNT_OF(szMsgBuf));
+    PrintResourceString(IDS_MSG_WEP_ENABLED, szMsgBuf);
+
+    _tprintf(_T("\n"));
     QueryOid->Oid = OID_802_11_RSSI;
-    
+
     bSuccess = DeviceIoControl(hAdapter,
                                IOCTL_NDISUIO_QUERY_OID_VALUE,
                                QueryOid,
@@ -441,9 +470,9 @@ WlanPrintCurrentStatus(HANDLE hAdapter)
         /* This OID is optional */
         _tprintf(_T("RSSI: %i dBm\n"), *(PINT)QueryOid->Data);
     }
-    
+
     QueryOid->Oid = OID_802_11_TX_POWER_LEVEL;
-    
+
     bSuccess = DeviceIoControl(hAdapter,
                                IOCTL_NDISUIO_QUERY_OID_VALUE,
                                QueryOid,
@@ -455,13 +484,13 @@ WlanPrintCurrentStatus(HANDLE hAdapter)
     if (bSuccess)
     {
         /* This OID is optional */
-        _tprintf(_T("Transmission power: %d mW\n"), *(PUINT)QueryOid->Data);
+        PrintResourceString(IDS_MSG_TRANSMISSION_POWER, *(PUINT)QueryOid->Data);
     }
-    
+
     _tprintf(_T("\n"));
-    
+
     QueryOid->Oid = OID_802_11_NUMBER_OF_ANTENNAS;
-    
+
     bSuccess = DeviceIoControl(hAdapter,
                                IOCTL_NDISUIO_QUERY_OID_VALUE,
                                QueryOid,
@@ -473,11 +502,11 @@ WlanPrintCurrentStatus(HANDLE hAdapter)
     if (bSuccess)
     {
         /* This OID is optional */
-        _tprintf(_T("Antenna count: %d\n"), *(PUINT)QueryOid->Data);
+        PrintResourceString(IDS_MSG_ANTENNA_COUNT, *(PUINT)QueryOid->Data);
     }
-    
+
     QueryOid->Oid = OID_802_11_TX_ANTENNA_SELECTED;
-    
+
     bSuccess = DeviceIoControl(hAdapter,
                                IOCTL_NDISUIO_QUERY_OID_VALUE,
                                QueryOid,
@@ -489,15 +518,15 @@ WlanPrintCurrentStatus(HANDLE hAdapter)
     if (bSuccess)
     {
         UINT TransmitAntenna = *(PUINT)QueryOid->Data;
-        
+
         if (TransmitAntenna != 0xFFFFFFFF)
-            _tprintf(_T("Transmit antenna: %d\n"), TransmitAntenna);
+            PrintResourceString(IDS_MSG_TRANSMIT_ANTENNA, TransmitAntenna);
         else
-            _tprintf(_T("Transmit antenna: Any\n"));
+            PrintResourceString(IDS_MSG_TRANSMIT_ANTENNA_ANY);
     }
-    
+
     QueryOid->Oid = OID_802_11_RX_ANTENNA_SELECTED;
-    
+
     bSuccess = DeviceIoControl(hAdapter,
                                IOCTL_NDISUIO_QUERY_OID_VALUE,
                                QueryOid,
@@ -509,17 +538,17 @@ WlanPrintCurrentStatus(HANDLE hAdapter)
     if (bSuccess)
     {
         UINT ReceiveAntenna = *(PUINT)QueryOid->Data;
-        
+
         if (ReceiveAntenna != 0xFFFFFFFF)
-            _tprintf(_T("Receive antenna: %d\n"), ReceiveAntenna);
+            PrintResourceString(IDS_MSG_RECEIVE_ANTENNA, ReceiveAntenna);
         else
-            _tprintf(_T("Receive antenna: Any\n"));
+            PrintResourceString(IDS_MSG_RECEIVE_ANTENNA_ANY);
     }
-    
+
     _tprintf(_T("\n"));
-    
+
     QueryOid->Oid = OID_802_11_FRAGMENTATION_THRESHOLD;
-    
+
     bSuccess = DeviceIoControl(hAdapter,
                                IOCTL_NDISUIO_QUERY_OID_VALUE,
                                QueryOid,
@@ -531,11 +560,11 @@ WlanPrintCurrentStatus(HANDLE hAdapter)
     if (bSuccess)
     {
         /* This OID is optional */
-        _tprintf(_T("Fragmentation threshold: %d bytes\n"), *(PUINT)QueryOid->Data);
+        PrintResourceString(IDS_MSG_FRAGMENT_THRESHOLD, *(PUINT)QueryOid->Data);
     }
-    
+
     QueryOid->Oid = OID_802_11_RTS_THRESHOLD;
-    
+
     bSuccess = DeviceIoControl(hAdapter,
                                IOCTL_NDISUIO_QUERY_OID_VALUE,
                                QueryOid,
@@ -547,11 +576,11 @@ WlanPrintCurrentStatus(HANDLE hAdapter)
     if (bSuccess)
     {
         /* This OID is optional */
-        _tprintf(_T("RTS threshold: %d bytes\n"), *(PUINT)QueryOid->Data);
+        PrintResourceString(IDS_MSG_RTS_THRESHOLD, *(PUINT)QueryOid->Data);
     }
-    
+
     HeapFree(GetProcessHeap(), 0, QueryOid);
-    
+
     _tprintf(_T("\n"));
     return TRUE;
 }
@@ -564,7 +593,7 @@ WlanConnect(HANDLE hAdapter)
     PNDISUIO_SET_OID SetOid;
     PNDIS_802_11_SSID Ssid;
     DWORD i;
-    
+
     SetOidSize = sizeof(NDISUIO_SET_OID);
     SetOid = HeapAlloc(GetProcessHeap(), 0, SetOidSize);
     if (!SetOid)
@@ -573,7 +602,7 @@ WlanConnect(HANDLE hAdapter)
     /* Set the network mode */
     SetOid->Oid = OID_802_11_INFRASTRUCTURE_MODE;
     *(PULONG)SetOid->Data = bAdhoc ? Ndis802_11IBSS : Ndis802_11Infrastructure;
-    
+
     bSuccess = DeviceIoControl(hAdapter,
                                IOCTL_NDISUIO_SET_OID_VALUE,
                                SetOid,
@@ -591,7 +620,7 @@ WlanConnect(HANDLE hAdapter)
     /* Set the authentication mode */
     SetOid->Oid = OID_802_11_AUTHENTICATION_MODE;
     *(PULONG)SetOid->Data = sWepKey ? Ndis802_11AuthModeShared : Ndis802_11AuthModeOpen;
-    
+
     bSuccess = DeviceIoControl(hAdapter,
                                IOCTL_NDISUIO_SET_OID_VALUE,
                                SetOid,
@@ -605,11 +634,11 @@ WlanConnect(HANDLE hAdapter)
         HeapFree(GetProcessHeap(), 0, SetOid);
         return FALSE;
     }
-    
+
     if (sWepKey)
     {
         PNDIS_802_11_WEP WepData;
-        
+
         HeapFree(GetProcessHeap(), 0, SetOid);
 
         SetOidSize = FIELD_OFFSET(NDISUIO_SET_OID, Data) +
@@ -618,7 +647,7 @@ WlanConnect(HANDLE hAdapter)
         SetOid = HeapAlloc(GetProcessHeap(), 0, SetOidSize);
         if (!SetOid)
             return FALSE;
-        
+
         /* Add the WEP key */
         SetOid->Oid = OID_802_11_ADD_WEP;
         WepData = (PNDIS_802_11_WEP)SetOid->Data;
@@ -626,7 +655,7 @@ WlanConnect(HANDLE hAdapter)
         WepData->KeyIndex = 0x80000000;
         WepData->KeyLength = strlen(sWepKey) >> 1;
         WepData->Length = FIELD_OFFSET(NDIS_802_11_WEP, KeyMaterial) + WepData->KeyLength;
-        
+
         /* Assemble the hex key */
         i = 0;
         while (sWepKey[i << 1] != '\0')
@@ -635,7 +664,7 @@ WlanConnect(HANDLE hAdapter)
             WepData->KeyMaterial[i] |= CharToHex(sWepKey[(i << 1) + 1]);
             i++;
         }
-        
+
         bSuccess = DeviceIoControl(hAdapter,
                                    IOCTL_NDISUIO_SET_OID_VALUE,
                                    SetOid,
@@ -668,17 +697,17 @@ WlanConnect(HANDLE hAdapter)
         HeapFree(GetProcessHeap(), 0, SetOid);
         return FALSE;
     }
-    
+
     HeapFree(GetProcessHeap(), 0, SetOid);
     SetOidSize = FIELD_OFFSET(NDISUIO_SET_OID, Data) + sizeof(NDIS_802_11_MAC_ADDRESS);
     SetOid = HeapAlloc(GetProcessHeap(), 0, SetOidSize);
     if (!SetOid)
         return FALSE;
-    
+
     /* Set the BSSID */
     SetOid->Oid = OID_802_11_BSSID;
     RtlFillMemory(SetOid->Data, sizeof(NDIS_802_11_MAC_ADDRESS), 0xFF);
-    
+
     bSuccess = DeviceIoControl(hAdapter,
                                IOCTL_NDISUIO_SET_OID_VALUE,
                                SetOid,
@@ -692,20 +721,20 @@ WlanConnect(HANDLE hAdapter)
         HeapFree(GetProcessHeap(), 0, SetOid);
         return FALSE;
     }
-    
+
     HeapFree(GetProcessHeap(), 0, SetOid);
     SetOidSize = FIELD_OFFSET(NDISUIO_SET_OID, Data) + sizeof(NDIS_802_11_SSID);
     SetOid = HeapAlloc(GetProcessHeap(), 0, SetOidSize);
     if (!SetOid)
         return FALSE;
-    
+
     /* Finally, set the SSID */
     SetOid->Oid = OID_802_11_SSID;
     Ssid = (PNDIS_802_11_SSID)SetOid->Data;
-    
+
     RtlCopyMemory(Ssid->Ssid, sSsid, strlen(sSsid));
     Ssid->SsidLength = strlen(sSsid);
-    
+
     bSuccess = DeviceIoControl(hAdapter,
                                IOCTL_NDISUIO_SET_OID_VALUE,
                                SetOid,
@@ -714,13 +743,13 @@ WlanConnect(HANDLE hAdapter)
                                0,
                                &dwBytesReturned,
                                NULL);
-    
+
     HeapFree(GetProcessHeap(), 0, SetOid);
-    
+
     if (!bSuccess)
         return FALSE;
 
-    _tprintf(_T("The operation completed successfully.\n"));
+    PrintResourceString(IDS_SUCCESS);
     return TRUE;
 }
 
@@ -734,9 +763,10 @@ WlanScan(HANDLE hAdapter)
     DWORD QueryOidSize;
     PNDIS_802_11_BSSID_LIST BssidList;
     DWORD i, j;
+    TCHAR szMsgBuf[128];
 
     SetOid.Oid = OID_802_11_BSSID_LIST_SCAN;
-    
+
     /* Send the scan OID */
     bSuccess = DeviceIoControl(hAdapter,
                                IOCTL_NDISUIO_SET_OID_VALUE,
@@ -748,13 +778,13 @@ WlanScan(HANDLE hAdapter)
                                NULL);
     if (!bSuccess)
         return FALSE;
-    
+
     /* Allocate space for 15 networks to be returned */
     QueryOidSize = sizeof(NDISUIO_QUERY_OID) + (sizeof(NDIS_WLAN_BSSID) * 15);
     QueryOid = HeapAlloc(GetProcessHeap(), 0, QueryOidSize);
     if (!QueryOid)
         return FALSE;
-    
+
     QueryOid->Oid = OID_802_11_BSSID_LIST;
     BssidList = (PNDIS_802_11_BSSID_LIST)QueryOid->Data;
 
@@ -774,7 +804,7 @@ WlanScan(HANDLE hAdapter)
 
     if (BssidList->NumberOfItems == 0)
     {
-        _tprintf(_T("No networks found in range\n"));
+        PrintResourceString(IDS_NO_NETWORK);
     }
     else
     {
@@ -791,9 +821,7 @@ WlanScan(HANDLE hAdapter)
             RtlCopyMemory(SsidBuffer, Ssid->Ssid, Ssid->SsidLength);
             SsidBuffer[Ssid->SsidLength] = 0;
 
-            _tprintf(_T("\n"));
-
-            _tprintf(_T("SSID: %s\n"), SsidBuffer);
+            _tprintf(_T("\nSSID: %hs\n"), SsidBuffer);
 
             _tprintf(_T("BSSID: "));
             for (j = 0; j < sizeof(NDIS_802_11_MAC_ADDRESS); j++)
@@ -807,14 +835,19 @@ WlanScan(HANDLE hAdapter)
             }
             _tprintf(_T("\n"));
 
-            _tprintf(_T("Encrypted: %s\n"
-                        "Network Type: %s\n"
-                        "RSSI: %i dBm\n"
-                        "Supported Rates (Mbps): "),
-                        BssidInfo->Privacy == 0 ? "No" : "Yes",
-                        NetworkType == Ndis802_11IBSS ? "Adhoc" : "Infrastructure",
-                        (int)Rssi);
-            
+            LoadString(GetModuleHandle(NULL),
+                       BssidInfo->Privacy == 0 ? IDS_NO : IDS_YES,
+                       szMsgBuf,
+                       COUNT_OF(szMsgBuf));
+            PrintResourceString(IDS_MSG_ENCRYPTED, szMsgBuf);
+            LoadString(GetModuleHandle(NULL),
+                       NetworkType == Ndis802_11IBSS ? IDS_ADHOC : IDS_INFRASTRUCTURE,
+                       szMsgBuf,
+                       COUNT_OF(szMsgBuf));
+            PrintResourceString(IDS_MSG_NETWORK_TYPE, szMsgBuf);
+            PrintResourceString(IDS_MSG_RSSI, (int)Rssi);
+            PrintResourceString(IDS_MSG_SUPPORT_RATE);
+
             for (j = 0; j < NDIS_802_11_LENGTH_RATES; j++)
             {
                 Rate = BssidInfo->SupportedRates[j];
@@ -837,34 +870,21 @@ WlanScan(HANDLE hAdapter)
                 }
             }
             _tprintf(_T("\n"));
-            
+
             /* Move to the next entry */
             BssidInfo = (PNDIS_WLAN_BSSID)((PUCHAR)BssidInfo + BssidInfo->Length);
         }
     }
-    
+
     HeapFree(GetProcessHeap(), 0, QueryOid);
-    
+
     return bSuccess;
 }
 
-VOID Usage()
-{
-    _tprintf(_T("\nConfigures a WLAN adapter.\n\n"
-    "WLANCONF [-c SSID [-w WEP] [-a]] [-d] [-s]\n\n"
-    "  -c SSID       Connects to a supplied SSID.\n"
-    "     -w WEP     Specifies a WEP key to use.\n"
-    "     -a         Specifies the target network is ad-hoc\n"
-    "  -d            Disconnects from the current AP.\n"
-    "  -s            Scans and displays a list of access points in range.\n\n"
-    " Passing no parameters will print information about the current WLAN connection\n"));
-}
-
-
-BOOL ParseCmdline(int argc, char* argv[])
+BOOL ParseCmdline(int argc, char *argv[])
 {
     INT i;
-    
+
     for (i = 1; i < argc; i++)
     {
         if (argv[i][0] == '-')
@@ -880,7 +900,7 @@ BOOL ParseCmdline(int argc, char* argv[])
                 case 'c':
                     if (i == argc - 1)
                     {
-                        Usage();
+                        PrintResourceString(IDS_USAGE);
                         return FALSE;
                     }
                     bConnect = TRUE;
@@ -889,7 +909,7 @@ BOOL ParseCmdline(int argc, char* argv[])
                 case 'w':
                     if (i == argc - 1)
                     {
-                        Usage();
+                        PrintResourceString(IDS_USAGE);
                         return FALSE;
                     }
                     sWepKey = argv[++i];
@@ -898,14 +918,14 @@ BOOL ParseCmdline(int argc, char* argv[])
                     bAdhoc = TRUE;
                     break;
                 default :
-                    Usage();
+                    PrintResourceString(IDS_USAGE);
                     return FALSE;
             }
 
         }
         else
         {
-            Usage();
+            PrintResourceString(IDS_USAGE);
             return FALSE;
         }
     }
@@ -913,20 +933,20 @@ BOOL ParseCmdline(int argc, char* argv[])
     return TRUE;
 }
 
-int main(int argc, char* argv[])
+int main(int argc, char *argv[])
 {
     HANDLE hAdapter;
     IP_ADAPTER_INDEX_MAP IpInfo;
 
     if (!ParseCmdline(argc, argv))
         return -1;
-    
+
     if (!OpenWlanAdapter(&hAdapter, &IpInfo))
     {
-        _tprintf(_T("Unable to find a WLAN adapter on the system\n"));
+        PrintResourceString(IDS_NO_WLAN_ADAPTER);
         return -1;
     }
-    
+
     if (bScan)
     {
         if (!WlanScan(hAdapter))

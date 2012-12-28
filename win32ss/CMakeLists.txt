@@ -1,5 +1,6 @@
 
 set(USE_DIBLIB TRUE)
+set(USE_NEW_CURSORICON FALSE)
 
 # Give WIN32 subsystem its own project.
 PROJECT(WIN32SS)
@@ -8,6 +9,10 @@ add_subdirectory(drivers)
 
 if(USE_DIBLIB)
     add_subdirectory(gdi/diblib)
+endif()
+
+if(USE_NEW_CURSORICON)
+    add_definitions(-DNEW_CURSORICON)
 endif()
 
 add_subdirectory(gdi/gdi32)
@@ -65,6 +70,7 @@ list(APPEND SOURCE
     gdi/eng/lineto.c
     gdi/eng/ldevobj.c
     gdi/eng/mapping.c
+    gdi/eng/math.c
     gdi/eng/mem.c
     gdi/eng/engmisc.c
     gdi/eng/mouse.c
@@ -82,11 +88,9 @@ list(APPEND SOURCE
     gdi/eng/xlateobj.c
     user/ntuser/main.c
     user/ntuser/misc/file.c
-    user/ntuser/misc/math.c
     user/ntuser/misc/rtlstr.c
     user/ntuser/misc/copy.c
     user/ntuser/misc/registry.c
-    user/ntuser/misc/usrheap.c
     reactx/ntddraw/ddraw.c
     reactx/ntddraw/dd.c
     reactx/ntddraw/ddsurf.c
@@ -102,7 +106,6 @@ list(APPEND SOURCE
     user/ntuser/class.c
     user/ntuser/clipboard.c
     user/ntuser/csr.c
-    user/ntuser/cursoricon.c
     user/ntuser/defwnd.c
     user/ntuser/desktop.c
     user/ntuser/display.c
@@ -131,6 +134,7 @@ list(APPEND SOURCE
     user/ntuser/sysparams.c
     user/ntuser/timer.c
     user/ntuser/useratom.c
+    user/ntuser/usrheap.c
     user/ntuser/vis.c
     user/ntuser/windc.c
     user/ntuser/window.c
@@ -190,21 +194,27 @@ else()
         ${GENDIB_FILES})
 endif()
 
-if(ARCH MATCHES i386)
+if(USE_NEW_CURSORICON)
+    list(APPEND SOURCE user/ntuser/cursoricon_new.c)
+else()
+    list(APPEND SOURCE user/ntuser/cursoricon.c)
+endif()
+
+if(ARCH STREQUAL "i386")
 list(APPEND SOURCE
     gdi/dib/i386/dib24bpp_hline.s
     gdi/dib/i386/dib32bpp_hline.s
     gdi/dib/i386/dib32bpp_colorfill.s
-    gdi/eng/i386/floatobj.S
-    user/ntuser/misc/i386/cos_asm.s
-    user/ntuser/misc/i386/sin_asm.s
-    user/ntuser/misc/i386/atan2_asm.s
-    user/ntuser/misc/i386/floor_asm.s
-    user/ntuser/misc/i386/ceil_asm.s)
+    gdi/eng/i386/floatobj.S)
 else()
 list(APPEND SOURCE
     gdi/dib/dib24bppc.c
     gdi/dib/dib32bppc.c)
+endif()
+
+if(KDBG)
+    list(APPEND SOURCE
+        gdi/ntgdi/gdikdbgext.c)
 endif()
 
 add_library(win32k SHARED

@@ -591,7 +591,7 @@ ScmDeleteRegKey(HKEY hKey, LPCWSTR lpszSubKey)
             if (dwMaxSubkeyLen > sizeof(szNameBuf) / sizeof(WCHAR))
             {
                 /* Name too big: alloc a buffer for it */
-                lpszName = HeapAlloc(GetProcessHeap(), 0, dwMaxSubkeyLen * sizeof(WCHAR));
+                lpszName = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, dwMaxSubkeyLen * sizeof(WCHAR));
             }
 
             if (!lpszName)
@@ -902,7 +902,7 @@ ScmControlService(PSERVICE Service,
 
     /* Calculate the total length of the start command line */
     PacketSize = sizeof(SCM_CONTROL_PACKET);
-    PacketSize += (wcslen(Service->lpServiceName) + 1) * sizeof(WCHAR);
+    PacketSize += (DWORD)((wcslen(Service->lpServiceName) + 1) * sizeof(WCHAR));
 
     ControlPacket = HeapAlloc(GetProcessHeap(),
                               HEAP_ZERO_MEMORY,
@@ -1117,7 +1117,7 @@ ScmSendStartCommand(PSERVICE Service,
 
     /* Calculate the total length of the start command line */
     PacketSize = sizeof(SCM_CONTROL_PACKET) +
-                 (wcslen(Service->lpServiceName) + 1) * sizeof(WCHAR);
+                 (DWORD)((wcslen(Service->lpServiceName) + 1) * sizeof(WCHAR));
 
     /* Calculate the required packet size for the start arguments */
     if (argc > 0 && argv != NULL)
@@ -1128,7 +1128,7 @@ ScmSendStartCommand(PSERVICE Service,
         for (i = 0; i < argc; i++)
         {
             DPRINT("Argv[%lu]: %S\n", i, argv[i]);
-            PacketSize += (wcslen(argv[i]) + 1) * sizeof(WCHAR) + sizeof(PWSTR);
+            PacketSize += (DWORD)((wcslen(argv[i]) + 1) * sizeof(WCHAR) + sizeof(PWSTR));
         }
     }
 
@@ -1512,13 +1512,9 @@ ScmStartUserModeService(PSERVICE Service,
         return ScmSendStartCommand(Service, argc, argv);
     }
 
+    ZeroMemory(&StartupInfo, sizeof(StartupInfo));
     StartupInfo.cb = sizeof(StartupInfo);
-    StartupInfo.lpReserved = NULL;
-    StartupInfo.lpDesktop = NULL;
-    StartupInfo.lpTitle = NULL;
-    StartupInfo.dwFlags = 0;
-    StartupInfo.cbReserved2 = 0;
-    StartupInfo.lpReserved2 = 0;
+    ZeroMemory(&ProcessInformation, sizeof(ProcessInformation));
 
     Result = CreateProcessW(NULL,
                             Service->lpImage->szImagePath,

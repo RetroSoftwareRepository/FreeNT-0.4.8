@@ -153,7 +153,7 @@ MiCheckPdeForSessionSpace(IN PVOID Address)
 {
     MMPTE TempPde;
     PMMPTE PointerPde;
-    PVOID SessionPageTable;
+    PVOID SessionAddress;
     ULONG Index;
 
     /* Is this a session PTE? */
@@ -171,12 +171,12 @@ MiCheckPdeForSessionSpace(IN PVOID Address)
         }
 
         /* Now get the session-specific page table for this address */
-        SessionPageTable = MiPteToAddress(Address);
-        PointerPde = MiPteToAddress(Address);
+        SessionAddress = MiPteToAddress(Address);
+        PointerPde = MiAddressToPte(Address);
         if (PointerPde->u.Hard.Valid) return STATUS_WAIT_1;
 
         /* It's not valid, so find it in the page table array */
-        Index = ((ULONG_PTR)SessionPageTable - (ULONG_PTR)MmSessionBase) >> 22;
+        Index = ((ULONG_PTR)SessionAddress - (ULONG_PTR)MmSessionBase) >> 22;
         TempPde.u.Long = MmSessionSpace->PageTables[Index].u.Long;
         if (TempPde.u.Hard.Valid)
         {
@@ -187,7 +187,7 @@ MiCheckPdeForSessionSpace(IN PVOID Address)
 
         /* We don't seem to have allocated a page table for this address yet? */
         DbgPrint("MiCheckPdeForSessionSpace: No Session PDE for PTE %p, %p\n",
-                 PointerPde->u.Long, SessionPageTable);
+                 PointerPde->u.Long, SessionAddress);
         DbgBreakPoint();
         return STATUS_ACCESS_VIOLATION;
     }
@@ -663,7 +663,7 @@ MiResolveTransitionFault(IN PVOID FaultingAddress,
     ASSERT(Pfn1->u3.e1.ReadInProgress == 0);
 
     /* Windows checks there's some free pages and this isn't an in-page error */
-    ASSERT(MmAvailablePages >= 0);
+    ASSERT(MmAvailablePages > 0);
     ASSERT(Pfn1->u4.InPageError == 0);
 
     /* ReactOS checks for this */
@@ -980,8 +980,51 @@ MiDispatchFault(IN BOOLEAN StoreInstruction,
                 else if ((TempPte.u.Soft.Prototype == 0) &&
                          (TempPte.u.Soft.Transition == 1))
                 {
-                    /* No standby support yet */
-                    ASSERT(FALSE);
+                    /* This is a standby page, bring it back from the cache */
+                    PageFrameIndex = TempPte.u.Trans.PageFrameNumber;
+                    DPRINT("oooh, shiny, a soft fault! 0x%lx\n", PageFrameIndex);
+                    Pfn1 = MI_PFN_ELEMENT(PageFrameIndex);
+                    ASSERT(Pfn1->u3.e1.PageLocation != ActiveAndValid);
+                    
+                    /* Should not yet happen in ReactOS */
+                    ASSERT(Pfn1->u3.e1.ReadInProgress == 0);
+                    ASSERT(Pfn1->u4.InPageError == 0);
+                    
+                    /* Get the page */
+                    MiUnlinkPageFromList(Pfn1);
+                    
+                    /* Bump its reference count */
+                    ASSERT(Pfn1->u2.ShareCount == 0);
+                    InterlockedIncrement16((PSHORT)&Pfn1->u3.e2.ReferenceCount);
+                    Pfn1->u2.ShareCount++;
+                    
+                    /* Make it valid again */
+                    /* This looks like another macro.... */
+                    Pfn1->u3.e1.PageLocation = ActiveAndValid;
+                    ASSERT(PointerProtoPte->u.Hard.Valid == 0);
+                    ASSERT(PointerProtoPte->u.Trans.Prototype == 0);
+                    ASSERT(PointerProtoPte->u.Trans.Transition == 1);
+                    TempPte.u.Long = (PointerProtoPte->u.Long & ~0xFFF) |
+                                     MmProtectToPteMask[PointerProtoPte->u.Trans.Protection];
+                    TempPte.u.Hard.Valid = 1;
+                    TempPte.u.Hard.Accessed = 1;
+                    
+                    /* Is the PTE writeable? */
+                    if (((Pfn1->u3.e1.Modified) && (TempPte.u.Hard.Write)) &&
+                        (TempPte.u.Hard.CopyOnWrite == 0))
+                    {
+                        /* Make it dirty */
+                        TempPte.u.Hard.Dirty = TRUE;
+                    }
+                    else
+                    {
+                        /* Make it clean */
+                        TempPte.u.Hard.Dirty = FALSE;
+                    }
+
+                    /* Write the valid PTE */
+                    MI_WRITE_VALID_PTE(PointerProtoPte, TempPte);
+                    ASSERT(PointerPte->u.Hard.Valid == 0);
                 }
                 else
                 {
@@ -1042,7 +1085,9 @@ MiDispatchFault(IN BOOLEAN StoreInstruction,
                                             Process,
                                             LockIrql,
                                             TrapInformation);
-            ASSERT(Status == STATUS_SUCCESS);
+            //ASSERT(Status != STATUS_ISSUE_PAGING_IO);
+            //ASSERT(Status != STATUS_REFAULT);
+            //ASSERT(Status != STATUS_PTE_CHANGED);
 
             /* Did the routine clean out the PFN or should we? */
             if (OutPfn)
@@ -1639,8 +1684,7 @@ UserFault:
         if (Address <= MM_HIGHEST_USER_ADDRESS)
         {
             /* Add an additional page table reference */
-            MmWorkingSetList->UsedPageTableEntries[MiGetPdeOffset(Address)]++;
-            ASSERT(MmWorkingSetList->UsedPageTableEntries[MiGetPdeOffset(Address)] <= PTE_COUNT);
+            MiIncrementPageTableReferences(Address);
         }
 
         /* Did we get a prototype PTE back? */
@@ -1742,18 +1786,15 @@ UserFault:
     {
         /* Get the protection code and check if this is a proto PTE */
         ProtectionCode = TempPte.u.Soft.Protection;
-        DPRINT1("Code: %lx\n", ProtectionCode);
         if (TempPte.u.Soft.Prototype)
         {
             /* Do we need to go find the real PTE? */
-            DPRINT1("Soft: %lx\n", TempPte.u.Soft.PageFileHigh);
             if (TempPte.u.Soft.PageFileHigh == MI_PTE_LOOKUP_NEEDED)
             {
                 /* Get the prototype pte and VAD for it */
                 ProtoPte = MiCheckVirtualAddress(Address,
                                                  &ProtectionCode,
                                                  &Vad);
-                DPRINT1("Address: %p ProtoP %p Code: %lx Vad: %p\n", Address, ProtoPte, ProtectionCode, Vad);
                 if (!ProtoPte)
                 {
                     ASSERT(KeGetCurrentIrql() <= APC_LEVEL);
@@ -1795,7 +1836,6 @@ UserFault:
                              Vad);
 
     /* Return the status */
-    ASSERT(NT_SUCCESS(Status));
     ASSERT(KeGetCurrentIrql() <= APC_LEVEL);
     MiUnlockProcessWorkingSet(CurrentProcess, CurrentThread);
     return Status;

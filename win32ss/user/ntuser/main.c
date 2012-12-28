@@ -11,6 +11,7 @@
 
 #define NDEBUG
 #include <debug.h>
+#include <kdros.h>
 
 HANDLE hModuleWin;
 
@@ -25,6 +26,7 @@ PSERVERINFO gpsi = NULL; // Global User Server Information.
 
 SHORT gusLanguageID;
 PPROCESSINFO ppiScrnSaver;
+PPROCESSINFO gppiList = NULL;
 
 extern ULONG_PTR Win32kSSDT[];
 extern UCHAR Win32kSSPT[];
@@ -54,7 +56,7 @@ APIENTRY
 Win32kProcessCallback(struct _EPROCESS *Process,
                       BOOLEAN Create)
 {
-    PPROCESSINFO ppiCurrent;
+    PPROCESSINFO ppiCurrent, *pppi;
     DECLARE_RETURN(NTSTATUS);
 
     ASSERT(Process->Peb);
@@ -87,6 +89,9 @@ Win32kProcessCallback(struct _EPROCESS *Process,
 
 #if DBG
         DbgInitDebugChannels();
+#if KDBG
+        KdRosRegisterCliCallback(DbgGdiKdbgCliCallback);
+#endif
 #endif
 
         TRACE_CH(UserProcess,"Allocated ppi 0x%p for PID:0x%lx\n", ppiCurrent, HandleToUlong(Process->UniqueProcessId));
@@ -156,6 +161,10 @@ Win32kProcessCallback(struct _EPROCESS *Process,
         ASSERT(ppiCurrent->pPoolDcAttr);
         ASSERT(ppiCurrent->pPoolBrushAttr);
         ASSERT(ppiCurrent->pPoolRgnAttr);
+
+        /* Add the process to the global list */
+        ppiCurrent->ppiNext = gppiList;
+        gppiList = ppiCurrent;
     }
     else
     {
@@ -208,9 +217,23 @@ Win32kProcessCallback(struct _EPROCESS *Process,
 
         if (gppiInputProvider == ppiCurrent) gppiInputProvider = NULL;
 
-        TRACE_CH(UserProcess,"Freeing ppi 0x%p\n", ppiCurrent);
+        pppi = &gppiList;
+        while (*pppi != NULL && *pppi != ppiCurrent)
+            pppi = &(*pppi)->ppiNext;
 
-        /* Ftee the PROCESSINFO */
+        ASSERT(*pppi == ppiCurrent);
+
+        *pppi = ppiCurrent->ppiNext;
+
+        TRACE_CH(UserProcess,"Freeing ppi 0x%p\n", ppiCurrent);
+#if DBG
+        if (DBG_IS_CHANNEL_ENABLED(ppiCurrent, DbgChUserObj, WARN_LEVEL))
+        {
+            DbgUserDumpHandleTable();
+        }
+#endif
+
+        /* Free the PROCESSINFO */
         PsSetProcessWin32Process(Process, NULL);
         ExFreePoolWithTag(ppiCurrent, USERTAG_PROCESSINFO);
     }
@@ -270,7 +293,7 @@ UserCreateThreadInfo(struct _ETHREAD *Thread)
     ptiCurrent->ptiSibling = ptiCurrent->ppi->ptiList;
     ptiCurrent->ppi->ptiList = ptiCurrent;
     ptiCurrent->ppi->cThreads++;
-    ptiCurrent->MessageQueue = MsqCreateMessageQueue(Thread);
+    ptiCurrent->MessageQueue = MsqCreateMessageQueue(ptiCurrent);
     if(ptiCurrent->MessageQueue == NULL)
     {
         ERR_CH(UserThread,"Failed to allocate message loop\n");
@@ -281,6 +304,7 @@ UserCreateThreadInfo(struct _ETHREAD *Thread)
     if (ptiCurrent->KeyboardLayout)
         UserReferenceObject(ptiCurrent->KeyboardLayout);
     ptiCurrent->TIF_flags &= ~TIF_INCLEANUP;
+    ptiCurrent->pcti = &ptiCurrent->cti;
 
     /* Initialize the CLIENTINFO */
     pci = (PCLIENTINFO)pTeb->Win32ClientInfo;
@@ -401,6 +425,28 @@ UserDestroyThreadInfo(struct _ETHREAD *Thread)
     ppiCurrent = ptiCurrent->ppi;
     ASSERT(ppiCurrent);
 
+    // ptiTo
+    if (IsThreadAttach(ptiCurrent))
+    {
+       PTHREADINFO ptiFrom = IsThreadAttach(ptiCurrent);
+       TRACE_CH(UserThread,"Attached Thread ptiTo is getting switched!\n");
+       UserAttachThreadInput(ptiFrom, ptiCurrent, FALSE);
+    }
+
+    // ptiFrom
+    if (ptiCurrent->pqAttach && ptiCurrent->MessageQueue)
+    {
+       PTHREADINFO ptiTo;
+       ptiTo = PsGetThreadWin32Thread(ptiCurrent->MessageQueue->Thread);
+       TRACE_CH(UserThread,"Attached Thread ptiFrom is getting switched!\n");
+       if (ptiTo) UserAttachThreadInput( ptiCurrent, ptiTo, FALSE);
+       else
+       {
+          // eThread maybe okay but Win32Thread already made NULL!
+          ERR_CH(UserThread,"Attached Thread ptiFrom did not switch due to ptiTo is NULL!\n");
+       }
+    }
+
     /* Decrement thread count and check if its 0 */
     ppiCurrent->cThreads--;
 
@@ -472,27 +518,10 @@ UserDestroyThreadInfo(struct _ETHREAD *Thread)
         }
     }
 
-    // ptiTo
-    if (IsThreadAttach(ptiCurrent))
-    {
-       PTHREADINFO ptiFrom = IsThreadAttach(ptiCurrent);
-       TRACE_CH(UserThread,"Attached Thread ptiTo is getting switched!\n");
-       UserAttachThreadInput(ptiFrom, ptiCurrent, FALSE);
-    }
-    
-    // ptiFrom
-    if (ptiCurrent->pqAttach && ptiCurrent->MessageQueue)
-    {
-       PTHREADINFO ptiTo;
-       ptiTo = PsGetThreadWin32Thread(ptiCurrent->MessageQueue->Thread);
-       TRACE_CH(UserThread,"Attached Thread ptiFrom is getting switched!\n");
-       UserAttachThreadInput( ptiCurrent, ptiTo, FALSE);
-    }
-
     /* Free the message queue */
-    if(ptiCurrent->MessageQueue)
+    if (ptiCurrent->MessageQueue)
     {
-       MsqDestroyMessageQueue(ptiCurrent->MessageQueue);
+       MsqDestroyMessageQueue(ptiCurrent);
     }
 
     /* Find the THREADINFO in the PROCESSINFO's list */
@@ -596,14 +625,16 @@ DriverEntry(
     DPRINT("Win32k hInstance 0x%p!\n",hModuleWin);
 
     /* Register Object Manager Callbacks */
-    CalloutData.WindowStationParseProcedure = IntWinStaObjectParse;
-    CalloutData.WindowStationDeleteProcedure = IntWinStaObjectDelete;
-    CalloutData.DesktopDeleteProcedure = IntDesktopObjectDelete;
     CalloutData.ProcessCallout = Win32kProcessCallback;
     CalloutData.ThreadCallout = Win32kThreadCallback;
-    CalloutData.BatchFlushRoutine = NtGdiFlushUserBatch;
-    CalloutData.DesktopOkToCloseProcedure = IntDesktopOkToClose;
+    CalloutData.WindowStationParseProcedure = IntWinStaObjectParse;
+    CalloutData.WindowStationDeleteProcedure = IntWinStaObjectDelete;
     CalloutData.WindowStationOkToCloseProcedure = IntWinstaOkToClose;
+    CalloutData.DesktopOkToCloseProcedure = IntDesktopOkToClose;
+    CalloutData.DesktopDeleteProcedure = IntDesktopObjectDelete;
+    CalloutData.DesktopCloseProcedure = IntDesktopObjectClose;
+    CalloutData.DesktopOpenProcedure = IntDesktopObjectOpen;
+    CalloutData.BatchFlushRoutine = NtGdiFlushUserBatch;
 
     /* Register our per-process and per-thread structures. */
     PsEstablishWin32Callouts((PWIN32_CALLOUTS_FPNS)&CalloutData);

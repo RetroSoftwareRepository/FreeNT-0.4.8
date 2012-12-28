@@ -93,6 +93,8 @@ typedef struct _EBRUSHOBJ
 
 extern HSURF gahsurfHatch[HS_DDI_MAX];
 
+struct _SURFACE;
+struct _PALETTE;
 struct _DC;
 
 INIT_FUNCTION
@@ -102,7 +104,11 @@ InitBrushImpl(VOID);
 
 VOID
 NTAPI
-EBRUSHOBJ_vInit(EBRUSHOBJ *pebo, PBRUSH pbrush, struct _DC *);
+EBRUSHOBJ_vInit(EBRUSHOBJ *pebo, PBRUSH pbrush, struct _SURFACE *, COLORREF, COLORREF, struct _PALETTE *);
+
+VOID
+NTAPI
+EBRUSHOBJ_vInitFromDC(EBRUSHOBJ *pebo, PBRUSH pbrush, struct _DC *);
 
 VOID
 FASTCALL
@@ -110,7 +116,7 @@ EBRUSHOBJ_vSetSolidRGBColor(EBRUSHOBJ *pebo, COLORREF crColor);
 
 VOID
 NTAPI
-EBRUSHOBJ_vUpdate(EBRUSHOBJ *pebo, PBRUSH pbrush, struct _DC *pdc);
+EBRUSHOBJ_vUpdateFromDC(EBRUSHOBJ *pebo, PBRUSH pbrush, struct _DC *);
 
 BOOL
 NTAPI

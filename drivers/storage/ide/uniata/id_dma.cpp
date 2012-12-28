@@ -879,9 +879,23 @@ AtaSetTransferMode(
         KdPrint3((PRINT_PREFIX "  assume that drive doesn't support mode swithing using PIO%d\n", apiomode));
         mode = ATA_PIO0 + apiomode;
     }
-    //if(mode <= ATA_UDMA6) {
-        LunExt->TransferMode = (UCHAR)mode;
-    //}
+    // SATA sets actual transfer rate in LunExt on init.
+    // There is no run-time SATA rate adjustment yet.
+    // On the other hand, we may turn SATA device in PIO mode
+    LunExt->TransferMode = (UCHAR)mode;
+    if(deviceExtension->HwFlags & UNIATA_SATA) {
+        if(mode < ATA_SA150) { 
+            LunExt->PhyTransferMode = max(LunExt->PhyTransferMode, LunExt->TransferMode);
+        } else {
+            LunExt->PhyTransferMode = LunExt->TransferMode;
+        }
+    } else {
+        if(LunExt->DeviceFlags & DFLAGS_ATAPI_DEVICE) {
+            LunExt->PhyTransferMode = max(LunExt->LimitedTransferMode, LunExt->TransferMode);
+        } else {
+            LunExt->PhyTransferMode = LunExt->TransferMode;
+        }
+    }
     return TRUE;
 } // end AtaSetTransferMode()
 
@@ -930,19 +944,19 @@ AtapiDmaInit(
     }
 
     // Limit transfer mode (controller limitation)
-    if((LONG)deviceExtension->MaxTransferMode >= ATA_UDMA) {
-        KdPrint2((PRINT_PREFIX "AtapiDmaInit: deviceExtension->MaxTransferMode >= ATA_UDMA\n"));
-        udmamode = min( udmamode, (CHAR)(deviceExtension->MaxTransferMode - ATA_UDMA));
+    if((LONG)chan->MaxTransferMode >= ATA_UDMA) {
+        KdPrint2((PRINT_PREFIX "AtapiDmaInit: chan->MaxTransferMode >= ATA_UDMA\n"));
+        udmamode = min( udmamode, (CHAR)(chan->MaxTransferMode - ATA_UDMA));
     } else
-    if((LONG)deviceExtension->MaxTransferMode >= ATA_WDMA) {
-        KdPrint2((PRINT_PREFIX "AtapiDmaInit: deviceExtension->MaxTransferMode >= ATA_WDMA\n"));
+    if((LONG)chan->MaxTransferMode >= ATA_WDMA) {
+        KdPrint2((PRINT_PREFIX "AtapiDmaInit: chan->MaxTransferMode >= ATA_WDMA\n"));
         udmamode = -1;
-        wdmamode = min( wdmamode, (CHAR)(deviceExtension->MaxTransferMode - ATA_WDMA));
+        wdmamode = min( wdmamode, (CHAR)(chan->MaxTransferMode - ATA_WDMA));
     } else
-    if((LONG)deviceExtension->MaxTransferMode >= ATA_PIO0) {
+    if((LONG)chan->MaxTransferMode >= ATA_PIO0) {
         KdPrint2((PRINT_PREFIX "AtapiDmaInit: NO DMA\n"));
         wdmamode = udmamode = -1;
-        apiomode = min( apiomode, (CHAR)(deviceExtension->MaxTransferMode - ATA_PIO0));
+        apiomode = min( apiomode, (CHAR)(chan->MaxTransferMode - ATA_PIO0));
     } else {
         KdPrint2((PRINT_PREFIX "AtapiDmaInit: PIO0\n"));
         wdmamode = udmamode = -1;
@@ -989,18 +1003,19 @@ AtapiDmaInit(
         }
     //}
 
-    if(UniataIsSATARangeAvailable(deviceExtension, lChannel)) {
+    if(UniataIsSATARangeAvailable(deviceExtension, lChannel) ||
+        (ChipFlags & UNIATA_AHCI) || (chan->MaxTransferMode >= ATA_SA150)
+       ) {
     //if(ChipFlags & (UNIATA_SATA | UNIATA_AHCI)) {
         /****************/
         /* SATA Generic */
         /****************/
 
         KdPrint2((PRINT_PREFIX "SATA Generic\n"));
-        if((udmamode >= 5) || (ChipFlags & UNIATA_AHCI) || chan->MaxTransferMode >= ATA_SA150) {
+        if((udmamode >= 5) || (ChipFlags & UNIATA_AHCI) || ((udmamode >= 0) && (chan->MaxTransferMode >= ATA_SA150))) {
             /* some drives report UDMA6, some UDMA5 */
             /* ATAPI may not have SataCapabilities set in IDENTIFY DATA */
-            if(LunExt->IdentifyData.SataCapabilities != 0x0000 &&
-               LunExt->IdentifyData.SataCapabilities != 0xffff) {
+            if(ata_is_sata(&(LunExt->IdentifyData))) {
                 //udmamode = min(udmamode, 6);
                 KdPrint2((PRINT_PREFIX "LunExt->LimitedTransferMode %x, LunExt->OrigTransferMode %x\n",
                     LunExt->LimitedTransferMode, LunExt->OrigTransferMode));
@@ -1011,7 +1026,7 @@ AtapiDmaInit(
 
             } else {
                 KdPrint2((PRINT_PREFIX "SATA -> PATA adapter ?\n"));
-                if (udmamode > 2 && !LunExt->IdentifyData.HwResCableId) {
+                if (udmamode > 2 && (!LunExt->IdentifyData.HwResCableId && (LunExt->IdentifyData.HwResValid == IDENTIFY_CABLE_ID_VALID) )) {
                     KdPrint2((PRINT_PREFIX "AtapiDmaInit: DMA limited to UDMA33, non-ATA66 compliant cable\n"));
                     udmamode = 2;
                     apiomode = min( apiomode, (CHAR)(LunExt->LimitedTransferMode - ATA_PIO0));
@@ -1041,9 +1056,8 @@ AtapiDmaInit(
         goto try_generic_dma;
     }
 
-    if(udmamode > 2 && !LunExt->IdentifyData.HwResCableId) {
-        if(LunExt->IdentifyData.SataCapabilities != 0x0000 &&
-           LunExt->IdentifyData.SataCapabilities != 0xffff) {
+    if(udmamode > 2 && (!LunExt->IdentifyData.HwResCableId && (LunExt->IdentifyData.HwResValid == IDENTIFY_CABLE_ID_VALID)) ) {
+        if(ata_is_sata(&(LunExt->IdentifyData))) {
             KdPrint2((PRINT_PREFIX "AtapiDmaInit: SATA beyond adapter or Controller compat mode\n"));
         } else {
             KdPrint2((PRINT_PREFIX "AtapiDmaInit: DMA limited to UDMA33, non-ATA66 compliant cable\n"));
@@ -1372,6 +1386,7 @@ set_new_acard:
         UCHAR  new44  = 0;
         UCHAR  intel_timings[] = { 0x00, 0x00, 0x10, 0x21, 0x23, 0x10, 0x21, 0x23,
     		                   0x23, 0x23, 0x23, 0x23, 0x23, 0x23 };
+        UCHAR  intel_utimings[] = { 0x00, 0x01, 0x02, 0x01, 0x02, 0x01, 0x02 };
 
         if(deviceExtension->DevID == ATA_I82371FB) {
             if (wdmamode >= 2 && apiomode >= 4) {
@@ -1454,17 +1469,24 @@ set_new_acard:
         for(i=udmamode; i>=0; i--) {
             if(AtaSetTransferMode(deviceExtension, DeviceNumber, lChannel, LunExt, ATA_UDMA0 + i)) {
 
-        	/* Set UDMA reference clock (33/66/133MHz). */
+        	/* Set UDMA reference clock (33 MHz or more). */
                 SetPciConfig1(0x48, reg48 | (0x0001 << dev));
                 if(!(ChipFlags & ICH4_FIX)) {
-                    SetPciConfig2(0x4a, (reg4a & ~(0x3 << (dev<<2))) |
-                                        (0x01 + !(i & 0x01))  );
+                    if(deviceExtension->MaxTransferMode == ATA_UDMA3) {
+                        // Special case (undocumented overclock !) for PIIX4e
+                        SetPciConfig2(0x4a, (reg4a | (0x03 << (dev<<2)) ) );
+                    } else {
+                        SetPciConfig2(0x4a, (reg4a & ~(0x03 << (dev<<2))) |
+                                                      (((USHORT)(intel_utimings[i])) << (dev<<2) )  );
+                    }
                 }
-                if(i >= 2) {
+        	/* Set UDMA reference clock (66 MHz or more). */
+                if(i > 2) {
                     reg54 |= (0x1 << dev);
                 } else {
                     reg54 &= ~(0x1 << dev);
                 }
+        	/* Set UDMA reference clock (133 MHz). */
                 if(i >= 5) {
                     reg54 |= (0x1000 << dev);
                 } else {

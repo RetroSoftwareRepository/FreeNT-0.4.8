@@ -69,7 +69,6 @@ static msi_file_state calculate_install_state( MSIPACKAGE *package, MSIFILE *fil
     VS_FIXEDFILEINFO *file_version;
     WCHAR *font_version;
     msi_file_state state;
-    DWORD file_size;
 
     comp->Action = msi_get_component_action( package, comp );
     if (comp->Action != INSTALLSTATE_LOCAL || (comp->assembly && comp->assembly->installed))
@@ -118,7 +117,7 @@ static msi_file_state calculate_install_state( MSIPACKAGE *package, MSIFILE *fil
             return state;
         }
     }
-    if ((file_size = msi_get_disk_file_size( file->TargetPath )) != file->FileSize)
+    if (msi_get_disk_file_size( file->TargetPath ) != file->FileSize)
     {
         return msifs_overwrite;
     }
@@ -336,7 +335,8 @@ UINT ACTION_InstallFiles(MSIPACKAGE *package)
         if (rc != ERROR_SUCCESS)
         {
             ERR("Unable to load media info for %s (%u)\n", debugstr_w(file->File), rc);
-            return ERROR_FUNCTION_FAILED;
+            rc = ERROR_FUNCTION_FAILED;
+            goto done;
         }
         if (!file->Component->Enabled) continue;
 
@@ -399,7 +399,6 @@ UINT ACTION_InstallFiles(MSIPACKAGE *package)
             goto done;
         }
     }
-    msi_init_assembly_caches( package );
     LIST_FOR_EACH_ENTRY( comp, &package->components, MSICOMPONENT, entry )
     {
         comp->Action = msi_get_component_action( package, comp );
@@ -414,7 +413,6 @@ UINT ACTION_InstallFiles(MSIPACKAGE *package)
             }
         }
     }
-    msi_destroy_assembly_caches( package );
 
 done:
     msi_free_media_info(mi);
@@ -515,7 +513,8 @@ UINT ACTION_PatchFiles( MSIPACKAGE *package )
         if (rc != ERROR_SUCCESS)
         {
             ERR("Unable to load media info for %s (%u)\n", debugstr_w(file->File), rc);
-            return ERROR_FUNCTION_FAILED;
+            rc = ERROR_FUNCTION_FAILED;
+            goto done;
         }
         comp->Action = msi_get_component_action( package, comp );
         if (!comp->Enabled || comp->Action != INSTALLSTATE_LOCAL) continue;
@@ -781,7 +780,7 @@ static UINT ITERATE_MoveFiles( MSIRECORD *rec, LPVOID param )
     LPWSTR sourcedir, destname = NULL, destdir = NULL, source = NULL, dest = NULL;
     int options;
     DWORD size;
-    BOOL ret, wildcards;
+    BOOL wildcards;
 
     component = MSI_RecordGetString(rec, 2);
     comp = msi_get_loaded_component(package, component);
@@ -863,7 +862,7 @@ static UINT ITERATE_MoveFiles( MSIRECORD *rec, LPVOID param )
 
     if (GetFileAttributesW(destdir) == INVALID_FILE_ATTRIBUTES)
     {
-        if (!(ret = msi_create_full_path(destdir)))
+        if (!msi_create_full_path(destdir))
         {
             WARN("failed to create directory %u\n", GetLastError());
             goto done;
@@ -1309,7 +1308,6 @@ UINT ACTION_RemoveFiles( MSIPACKAGE *package )
         msiobj_release( &uirow->hdr );
     }
 
-    msi_init_assembly_caches( package );
     LIST_FOR_EACH_ENTRY( comp, &package->components, MSICOMPONENT, entry )
     {
         comp->Action = msi_get_component_action( package, comp );
@@ -1328,6 +1326,5 @@ UINT ACTION_RemoveFiles( MSIPACKAGE *package )
             remove_folder( folder );
         }
     }
-    msi_destroy_assembly_caches( package );
     return ERROR_SUCCESS;
 }

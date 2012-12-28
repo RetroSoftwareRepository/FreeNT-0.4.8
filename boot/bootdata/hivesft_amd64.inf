@@ -1,5 +1,5 @@
 [Version]
-Signature="$ReactOS$
+Signature="$ReactOS$"
 
 [AddReg]
 
@@ -30,7 +30,7 @@ HKLM,"SOFTWARE\Microsoft\Rpc\SecurityService","68",2,"netlogon.dll"
 HKLM,"SOFTWARE\Microsoft\Rpc\SecurityService","9",2,"secur32.dll"
 
 ; .NET
-HKLM,"SOFTWARE\Microsoft\.NETFramework\","InstallDir",0x00020000,"%SystemRoot%\Microsoft .NET\Framework\"
+HKLM,"SOFTWARE\Microsoft\.NETFramework\","InstallRoot",0x00020000,"%SystemRoot%\Microsoft .NET\Framework\"
 
 HKLM,"SOFTWARE\Microsoft\Secure",,0x00000012
 
@@ -187,7 +187,7 @@ HKLM,"SOFTWARE\Microsoft\Windows NT\CurrentVersion\MCI Extensions","wvx",0x00000
 HKLM,"SOFTWARE\Microsoft\Windows NT\CurrentVersion\OpenGLDrivers","DefaultDriver",0x00000000,"Mesa"
 HKLM,"SOFTWARE\Microsoft\Windows NT\CurrentVersion\OpenGLDrivers\Mesa","Version",0x00010001,0x00000002
 HKLM,"SOFTWARE\Microsoft\Windows NT\CurrentVersion\OpenGLDrivers\Mesa","Dll",0x00000000,"mesa32"
-HKLM,"SOFTWARE\Microsoft\Windows NT\CurrentVersion\OpenGLDrivers\Mesa","DriverVersion",0x00010001,0x00000010
+HKLM,"SOFTWARE\Microsoft\Windows NT\CurrentVersion\OpenGLDrivers\Mesa","DriverVersion",0x00010001,0x00000001
 HKLM,"SOFTWARE\Microsoft\Windows NT\CurrentVersion\OpenGLDrivers\Mesa","Flags",0x00010001,0x00000001
 
 ; User Profile List

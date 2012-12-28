@@ -187,6 +187,11 @@ extern "C" {
 #define USER_PARTIAL_SECRETS_ACCOUNT                0x00100000
 #define USER_USE_AES_KEYS                           0x00200000
 
+/* Constants uses by LOGON_HOURS.UnitsPerWeek */
+#define SAM_DAYS_PER_WEEK        (7)
+#define SAM_HOURS_PER_WEEK       (24 * SAM_DAYS_PER_WEEK)
+#define SAM_MINUTES_PER_WEEK     (60 * SAM_HOURS_PER_WEEK)
+
 
 typedef PVOID SAM_HANDLE, *PSAM_HANDLE;
 typedef ULONG SAM_ENUMERATE_HANDLE, *PSAM_ENUMERATE_HANDLE;
@@ -271,6 +276,18 @@ typedef enum _GROUP_INFORMATION_CLASS
     GroupReplicationInformation
 } GROUP_INFORMATION_CLASS;
 
+typedef struct _GROUP_MEMBERSHIP
+{
+    ULONG RelativeId;
+    ULONG Attributes;
+} GROUP_MEMBERSHIP, *PGROUP_MEMBERSHIP;
+
+typedef struct _LOGON_HOURS
+{
+    USHORT UnitsPerWeek;
+    PUCHAR LogonHours;
+} LOGON_HOURS, *PLOGON_HOURS;
+
 typedef enum _USER_INFORMATION_CLASS
 {
     UserGeneralInformation = 1,
@@ -304,11 +321,138 @@ typedef enum _USER_INFORMATION_CLASS
     UserLogonUIInformation,
 } USER_INFORMATION_CLASS, *PUSER_INFORMATION_CLASS;
 
+typedef struct _USER_GENERAL_INFORMATION
+{
+    UNICODE_STRING UserName;
+    UNICODE_STRING FullName;
+    ULONG PrimaryGroupId;
+    UNICODE_STRING AdminComment;
+    UNICODE_STRING UserComment;
+} USER_GENERAL_INFORMATION, *PUSER_GENERAL_INFORMATION;
+
+typedef struct _USER_PREFERENCES_INFORMATION
+{
+    UNICODE_STRING UserComment;
+    UNICODE_STRING Reserved1;
+    USHORT CountryCode;
+    USHORT CodePage;
+} USER_PREFERENCES_INFORMATION, *PUSER_PREFERENCES_INFORMATION;
+
+#include "pshpack4.h"
+typedef struct _USER_LOGON_INFORMATION
+{
+    UNICODE_STRING UserName;
+    UNICODE_STRING FullName;
+    ULONG UserId;
+    ULONG PrimaryGroupId;
+    UNICODE_STRING HomeDirectory;
+    UNICODE_STRING HomeDirectoryDrive;
+    UNICODE_STRING ScriptPath;
+    UNICODE_STRING ProfilePath;
+    UNICODE_STRING WorkStations;
+    LARGE_INTEGER LastLogon;
+    LARGE_INTEGER LastLogoff;
+    LARGE_INTEGER PasswordLastSet;
+    LARGE_INTEGER PasswordCanChange;
+    LARGE_INTEGER PasswordMustChange;
+    LOGON_HOURS LogonHours;
+    USHORT BadPasswordCount;
+    USHORT LogonCount;
+    ULONG UserAccountControl;
+} USER_LOGON_INFORMATION, *PUSER_LOGON_INFORMATION;
+#include "poppack.h"
+
+typedef struct _USER_LOGON_HOURS_INFORMATION
+{
+    LOGON_HOURS LogonHours;
+} USER_LOGON_HOURS_INFORMATION, *PUSER_LOGON_HOURS_INFORMATION;
+
+#include "pshpack4.h"
+typedef struct _USER_ACCOUNT_INFORMATION
+{
+    UNICODE_STRING UserName;
+    UNICODE_STRING FullName;
+    ULONG UserId;
+    ULONG PrimaryGroupId;
+    UNICODE_STRING HomeDirectory;
+    UNICODE_STRING HomeDirectoryDrive;
+    UNICODE_STRING ScriptPath;
+    UNICODE_STRING ProfilePath;
+    UNICODE_STRING AdminComment;
+    UNICODE_STRING WorkStations;
+    LARGE_INTEGER LastLogon;
+    LARGE_INTEGER LastLogoff;
+    LOGON_HOURS LogonHours;
+    USHORT BadPasswordCount;
+    USHORT LogonCount;
+    LARGE_INTEGER PasswordLastSet;
+    LARGE_INTEGER AccountExpires;
+    ULONG UserAccountControl;
+} USER_ACCOUNT_INFORMATION, *PUSER_ACCOUNT_INFORMATION;
+#include "poppack.h"
+
+typedef struct _USER_NAME_INFORMATION
+{
+    UNICODE_STRING UserName;
+    UNICODE_STRING FullName;
+} USER_NAME_INFORMATION, *PUSER_NAME_INFORMATION;
+
+typedef struct _USER_ACCOUNT_NAME_INFORMATION
+{
+    UNICODE_STRING UserName;
+} USER_ACCOUNT_NAME_INFORMATION, *PUSER_ACCOUNT_NAME_INFORMATION;
+
+typedef struct _USER_FULL_NAME_INFORMATION
+{
+    UNICODE_STRING FullName;
+} USER_FULL_NAME_INFORMATION, *PUSER_FULL_NAME_INFORMATION;
+
+typedef struct _USER_PRIMARY_GROUP_INFORMATION
+{
+    ULONG PrimaryGroupId;
+} USER_PRIMARY_GROUP_INFORMATION, *PUSER_PRIMARY_GROUP_INFORMATION;
+
+typedef struct _USER_HOME_INFORMATION
+{
+    UNICODE_STRING HomeDirectory;
+    UNICODE_STRING HomeDirectoryDrive;
+} USER_HOME_INFORMATION, *PUSER_HOME_INFORMATION;
+
+typedef struct _USER_SCRIPT_INFORMATION
+{
+    UNICODE_STRING ScriptPath;
+} USER_SCRIPT_INFORMATION, *PUSER_SCRIPT_INFORMATION;
+
+typedef struct _USER_PROFILE_INFORMATION
+{
+    UNICODE_STRING ProfilePath;
+} USER_PROFILE_INFORMATION, *PUSER_PROFILE_INFORMATION;
+
+typedef struct _USER_ADMIN_COMMENT_INFORMATION
+{
+    UNICODE_STRING AdminComment;
+} USER_ADMIN_COMMENT_INFORMATION, *PUSER_ADMIN_COMMENT_INFORMATION;
+
+typedef struct _USER_WORKSTATIONS_INFORMATION
+{
+    UNICODE_STRING WorkStations;
+} USER_WORKSTATIONS_INFORMATION, *PUSER_WORKSTATIONS_INFORMATION;
+
 typedef struct _USER_SET_PASSWORD_INFORMATION
 {
     UNICODE_STRING Password;
     BOOLEAN PasswordExpired;
 } USER_SET_PASSWORD_INFORMATION, *PUSER_SET_PASSWORD_INFORMATION;
+
+typedef struct _USER_CONTROL_INFORMATION
+{
+    ULONG UserAccountControl;
+} USER_CONTROL_INFORMATION, *PUSER_CONTROL_INFORMATION;
+
+
+#define SAM_SID_COMPATIBILITY_ALL    0
+#define SAM_SID_COMPATIBILITY_LAX    1
+#define SAM_SID_COMPATIBILITY_STRICT 2
 
 
 NTSTATUS
@@ -321,6 +465,12 @@ NTAPI
 SamAddMemberToGroup(IN SAM_HANDLE GroupHandle,
                     IN ULONG MemberId,
                     IN ULONG Attributes);
+
+NTSTATUS
+NTAPI
+SamAddMultipleMembersToAlias(IN SAM_HANDLE AliasHandle,
+                             IN PSID *MemberIds,
+                             IN ULONG MemberCount);
 
 NTSTATUS
 NTAPI
@@ -369,6 +519,18 @@ SamCreateUserInDomain(IN SAM_HANDLE DomainHandle,
 
 NTSTATUS
 NTAPI
+SamDeleteAlias(IN SAM_HANDLE AliasHandle);
+
+NTSTATUS
+NTAPI
+SamDeleteGroup(IN SAM_HANDLE GroupHandle);
+
+NTSTATUS
+NTAPI
+SamDeleteUser(IN SAM_HANDLE UserHandle);
+
+NTSTATUS
+NTAPI
 SamEnumerateAliasesInDomain(IN SAM_HANDLE DomainHandle,
                             IN OUT PSAM_ENUMERATE_HANDLE EnumerationContext,
                             OUT PVOID *Buffer,
@@ -414,8 +576,26 @@ SamGetAliasMembership(IN SAM_HANDLE DomainHandle,
 
 NTSTATUS
 NTAPI
+SamGetCompatibilityMode(IN SAM_HANDLE ObjectHandle,
+                        OUT PULONG Mode);
+
+NTSTATUS
+NTAPI
+SamGetGroupsForUser(IN SAM_HANDLE UserHandle,
+                    OUT PGROUP_MEMBERSHIP *Groups,
+                    OUT PULONG MembershipCount);
+
+NTSTATUS
+NTAPI
 SamGetMembersInAlias(IN SAM_HANDLE AliasHandle,
                      OUT PSID **MemberIds,
+                     OUT PULONG MemberCount);
+
+NTSTATUS
+NTAPI
+SamGetMembersInGroup(IN SAM_HANDLE GroupHandle,
+                     OUT PULONG *MemberIds,
+                     OUT PULONG *Attributes,
                      OUT PULONG MemberCount);
 
 NTSTATUS
@@ -494,8 +674,36 @@ SamQueryInformationUser(IN SAM_HANDLE UserHandle,
 
 NTSTATUS
 NTAPI
+SamQuerySecurityObject(IN SAM_HANDLE ObjectHandle,
+                       IN SECURITY_INFORMATION SecurityInformation,
+                       OUT PSECURITY_DESCRIPTOR *SecurityDescriptor);
+
+NTSTATUS
+NTAPI
 SamRemoveMemberFromAlias(IN SAM_HANDLE AliasHandle,
                          IN PSID MemberId);
+
+NTSTATUS
+NTAPI
+SamRemoveMemberFromForeignDomain(IN SAM_HANDLE DomainHandle,
+                                 IN PSID MemberId);
+
+NTSTATUS
+NTAPI
+SamRemoveMemberFromGroup(IN SAM_HANDLE GroupHandle,
+                         IN ULONG MemberId);
+
+NTSTATUS
+NTAPI
+SamRemoveMultipleMembersFromAlias(IN SAM_HANDLE AliasHandle,
+                                  IN PSID *MemberIds,
+                                  IN ULONG MemberCount);
+
+NTSTATUS
+NTAPI
+SamRidToSid(IN SAM_HANDLE ObjectHandle,
+            IN ULONG Rid,
+            OUT PSID *Sid);
 
 NTSTATUS
 NTAPI
@@ -520,6 +728,18 @@ NTAPI
 SamSetInformationUser(IN SAM_HANDLE UserHandle,
                       IN USER_INFORMATION_CLASS UserInformationClass,
                       IN PVOID Buffer);
+
+NTSTATUS
+NTAPI
+SamSetMemberAttributesOfGroup(IN SAM_HANDLE GroupHandle,
+                              IN ULONG MemberId,
+                              IN ULONG Attributes);
+
+NTSTATUS
+NTAPI
+SamSetSecurityObject(IN SAM_HANDLE ObjectHandle,
+                     IN SECURITY_INFORMATION SecurityInformation,
+                     IN PSECURITY_DESCRIPTOR SecurityDescriptor);
 
 NTSTATUS
 NTAPI

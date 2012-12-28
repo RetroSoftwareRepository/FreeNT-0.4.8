@@ -51,16 +51,13 @@
            (objt) == GDIObjType_BRUSH_TYPE)
 #define ASSERT_EXCLUSIVE_OBJECT_TYPE(objt) \
     ASSERT((objt) == GDIObjType_DC_TYPE || \
-           (objt) == GDIObjType_RGN_TYPE || \
-           (objt) == GDIObjType_LFONT_TYPE)
+           (objt) == GDIObjType_RGN_TYPE)
 #else
 #define DBG_INCREASE_LOCK_COUNT(ppi, hobj)
 #define DBG_DECREASE_LOCK_COUNT(x, y)
 #define ASSERT_SHARED_OBJECT_TYPE(objt)
 #define ASSERT_EXCLUSIVE_OBJECT_TYPE(objt)
 #endif
-
-#define MmMapViewInSessionSpace MmMapViewInSystemSpace
 
 #if defined(_M_IX86) || defined(_M_AMD64)
 #define InterlockedOr16 _InterlockedOr16
@@ -81,8 +78,8 @@ enum
 
 /* Per session handle table globals */
 static PVOID gpvGdiHdlTblSection = NULL;
-static PENTRY gpentHmgr;
-static PULONG gpaulRefCount;
+PENTRY gpentHmgr;
+PULONG gpaulRefCount;
 ULONG gulFirstFree;
 ULONG gulFirstUnused;
 static PPAGED_LOOKASIDE_LIST gpaLookasideList;
@@ -166,7 +163,7 @@ InitGdiHandleTable(void)
                              NULL,
                              &liSize,
                              PAGE_READWRITE,
-                             SEC_COMMIT,
+                             SEC_COMMIT | 0x1,
                              NULL,
                              NULL);
     if (!NT_SUCCESS(status))
@@ -1240,6 +1237,11 @@ GDIOBJ_AllocObjWithHandle(ULONG ObjectType, ULONG cjSize)
     }
 
     pobj = GDIOBJ_AllocateObject(objt, cjSize, fl);
+    if (!pobj)
+    {
+        return NULL;
+    }
+
     if (!GDIOBJ_hInsertObject(pobj, GDI_OBJ_HMGR_POWNED))
     {
         GDIOBJ_vFreeObject(pobj);
@@ -1342,5 +1344,6 @@ GDI_CleanupForProcess(struct _EPROCESS *Process)
 
     return TRUE;
 }
+
 
 /* EOF */

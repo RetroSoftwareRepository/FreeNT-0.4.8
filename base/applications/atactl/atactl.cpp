@@ -37,6 +37,14 @@ int g_extended = 0;
 int g_adapter_info = 0;
 char* g_bb_list = NULL;
 int gRadix = 16;
+PADAPTERINFO g_AdapterInfo = NULL;
+
+BOOLEAN
+ata_power_mode(
+    int bus_id,
+    int dev_id,
+    int power_mode
+    );
 
 void print_help() {
     printf("Usage:\n"
@@ -60,6 +68,12 @@ void print_help() {
            "  d [XXX]   lock ATA/SATA bus for device removal for XXX seconds or\n"
            "              for %d seconds if no lock timeout specified.\n"
            "              can be used with -h, -m or standalone.\n"
+           "  D [XXX]   disable device (turn into sleep mode) and lock ATA/SATA bus \n"
+           "              for device removal for XXX seconds or\n"
+           "              for %d seconds if no lock timeout specified.\n"
+           "              can be used with -h, -m or standalone.\n"
+           "  pX        change power state to X, where X is\n"
+           "              0 - active, 1 - idle, 2 - standby, 3 - sleep\n"
            "  r         (R)eset device\n"
            "  ba        (A)ssign (B)ad-block list\n"
            "  bl        get assigned (B)ad-block (L)ist\n"
@@ -104,6 +118,7 @@ void print_help() {
            "...\n"
            "------\n"
            "",
+           DEFAULT_REMOVAL_LOCK_TIMEOUT,
            DEFAULT_REMOVAL_LOCK_TIMEOUT
            );
     exit(0);
@@ -115,6 +130,7 @@ void print_help() {
 #define CMD_ATA_MODE  0x04
 #define CMD_ATA_RESET 0x05
 #define CMD_ATA_BBLK  0x06
+#define CMD_ATA_POWER 0x07
 
 HANDLE
 ata_open_dev(
@@ -262,6 +278,14 @@ ata_send_ioctl(
         AtaCtl->addr.Length = sizeof(AtaCtl->addr);
     }
 
+    if(outBufferLength) {
+        if(addr) {
+            memset(&AtaCtl->RawData, 0, outBufferLength);
+        } else {
+            memset(&AtaCtl->addr, 0, outBufferLength);
+        }
+    }
+
     if(inBuffer && inBufferLength) {
         if(addr) {
             memcpy(&AtaCtl->RawData, inBuffer, inBufferLength);
@@ -295,74 +319,78 @@ ata_send_ioctl(
     return TRUE;
 } // end ata_send_ioctl()
 
+int
+ata_send_scsi(
+    HANDLE h,
+    PSCSI_ADDRESS addr,
+    PCDB   cdb,
+    UCHAR  cdbLength,
+    PVOID  Buffer,
+    ULONG  BufferLength,
+    BOOLEAN DataIn,
+    PSENSE_DATA senseData,
+    PULONG returned
+    )
+{
+    ULONG status;
+    PSCSI_PASS_THROUGH_WITH_BUFFERS sptwb;
+    ULONG data_len = BufferLength;
+    ULONG len;
+
+    len = BufferLength + offsetof(SCSI_PASS_THROUGH_WITH_BUFFERS, ucDataBuf);
+
+    sptwb = (PSCSI_PASS_THROUGH_WITH_BUFFERS)GlobalAlloc(GMEM_FIXED, len);
+    if(!sptwb) {
+        return FALSE;
+    }
+    memset(sptwb, 0, offsetof(SCSI_PASS_THROUGH_WITH_BUFFERS, ucDataBuf));
+
+    sptwb->spt.Length = sizeof(SCSI_PASS_THROUGH);
+    sptwb->spt.PathId   = addr->PathId;
+    sptwb->spt.TargetId = addr->TargetId;
+    sptwb->spt.Lun      = addr->Lun;
+    sptwb->spt.CdbLength = cdbLength;
+    sptwb->spt.SenseInfoLength = 24;
+    sptwb->spt.DataIn = Buffer ? (DataIn ? SCSI_IOCTL_DATA_IN : SCSI_IOCTL_DATA_OUT) : 0;
+    sptwb->spt.DataTransferLength = BufferLength;
+    sptwb->spt.TimeOutValue = 10;
+    sptwb->spt.DataBufferOffset =
+       offsetof(SCSI_PASS_THROUGH_WITH_BUFFERS,ucDataBuf);
+    sptwb->spt.SenseInfoOffset = 
+       offsetof(SCSI_PASS_THROUGH_WITH_BUFFERS,ucSenseBuf);
+    memcpy(&sptwb->spt.Cdb, cdb, cdbLength);
+
+    if(Buffer && !DataIn) {
+        memcpy(&sptwb->ucSenseBuf, Buffer, BufferLength);
+    }
+
+    status = DeviceIoControl(h,
+                             IOCTL_SCSI_PASS_THROUGH,
+                             sptwb,
+                             (Buffer && !DataIn) ? len : sizeof(SCSI_PASS_THROUGH),
+                             sptwb,
+                             (Buffer && DataIn) ? len : offsetof(SCSI_PASS_THROUGH_WITH_BUFFERS, ucDataBuf),
+                             returned,
+                             FALSE);
+
+    if(Buffer && DataIn) {
+        memcpy(Buffer, &sptwb->ucDataBuf, BufferLength);
+    }
+    if(senseData) {
+        memcpy(senseData, &sptwb->ucSenseBuf, sizeof(sptwb->ucSenseBuf));
+    }
+
+    GlobalFree(sptwb);
+
+    if(!status) {
+        status = GetLastError();
+        return FALSE;
+    }
+    return TRUE;
+} // end ata_send_scsi()
+
 IO_SCSI_CAPABILITIES g_capabilities;
 UCHAR g_inquiry_buffer[2048];
-
-int
-ata_is_sata(
-    PIDENTIFY_DATA ident
-    )
-{
-    return (ident->SataEnable && ident->SataEnable != 0xffff);
-}
-
-int
-ata_cur_mode_from_ident(
-    PIDENTIFY_DATA ident
-    )
-{
-    if(ata_is_sata(ident)) {
-        return ATA_SA150-1;
-    }
-
-    if (ident->UdmaModesValid) {
-        if (ident->UltraDMAActive & 0x40)
-            return ATA_UDMA0+6;
-        if (ident->UltraDMAActive & 0x20)
-            return ATA_UDMA0+5;
-        if (ident->UltraDMAActive & 0x10)
-            return ATA_UDMA0+4;
-        if (ident->UltraDMAActive & 0x08)
-            return ATA_UDMA0+3;
-        if (ident->UltraDMAActive & 0x04)
-            return ATA_UDMA0+2;
-        if (ident->UltraDMAActive & 0x02)
-            return ATA_UDMA0+1;
-        if (ident->UltraDMAActive & 0x01)
-            return ATA_UDMA0+0;
-    }
-
-    if (ident->MultiWordDMAActive & 0x04)
-        return ATA_WDMA0+2;
-    if (ident->MultiWordDMAActive & 0x02)
-        return ATA_WDMA0+1;
-    if (ident->MultiWordDMAActive & 0x01)
-        return ATA_WDMA0+0;
-
-    if (ident->SingleWordDMAActive & 0x04)
-        return ATA_SDMA0+2;
-    if (ident->SingleWordDMAActive & 0x02)
-        return ATA_SDMA0+1;
-    if (ident->SingleWordDMAActive & 0x01)
-        return ATA_SDMA0+0;
-
-    if (ident->PioTimingsValid) {
-        if (ident->AdvancedPIOModes & AdvancedPIOModes_5)
-            return ATA_PIO0+5;
-        if (ident->AdvancedPIOModes & AdvancedPIOModes_4)
-            return ATA_PIO0+4;
-        if (ident->AdvancedPIOModes & AdvancedPIOModes_3) 
-            return ATA_PIO0+3;
-    }        
-    if (ident->PioCycleTimingMode == 2)
-        return ATA_PIO0+2;
-    if (ident->PioCycleTimingMode == 1)
-        return ATA_PIO0+1;
-    if (ident->PioCycleTimingMode == 0)
-        return ATA_PIO0+0;
-
-    return ATA_PIO;
-} // end ata_cur_mode_from_ident()
 
 void
 ata_mode_to_str(
@@ -370,8 +398,11 @@ ata_mode_to_str(
     int mode
     )
 {
-    if(mode == ATA_SA150-1) {
-        sprintf(str, "SATA");
+    if(mode > ATA_SA600) {
+        sprintf(str, "SATA-600+");
+    } else
+    if(mode >= ATA_SA600) {
+        sprintf(str, "SATA-600");
     } else
     if(mode >= ATA_SA300) {
         sprintf(str, "SATA-300");
@@ -413,6 +444,12 @@ ata_str_to_mode(
     int mode;
     int len;
 
+    if(!_stricmp(str, "SATA600"))
+        return ATA_SA600;
+    if(!_stricmp(str, "SATA300"))
+        return ATA_SA300;
+    if(!_stricmp(str, "SATA150"))
+        return ATA_SA150;
     if(!_stricmp(str, "SATA"))
         return ATA_SA150;
 
@@ -583,9 +620,10 @@ ata_check_unit(
     GETTRANSFERMODE IoMode;
     PSENDCMDOUTPARAMS pout;
     PIDENTIFY_DATA   ident;
+    PINQUIRYDATA     scsi_ident;
     char buff[sizeof(SENDCMDOUTPARAMS)+/*sizeof(IDENTIFY_DATA)*/2048];
     char mode_str[12];
-    ULONG bus_id = (dev_id >> 24) & 0xff;
+    //ULONG bus_id = (dev_id >> 24) & 0xff;
     BOOLEAN found = FALSE;
     SENDCMDINPARAMS pin;
     int io_mode = -1;
@@ -594,7 +632,7 @@ ata_check_unit(
     char lun_str[10];
     HKEY hKey2;
     ULONGLONG max_lba = -1;
-    USHORT chs[3];
+    USHORT chs[3] = { 0 };
 
     if(dev_id != -1) {
         dev_id &= 0x00ffffff;
@@ -620,10 +658,34 @@ ata_check_unit(
         return FALSE;
     }
 
+    // Note: adapterInfo->NumberOfBuses is 1 greater than g_AdapterInfo->NumberChannels
+    // because of virtual communication port
     adapterInfo = (PSCSI_ADAPTER_BUS_INFO)g_inquiry_buffer;
-    for (i = 0; i < adapterInfo->NumberOfBuses; i++) {
+    for (i = 0; i+1 < adapterInfo->NumberOfBuses; i++) {
         inquiryData = (PSCSI_INQUIRY_DATA) (g_inquiry_buffer +
             adapterInfo->BusData[i].InquiryDataOffset);
+
+        if(g_extended && g_AdapterInfo && g_AdapterInfo->ChanHeaderLengthValid &&
+              g_AdapterInfo->NumberChannels < i) {
+            PCHANINFO ChanInfo;
+
+            ChanInfo = (PCHANINFO)
+                         (((PCHAR)g_AdapterInfo)+
+                            sizeof(ADAPTERINFO)+
+                            g_AdapterInfo->ChanHeaderLength*i);
+
+            io_mode = ChanInfo->MaxTransferMode;
+            if(io_mode != -1) {
+                ata_mode_to_str(mode_str, io_mode);
+            } else {
+                mode_str[0] = 0;
+            }
+            printf(" b%lu [%s]\n",
+                i,
+                mode_str
+                );
+        }
+
         while (adapterInfo->BusData[i].InquiryDataOffset) {
             /*
             if(dev_id/adapterInfo->BusData[i].NumberOfLogicalUnits ==
@@ -641,7 +703,8 @@ ata_check_unit(
             
             if(l_dev_id == dev_id || dev_id == -1) {
 
-                if(!memcmp(&inquiryData->InquiryData[8], UNIATA_COMM_PORT_VENDOR_STR, 24)) {
+                scsi_ident = (PINQUIRYDATA)&(inquiryData->InquiryData);
+                if(!memcmp(&(scsi_ident->VendorId[0]), UNIATA_COMM_PORT_VENDOR_STR, 24)) {
                     // skip communication port
                     goto next_dev;
                 }
@@ -651,7 +714,7 @@ ata_check_unit(
                 if(inquiryData->Lun) {
                     sprintf(lun_str, ":l%d", inquiryData->Lun);
                 } else {
-                    sprintf(lun_str, "  ", inquiryData->Lun);
+                    sprintf(lun_str, "  ");
                 }
 
 
@@ -665,14 +728,17 @@ ata_check_unit(
                 addr.PathId   = inquiryData->PathId;
                 addr.TargetId = inquiryData->TargetId;
                 addr.Lun      = inquiryData->Lun;
-                status = ata_send_ioctl(h, &addr, "-UNIATA-",
+                status = ata_send_ioctl(h, &addr, (PCHAR)"-UNIATA-",
                                         IOCTL_SCSI_MINIPORT_UNIATA_GET_MODE,
                                         NULL, 0,
                                         &IoMode, sizeof(IoMode),
                                         &returned);
                 if(status) {
                     //io_mode = min(IoMode.CurrentMode, IoMode.MaxMode);
-                    io_mode = min(max(IoMode.CurrentMode,IoMode.OrigMode),IoMode.MaxMode);
+                    io_mode = IoMode.PhyMode;
+                    if(!io_mode) {
+                        io_mode = min(max(IoMode.CurrentMode,IoMode.OrigMode),IoMode.MaxMode);
+                    }
                 } else {
                     io_mode = -1;
                 }
@@ -684,7 +750,7 @@ ata_check_unit(
                 // probably, we shall change this in future to support SATA splitters
                 pin.bDriveNumber = inquiryData->PathId*2+inquiryData->TargetId;
 
-                status = ata_send_ioctl(h, NULL, "SCSIDISK",
+                status = ata_send_ioctl(h, NULL, (PCHAR)"SCSIDISK",
                                         IOCTL_SCSI_MINIPORT_IDENTIFY,
                                         &pin, sizeof(pin),
                                         buff, sizeof(buff),
@@ -698,7 +764,7 @@ ata_check_unit(
                     // probably, we shall change this in future to support SATA splitters
                     pin.bDriveNumber = inquiryData->PathId*2+inquiryData->TargetId;
 
-                    status = ata_send_ioctl(h, NULL, "SCSIDISK",
+                    status = ata_send_ioctl(h, NULL, (PCHAR)"SCSIDISK",
                                             IOCTL_SCSI_MINIPORT_IDENTIFY,
                                             &pin, sizeof(pin),
                                             buff, sizeof(buff),
@@ -706,29 +772,27 @@ ata_check_unit(
 
                 }
 
-                if(status) {
-                    if(!g_extended) {
-                        printf("  b%d:d%d%s    %24.24s %4.4s ",
-                            i,
-                            inquiryData->TargetId,
-                            lun_str,
-                            /*(inquiryData->DeviceClaimed) ? "Y" : "N",*/
-                            (g_extended ? (PUCHAR)"" : &inquiryData->InquiryData[8]),
-                            (g_extended ? (PUCHAR)"" : &inquiryData->InquiryData[8+24])
-                            );
-                    } else {
-                        printf("  b%d:d%d%s ",
-                            i,
-                            inquiryData->TargetId,
-                            lun_str
-                            );
-                    }
-                    if(io_mode == -1) {
-                        io_mode = ata_cur_mode_from_ident(ident);
-                    }
+                if(!g_extended) {
+                    printf("  b%lu:d%d%s    %24.24s %4.4s ",
+                        i,
+                        inquiryData->TargetId,
+                        lun_str,
+                        /*(inquiryData->DeviceClaimed) ? "Y" : "N",*/
+                        (g_extended ? (PUCHAR)"" : &scsi_ident->VendorId[0]),
+                        (g_extended ? (PUCHAR)"" : &scsi_ident->ProductRevisionLevel[0])
+                        );
                 } else {
-                    goto next_dev;
+                    printf("  b%lu:d%d%s ",
+                        i,
+                        inquiryData->TargetId,
+                        lun_str
+                        );
+                }
 
+                if(status) {
+                    if(io_mode == -1) {
+                        io_mode = ata_cur_mode_from_ident(ident, IDENT_MODE_ACTIVE);
+                    }
                 }
                 if(io_mode != -1) {
                     ata_mode_to_str(mode_str, io_mode);
@@ -746,100 +810,139 @@ ata_check_unit(
                 }
                 printf("\n");
 
-                if(status && g_extended) {
+                if(g_extended) {
+                    if(status) {
 
-                    BOOLEAN BlockMode_valid = TRUE;
-                    BOOLEAN print_geom = FALSE;
+                        BOOLEAN BlockMode_valid = TRUE;
+                        BOOLEAN print_geom = FALSE;
 
-                    switch(ident->DeviceType) {
-                    case ATAPI_TYPE_DIRECT:
-                        if(ident->Removable) {
-                            printf("    Floppy        ");
-                        } else {
+                        switch(ident->DeviceType) {
+                        case ATAPI_TYPE_DIRECT:
+                            if(ident->Removable) {
+                                printf("    Floppy        ");
+                            } else {
+                                printf("    Hard Drive    ");
+                            }
+                            break;
+                        case ATAPI_TYPE_TAPE:
+                            printf("    Tape Drive    ");
+                            break;
+                        case ATAPI_TYPE_CDROM:
+                            printf("    CD/DVD Drive  ");
+                            BlockMode_valid = FALSE;
+                            break;
+                        case ATAPI_TYPE_OPTICAL:
+                            printf("    Optical Drive ");
+                            BlockMode_valid = FALSE;
+                            break;
+                        default:
                             printf("    Hard Drive    ");
+                            print_geom = TRUE;
+                            //MOV_DD_SWP(max_lba, ident->UserAddressableSectors);
+                            max_lba = ident->UserAddressableSectors;
+                            if(ident->FeaturesSupport.Address48) {
+                               max_lba = ident->UserAddressableSectors48;
+                            }
+                            //MOV_DW_SWP(chs[0], ident->NumberOfCylinders);
+                            //MOV_DW_SWP(chs[1], ident->NumberOfHeads);
+                            //MOV_DW_SWP(chs[2], ident->SectorsPerTrack);
+                            chs[0] = ident->NumberOfCylinders;
+                            chs[1] = ident->NumberOfHeads;
+                            chs[2] = ident->SectorsPerTrack;
+                            if(!max_lba) {
+                                max_lba = (ULONG)(chs[0])*(ULONG)(chs[1])*(ULONG)(chs[2]);
+                            }
                         }
-                        break;
-                    case ATAPI_TYPE_TAPE:
-                        printf("    Tape Drive    ");
-                        break;
-                    case ATAPI_TYPE_CDROM:
-                        printf("    CD/DVD Drive  ");
-                        BlockMode_valid = FALSE;
-                        break;
-                    case ATAPI_TYPE_OPTICAL:
-                        printf("    Optical Drive ");
-                        BlockMode_valid = FALSE;
-                        break;
-                    default:
-                        printf("    Hard Drive    ");
-                        print_geom = 1;
-                        //MOV_DD_SWP(max_lba, ident->UserAddressableSectors);
-                        max_lba = ident->UserAddressableSectors;
-                        if(ident->FeaturesSupport.Address48) {
-                           max_lba = ident->UserAddressableSectors48;
+                        if(io_mode != -1) {
+                            printf("           %.12s\n", mode_str);
                         }
-                        //MOV_DW_SWP(chs[0], ident->NumberOfCylinders);
-                        //MOV_DW_SWP(chs[1], ident->NumberOfHeads);
-                        //MOV_DW_SWP(chs[2], ident->SectorsPerTrack);
-                        chs[0] = ident->NumberOfCylinders;
-                        chs[1] = ident->NumberOfHeads;
-                        chs[2] = ident->SectorsPerTrack;
-                        if(!max_lba) {
-                            max_lba = (ULONG)(chs[0])*(ULONG)(chs[1])*(ULONG)(chs[2]);
+                        for (j = 0; j < 40; j += 2) {
+                            MOV_DW_SWP(SerNum[j], ((PUCHAR)ident->ModelNumber)[j]);
                         }
-                    }
-                    if(io_mode != -1) {
-                        printf("           %.12s\n", mode_str);
-                    }
-                    for (j = 0; j < 40; j += 2) {
-                        MOV_DW_SWP(SerNum[j], ((PUCHAR)ident->ModelNumber)[j]);
-                    }
-                    printf("    Mod: %40.40s\n", SerNum);
-                    for (j = 0; j < 8; j += 2) {
-                        MOV_DW_SWP(SerNum[j], ((PUCHAR)ident->FirmwareRevision)[j]);
-                    }
-                    printf("    Rev: %8.8s\n", SerNum);
-                    for (j = 0; j < 20; j += 2) {
-                        MOV_DW_SWP(SerNum[j], ((PUCHAR)ident->SerialNumber)[j]);
-                    }
-                    printf("    S/N: %20.20s\n", SerNum);
+                        printf("    Mod: %40.40s\n", SerNum);
+                        for (j = 0; j < 8; j += 2) {
+                            MOV_DW_SWP(SerNum[j], ((PUCHAR)ident->FirmwareRevision)[j]);
+                        }
+                        printf("    Rev: %8.8s\n", SerNum);
+                        for (j = 0; j < 20; j += 2) {
+                            MOV_DW_SWP(SerNum[j], ((PUCHAR)ident->SerialNumber)[j]);
+                        }
+                        printf("    S/N: %20.20s\n", SerNum);
 
-                    if(BlockMode_valid) {
-                        if(ident->MaximumBlockTransfer) {
-                            printf("    Multi-block mode:        %d block%s\n", ident->MaximumBlockTransfer, ident->MaximumBlockTransfer == 1 ? "" : "s");
-                        } else {
-                            printf("    Multi-block mode:        N/A\n");
+                        if(BlockMode_valid) {
+                            if(ident->MaximumBlockTransfer) {
+                                printf("    Multi-block mode:        %u block%s\n", ident->MaximumBlockTransfer, ident->MaximumBlockTransfer == 1 ? "" : "s");
+                            } else {
+                                printf("    Multi-block mode:        N/A\n");
+                            }
                         }
-                    }
-                    if(print_geom) {
-                        printf("    C/H/S:                   %d/%d/%d \n", chs[0], chs[1], chs[2]);
-                        printf("    LBA:                     %d \n", max_lba);
-                        if(max_lba < 2) {
-                            printf("    Size:                    %d kb\n", max_lba/2);
-                        } else
-                        if(max_lba < 2*1024*1024) {
-                            printf("    Size:                    %d Mb\n", max_lba/2048);
-                        } else
-                        if(max_lba < (ULONG)2*1024*1024*1024) {
-                            printf("    Size:                    %d.%d (%d) Gb\n", (ULONG)(max_lba/2048/1024),
-                                                                              (ULONG)(((max_lba/2048)%1024)/10),
-                                                                              (ULONG)(max_lba*512/1000/1000/1000)
-                            );
-                        } else {
-                            printf("    Size:                    %d.%d (%d) Tb\n", (ULONG)(max_lba/2048/1024/1024),
-                                                                              (ULONG)((max_lba/2048/1024)%1024)/10,
-                                                                              (ULONG)(max_lba*512/1000/1000/1000)
-                            );
+                        if(print_geom) {
+                            printf("    C/H/S:                   %u/%u/%u \n", chs[0], chs[1], chs[2]);
+                            printf("    LBA:                     %I64u \n", max_lba);
+                            if(max_lba < 2) {
+                                printf("    Size:                    %lu kb\n", (ULONG)(max_lba/2));
+                            } else
+                            if(max_lba < 2*1024*1024) {
+                                printf("    Size:                    %lu Mb\n", (ULONG)(max_lba/2048));
+                            } else
+                            if(max_lba < (ULONG)2*1024*1024*1024) {
+                                printf("    Size:                    %lu.%lu (%lu) Gb\n", (ULONG)(max_lba/2048/1024),
+                                                                                  (ULONG)(((max_lba/2048)%1024)/10),
+                                                                                  (ULONG)(max_lba*512/1000/1000/1000)
+                                );
+                            } else {
+                                printf("    Size:                    %lu.%lu (%lu) Tb\n", (ULONG)(max_lba/2048/1024/1024),
+                                                                                  (ULONG)((max_lba/2048/1024)%1024)/10,
+                                                                                  (ULONG)(max_lba*512/1000/1000/1000)
+                                );
+                            }
                         }
-                    }
-                    len = 0;
-                    if(hKey2 = ata_get_bblist_regh(ident, DevSerial, TRUE)) {
-                        if(RegQueryValueEx(hKey2, DevSerial, NULL, NULL, NULL, &len) == ERROR_SUCCESS) {
-                            printf("    !!! Assigned bad-block list !!!\n");
+                        len = 0;
+                        if((hKey2 = ata_get_bblist_regh(ident, DevSerial, TRUE))) {
+                            if(RegQueryValueEx(hKey2, DevSerial, NULL, NULL, NULL, &len) == ERROR_SUCCESS) {
+                                printf("    !!! Assigned bad-block list !!!\n");
+                            }
+                            RegCloseKey(hKey2);
                         }
-                        RegCloseKey(hKey2);
+                    } else {
+                        switch(scsi_ident->DeviceType) {
+                        case DIRECT_ACCESS_DEVICE:
+                            if(scsi_ident->RemovableMedia) {
+                                printf("    Floppy        ");
+                            } else {
+                                printf("    Hard Drive    ");
+                            }
+                            break;
+                        case SEQUENTIAL_ACCESS_DEVICE:
+                            printf("    Tape Drive    ");
+                            break;
+                        case PRINTER_DEVICE:
+                            printf("    Printer       ");
+                            break;
+                        case PROCESSOR_DEVICE:
+                            printf("    Processor     ");
+                            break;
+                        case WRITE_ONCE_READ_MULTIPLE_DEVICE:
+                            printf("    WORM Drive    ");
+                            break;
+                        case READ_ONLY_DIRECT_ACCESS_DEVICE:
+                            printf("    CDROM Drive   ");
+                            break;
+                        case SCANNER_DEVICE:
+                            printf("    Scanner       ");
+                            break;
+                        case OPTICAL_DEVICE:
+                            printf("    Optical Drive ");
+                            break;
+                        case MEDIUM_CHANGER:
+                            printf("    Changer       ");
+                            break;
+                        case COMMUNICATION_DEVICE:
+                            printf("    Comm. device  ");
+                            break;
+                        }
+                        printf("\n");
                     }
-
                 }
                 memcpy(&g_ident, ident, sizeof(IDENTIFY_DATA));
             }
@@ -868,11 +971,13 @@ ata_adapter_info(
 {
     char dev_name[64];
     HANDLE h;
-    ADAPTERINFO AdapterInfo;
+    PADAPTERINFO AdapterInfo;
     ULONG status;
     ULONG returned;
     SCSI_ADDRESS addr;
     PCI_SLOT_NUMBER       slotData;
+    char mode_str[12];
+    ULONG len;
 
     sprintf(dev_name, "\\\\.\\Scsi%d:", bus_id);
     h = ata_open_dev(dev_name);
@@ -880,35 +985,52 @@ ata_adapter_info(
         return FALSE;
     addr.PortNumber = bus_id;
 
-    memset(&AdapterInfo, 0, sizeof(AdapterInfo));
+    len = sizeof(ADAPTERINFO)+sizeof(CHANINFO)*AHCI_MAX_PORT;
+    if(!g_AdapterInfo) {
+        AdapterInfo = (PADAPTERINFO)GlobalAlloc(GMEM_FIXED, len);
+        if(!AdapterInfo) {
+            return FALSE;
+        }
+    } else {
+        AdapterInfo = g_AdapterInfo; 
+    }
+    memset(AdapterInfo, 0, len);
 
-    status = ata_send_ioctl(h, &addr, "-UNIATA-",
+    status = ata_send_ioctl(h, &addr, (PCHAR)"-UNIATA-",
                             IOCTL_SCSI_MINIPORT_UNIATA_ADAPTER_INFO,
-                            &AdapterInfo, sizeof(AdapterInfo),
-                            &AdapterInfo, sizeof(AdapterInfo),
+                            AdapterInfo, len,
+                            AdapterInfo, len,
                             &returned);
-    printf("Scsi%d: %s\n", bus_id, status ? "[UniATA]" : "");
+    if(status) {
+        ata_mode_to_str(mode_str, AdapterInfo->MaxTransferMode);
+    }
+    printf("Scsi%d: %s     %s\n", bus_id, status ? "[UniATA]" : "", status ? mode_str : "");
     if(print_info) {
         if(!status) {
             printf("Can't get adapter info\n");
         } else {
-            if(AdapterInfo.AdapterInterfaceType == PCIBus) {
-                slotData.u.AsULONG = AdapterInfo.slotNumber;
-                printf("  PCI Bus/Dev/Func:   %d/%d/%d%s\n",
-                    AdapterInfo.SystemIoBusNumber, slotData.u.bits.DeviceNumber, slotData.u.bits.FunctionNumber,
-                    AdapterInfo.AdapterInterfaceType == AdapterInfo.OrigAdapterInterfaceType ? "" : " (ISA-Bridged)");
-                printf("  VendorId/DevId/Rev: %#04x/%#04x/%#02x\n", AdapterInfo.DevID >> 16, AdapterInfo.DevID & 0xffff, AdapterInfo.RevID);
-                if(AdapterInfo.DeviceName[0]) {
-                    printf("  Name:               %s\n", AdapterInfo.DeviceName);
+            if(AdapterInfo->AdapterInterfaceType == PCIBus) {
+                slotData.u.AsULONG = AdapterInfo->slotNumber;
+                printf("  PCI Bus/Dev/Func:   %lu/%lu/%lu%s\n",
+                    AdapterInfo->SystemIoBusNumber, slotData.u.bits.DeviceNumber, slotData.u.bits.FunctionNumber,
+                    AdapterInfo->AdapterInterfaceType == AdapterInfo->OrigAdapterInterfaceType ? "" : " (ISA-Bridged)");
+                printf("  VendorId/DevId/Rev: %#04x/%#04x/%#02x\n",
+                    (USHORT)(AdapterInfo->DevID >> 16),
+                    (USHORT)(AdapterInfo->DevID & 0xffff),
+                    (UCHAR)(AdapterInfo->RevID));
+                if(AdapterInfo->DeviceName[0]) {
+                    printf("  Name:               %s\n", AdapterInfo->DeviceName);
                 }
             } else
-            if(AdapterInfo.AdapterInterfaceType == Isa) {
+            if(AdapterInfo->AdapterInterfaceType == Isa) {
                 printf("  ISA Bus\n");
             }
-            printf("  IRQ: %d\n", AdapterInfo.BusInterruptLevel);
+            printf("  IRQ: %ld\n", AdapterInfo->BusInterruptLevel);
         }
     }
     ata_close_dev(h);
+    //GlobalFree(AdapterInfo);
+    g_AdapterInfo = AdapterInfo;
     return status ? TRUE : FALSE;
 } // end ata_adapter_info()
 
@@ -996,7 +1118,7 @@ ata_mode(
 //    IoMode.ApplyImmediately = TRUE;
     IoMode.OrigMode = mode;
 
-    status = ata_send_ioctl(h, &addr, "-UNIATA-",
+    status = ata_send_ioctl(h, &addr, (PCHAR)"-UNIATA-",
                             IOCTL_SCSI_MINIPORT_UNIATA_SET_MAX_MODE,
                             &IoMode, sizeof(IoMode),
                             NULL, 0,
@@ -1062,7 +1184,8 @@ ata_hide(
     int bus_id,
     int dev_id,
     int lock,
-    int persistent_hide
+    int persistent_hide,
+    int power_mode
     )
 {
     char dev_name[64];
@@ -1075,6 +1198,11 @@ ata_hide(
     if(dev_id == -1) {
         return FALSE;
     }
+
+    if(power_mode) {
+        ata_power_mode(bus_id, dev_id, power_mode);
+    }
+
     if(lock < 0) {
         lock = DEFAULT_REMOVAL_LOCK_TIMEOUT;
     }
@@ -1094,7 +1222,7 @@ ata_hide(
     if(lock) {
         printf("ATTENTION: you have %d seconds to disconnect cable\n", lock);
     }
-    status = ata_send_ioctl(h, &addr, "-UNIATA-",
+    status = ata_send_ioctl(h, &addr, (PCHAR)"-UNIATA-",
                             IOCTL_SCSI_MINIPORT_UNIATA_DELETE_DEVICE,
                             &to, sizeof(to),
                             NULL, 0,
@@ -1144,7 +1272,7 @@ ata_scan(
         if(lock) {
             printf("You have %d seconds to connect device.\n", lock);
         }
-        status = ata_send_ioctl(h, &addr, "-UNIATA-",
+        status = ata_send_ioctl(h, &addr, (PCHAR)"-UNIATA-",
                                 IOCTL_SCSI_MINIPORT_UNIATA_FIND_DEVICES,
                                 &to, sizeof(to),
                                 NULL, 0,
@@ -1233,12 +1361,12 @@ ata_bblk(
         print_help();
         return FALSE;
     }
-    if((dev_id >> 16) & 0xff == 0xff) {
+    if(((dev_id >> 16) & 0xff) == 0xff) {
         printf("\nERROR: Target device bus number (channel) must be specified with b:<bus id>\n\n");
         print_help();
         return FALSE;
     }
-    if((dev_id >> 8) & 0xff == 0xff) {
+    if(((dev_id >> 8) & 0xff) == 0xff) {
         printf("\nERROR: Target device ID must be specified with d:<device id>\n\n");
         print_help();
         return FALSE;
@@ -1263,7 +1391,7 @@ ata_bblk(
         }
 
         len = GetFileSize(hf, NULL);
-        if(!len || len == -1)
+        if(!len || len == INVALID_FILE_SIZE)
             goto exit;
         bblist = (char*)GlobalAlloc(GMEM_FIXED, len*8);
     }
@@ -1289,7 +1417,7 @@ ata_bblk(
         addr.TargetId = (UCHAR)(dev_id >> 8);
         addr.Lun      = (UCHAR)(dev_id);
 
-        status = ata_send_ioctl(h, &addr, "-UNIATA-",
+        status = ata_send_ioctl(h, &addr, (PCHAR)"-UNIATA-",
                                 IOCTL_SCSI_MINIPORT_UNIATA_RESETBB,
                                 NULL, 0,
                                 NULL, 0,
@@ -1312,7 +1440,7 @@ ata_bblk(
             j++;
             BB_Msg[sizeof(BB_Msg)-1] = 0;
             k=0;
-            while(a = BB_Msg[k]) {
+            while((a = BB_Msg[k])) {
                 if(a == ' ' || a == '\t' || a == '\r') {
                     k++;
                     continue;
@@ -1331,7 +1459,7 @@ ata_bblk(
                 continue;
             }
             k0 = k;
-            while(a = BB_Msg[k]) {
+            while((a = BB_Msg[k])) {
                 if(a == ' ' || a == '\t' || a == '\r') {
                     BB_Msg[k] = '\t';
                 }
@@ -1355,7 +1483,7 @@ ata_bblk(
             }
             k = k0;
             if(radix == 10) {
-                b = sscanf(BB_Msg+k, "%I64d\t%I64d", &tmp_bb_lba, &tmp_bb_len);
+                b = sscanf(BB_Msg+k, "%I64u\t%I64u", &tmp_bb_lba, &tmp_bb_len);
             } else {
                 b = sscanf(BB_Msg+k, "%I64x\t%I64x", &tmp_bb_lba, &tmp_bb_len);
             }
@@ -1464,7 +1592,7 @@ ata_bblk(
         while(len >= sizeof(LONGLONG)*2) {
             tmp_bb_lba = ((LONGLONG*)bblist)[i*2+0];
             tmp_bb_len = ((LONGLONG*)bblist)[i*2+1] - tmp_bb_lba;
-            b = sprintf(BB_Msg, "%I64x\t%I64x\n", tmp_bb_lba, tmp_bb_len);
+            b = sprintf(BB_Msg, "%I64u\t%I64u\n", tmp_bb_lba, tmp_bb_len);
             WriteFile(hf, BB_Msg, b, &returned, NULL);
             i++;
             len -= sizeof(LONGLONG)*2;
@@ -1482,6 +1610,52 @@ exit:
     return retval;
 } // end ata_bblk()
 
+BOOLEAN
+ata_power_mode(
+    int bus_id,
+    int dev_id,
+    int power_mode
+    )
+{
+    char dev_name[64];
+    HANDLE h;
+    ULONG status;
+    ULONG returned;
+    SCSI_ADDRESS addr;
+    CDB cdb;
+    SENSE_DATA senseData;
+
+    if(dev_id == -1) {
+        return FALSE;
+    }
+    if(!power_mode) {
+        return TRUE;
+    }
+
+    sprintf(dev_name, "\\\\.\\Scsi%d:", bus_id);
+    h = ata_open_dev(dev_name);
+    if(!h)
+        return FALSE;
+    addr.PortNumber = bus_id;
+    addr.PathId   = (UCHAR)(dev_id >> 16);
+    addr.TargetId = (UCHAR)(dev_id >> 8);
+    addr.Lun      = (UCHAR)(dev_id);
+
+    memset(&cdb, 0, sizeof(cdb));
+    cdb.START_STOP.OperationCode = SCSIOP_START_STOP_UNIT;
+    cdb.START_STOP.Immediate = 1;
+    cdb.START_STOP.PowerConditions = power_mode;
+    cdb.START_STOP.Start = (power_mode != StartStop_Power_Sleep);
+
+    printf("Changing power state to ...\n");
+
+    status = ata_send_scsi(h, &addr, &cdb, 6,
+                            NULL, 0, FALSE,
+                            &senseData, &returned);
+    ata_close_dev(h);
+    return TRUE;
+} // end ata_power_mode()
+
 int
 ata_num_to_x_dev(
     char a
@@ -1498,7 +1672,7 @@ main (
     char* argv[]
     )
 {
-    ULONG Flags = 0;
+    //ULONG Flags = 0;
     int i, j;
     char a;
     int bus_id = -1;
@@ -1509,16 +1683,17 @@ main (
     int mode=-1;
     int list_bb=0;
     int persistent_hide=0;
+    int power_mode=StartStop_Power_NoChg;
 
     printf("Console ATA control utility for Windows NT3.51/NT4/2000/XP/2003\n"
-           "Version 0." UNIATA_VER_STR ", Copyright (c) Alexander A. Telyatnikov, 2003-2008\n"
+           "Version 0." UNIATA_VER_STR ", Copyright (c) Alexander A. Telyatnikov, 2003-2012\n"
            "Home site: http://alter.org.ua\n");
 
     for(i=1; i<argc; i++) {
         if(!argv[i])
             continue;
         if((a = argv[i][0]) != '-') {
-            for(j=0; a = argv[i][j]; j++) {
+            for(j=0; (a = argv[i][j]); j++) {
                 switch(a) {
                 case 'a' :
                 case 's' :
@@ -1632,9 +1807,46 @@ main (
                 g_bb_list=argv[i];
                 j = strlen(argv[i])-1;
                 break;
-            case 'd' :
-                if(cmd && cmd != CMD_ATA_FIND && cmd != CMD_ATA_HIDE) {
+            case 'p' :
+                if(cmd && (cmd != CMD_ATA_FIND) && (cmd != CMD_ATA_HIDE)) {
                     print_help();
+                }
+                switch(argv[i][j+1]) {
+                case '0':
+                case 'a':
+                    // do nothing
+                    break;
+                case '1':
+                case 'i':
+                    power_mode = StartStop_Power_Idle;
+                    break;
+                case '2':
+                case 's':
+                    power_mode = StartStop_Power_Standby;
+                    break;
+                case '3':
+                case 'p':
+                    power_mode = StartStop_Power_Sleep;
+                    break;
+                default:
+                    j--;
+                }
+                j++;
+                if(power_mode && !cmd) {
+                    cmd = CMD_ATA_POWER;
+                }
+                break;
+            case 'D' :
+                power_mode = StartStop_Power_Sleep;
+                if(cmd && (cmd != CMD_ATA_HIDE)) {
+                    print_help();
+                }
+            case 'd' :
+                if(cmd && (cmd != CMD_ATA_FIND) && (cmd != CMD_ATA_HIDE) && (cmd != CMD_ATA_POWER)) {
+                    print_help();
+                }
+                if(!cmd) {
+                    cmd = CMD_ATA_HIDE;
                 }
                 i++;
                 if(!argv[i]) {
@@ -1680,12 +1892,12 @@ main (
         d_dev = 127;
         l_dev = 127;
     } else
-    if(d_dev == -1 && b_dev != -1) {
+    if((d_dev == -1) && (b_dev != -1)) {
         d_dev = 127;
         l_dev = 127;
     }
 
-    if(d_dev != -1 && b_dev != -1) {
+    if((d_dev != -1) && (b_dev != -1)) {
         dev_id = (b_dev << 16) | (d_dev << 8) | l_dev;
     }
     if(cmd == CMD_ATA_LIST) {
@@ -1701,10 +1913,13 @@ main (
         ata_scan(bus_id, dev_id, lock, persistent_hide);
     } else
     if(cmd == CMD_ATA_HIDE) {
-        ata_hide(bus_id, dev_id, lock, persistent_hide);
+        ata_hide(bus_id, dev_id, lock, persistent_hide, power_mode);
     } else
     if(cmd == CMD_ATA_BBLK) {
         ata_bblk(bus_id, dev_id, list_bb);
+    } else
+    if(cmd == CMD_ATA_POWER) {
+        ata_power_mode(bus_id, dev_id, power_mode);
     } else {
         print_help();
     }

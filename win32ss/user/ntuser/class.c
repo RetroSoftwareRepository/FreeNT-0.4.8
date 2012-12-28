@@ -13,10 +13,10 @@ REGISTER_SYSCLASS DefaultServerClasses[] =
 {
   { ((PWSTR)((ULONG_PTR)(WORD)(0x8001))),
     CS_GLOBALCLASS|CS_DBLCLKS,
-    NULL,
-    0,
+    NULL, // Use User32 procs
+    sizeof(ULONG)*2,
     (HICON)IDC_ARROW,
-    (HBRUSH)(COLOR_BACKGROUND + 1),
+    (HBRUSH)(COLOR_BACKGROUND),
     FNID_DESKTOP,
     ICLS_DESKTOP
   },
@@ -47,6 +47,17 @@ REGISTER_SYSCLASS DefaultServerClasses[] =
     FNID_SCROLLBAR,
     ICLS_SCROLLBAR
   },
+#if 0
+  { ((PWSTR)((ULONG_PTR)(WORD)(0x8006))), // Tooltips
+    CS_PARENTDC|CS_DBLCLKS,
+    NULL, // Use User32 procs
+    0,
+    (HICON)IDC_ARROW,
+    0,
+    FNID_TOOLTIPS,
+    ICLS_TOOLTIPS
+  },
+#endif
   { ((PWSTR)((ULONG_PTR)(WORD)(0x8004))), // IconTitle is here for now...
     0,
     NULL, // Use User32 procs
@@ -113,8 +124,8 @@ LookupFnIdToiCls(int FnId, int *iCls )
 _Must_inspect_result_
 NTSTATUS
 NTAPI
-CaptureUnicodeStringOrAtom(
-    _Out_ PUNICODE_STRING pustrOut,
+ProbeAndCaptureUnicodeStringOrAtom(
+    _Out_ _When_(return>=0, _At_(pustrOut->Buffer, _Post_ _Notnull_)) PUNICODE_STRING pustrOut,
     __in_data_source(USER_MODE) _In_ PUNICODE_STRING pustrUnsafe)
 {
     NTSTATUS Status = STATUS_SUCCESS;
@@ -630,9 +641,17 @@ IntReferenceClass(IN OUT PCLS BaseClass,
     PCLS Class;
     ASSERT(BaseClass->pclsBase == BaseClass);
 
-    Class = IntGetClassForDesktop(BaseClass,
-                                  ClassLink,
-                                  Desktop);
+    if (Desktop != NULL)
+    {
+        Class = IntGetClassForDesktop(BaseClass,
+                                      ClassLink,
+                                      Desktop);
+    }
+    else
+    {
+        Class = BaseClass;
+    }
+
     if (Class != NULL)
     {
         Class->cWndReferenceCount++;
@@ -1275,13 +1294,16 @@ FoundClass:
 }
 
 PCLS
-IntGetAndReferenceClass(PUNICODE_STRING ClassName, HINSTANCE hInstance)
+IntGetAndReferenceClass(PUNICODE_STRING ClassName, HINSTANCE hInstance, BOOL bDesktopThread)
 {
    PCLS *ClassLink, Class = NULL;
    RTL_ATOM ClassAtom;
    PTHREADINFO pti;
 
-   pti = PsGetCurrentThreadWin32Thread();
+   if (bDesktopThread)
+       pti = gptiDesktopThread;
+   else
+       pti = PsGetCurrentThreadWin32Thread();
 
    if ( !(pti->ppi->W32PF_flags & W32PF_CLASSESREGISTERED ))
    {
@@ -1579,7 +1601,7 @@ UserGetClassName(IN PCLS Class,
 
     if (Ansi && szTemp != NULL && szTemp != szStaticTemp)
     {
-        ExFreePool(szTemp);
+        ExFreePoolWithTag(szTemp, USERTAG_CLASS);
     }
 
     return Ret;
@@ -1948,6 +1970,7 @@ UserRegisterSystemClasses(VOID)
     WNDCLASSEXW wc;
     PCLS Class;
     BOOL Ret = TRUE;
+    HBRUSH hBrush;
     DWORD Flags = 0;
 
     if (ppi->W32PF_flags & W32PF_CLASSESREGISTERED)
@@ -1992,7 +2015,12 @@ UserRegisterSystemClasses(VOID)
         wc.cbWndExtra = DefaultServerClasses[i].ExtraBytes;
         wc.hIcon = NULL;
         wc.hCursor = DefaultServerClasses[i].hCursor;
-        wc.hbrBackground = DefaultServerClasses[i].hBrush;
+        hBrush = DefaultServerClasses[i].hBrush;
+        if (hBrush <= (HBRUSH)COLOR_MENUBAR)
+        {
+            hBrush = IntGetSysColorBrush((INT)hBrush);
+        }
+        wc.hbrBackground = hBrush;
         wc.lpszMenuName = NULL;
         wc.lpszClassName = ClassName.Buffer;
         wc.hIconSm = NULL;
@@ -2266,7 +2294,7 @@ NtUserUnregisterClass(
     NTSTATUS Status;
     BOOL Ret;
 
-    Status = CaptureUnicodeStringOrAtom(&SafeClassName, ClassNameOrAtom);
+    Status = ProbeAndCaptureUnicodeStringOrAtom(&SafeClassName, ClassNameOrAtom);
     if (!NT_SUCCESS(Status))
     {
         ERR("Error capturing the class name\n");
@@ -2318,7 +2346,7 @@ NtUserGetClassInfo(
     }
     _SEH2_END;
 
-    Status = CaptureUnicodeStringOrAtom(&SafeClassName, ClassName);
+    Status = ProbeAndCaptureUnicodeStringOrAtom(&SafeClassName, ClassName);
     if (!NT_SUCCESS(Status))
     {
         ERR("Error capturing the class name\n");
@@ -2452,7 +2480,7 @@ NtUserGetWOWClass(
     RTL_ATOM ClassAtom = 0;
     NTSTATUS Status;
 
-    Status = CaptureUnicodeStringOrAtom(&SafeClassName, ClassName);
+    Status = ProbeAndCaptureUnicodeStringOrAtom(&SafeClassName, ClassName);
     if (!NT_SUCCESS(Status))
     {
         ERR("Error capturing the class name\n");

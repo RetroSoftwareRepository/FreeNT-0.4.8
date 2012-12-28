@@ -287,8 +287,10 @@ ChangeServiceConfigA(SC_HANDLE hService,
 {
     DWORD dwError;
     DWORD dwDependenciesLength = 0;
-    DWORD dwLength;
+    SIZE_T cchLength;
     LPCSTR lpStr;
+    DWORD dwPasswordLength = 0;
+    LPBYTE lpEncryptedPassword = NULL;
 
     TRACE("ChangeServiceConfigA() called\n");
 
@@ -298,14 +300,16 @@ ChangeServiceConfigA(SC_HANDLE hService,
         lpStr = lpDependencies;
         while (*lpStr)
         {
-            dwLength = strlen(lpStr) + 1;
-            dwDependenciesLength += dwLength;
-            lpStr = lpStr + dwLength;
+            cchLength = strlen(lpStr) + 1;
+            dwDependenciesLength += (DWORD)cchLength;
+            lpStr = lpStr + cchLength;
         }
         dwDependenciesLength++;
     }
 
     /* FIXME: Encrypt the password */
+    lpEncryptedPassword = (LPBYTE)lpPassword;
+    dwPasswordLength = (DWORD)(lpPassword ? (strlen(lpPassword) + 1) * sizeof(CHAR) : 0);
 
     RpcTryExcept
     {
@@ -317,11 +321,11 @@ ChangeServiceConfigA(SC_HANDLE hService,
                                         (LPSTR)lpBinaryPathName,
                                         (LPSTR)lpLoadOrderGroup,
                                         lpdwTagId,
-                                        (LPSTR)lpDependencies,
+                                        (LPBYTE)lpDependencies,
                                         dwDependenciesLength,
                                         (LPSTR)lpServiceStartName,
-                                        NULL,              /* FIXME: lpPassword */
-                                        0,                 /* FIXME: dwPasswordLength */
+                                        lpEncryptedPassword,
+                                        dwPasswordLength,
                                         (LPSTR)lpDisplayName);
     }
     RpcExcept(EXCEPTION_EXECUTE_HANDLER)
@@ -361,8 +365,10 @@ ChangeServiceConfigW(SC_HANDLE hService,
 {
     DWORD dwError;
     DWORD dwDependenciesLength = 0;
-    DWORD dwLength;
+    SIZE_T cchLength;
     LPCWSTR lpStr;
+    DWORD dwPasswordLength = 0;
+    LPBYTE lpEncryptedPassword = NULL;
 
     TRACE("ChangeServiceConfigW() called\n");
 
@@ -372,14 +378,17 @@ ChangeServiceConfigW(SC_HANDLE hService,
         lpStr = lpDependencies;
         while (*lpStr)
         {
-            dwLength = wcslen(lpStr) + 1;
-            dwDependenciesLength += dwLength;
-            lpStr = lpStr + dwLength;
+            cchLength = wcslen(lpStr) + 1;
+            dwDependenciesLength += (DWORD)cchLength;
+            lpStr = lpStr + cchLength;
         }
         dwDependenciesLength++;
+        dwDependenciesLength *= sizeof(WCHAR);
     }
 
     /* FIXME: Encrypt the password */
+    lpEncryptedPassword = (LPBYTE)lpPassword;
+    dwPasswordLength = (lpPassword ? (wcslen(lpPassword) + 1) * sizeof(WCHAR) : 0);
 
     RpcTryExcept
     {
@@ -394,8 +403,8 @@ ChangeServiceConfigW(SC_HANDLE hService,
                                         (LPBYTE)lpDependencies,
                                         dwDependenciesLength,
                                         (LPWSTR)lpServiceStartName,
-                                        NULL,              /* FIXME: lpPassword */
-                                        0,                 /* FIXME: dwPasswordLength */
+                                        lpEncryptedPassword,
+                                        dwPasswordLength,
                                         (LPWSTR)lpDisplayName);
     }
     RpcExcept(EXCEPTION_EXECUTE_HANDLER)
@@ -539,8 +548,10 @@ CreateServiceA(SC_HANDLE hSCManager,
     SC_HANDLE hService = NULL;
     DWORD dwDependenciesLength = 0;
     DWORD dwError;
-    DWORD dwLength;
+    SIZE_T cchLength;
     LPCSTR lpStr;
+    DWORD dwPasswordLength = 0;
+    LPBYTE lpEncryptedPassword = NULL;
 
     TRACE("CreateServiceA() called\n");
     TRACE("%p %s %s\n", hSCManager,
@@ -558,14 +569,16 @@ CreateServiceA(SC_HANDLE hSCManager,
         lpStr = lpDependencies;
         while (*lpStr)
         {
-            dwLength = strlen(lpStr) + 1;
-            dwDependenciesLength += dwLength;
-            lpStr = lpStr + dwLength;
+            cchLength = strlen(lpStr) + 1;
+            dwDependenciesLength += (DWORD)cchLength;
+            lpStr = lpStr + cchLength;
         }
         dwDependenciesLength++;
     }
 
     /* FIXME: Encrypt the password */
+    lpEncryptedPassword = (LPBYTE)lpPassword;
+    dwPasswordLength = (DWORD)(lpPassword ? (strlen(lpPassword) + 1) * sizeof(CHAR) : 0);
 
     RpcTryExcept
     {
@@ -583,8 +596,8 @@ CreateServiceA(SC_HANDLE hSCManager,
                                   (LPBYTE)lpDependencies,
                                   dwDependenciesLength,
                                   (LPSTR)lpServiceStartName,
-                                  NULL,              /* FIXME: lpPassword */
-                                  0,                 /* FIXME: dwPasswordLength */
+                                  lpEncryptedPassword,
+                                  dwPasswordLength,
                                   (SC_RPC_HANDLE *)&hService);
     }
     RpcExcept(EXCEPTION_EXECUTE_HANDLER)
@@ -627,8 +640,10 @@ CreateServiceW(SC_HANDLE hSCManager,
     SC_HANDLE hService = NULL;
     DWORD dwDependenciesLength = 0;
     DWORD dwError;
-    DWORD dwLength;
+    SIZE_T cchLength;
     LPCWSTR lpStr;
+    DWORD dwPasswordLength = 0;
+    LPBYTE lpEncryptedPassword = NULL;
 
     TRACE("CreateServiceW() called\n");
     TRACE("%p %S %S\n", hSCManager,
@@ -646,16 +661,17 @@ CreateServiceW(SC_HANDLE hSCManager,
         lpStr = lpDependencies;
         while (*lpStr)
         {
-            dwLength = wcslen(lpStr) + 1;
-            dwDependenciesLength += dwLength;
-            lpStr = lpStr + dwLength;
+            cchLength = wcslen(lpStr) + 1;
+            dwDependenciesLength += (DWORD)cchLength;
+            lpStr = lpStr + cchLength;
         }
         dwDependenciesLength++;
-
         dwDependenciesLength *= sizeof(WCHAR);
     }
 
     /* FIXME: Encrypt the password */
+    lpEncryptedPassword = (LPBYTE)lpPassword;
+    dwPasswordLength = (DWORD)(lpPassword ? (wcslen(lpPassword) + 1) * sizeof(WCHAR) : 0);
 
     RpcTryExcept
     {
@@ -673,8 +689,8 @@ CreateServiceW(SC_HANDLE hSCManager,
                                   (LPBYTE)lpDependencies,
                                   dwDependenciesLength,
                                   lpServiceStartName,
-                                  NULL,              /* FIXME: lpPassword */
-                                  0,                 /* FIXME: dwPasswordLength */
+                                  lpEncryptedPassword,
+                                  dwPasswordLength,
                                   (SC_RPC_HANDLE *)&hService);
     }
     RpcExcept(EXCEPTION_EXECUTE_HANDLER)

@@ -1158,7 +1158,33 @@ map_wparam_AtoW( UINT message, WPARAM wparam )
     return wparam;
 }
 
+LRESULT
+WINAPI
+DesktopWndProcA( HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam )
+{
+  LRESULT Result;
+  MSG AnsiMsg, UcMsg;
 
+  TRACE("Desktop A Class Atom! hWnd 0x%x, Msg %d\n", hwnd, message);
+
+  AnsiMsg.hwnd = hwnd;
+  AnsiMsg.message = message;
+  AnsiMsg.wParam = wParam;
+  AnsiMsg.lParam = lParam;
+
+  // Desktop is always Unicode so convert Ansi here.
+  if (!MsgiAnsiToUnicodeMessage(hwnd, &UcMsg, &AnsiMsg))
+  {
+     return FALSE;
+  }
+
+  Result = DesktopWndProcW(hwnd, message, UcMsg.wParam, UcMsg.lParam);
+ 
+  MsgiAnsiToUnicodeCleanup(&UcMsg, &AnsiMsg);
+
+  return Result;
+ }
+ 
 /*
  * @implemented
  */
@@ -1262,7 +1288,7 @@ IntCallWindowProcW(BOOL IsAnsiProc,
   ULONG_PTR LowLimit;
   BOOL Hook = FALSE, MsgOverride = FALSE, Dialog;
   LRESULT Result = 0, PreResult = 0;
-  DWORD Hit = 0, Data = 0;
+  DWORD Data = 0;
 
   if (WndProc == NULL)
   {
@@ -1326,7 +1352,7 @@ IntCallWindowProcW(BOOL IsAnsiProc,
       }
       _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
       {
-         Hit = 1;
+         ERR("Got exception when calling Ansi WndProc %p Msg %d \n",WndProc,Msg);
       }
       _SEH2_END;
 
@@ -1375,7 +1401,7 @@ IntCallWindowProcW(BOOL IsAnsiProc,
       }
       _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
       {
-         Hit = 2;
+         ERR("Got exception when calling unicode WndProc %p Msg %d \n",WndProc, Msg);
       }
       _SEH2_END;
 
@@ -1397,18 +1423,6 @@ IntCallWindowProcW(BOOL IsAnsiProc,
 
 Exit:
   if (Hook) EndUserApiHook();
-  if (Hit)
-  {
-     switch(Hit)
-     {
-     case 1:
-         ERR("CallWindowProcW Ansi Failed! Msg %d WndProc %p\n",Msg,WndProc);
-         break;
-     case 2:
-         ERR("CallWindowProcW Unicode Failed! Msg %d WndProc %p\n",Msg,WndProc);
-         break;
-     }
-  }
   return Result;
 }
 
@@ -1426,7 +1440,7 @@ IntCallWindowProcA(BOOL IsAnsiProc,
   ULONG_PTR LowLimit;
   BOOL Hook = FALSE, MsgOverride = FALSE, Dialog;
   LRESULT Result = 0, PreResult = 0;
-  DWORD Hit = 0, Data = 0;
+  DWORD Data = 0;
 
   if (WndProc == NULL)
   {
@@ -1480,7 +1494,7 @@ IntCallWindowProcA(BOOL IsAnsiProc,
       }
       _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
       {
-         Hit = 1;
+         ERR("Got exception when calling Ansi WndProc %p Msg %d \n",WndProc,Msg);
       }
       _SEH2_END;
 
@@ -1534,7 +1548,7 @@ IntCallWindowProcA(BOOL IsAnsiProc,
       }
       _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
       {
-         Hit = 2;
+         ERR("Got exception when calling unicode WndProc %p Msg %d \n",WndProc, Msg);
       }
       _SEH2_END;
 
@@ -1561,18 +1575,6 @@ IntCallWindowProcA(BOOL IsAnsiProc,
 
 Exit:
   if (Hook) EndUserApiHook();
-  if (Hit)
-  {
-     switch(Hit)
-     {
-     case 1:
-         ERR("CallWindowProcA Ansi Failed! Msg %d WndProc %p\n",Msg,WndProc);
-         break;
-     case 2:
-         ERR("CallWindowProcA Unicode Failed! Msg %d WndProc %p\n",Msg,WndProc);
-         break;
-     }
-  }
   return Result;
 }
 

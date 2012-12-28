@@ -1,5 +1,4 @@
-/* $Id$
- *
+/*
  * subsystems/win32/csrss/csrsrv/api/wapi.c
  *
  * CSRSS port message processing
@@ -22,7 +21,7 @@ static PCSRSS_API_DEFINITION ApiDefinitions = NULL;
 UNICODE_STRING CsrApiPortName;
 volatile LONG CsrpStaticThreadCount;
 volatile LONG CsrpDynamicThreadTotal;
-ULONG CsrMaxApiRequestThreads;
+extern ULONG CsrMaxApiRequestThreads;
 
 /* FUNCTIONS *****************************************************************/
 
@@ -187,7 +186,7 @@ CsrCallServerFromServer(PCSR_API_MESSAGE ReceiveMsg,
         DPRINT1("CSRSS: %s Api Request received from server process\n",
                 ServerDll->NameTable[ApiId]);
     }
-        
+
     /* Validation complete, start SEH */
     _SEH2_TRY
     {
@@ -206,7 +205,9 @@ CsrCallServerFromServer(PCSR_API_MESSAGE ReceiveMsg,
 
     /* Return success */
     return STATUS_SUCCESS;
+
 #else // Hacky reactos code
+
     PCSR_PROCESS ProcessData;
 
     /* Get the Process Data */
@@ -249,7 +250,7 @@ CsrCallServerFromServer(PCSR_API_MESSAGE ReceiveMsg,
  * @param None
  *
  * @return STATUS_SUCCESS in case of success, STATUS_UNSUCCESSFUL
- *         othwerwise.
+ *         otherwise.
  *
  * @remarks None.
  *
@@ -298,8 +299,8 @@ CsrApiPortInitialize(VOID)
     /* Create the Port Object */
     Status = NtCreatePort(&CsrApiPort,
                           &ObjectAttributes,
-                          LPC_MAX_DATA_LENGTH, // hack
-                          LPC_MAX_MESSAGE_LENGTH, // hack
+                          LPC_MAX_DATA_LENGTH, // hack ; sizeof(CSR_CONNECTION_INFO),
+                          LPC_MAX_MESSAGE_LENGTH, // hack ; sizeof(CSR_API_MESSAGE),
                           16 * PAGE_SIZE);
     if (NT_SUCCESS(Status))
     {
@@ -433,7 +434,7 @@ CreateBaseAcls(OUT PACL* Dacl,
                                          0, 0, 0, 0, 0, 0, 0,
                                          &RestrictedSid);
     ASSERT(NT_SUCCESS(Status));
-    
+
     /* Allocate one ACL with 3 ACEs each for one SID */
     AclLength = sizeof(ACL) + 3 * sizeof(ACCESS_ALLOWED_ACE) +
                 RtlLengthSid(SystemSid) +
@@ -471,7 +472,7 @@ CreateBaseAcls(OUT PACL* Dacl,
     ASSERT(NT_SUCCESS(Status));
     Status = RtlAddAccessAllowedAce(*RestrictedDacl, ACL_REVISION2, DIRECTORY_TRAVERSE, RestrictedSid);
     ASSERT(NT_SUCCESS(Status));
-    
+
     /* The SIDs are captured, can free them now */
     RtlFreeHeap(CsrHeap, 0, SystemSid);
     RtlFreeHeap(CsrHeap, 0, WorldSid);
@@ -511,7 +512,7 @@ BasepFakeStaticServerData(VOID)
         },
         {0}
     };
-    
+
     /* Get the session ID */
     SessionId = NtCurrentPeb()->SessionId;
 
@@ -641,7 +642,7 @@ BasepFakeStaticServerData(VOID)
     ASSERT(BnoSd);
     Status = RtlCreateSecurityDescriptor(BnoSd, SECURITY_DESCRIPTOR_REVISION);
     ASSERT(NT_SUCCESS(Status));
-    
+
     /* Create the BNO and \Restricted DACLs */
     Status = CreateBaseAcls(&BnoDacl, &BnoRestrictedDacl);
     ASSERT(NT_SUCCESS(Status));
@@ -745,7 +746,7 @@ BasepFakeStaticServerData(VOID)
 }
 
 NTSTATUS WINAPI
-CsrpHandleConnectionRequest (PPORT_MESSAGE Request)
+CsrpHandleConnectionRequest(PPORT_MESSAGE Request)
 {
     NTSTATUS Status;
     HANDLE ServerPort = NULL;//, ServerThread = NULL;
@@ -769,7 +770,7 @@ CsrpHandleConnectionRequest (PPORT_MESSAGE Request)
         DPRINT1("CSRSRV: Unknown process: %lx. Will be rejecting connection\n",
                 Request->ClientId.UniqueProcess);
     }
-    
+
     if ((ProcessData) && (ProcessData != CsrRootProcess))
     {
         /* Attach the Shared Section */
@@ -844,6 +845,19 @@ CsrpHandleConnectionRequest (PPORT_MESSAGE Request)
     return Status;
 }
 
+/*++
+ * @name CsrConnectToUser
+ * @implemented NT4
+ *
+ * The CsrConnectToUser connects to the User subsystem.
+ *
+ * @param None
+ *
+ * @return A pointer to the CSR Thread
+ *
+ * @remarks None.
+ *
+ *--*/
 PCSR_THREAD
 NTAPI
 CsrConnectToUser(VOID)
@@ -1068,13 +1082,13 @@ ClientConnectionThread(IN PVOID Parameter)
                 continue;
             }
         }
-        
+
         /* Use whatever Client ID we got */
         Teb->RealClientId = Request->Header.ClientId;
 
         /* Get the Message Type */
         MessageType = Request->Header.u2.s2.Type;
-        
+
         /* Handle connection requests */
         if (MessageType == LPC_CONNECTION_REQUEST)
         {
@@ -1085,7 +1099,7 @@ ClientConnectionThread(IN PVOID Parameter)
             ReplyPort = CsrApiPort;
             continue;
         }
-        
+
         /* It's some other kind of request. Get the lock for the lookup */
         CsrAcquireProcessLock();
 
@@ -1098,7 +1112,7 @@ ClientConnectionThread(IN PVOID Parameter)
         {
             /* This wasn't a CSR Thread, release lock */
             CsrReleaseProcessLock();
-            
+
             /* If this was an exception, handle it */
             if (MessageType == LPC_EXCEPTION)
             {
@@ -1111,7 +1125,7 @@ ClientConnectionThread(IN PVOID Parameter)
                      MessageType == LPC_CLIENT_DIED)
             {
                 /* The Client or Port are gone, loop again */
-                DPRINT1("Death from unknown thread, just continue\n");
+                DPRINT("Death from unknown thread, just continue\n");
                 Reply = NULL;
                 ReplyPort = CsrApiPort;
             }
@@ -1131,7 +1145,7 @@ HandleHardError:
                 {
                     CsrHandleHardError(CsrThread, (PHARDERROR_MSG)Request);
                 }
-                
+
                 /* If the response was 0xFFFFFFFF, we'll ignore it */
                 if (HardErrorMsg->Response == 0xFFFFFFFF)
                 {
@@ -1172,7 +1186,7 @@ HandleHardError:
             /* Keep going */
             continue;
         }
-        
+
         /* We have a valid thread, was this an LPC Request? */
         if (MessageType != LPC_REQUEST)
         {
@@ -1207,7 +1221,7 @@ HandleHardError:
                 ReplyPort = CsrApiPort;
                 continue;
             }
-            
+
             /* Reference the thread and release the lock */
             CsrLockedReferenceThread(CsrThread);
             CsrReleaseProcessLock();
@@ -1253,14 +1267,14 @@ HandleHardError:
         /* We got an API Request */
         CsrLockedReferenceThread(CsrThread);
         CsrReleaseProcessLock();
-        
+
         /* Assume success */
         Reply = Request;
         Request->Status = STATUS_SUCCESS;
 
         /* Now we reply to a particular client */
         ReplyPort = CsrThread->Process->ClientPort;
-        
+
         DPRINT("CSR: Got CSR API: %x [Message Origin: %x]\n",
                 Request->Type,
                 Request->Header.ClientId.UniqueThread);
@@ -1270,19 +1284,19 @@ HandleHardError:
         {
             /* Make sure we have enough threads */
             CsrpCheckRequestThreads();
-            
+
             /* Set the client thread pointer */
             NtCurrentTeb()->CsrClientThread = CsrThread;
 
             /* Call the Handler */
             CsrApiCallHandler(CsrThread->Process, Request);
-            
+
             /* Increase the static thread count */
             _InterlockedIncrement(&CsrpStaticThreadCount);
 
             /* Restore the server thread */
             NtCurrentTeb()->CsrClientThread = ServerThread;
-            
+
             /* Check if this is a dead client now */
             if (Request->Type == 0xBABE)
             {

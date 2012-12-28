@@ -64,6 +64,7 @@ paging machinery.
 
 extern KSPIN_LOCK MiSectionPageTableLock;
 
+_Function_class_(RTL_GENERIC_ALLOCATE_ROUTINE)
 static
 PVOID
 NTAPI
@@ -75,6 +76,7 @@ MiSectionPageTableAllocate(PRTL_GENERIC_TABLE Table, CLONG Bytes)
     return Result;
 }
 
+_Function_class_(RTL_GENERIC_FREE_ROUTINE)
 static
 VOID
 NTAPI
@@ -84,6 +86,7 @@ MiSectionPageTableFree(PRTL_GENERIC_TABLE Table, PVOID Data)
     ExFreePoolWithTag(Data, 'MmPt');
 }
 
+_Function_class_(RTL_GENERIC_COMPARE_ROUTINE)
 static
 RTL_GENERIC_COMPARE_RESULTS
 NTAPI
@@ -196,7 +199,7 @@ _MmSetPageEntrySectionSegment(PMM_SECTION_SEGMENT Segment,
     ASSERT(MiSectionPageTableGet(&Segment->PageTable, Offset));
 
     PageTable->Segment = Segment;
-    PageIndex = (Offset->QuadPart - PageTable->FileOffset.QuadPart) / PAGE_SIZE;
+    PageIndex = (ULONG_PTR)((Offset->QuadPart - PageTable->FileOffset.QuadPart) / PAGE_SIZE);
     OldEntry = PageTable->PageEntries[PageIndex];
 
     DPRINT("MiSetPageEntrySectionSegment(%p,%08x%08x,%x=>%x)\n",
@@ -215,7 +218,7 @@ _MmSetPageEntrySectionSegment(PMM_SECTION_SEGMENT Segment,
         ASSERT(!Entry || IS_SWAP_FROM_SSE(Entry));
         MmDeleteSectionAssociation(PFN_FROM_SSE(OldEntry));
     } else if (IS_SWAP_FROM_SSE(Entry)) {
-        ASSERT(!IS_SWAP_FROM_SSE(OldEntry) || 
+        ASSERT(!IS_SWAP_FROM_SSE(OldEntry) ||
                SWAPENTRY_FROM_SSE(OldEntry) == MM_WAIT_ENTRY);
         if (OldEntry && SWAPENTRY_FROM_SSE(OldEntry) != MM_WAIT_ENTRY)
             MmDeleteSectionAssociation(PFN_FROM_SSE(OldEntry));
@@ -247,7 +250,7 @@ _MmGetPageEntrySectionSegment(PMM_SECTION_SEGMENT Segment,
                                      ENTRIES_PER_ELEMENT * PAGE_SIZE);
     PageTable = MiSectionPageTableGet(&Segment->PageTable, &FileOffset);
     if (!PageTable) return 0;
-    PageIndex = (Offset->QuadPart - PageTable->FileOffset.QuadPart) / PAGE_SIZE;
+    PageIndex = (ULONG_PTR)((Offset->QuadPart - PageTable->FileOffset.QuadPart) / PAGE_SIZE);
     Result = PageTable->PageEntries[PageIndex];
 #if 0
     DPRINTC
@@ -341,7 +344,7 @@ MmGetSectionAssociation(PFN_NUMBER Page,
     {
         Segment = PageTable->Segment;
         Offset->QuadPart = PageTable->FileOffset.QuadPart +
-                           (RawOffset << PAGE_SHIFT);
+                           ((ULONG64)RawOffset << PAGE_SHIFT);
     }
 
     return Segment;

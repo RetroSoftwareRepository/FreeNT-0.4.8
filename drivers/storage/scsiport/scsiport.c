@@ -2870,7 +2870,11 @@ ScsiPortDeviceControl(IN PDEVICE_OBJECT DeviceObject,
           break;
 
       default:
-          DPRINT1("  unknown ioctl code: 0x%lX\n", Stack->Parameters.DeviceIoControl.IoControlCode);
+          if ('M' == (Stack->Parameters.DeviceIoControl.IoControlCode >> 16)) {
+            DPRINT1("  got ioctl intended for the mount manager: 0x%lX\n", Stack->Parameters.DeviceIoControl.IoControlCode);
+          } else {
+            DPRINT1("  unknown ioctl code: 0x%lX\n", Stack->Parameters.DeviceIoControl.IoControlCode);
+          }
           Status = STATUS_NOT_IMPLEMENTED;
           break;
     }
@@ -4585,7 +4589,11 @@ ScsiPortIsr(IN PKINTERRUPT Interrupt,
         return FALSE;
 
     /* Call miniport's HwInterrupt routine */
-    DeviceExtension->HwInterrupt(&DeviceExtension->MiniPortDeviceExtension);
+    if (DeviceExtension->HwInterrupt(&DeviceExtension->MiniPortDeviceExtension) == FALSE)
+    {
+        /* This interrupt doesn't belong to us */
+        return FALSE;
+    }
 
     /* If flag of notification is set - queue a DPC */
     if (DeviceExtension->InterruptData.Flags & SCSI_PORT_NOTIFICATION_NEEDED)

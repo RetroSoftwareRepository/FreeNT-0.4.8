@@ -43,7 +43,7 @@ KSPIN_LOCK ExpTaggedPoolLock;
 ULONG PoolHitTag;
 BOOLEAN ExStopBadTags;
 KSPIN_LOCK ExpLargePoolTableLock;
-LONG ExpPoolBigEntriesInUse;
+ULONG ExpPoolBigEntriesInUse;
 ULONG ExpPoolFlags;
 ULONG ExPoolFailures;
 
@@ -358,7 +358,7 @@ ExpComputeHashForTag(IN ULONG Tag,
     // Finally, AND with the bucket mask to generate a valid index/bucket into
     // the table
     //
-    ULONGLONG Result = 40543 * Tag;
+    ULONGLONG Result = (ULONGLONG)40543 * Tag;
     return (ULONG)BucketMask & ((ULONG)Result ^ (Result >> 32));
 }
 
@@ -1185,7 +1185,7 @@ ExGetPoolTagInfo(IN PSYSTEM_POOLTAG_INFORMATION SystemInformation,
     //
     // Free the "Generic DPC" temporary buffer, return the buffer length and status
     //
-    ExFreePool(Buffer);
+    ExFreePoolWithTag(Buffer, 'ofnI');
     if (ReturnLength) *ReturnLength = CurrentLength;
     return Status;
 }
@@ -1246,10 +1246,10 @@ ExpAddTagForBigPages(IN PVOID Va,
             // keep losing the race or that we are not finding a free entry anymore,
             // which implies a massive number of concurrent big pool allocations.
             //
-            InterlockedIncrement(&ExpPoolBigEntriesInUse);
+            InterlockedIncrementUL(&ExpPoolBigEntriesInUse);
             if ((i >= 16) && (ExpPoolBigEntriesInUse > (TableSize / 4)))
             {
-                DPRINT1("Should attempt expansion since we now have %d entries\n",
+                DPRINT1("Should attempt expansion since we now have %lu entries\n",
                         ExpPoolBigEntriesInUse);
             }
 
@@ -1348,7 +1348,7 @@ ExpFindAndRemoveTagBigPages(IN PVOID Va,
     // the lock and return the tag that was located
     //
     InterlockedIncrement((PLONG)&Entry->Va);
-    InterlockedDecrement(&ExpPoolBigEntriesInUse);
+    InterlockedDecrementUL(&ExpPoolBigEntriesInUse);
     KeReleaseSpinLock(&ExpLargePoolTableLock, OldIrql);
     return PoolTag;
 }
@@ -1583,6 +1583,7 @@ ExAllocatePoolWithTag(IN POOL_TYPE PoolType,
     //
     i = (USHORT)((NumberOfBytes + sizeof(POOL_HEADER) + (POOL_BLOCK_SIZE - 1))
                  / POOL_BLOCK_SIZE);
+    ASSERT(i < POOL_LISTS_PER_PAGE);
 
     //
     // Handle lookaside list optimization for both paged and nonpaged pool
@@ -1664,7 +1665,6 @@ ExAllocatePoolWithTag(IN POOL_TYPE PoolType,
                 // Try again!
                 //
                 ExUnlockPool(PoolDesc, OldIrql);
-                ListHead++;
                 continue;
             }
 

@@ -2,6 +2,8 @@
 #define _WINGDI_H
 #define _WINGDI_
 
+#ifndef NOGDI
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -1230,6 +1232,11 @@ extern "C" {
 #if (WINVER >= 0x0501)
 #define DM_DISPLAYFIXEDOUTPUT 0x20000000
 #endif
+
+#define DMDO_DEFAULT            0
+#define DMDO_90                 1
+#define DMDO_180                2
+#define DMDO_270                3
 
 #define DMICMMETHOD_NONE	1
 #define DMICMMETHOD_SYSTEM	2
@@ -3460,4 +3467,6 @@ WINGDIAPI INT       WINAPI SelectVisRgn(HDC,HRGN);
 #ifdef __cplusplus
 }
 #endif
-#endif
+
+#endif //!NOGDI
+#endif // _WINGDI_H

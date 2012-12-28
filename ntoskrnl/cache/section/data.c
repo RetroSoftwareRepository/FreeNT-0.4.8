@@ -91,8 +91,6 @@ extern PMMWSL MmWorkingSetList;
 
 /* GLOBALS *******************************************************************/
 
-ULONG_PTR MmSubsectionBase;
-
 static const INFORMATION_CLASS_INFO ExSectionInfoClass[] =
 {
     ICI_SQ_SAME( sizeof(SECTION_BASIC_INFORMATION), sizeof(ULONG), ICIF_QUERY ), /* SectionBasicInformation */
@@ -156,9 +154,10 @@ MiZeroFillSection(PVOID Address, PLARGE_INTEGER FileOffsetPtr, ULONG Length)
     DPRINT("Pulling zero pages for %08x%08x-%08x%08x\n",
            FileOffset.u.HighPart, FileOffset.u.LowPart,
            End.u.HighPart, End.u.LowPart);
+
     while (FileOffset.QuadPart < End.QuadPart)
     {
-        PVOID Address;
+        PVOID CurrentAddress;
         ULONG_PTR Entry;
 
         if (!NT_SUCCESS(MmRequestPageMemoryConsumer(MC_CACHE, TRUE, &Page)))
@@ -171,14 +170,14 @@ MiZeroFillSection(PVOID Address, PLARGE_INTEGER FileOffsetPtr, ULONG Length)
         if (Entry == 0)
         {
             MmSetPageEntrySectionSegment(Segment, &FileOffset, MAKE_PFN_SSE(Page));
-            Address = ((PCHAR)MemoryArea->StartingAddress) + FileOffset.QuadPart - FirstMapped.QuadPart;
+            CurrentAddress = ((PCHAR)MemoryArea->StartingAddress) + FileOffset.QuadPart - FirstMapped.QuadPart;
 
             OldIrql = KeAcquireQueuedSpinLock(LockQueuePfnLock);
             MmReferencePage(Page);
             KeReleaseQueuedSpinLock(LockQueuePfnLock, OldIrql);
 
-            MmCreateVirtualMapping(NULL, Address, PAGE_READWRITE, &Page, 1);
-            MmInsertRmap(Page, NULL, Address);
+            MmCreateVirtualMapping(NULL, CurrentAddress, PAGE_READWRITE, &Page, 1);
+            MmInsertRmap(Page, NULL, CurrentAddress);
         }
         else
         {
@@ -557,7 +556,7 @@ MmCreateCacheSection(PROS_SECTION_OBJECT *SectionObject,
     {
         KeReleaseSpinLock(&FileObject->IrpListLock, OldIrql);
         DPRINTC("Free Segment %x\n", Segment);
-        ExFreePool(Segment);
+        ExFreePoolWithTag(Segment, TAG_MM_SECTION_SEGMENT);
 
         DPRINT("Filling out Segment info (previous data section)\n");
 

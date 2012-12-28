@@ -1,4 +1,4 @@
-/* $Id$
+/* $Id: except.c 57269 2012-09-11 03:50:20Z mnordell $
  *
  * COPYRIGHT:       See COPYING in the top level directory
  * PROJECT:         ReactOS system libraries
@@ -435,12 +435,12 @@ LPTOP_LEVEL_EXCEPTION_FILTER
 WINAPI
 SetUnhandledExceptionFilter(IN LPTOP_LEVEL_EXCEPTION_FILTER lpTopLevelExceptionFilter)
 {
-    PVOID EncodedPointer, NewPointer;
+    PVOID EncodedPointer, EncodedOldPointer;
 
     EncodedPointer = RtlEncodePointer(lpTopLevelExceptionFilter);
-    NewPointer = InterlockedExchangePointer(&GlobalTopLevelExceptionFilter,
+    EncodedOldPointer = InterlockedExchangePointer(&GlobalTopLevelExceptionFilter,
                                             EncodedPointer);
-    return RtlDecodePointer(EncodedPointer);
+    return RtlDecodePointer(EncodedOldPointer);
 }
 
 /*

@@ -315,7 +315,7 @@ GetDIBits(
     }
 
     cjBmpScanSize = DIB_BitmapMaxBitsSize(pbmi, cScanLines);
-    cjInfoSize = DIB_BitmapInfoSize(pbmi, iUsage);
+    cjInfoSize = DibGetBitmapInfoSize(pbmi, iUsage);
 
     if (pvBits )
     {

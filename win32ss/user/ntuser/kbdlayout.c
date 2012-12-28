@@ -131,7 +131,7 @@ UserLoadKbdFile(PUNICODE_STRING pwszKLID)
                                  L"Control\\Keyboard Layouts\\";
 
     /* Create keyboard layout file object */
-    pkf = UserCreateObject(gHandleTable, NULL, NULL, otKBDfile, sizeof(KBDFILE));
+    pkf = UserCreateObject(gHandleTable, NULL, NULL, NULL, otKBDfile, sizeof(KBDFILE));
     if (!pkf)
     {
         ERR("Failed to create object!\n");
@@ -206,7 +206,7 @@ UserLoadKbdLayout(PUNICODE_STRING pwszKLID, HKL hKL)
     PKL pKl;
 
     /* Create keyboard layout object */
-    pKl = UserCreateObject(gHandleTable, NULL, NULL, otKBDlayout, sizeof(KL));
+    pKl = UserCreateObject(gHandleTable, NULL, NULL, NULL, otKBDlayout, sizeof(KL));
     if (!pKl)
     {
         ERR("Failed to create object!\n");
@@ -254,9 +254,10 @@ UserLoadKbdLayout(PUNICODE_STRING pwszKLID, HKL hKL)
  */
 static
 VOID
-UnloadKbdFile(PKBDFILE pkf)
+UnloadKbdFile(_In_ PKBDFILE pkf)
 {
     PKBDFILE *ppkfLink = &gpkfList;
+    NT_ASSERT(pkf != NULL);
 
     /* Find previous object */
     while (*ppkfLink)
@@ -644,7 +645,7 @@ NtUserLoadKeyboardLayoutEx(
 
     /* Send shell message */
     if (!(Flags & KLF_NOTELLSHELL))
-        co_IntShellHookNotify(HSHELL_LANGUAGE, (LPARAM)hkl);
+        co_IntShellHookNotify(HSHELL_LANGUAGE, 0, (LPARAM)hkl);
 
     /* Return hkl on success */
     hklRet = (HKL)hkl;
@@ -713,7 +714,7 @@ NtUserActivateKeyboardLayout(
 
         /* Send shell message */
         if (!(Flags & KLF_NOTELLSHELL))
-            co_IntShellHookNotify(HSHELL_LANGUAGE, (LPARAM)hkl);
+            co_IntShellHookNotify(HSHELL_LANGUAGE, 0, (LPARAM)hkl);
     }
 
 cleanup:

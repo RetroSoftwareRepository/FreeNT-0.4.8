@@ -42,6 +42,12 @@ IntChildrenWindowFromPoint(PWND pWndTop, INT x, INT y)
 {
     PWND pWnd, pWndChild;
 
+    if ( !pWndTop )
+    {
+       pWndTop = UserGetDesktopWindow();
+       if ( !pWndTop ) return NULL;
+    }
+
     if (!(pWndTop->style & WS_VISIBLE)) return NULL;
     if ((pWndTop->style & WS_DISABLED)) return NULL;
     if (!IntPtInWindow(pWndTop, x, y)) return NULL;
@@ -95,7 +101,7 @@ IntTopLevelWindowFromPoint(INT x, INT y)
     }
 
     /* Window has not been found */
-    return NULL;
+    return pwndDesktop;
 }
 
 PCURICON_OBJECT
@@ -139,13 +145,25 @@ UserSetCursor(
         if (NewCursor)
         {
             /* Call GDI to set the new screen cursor */
+#ifdef NEW_CURSORICON
+            GreSetPointerShape(hdcScreen,
+                               NewCursor->hbmAlpha ? NULL : NewCursor->hbmMask,
+                               NewCursor->hbmAlpha ? NewCursor->hbmAlpha : NewCursor->hbmColor,
+                               NewCursor->xHotspot,
+                               NewCursor->yHotspot,
+                               gpsi->ptCursor.x,
+                               gpsi->ptCursor.y,
+                               NewCursor->hbmAlpha ? SPS_ALPHA : 0);
+#else
             GreSetPointerShape(hdcScreen,
                                NewCursor->IconInfo.hbmMask,
                                NewCursor->IconInfo.hbmColor,
                                NewCursor->IconInfo.xHotspot,
                                NewCursor->IconInfo.yHotspot,
                                gpsi->ptCursor.x,
-                               gpsi->ptCursor.y);
+                               gpsi->ptCursor.y,
+                               0);
+#endif
         }
         else /* Note: OldCursor != NewCursor so we have to hide cursor */
         {
@@ -565,13 +583,27 @@ co_MsqInsertMouseMessage(MSG* Msg, DWORD flags, ULONG_PTR dwExtraInfo, BOOL Hook
                if(CurInfo->CurrentCursorObject != MessageQueue->CursorObject)
                {
                    /* Call GDI to set the new screen cursor */
-                   GreSetPointerShape(hdcScreen,
+#ifdef NEW_CURSORICON
+                    GreSetPointerShape(hdcScreen,
+                                       MessageQueue->CursorObject->hbmAlpha ?
+                                           NULL : MessageQueue->CursorObject->hbmMask,
+                                       MessageQueue->CursorObject->hbmAlpha ?
+                                           MessageQueue->CursorObject->hbmAlpha : MessageQueue->CursorObject->hbmColor,
+                                       MessageQueue->CursorObject->xHotspot,
+                                       MessageQueue->CursorObject->yHotspot,
+                                       gpsi->ptCursor.x,
+                                       gpsi->ptCursor.y,
+                                       MessageQueue->CursorObject->hbmAlpha ? SPS_ALPHA : 0);
+#else
+                    GreSetPointerShape(hdcScreen,
                                       MessageQueue->CursorObject->IconInfo.hbmMask,
                                       MessageQueue->CursorObject->IconInfo.hbmColor,
                                       MessageQueue->CursorObject->IconInfo.xHotspot,
                                       MessageQueue->CursorObject->IconInfo.yHotspot,
                                       gpsi->ptCursor.x,
-                                      gpsi->ptCursor.y);
+                                      gpsi->ptCursor.y,
+                                      0);
+#endif
                } else
                    GreMovePointer(hdcScreen, Msg->pt.x, Msg->pt.y);
            }
@@ -590,7 +622,7 @@ co_MsqInsertMouseMessage(MSG* Msg, DWORD flags, ULONG_PTR dwExtraInfo, BOOL Hook
        else
        {
            TRACE("Posting mouse message to hwnd=0x%x!\n", UserHMGetHandle(pwnd));
-           MsqPostMessage(MessageQueue, Msg, TRUE, QS_MOUSEBUTTON);
+           MsqPostMessage(MessageQueue, Msg, TRUE, QS_MOUSEBUTTON, 0);
        }
    }
    else if (hdcScreen)
@@ -643,7 +675,7 @@ MsqPostHotKeyMessage(PVOID Thread, HWND hWnd, WPARAM wParam, LPARAM lParam)
    KeQueryTickCount(&LargeTickCount);
    Mesg.time    = MsqCalculateMessageTime(&LargeTickCount);
    Mesg.pt      = gpsi->ptCursor;
-   MsqPostMessage(Window->head.pti->MessageQueue, &Mesg, FALSE, Type);
+   MsqPostMessage(Window->head.pti->MessageQueue, &Mesg, FALSE, Type, 0);
    UserDereferenceObject(Window);
    ObDereferenceObject (Thread);
 
@@ -672,7 +704,7 @@ MsqDestroyMessage(PUSER_MESSAGE Message)
 }
 
 BOOLEAN FASTCALL
-co_MsqDispatchOneSentMessage(PUSER_MESSAGE_QUEUE MessageQueue)
+co_MsqDispatchOneSentMessage(_In_ PUSER_MESSAGE_QUEUE MessageQueue)
 {
    PUSER_SENT_MESSAGE SaveMsg, Message;
    PLIST_ENTRY Entry;
@@ -868,6 +900,9 @@ MsqRemoveWindowMessagesFromQueue(PVOID pWindow)
       }
    }
 
+   /* Reference we message queue, so it won't get deleted */
+   IntReferenceMessageQueue(MessageQueue);
+
    /* remove the sent messages for this window */
    CurrentEntry = MessageQueue->SentMessagesListHead.Flink;
    ListHead = &MessageQueue->SentMessagesListHead;
@@ -924,6 +959,9 @@ MsqRemoveWindowMessagesFromQueue(PVOID pWindow)
          CurrentEntry = CurrentEntry->Flink;
       }
    }
+
+   /* Remove the reference we added */
+   IntDereferenceMessageQueue(MessageQueue);
 }
 
 BOOL FASTCALL
@@ -991,6 +1029,7 @@ co_MsqSendMessage(PUSER_MESSAGE_QUEUE MessageQueue,
    PUSER_MESSAGE_QUEUE ThreadQueue;
    LARGE_INTEGER Timeout;
    PLIST_ENTRY Entry;
+   PWND pWnd;
    LRESULT Result = 0;   //// Result could be trashed. ////
 
    pti = PsGetCurrentThreadWin32Thread();
@@ -1009,14 +1048,27 @@ co_MsqSendMessage(PUSER_MESSAGE_QUEUE MessageQueue,
 
    if ( HookMessage == MSQ_NORMAL )
    {
+      pWnd = ValidateHwndNoErr(Wnd);
+
       // These can not cross International Border lines!
-      if ( pti->ppi != ptirec->ppi )
+      if ( pti->ppi != ptirec->ppi && pWnd )
       {
          switch(Msg)
          {
+             // Handle the special case when working with password transfers across bordering processes.
              case EM_GETLINE:
              case EM_SETPASSWORDCHAR:
              case WM_GETTEXT:
+                // Look for edit controls setup for passwords.
+                if ( gpsi->atomSysClass[ICLS_EDIT] == pWnd->pcls->atomClassName && // Use atomNVClassName.
+                     pWnd->style & ES_PASSWORD )
+                {
+                   if (uResult) *uResult = -1;
+                   ERR("Running across the border without a passport!\n");
+                   EngSetLastError(ERROR_ACCESS_DENIED);
+                   return STATUS_UNSUCCESSFUL;
+                }
+                break;
              case WM_NOTIFY:
                 if (uResult) *uResult = -1;
                 ERR("Running across the border without a passport!\n");
@@ -1200,8 +1252,11 @@ co_MsqSendMessage(PUSER_MESSAGE_QUEUE MessageQueue,
 }
 
 VOID FASTCALL
-MsqPostMessage(PUSER_MESSAGE_QUEUE MessageQueue, MSG* Msg, BOOLEAN HardwareMessage,
-               DWORD MessageBits)
+MsqPostMessage(PUSER_MESSAGE_QUEUE MessageQueue,
+               MSG* Msg,
+               BOOLEAN HardwareMessage,
+               DWORD MessageBits,
+               DWORD dwQEvent)
 {
    PUSER_MESSAGE Message;
 
@@ -1210,7 +1265,12 @@ MsqPostMessage(PUSER_MESSAGE_QUEUE MessageQueue, MSG* Msg, BOOLEAN HardwareMessa
       return;
    }
 
-   if(!HardwareMessage)
+   if (dwQEvent)
+   {
+       InsertHeadList(&MessageQueue->PostedMessagesListHead,
+                      &Message->ListEntry);
+   }
+   else if (!HardwareMessage)
    {
        InsertTailList(&MessageQueue->PostedMessagesListHead,
                       &Message->ListEntry);
@@ -1221,7 +1281,9 @@ MsqPostMessage(PUSER_MESSAGE_QUEUE MessageQueue, MSG* Msg, BOOLEAN HardwareMessa
                       &Message->ListEntry);
    }
 
+   Message->dwQEvent = dwQEvent;
    Message->QS_Flags = MessageBits;
+   //Message->pti = pti; Fixed in ATI changes. See CORE-6551
    MsqWakeQueue(MessageQueue, MessageBits, (MessageBits & QS_TIMER ? FALSE : TRUE));
 }
 
@@ -1269,7 +1331,7 @@ FASTCALL
 IntTrackMouseMove(PWND pwndTrack, PDESKTOP pDesk, PMSG msg, USHORT hittest)
 {
 //   PWND pwndTrack = IntChildrenWindowFromPoint(pwndMsg, msg->pt.x, msg->pt.y);
-   hittest = GetNCHitEx(pwndTrack, msg->pt);
+   hittest = (USHORT)GetNCHitEx(pwndTrack, msg->pt); /// @todo WTF is this???
 
    if ( pDesk->spwndTrack != pwndTrack || // Change with tracking window or
         msg->message != WM_MOUSEMOVE   || // Mouse click changes or
@@ -1338,19 +1400,21 @@ BOOL co_IntProcessMouseMessage(MSG* msg, BOOL* RemoveMessages, UINT first, UINT 
     pwndDesktop = UserGetDesktopWindow();
     MessageQueue = pti->MessageQueue;
     CurInfo = IntGetSysCursorInfo();
-    pwndMsg = UserGetWindowObject(msg->hwnd);
+    pwndMsg = ValidateHwndNoErr(msg->hwnd);
     clk_msg = MessageQueue->msgDblClk;
     pDesk = pwndDesktop->head.rpdesk;
 
     /* find the window to dispatch this mouse message to */
-    if (MessageQueue->CaptureWindow)
+    if (MessageQueue->spwndCapture)
     {
         hittest = HTCLIENT;
-        pwndMsg = IntGetWindowObject(MessageQueue->CaptureWindow);
+        pwndMsg = MessageQueue->spwndCapture;
+        if (pwndMsg) UserReferenceObject(pwndMsg);
     }
     else
-    {
-        pwndMsg = co_WinPosWindowFromPoint(pwndMsg, &msg->pt, &hittest);
+    {   // Fix wine Msg test_HTTRANSPARENT. Start with a NULL window.
+        // http://www.winehq.org/pipermail/wine-patches/2012-August/116776.html
+        pwndMsg = co_WinPosWindowFromPoint(NULL, &msg->pt, &hittest);
     }
 
     TRACE("Got mouse message for 0x%x, hittest: 0x%x\n", msg->hwnd, hittest );
@@ -1521,7 +1585,7 @@ BOOL co_IntProcessMouseMessage(MSG* msg, BOOL* RemoveMessages, UINT first, UINT 
         RETURN(FALSE);
     }
 
-    if ((*RemoveMessages == FALSE) || MessageQueue->CaptureWindow)
+    if ((*RemoveMessages == FALSE) || MessageQueue->spwndCapture)
     {
         /* Accept the message */
         msg->message = message;
@@ -1543,13 +1607,12 @@ BOOL co_IntProcessMouseMessage(MSG* msg, BOOL* RemoveMessages, UINT first, UINT 
 
         /* Activate the window if needed */
 
-        if (pwndMsg != pti->MessageQueue->spwndActive) //msg->hwnd != UserGetForegroundWindow())
+        if (pwndMsg != MessageQueue->spwndActive)
         {
             PWND pwndTop = pwndMsg;
-            while (pwndTop)
+            while (pwndTop && ((pwndTop->style & (WS_POPUP|WS_CHILD)) == WS_CHILD))
             {
-                if ((pwndTop->style & (WS_POPUP|WS_CHILD)) != WS_CHILD) break;
-                pwndTop = IntGetParent( pwndTop );
+                pwndTop = pwndTop->spwndParent;
             }
 
             if (pwndTop && pwndTop != pwndDesktop)
@@ -1665,9 +1728,22 @@ co_MsqPeekMouseMove(IN PUSER_MESSAGE_QUEUE MessageQueue,
 {
     BOOL AcceptMessage;
     MSG msg;
+    PTHREADINFO pti = PsGetCurrentThreadWin32Thread();
 
     if(!(MessageQueue->MouseMoved))
         return FALSE;
+
+    if (!MessageQueue->ptiSysLock)
+    {
+       MessageQueue->ptiSysLock = pti;
+       pti->pcti->CTI_flags |= CTI_THREADSYSLOCK;
+    }
+
+    if (MessageQueue->ptiSysLock != pti)
+    {
+       ERR("MsqPeekMouseMove: Thread Q is locked to another pti!\n");
+       return FALSE;
+    }
 
     msg = MessageQueue->MouseMoveMsg;
 
@@ -1682,7 +1758,9 @@ co_MsqPeekMouseMove(IN PUSER_MESSAGE_QUEUE MessageQueue,
         MessageQueue->MouseMoved = FALSE;
     }
 
-   return AcceptMessage;
+    MessageQueue->ptiSysLock = NULL;
+    pti->pcti->CTI_flags &= ~CTI_THREADSYSLOCK;
+    return AcceptMessage;
 }
 
 /* check whether a message filter contains at least one potential hardware message */
@@ -1716,6 +1794,8 @@ co_MsqPeekHardwareMessage(IN PUSER_MESSAGE_QUEUE MessageQueue,
     PUSER_MESSAGE CurrentMessage;
     PLIST_ENTRY ListHead, CurrentEntry = NULL;
     MSG msg;
+    BOOL Ret = FALSE;
+    PTHREADINFO pti = PsGetCurrentThreadWin32Thread();
 
     if (!filter_contains_hw_range( MsgFilterLow, MsgFilterHigh )) return FALSE;
 
@@ -1723,6 +1803,18 @@ co_MsqPeekHardwareMessage(IN PUSER_MESSAGE_QUEUE MessageQueue,
     CurrentEntry = ListHead->Flink;
 
     if (IsListEmpty(CurrentEntry)) return FALSE;
+
+    if (!MessageQueue->ptiSysLock)
+    {
+       MessageQueue->ptiSysLock = pti;
+       pti->pcti->CTI_flags |= CTI_THREADSYSLOCK;
+    }
+
+    if (MessageQueue->ptiSysLock != pti)
+    {
+       ERR("MsqPeekHardwareMessage: Thread Q is locked to another pti!\n");
+       return FALSE;
+    }
 
     CurrentMessage = CONTAINING_RECORD(CurrentEntry, USER_MESSAGE,
                                           ListEntry);
@@ -1758,7 +1850,8 @@ co_MsqPeekHardwareMessage(IN PUSER_MESSAGE_QUEUE MessageQueue,
            if (AcceptMessage)
            {
               *pMsg = msg;
-              return TRUE;
+              Ret = TRUE;
+              break;
            }
         }
         CurrentMessage = CONTAINING_RECORD(CurrentEntry, USER_MESSAGE,
@@ -1766,7 +1859,9 @@ co_MsqPeekHardwareMessage(IN PUSER_MESSAGE_QUEUE MessageQueue,
     }
     while(CurrentEntry != ListHead);
 
-    return FALSE;
+    MessageQueue->ptiSysLock = NULL;
+    pti->pcti->CTI_flags &= ~CTI_THREADSYSLOCK;
+    return Ret;
 }
 
 BOOLEAN APIENTRY
@@ -1781,11 +1876,25 @@ MsqPeekMessage(IN PUSER_MESSAGE_QUEUE MessageQueue,
    PLIST_ENTRY CurrentEntry;
    PUSER_MESSAGE CurrentMessage;
    PLIST_ENTRY ListHead;
+   BOOL Ret = FALSE;
+   PTHREADINFO pti = PsGetCurrentThreadWin32Thread();
 
    CurrentEntry = MessageQueue->PostedMessagesListHead.Flink;
    ListHead = &MessageQueue->PostedMessagesListHead;
 
    if (IsListEmpty(CurrentEntry)) return FALSE;
+
+   if (!MessageQueue->ptiSysLock)
+   {
+      MessageQueue->ptiSysLock = pti;
+      pti->pcti->CTI_flags |= CTI_THREADSYSLOCK;
+   }
+
+   if (MessageQueue->ptiSysLock != pti)
+   {
+      ERR("MsqPeekMessage: Thread Q is locked to another pti!\n");
+      return FALSE;
+   }
 
    CurrentMessage = CONTAINING_RECORD(CurrentEntry, USER_MESSAGE,
                                          ListEntry);
@@ -1814,14 +1923,17 @@ MsqPeekMessage(IN PUSER_MESSAGE_QUEUE MessageQueue,
              ClearMsgBitsMask(MessageQueue, CurrentMessage->QS_Flags);
              MsqDestroyMessage(CurrentMessage);
          }
-         return(TRUE);
+         Ret = TRUE;
+         break;
       }
       CurrentMessage = CONTAINING_RECORD(CurrentEntry, USER_MESSAGE,
                                          ListEntry);
    }
    while (CurrentEntry != ListHead);
 
-   return(FALSE);
+   MessageQueue->ptiSysLock = NULL;
+   pti->pcti->CTI_flags &= ~CTI_THREADSYSLOCK;
+   return Ret;
 }
 
 NTSTATUS FASTCALL
@@ -1858,11 +1970,13 @@ HungAppSysTimerProc(HWND hwnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime)
 }
 
 BOOLEAN FASTCALL
-MsqInitializeMessageQueue(struct _ETHREAD *Thread, PUSER_MESSAGE_QUEUE MessageQueue)
+MsqInitializeMessageQueue(PTHREADINFO pti, PUSER_MESSAGE_QUEUE MessageQueue)
 {
+   struct _ETHREAD *Thread;
    LARGE_INTEGER LargeTickCount;
    NTSTATUS Status;
 
+   Thread = pti->pEThread;
    MessageQueue->Thread = Thread;
    MessageQueue->CaretInfo = (PTHRDCARETINFO)(MessageQueue + 1);
    InitializeListHead(&MessageQueue->PostedMessagesListHead);
@@ -1901,15 +2015,14 @@ MsqInitializeMessageQueue(struct _ETHREAD *Thread, PUSER_MESSAGE_QUEUE MessageQu
 }
 
 VOID FASTCALL
-MsqCleanupMessageQueue(PUSER_MESSAGE_QUEUE MessageQueue)
+MsqCleanupMessageQueue(PTHREADINFO pti)
 {
+   PUSER_MESSAGE_QUEUE MessageQueue;
    PLIST_ENTRY CurrentEntry;
    PUSER_MESSAGE CurrentMessage;
    PUSER_SENT_MESSAGE CurrentSentMessage;
-   PTHREADINFO pti;
 
-   pti = MessageQueue->Thread->Tcb.Win32Thread;
-
+   MessageQueue = pti->MessageQueue;
 
    /* cleanup posted messages */
    while (!IsListEmpty(&MessageQueue->PostedMessagesListHead))
@@ -2025,7 +2138,7 @@ MsqCleanupMessageQueue(PUSER_MESSAGE_QUEUE MessageQueue)
    }
 
    // Clear it all out.
-   if(pti->pcti)
+   if (pti->pcti)
    {
        pti->pcti->fsWakeBits = 0;
        pti->pcti->fsChangeBits = 0;
@@ -2058,11 +2171,10 @@ MsqCleanupMessageQueue(PUSER_MESSAGE_QUEUE MessageQueue)
 
        UserDereferenceObject(pCursor);
    }
-
 }
 
 PUSER_MESSAGE_QUEUE FASTCALL
-MsqCreateMessageQueue(struct _ETHREAD *Thread)
+MsqCreateMessageQueue(PTHREADINFO pti)
 {
    PUSER_MESSAGE_QUEUE MessageQueue;
 
@@ -2079,7 +2191,7 @@ MsqCreateMessageQueue(struct _ETHREAD *Thread)
    /* hold at least one reference until it'll be destroyed */
    IntReferenceMessageQueue(MessageQueue);
    /* initialize the queue */
-   if (!MsqInitializeMessageQueue(Thread, MessageQueue))
+   if (!MsqInitializeMessageQueue(pti, MessageQueue))
    {
       IntDereferenceMessageQueue(MessageQueue);
       return NULL;
@@ -2089,9 +2201,10 @@ MsqCreateMessageQueue(struct _ETHREAD *Thread)
 }
 
 VOID FASTCALL
-MsqDestroyMessageQueue(PUSER_MESSAGE_QUEUE MessageQueue)
+MsqDestroyMessageQueue(PTHREADINFO pti)
 {
    PDESKTOP desk;
+   PUSER_MESSAGE_QUEUE MessageQueue = pti->MessageQueue;
 
    MessageQueue->QF_flags |= QF_INDESTROY;
 
@@ -2103,7 +2216,7 @@ MsqDestroyMessageQueue(PUSER_MESSAGE_QUEUE MessageQueue)
    }
 
    /* clean it up */
-   MsqCleanupMessageQueue(MessageQueue);
+   MsqCleanupMessageQueue(pti);
 
    if (MessageQueue->NewMessagesHandle != NULL)
       ZwClose(MessageQueue->NewMessagesHandle);
@@ -2180,16 +2293,16 @@ MsqSetStateWindow(PUSER_MESSAGE_QUEUE MessageQueue, ULONG Type, HWND hWnd)
    switch(Type)
    {
       case MSQ_STATE_CAPTURE:
-         Prev = MessageQueue->CaptureWindow;
-         MessageQueue->CaptureWindow = hWnd;
+         Prev = MessageQueue->spwndCapture ? UserHMGetHandle(MessageQueue->spwndCapture) : 0;
+         MessageQueue->spwndCapture = ValidateHwndNoErr(hWnd);
          return Prev;
       case MSQ_STATE_ACTIVE:
          Prev = MessageQueue->spwndActive ? UserHMGetHandle(MessageQueue->spwndActive) : 0;
-         MessageQueue->spwndActive = UserGetWindowObject(hWnd);
+         MessageQueue->spwndActive = ValidateHwndNoErr(hWnd);
          return Prev;
       case MSQ_STATE_FOCUS:
          Prev = MessageQueue->spwndFocus ? UserHMGetHandle(MessageQueue->spwndFocus) : 0;
-         MessageQueue->spwndFocus = UserGetWindowObject(hWnd);
+         MessageQueue->spwndFocus = ValidateHwndNoErr(hWnd);
          return Prev;
       case MSQ_STATE_MENUOWNER:
          Prev = MessageQueue->MenuOwner;

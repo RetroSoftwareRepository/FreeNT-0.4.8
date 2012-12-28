@@ -152,7 +152,7 @@ IntFreeMenuItem(PMENU_OBJECT Menu, PMENU_ITEM MenuItem, BOOL bRecurse)
    }
 
    /* Free memory */
-   ExFreePool(MenuItem);
+   ExFreePoolWithTag(MenuItem, TAG_MENUITEM);
 
    return TRUE;
 }
@@ -249,6 +249,7 @@ IntCreateMenu(PHANDLE Handle, BOOL IsMenuBar)
    PPROCESSINFO CurrentWin32Process;
 
    Menu = (PMENU_OBJECT)UserCreateObject( gHandleTable,
+                                          NULL,
                                           NULL,
                                           Handle,
                                           otMenu,
@@ -361,7 +362,8 @@ IntCloneMenu(PMENU_OBJECT Source)
 
    Menu = (PMENU_OBJECT)UserCreateObject( gHandleTable,
                                           NULL,
-                                         &hMenu,
+                                          NULL,
+                                          &hMenu,
                                           otMenu,
                                           sizeof(MENU_OBJECT));
    if(!Menu)
@@ -801,12 +803,17 @@ IntSetMenuItemInfo(PMENU_OBJECT MenuObject, PMENU_ITEM MenuItem, PROSMENUITEMINF
 }
 
 BOOL FASTCALL
-IntInsertMenuItem(PMENU_OBJECT MenuObject, UINT uItem, BOOL fByPosition,
-                  PROSMENUITEMINFO ItemInfo)
+IntInsertMenuItem(
+    _In_ PMENU_OBJECT MenuObject,
+    UINT uItem,
+    BOOL fByPosition,
+    PROSMENUITEMINFO ItemInfo)
 {
    int pos;
    PMENU_ITEM MenuItem;
    PMENU_OBJECT SubMenu = NULL;
+
+   NT_ASSERT(MenuObject != NULL);
 
    if (MAX_MENU_ITEMS <= MenuObject->MenuInfo.MenuItemCount)
    {
@@ -1814,14 +1821,29 @@ NtUserGetMenuBarInfo(
            }
          if (MenuObject->MenuInfo.FocusedItem != NO_SELECTED_ITEM)
                kmbi.fBarFocused = TRUE;
+
+         if (MenuObject->MenuItemList)
+         {
          SubMenuObject = UserGetMenuObject(MenuObject->MenuItemList->hSubMenu);
          if(SubMenuObject) kmbi.hwndMenu = SubMenuObject->MenuInfo.Wnd;
+         }
          TRACE("OBJID_MENU, idItem = %d\n",idItem);
          break;
       }
       case OBJID_CLIENT:
       {
          PMENU_OBJECT SubMenuObject, XSubMenuObject;
+         HMENU hMenuChk;
+         // Windows does this! Wine checks for Atom and uses GetWindowLongPtrW.
+         hMenuChk = (HMENU)co_IntSendMessage(hwnd, MN_GETHMENU, 0, 0);
+
+         if (!(MenuObject = UserGetMenuObject(hMenuChk)))
+         {
+            ERR("Window does not have a Popup Menu!\n");
+            EngSetLastError(ERROR_INVALID_MENU_HANDLE);
+            RETURN(FALSE);
+         }
+
          SubMenuObject = UserGetMenuObject(MenuObject->MenuItemList->hSubMenu);
          if(SubMenuObject) kmbi.hMenu = SubMenuObject->MenuInfo.Self;
          else

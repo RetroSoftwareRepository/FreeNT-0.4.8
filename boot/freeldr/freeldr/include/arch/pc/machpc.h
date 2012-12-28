@@ -1,5 +1,4 @@
-/* $Id$
- *
+/*
  *  FreeLoader
  *
  *  Copyright (C) 2003  Eric Kohl
@@ -26,6 +25,8 @@
 #endif
 
 VOID PcMachInit(const char *CmdLine);
+
+VOID PcBeep(VOID);
 
 VOID PcConsPutChar(int Ch);
 BOOLEAN PcConsKbHit(VOID);

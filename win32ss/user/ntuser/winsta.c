@@ -57,7 +57,10 @@ UserCreateWinstaDirectoy()
     Peb = NtCurrentPeb();
     if(Peb->SessionId == 0)
     {
-        RtlCreateUnicodeString(&gustrWindowStationsDir, WINSTA_OBJ_DIR);
+        if (!RtlCreateUnicodeString(&gustrWindowStationsDir, WINSTA_OBJ_DIR))
+        {
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
     }
     else
     {
@@ -67,7 +70,10 @@ UserCreateWinstaDirectoy()
                  Peb->SessionId,
                  WINSTA_OBJ_DIR);
 
-        RtlCreateUnicodeString( &gustrWindowStationsDir, wstrWindowStationsDir);
+        if (!RtlCreateUnicodeString(&gustrWindowStationsDir, wstrWindowStationsDir))
+        {
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
     }
 
    InitializeObjectAttributes(&ObjectAttributes,
@@ -229,10 +235,7 @@ co_IntInitializeDesktopGraphics(VOID)
 {
    TEXTMETRICW tmw;
    UNICODE_STRING DriverName = RTL_CONSTANT_STRING(L"DISPLAY");
-   if (! IntCreatePrimarySurface())
-   {
-      return FALSE;
-   }
+
    ScreenDeviceContext = IntGdiCreateDC(&DriverName, NULL, NULL, NULL, FALSE);
    if (NULL == ScreenDeviceContext)
    {
@@ -240,6 +243,11 @@ co_IntInitializeDesktopGraphics(VOID)
       return FALSE;
    }
    GreSetDCOwner(ScreenDeviceContext, GDI_OBJ_HMGR_PUBLIC);
+
+   if (! IntCreatePrimarySurface())
+   {
+      return FALSE;
+   }
 
    /* Setup the cursor */
    co_IntLoadDefaultCursors();
@@ -524,7 +532,7 @@ NtUserCloseWindowStation(
 
 	if (hWinSta == UserGetProcessWindowStation())
 	{
-        ERR("Attempted to close process window station");
+        ERR("Attempted to close process window station\n");
 		return FALSE;
 	}
 
@@ -610,19 +618,13 @@ NtUserGetObjectInformation(
 
    /* try windowstation */
    TRACE("Trying to open window station 0x%x\n", hObject);
-   Status = IntValidateWindowStationHandle(
+   Status = ObReferenceObjectByHandle(
                hObject,
-               UserMode,
                0,
-               &WinStaObject);
-
-
-   if (!NT_SUCCESS(Status) && Status != STATUS_OBJECT_TYPE_MISMATCH)
-   {
-      TRACE("Failed: 0x%x\n", Status);
-      SetLastNtError(Status);
-      return FALSE;
-   }
+               ExWindowStationObjectType,
+               UserMode,
+               (PVOID*)&WinStaObject,
+               NULL);
 
    if (Status == STATUS_OBJECT_TYPE_MISMATCH)
    {
@@ -633,13 +635,15 @@ NtUserGetObjectInformation(
                   UserMode,
                   0,
                   &DesktopObject);
-      if (!NT_SUCCESS(Status))
-      {
-         TRACE("Failed: 0x%x\n", Status);
-         SetLastNtError(Status);
-         return FALSE;
-      }
    }
+
+   if (!NT_SUCCESS(Status))
+   {
+      ERR("Failed: 0x%x\n", Status);
+      SetLastNtError(Status);
+      return FALSE;
+   }
+
    TRACE("WinSta or Desktop opened!!\n");
 
    /* get data */
@@ -711,8 +715,13 @@ NtUserGetObjectInformation(
    if (DesktopObject != NULL)
       ObDereferenceObject(DesktopObject);
 
-   SetLastNtError(Status);
-   return NT_SUCCESS(Status);
+   if (!NT_SUCCESS(Status))
+   {
+      SetLastNtError(Status);
+      return FALSE;
+   }
+
+   return TRUE;
 }
 
 /*
@@ -1021,27 +1030,30 @@ BuildWindowStationNameList(
                                       &ReturnLength);
       if (STATUS_BUFFER_TOO_SMALL == Status)
       {
-         BufferSize = ReturnLength;
-         Buffer = ExAllocatePoolWithTag(PagedPool, BufferSize, TAG_WINSTA);
-         if (NULL == Buffer)
-         {
-            ObDereferenceObject(DirectoryHandle);
-            return STATUS_NO_MEMORY;
-         }
+         ObDereferenceObject(DirectoryHandle);
+         return STATUS_NO_MEMORY;
+      }
 
-         /* We should have a sufficiently large buffer now */
-         Context = 0;
-         Status = ZwQueryDirectoryObject(DirectoryHandle, Buffer, BufferSize,
-                                         FALSE, TRUE, &Context, &ReturnLength);
-         if (! NT_SUCCESS(Status) ||
-               STATUS_NO_MORE_ENTRIES != ZwQueryDirectoryObject(DirectoryHandle, NULL, 0, FALSE,
-                     FALSE, &Context, NULL))
-         {
-            /* Something went wrong, maybe someone added a directory entry? Just give up. */
-            ExFreePoolWithTag(Buffer, TAG_WINSTA);
-            ObDereferenceObject(DirectoryHandle);
-            return NT_SUCCESS(Status) ? STATUS_INTERNAL_ERROR : Status;
-         }
+      BufferSize = ReturnLength;
+      Buffer = ExAllocatePoolWithTag(PagedPool, BufferSize, TAG_WINSTA);
+      if (NULL == Buffer)
+      {
+         ObDereferenceObject(DirectoryHandle);
+         return STATUS_NO_MEMORY;
+      }
+
+      /* We should have a sufficiently large buffer now */
+      Context = 0;
+      Status = ZwQueryDirectoryObject(DirectoryHandle, Buffer, BufferSize,
+                                      FALSE, TRUE, &Context, &ReturnLength);
+      if (! NT_SUCCESS(Status) ||
+            STATUS_NO_MORE_ENTRIES != ZwQueryDirectoryObject(DirectoryHandle, NULL, 0, FALSE,
+                  FALSE, &Context, NULL))
+      {
+         /* Something went wrong, maybe someone added a directory entry? Just give up. */
+         ExFreePoolWithTag(Buffer, TAG_WINSTA);
+         ObDereferenceObject(DirectoryHandle);
+         return NT_SUCCESS(Status) ? STATUS_INTERNAL_ERROR : Status;
       }
    }
 
@@ -1092,7 +1104,7 @@ BuildWindowStationNameList(
    {
       if (Buffer != InitialBuffer)
       {
-         ExFreePool(Buffer);
+         ExFreePoolWithTag(Buffer, TAG_WINSTA);
       }
       return Status;
    }
@@ -1107,7 +1119,7 @@ BuildWindowStationNameList(
       {
          if (Buffer != InitialBuffer)
          {
-            ExFreePool(Buffer);
+            ExFreePoolWithTag(Buffer, TAG_WINSTA);
          }
          return Status;
       }
@@ -1117,7 +1129,7 @@ BuildWindowStationNameList(
       {
          if (Buffer != InitialBuffer)
          {
-            ExFreePool(Buffer);
+            ExFreePoolWithTag(Buffer, TAG_WINSTA);
          }
          return Status;
       }
@@ -1127,9 +1139,9 @@ BuildWindowStationNameList(
    /*
     * Clean up
     */
-   if (NULL != Buffer && Buffer != InitialBuffer)
+   if (Buffer != InitialBuffer)
    {
-      ExFreePool(Buffer);
+      ExFreePoolWithTag(Buffer, TAG_WINSTA);
    }
 
    return STATUS_SUCCESS;
@@ -1150,6 +1162,7 @@ BuildDesktopNameList(
    DWORD EntryCount;
    ULONG ReturnLength;
    WCHAR NullWchar;
+   PUNICODE_STRING DesktopName;
 
    Status = IntValidateWindowStationHandle(hWindowStation,
                                            KernelMode,
@@ -1172,7 +1185,8 @@ BuildDesktopNameList(
          DesktopEntry = DesktopEntry->Flink)
    {
       DesktopObject = CONTAINING_RECORD(DesktopEntry, DESKTOP, ListEntry);
-      ReturnLength += ((PUNICODE_STRING)GET_DESKTOP_NAME(DesktopObject))->Length + sizeof(WCHAR);
+      DesktopName = GET_DESKTOP_NAME(DesktopObject);
+      if (DesktopName) ReturnLength += DesktopName->Length + sizeof(WCHAR);
       EntryCount++;
    }
    TRACE("Required size: %d Entry count: %d\n", ReturnLength, EntryCount);
@@ -1215,14 +1229,18 @@ BuildDesktopNameList(
          DesktopEntry = DesktopEntry->Flink)
    {
       DesktopObject = CONTAINING_RECORD(DesktopEntry, DESKTOP, ListEntry);
-      Status = MmCopyToCaller(lpBuffer, ((PUNICODE_STRING)GET_DESKTOP_NAME(DesktopObject))->Buffer, ((PUNICODE_STRING)GET_DESKTOP_NAME(DesktopObject))->Length);
+      _PRAGMA_WARNING_SUPPRESS(__WARNING_DEREF_NULL_PTR)
+      DesktopName = GET_DESKTOP_NAME(DesktopObject);/// @todo Don't mess around with the object headers!
+      if (!DesktopName) continue;
+
+      Status = MmCopyToCaller(lpBuffer, DesktopName->Buffer, DesktopName->Length);
       if (! NT_SUCCESS(Status))
       {
          KeReleaseSpinLock(&WindowStation->Lock, OldLevel);
          ObDereferenceObject(WindowStation);
          return Status;
       }
-      lpBuffer = (PVOID) ((PCHAR) lpBuffer + ((PUNICODE_STRING)GET_DESKTOP_NAME(DesktopObject))->Length);
+      lpBuffer = (PVOID) ((PCHAR)lpBuffer + DesktopName->Length);
       Status = MmCopyToCaller(lpBuffer, &NullWchar, sizeof(WCHAR));
       if (! NT_SUCCESS(Status))
       {

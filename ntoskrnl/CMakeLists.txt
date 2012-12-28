@@ -18,11 +18,9 @@ add_definitions(
     -D_IN_KERNEL_
     -DNTDDI_VERSION=0x05020400)
 
-set_rc_compiler()
-
 if(NOT DEFINED NEWCC)
     set(NEWCC FALSE)
-endif(NOT DEFINED NEWCC)
+endif()
 
 if(NEWCC)
     add_definitions(-DNEWCC)
@@ -276,7 +274,7 @@ list(APPEND SOURCE
     wmi/wmi.c
     ntoskrnl.rc)
 
-if(ARCH MATCHES i386)
+if(ARCH STREQUAL "i386")
     list(APPEND SOURCE
         config/i386/cmhardwr.c
         ex/i386/fastinterlck_asm.S
@@ -304,7 +302,7 @@ if(ARCH MATCHES i386)
         rtl/i386/stack.S
         vdm/vdmmain.c
         vdm/vdmexec.c)
-elseif(ARCH MATCHES amd64)
+elseif(ARCH STREQUAL "amd64")
     list(APPEND SOURCE
         config/i386/cmhardwr.c
         ke/amd64/boot.S
@@ -323,7 +321,7 @@ elseif(ARCH MATCHES amd64)
         mm/amd64/init.c
         mm/amd64/page.c
         ps/amd64/psctx.c)
-elseif(ARCH MATCHES arm)
+elseif(ARCH STREQUAL "arm")
     list(APPEND SOURCE
         config/arm/cmhardwr.c
         ke/arm/boot.s
@@ -340,7 +338,7 @@ elseif(ARCH MATCHES arm)
         mm/ARM3/arm/init.c
         ps/arm/psctx.c
         rtl/arm/rtlexcpt.c)
-elseif(ARCH MATCHES powerpc)
+elseif(ARCH STREQUAL "powerpc")
     list(APPEND SOURCE
         config/powerpc/cmhardwr.c
         ke/powerpc/main_asm.S
@@ -358,7 +356,7 @@ elseif(ARCH MATCHES powerpc)
 endif()
 
 if(NOT _WINKD_)
-    if(ARCH MATCHES i386)
+    if(ARCH STREQUAL "i386")
         list(APPEND SOURCE
             kd/i386/kdmemsup.c
             kd/wrappers/gdbstub.c)
@@ -367,7 +365,7 @@ if(NOT _WINKD_)
                 kdbg/i386/i386-dis.c
                 kdbg/i386/kdb_help.S)
         endif()
-    elseif(ARCH MATCHES amd64)
+    elseif(ARCH STREQUAL "amd64")
         list(APPEND SOURCE
             kd/amd64/kd.c
             kd/amd64/kdmemsup.c)
@@ -377,7 +375,7 @@ if(NOT _WINKD_)
                 kdbg/amd64/kdb_help.S
                 kdbg/amd64/kdb.c)
         endif()
-    elseif(ARCH MATCHES powerpc)
+    elseif(ARCH STREQUAL "powerpc")
         list(APPEND SOURCE kd/wrappers/gdbstub_powerpc.c)
     endif()
 
@@ -413,11 +411,11 @@ else() # _WINKD_
         kd64/kdprint.c
         kd64/kdtrap.c)
 
-    if(ARCH MATCHES i386)
+    if(ARCH STREQUAL "i386")
         list(APPEND SOURCE kd64/i386/kdx86.c)
-    elseif(ARCH MATCHES amd64)
+    elseif(ARCH STREQUAL "amd64")
         list(APPEND SOURCE kd64/amd64/kdx64.c)
-    elseif(ARCH MATCHES arm)
+    elseif(ARCH STREQUAL "arm")
         list(APPEND SOURCE kd64/arm/kdarm.c)
     endif()
 
@@ -427,10 +425,10 @@ add_executable(ntoskrnl
     ${SOURCE}
     ${CMAKE_CURRENT_BINARY_DIR}/ntoskrnl.def)
 
-if (ARCH MATCHES i386)
-  set_entrypoint(ntoskrnl KiSystemStartup 4)
+if(ARCH STREQUAL "i386")
+    set_entrypoint(ntoskrnl KiSystemStartup 4)
 else()
-  set_entrypoint(ntoskrnl KiSystemStartup)
+    set_entrypoint(ntoskrnl KiSystemStartup)
 endif()
 set_subsystem(ntoskrnl native)
 
@@ -457,10 +455,8 @@ target_link_libraries(ntoskrnl
     ioevent)
 
 add_importlibs(ntoskrnl hal kdcom bootvid)
-
 add_pch(ntoskrnl include/ntoskrnl.h)
 add_dependencies(ntoskrnl psdk bugcodes asm)
-
 add_cd_file(TARGET ntoskrnl DESTINATION reactos/system32 NO_CAB FOR all)
 
 if(BUILD_MP)
@@ -472,7 +468,7 @@ if(BUILD_MP)
 
     add_target_compile_definitions(ntkrnlmp CONFIG_SMP)
 
-    if(ARCH MATCHES i386)
+    if(ARCH STREQUAL "i386")
         set_entrypoint(ntkrnlmp KiSystemStartup 4)
     else()
         set_entrypoint(ntkrnlmp KiSystemStartup)

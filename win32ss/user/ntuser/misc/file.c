@@ -237,7 +237,7 @@ __debugbreak();
                                          0);
 
 		NtGdiDeleteObjectApp(hdc);
-		DIB_FreeConvertedBitmapInfo(pConvertedInfo, pbmi);
+		DIB_FreeConvertedBitmapInfo(pConvertedInfo, pbmi, -1);
     }
 	else
 	{

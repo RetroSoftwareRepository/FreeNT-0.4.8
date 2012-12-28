@@ -21,6 +21,7 @@ list(APPEND MSVCRTEX_SOURCE
     startup/charmax.c
     startup/merr.c
     startup/atonexit.c
+    startup/dllmain.c
     startup/txtmode.c
     startup/pesect.c
     startup/tlsmcrt.c
@@ -47,7 +48,7 @@ if(NOT MSVC)
         startup/pseudo-reloc-list.c)
 endif()
 
-if(ARCH MATCHES i386)
+if(ARCH STREQUAL "i386")
     list(APPEND MSVCRTEX_SOURCE
         except/i386/chkstk_asm.s
         except/i386/chkstk_ms.s
@@ -59,7 +60,7 @@ if(ARCH MATCHES i386)
         math/i386/cisqrt.c
         math/i386/ftol2_asm.s
         math/i386/alldiv_asm.s)
-elseif(ARCH MATCHES amd64)
+elseif(ARCH STREQUAL "amd64")
     list(APPEND MSVCRTEX_SOURCE
         except/amd64/chkstk_asm.s
         except/amd64/chkstk_ms.s)

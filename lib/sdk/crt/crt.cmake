@@ -61,6 +61,7 @@ list(APPEND CRT_SOURCE
     math/sinf.c
     math/sinh.c
     math/tanh.c
+    mbstring/_setmbcp.c
     mbstring/hanzen.c
     mbstring/ischira.c
     mbstring/iskana.c
@@ -187,9 +188,9 @@ list(APPEND CRT_SOURCE
     startup/mingw_helpers.c
     startup/natstart.c
     startup/charmax.c
-    startup/merr.c
-    startup/atonexit.c
-    startup/txtmode.c
+    #startup/merr.c
+    #startup/atonexit.c
+    #startup/txtmode.c
     startup/pesect.c
     startup/tlsmcrt.c
     startup/tlsthrd.c
@@ -247,13 +248,18 @@ list(APPEND CRT_SOURCE
     stdlib/wsenv.c
     stdlib/wmakpath.c
     stdlib/wmakpath_s.c
+    string/_mbsnlen.c
+    string/_mbstrnlen.c
     string/atof.c
     string/atoi.c
     string/atoi64.c
     string/atol.c
     string/ctype.c
+    string/iswctype.c
+    string/is_wctype.c
     string/itoa.c
     string/itow.c
+    string/mbstowcs_s.c
     string/scanf.c
     string/splitp.c
     string/strcoll.c
@@ -280,7 +286,9 @@ list(APPEND CRT_SOURCE
     string/strxfrm.c
     string/wcs.c
     string/wcstol.c
+    string/wcstombs_s.c
     string/wcstoul.c
+    string/wctype.c
     string/wsplitp.c
     string/wtoi.c
     string/wtoi64.c
@@ -316,7 +324,6 @@ list(APPEND CRT_SOURCE
     time/utime64.c
     time/utime.c
     time/wasctime.c
-    time/wcsftime.c
     time/wctime32.c
     time/wctime64.c
     time/wctime.c
@@ -338,7 +345,7 @@ list(APPEND CRT_SOURCE
     wine/heap.c
     wine/undname.c)
 
-if(ARCH MATCHES i386)
+if(ARCH STREQUAL "i386")
     list(APPEND CRT_SOURCE
         except/i386/chkesp.s
         except/i386/prolog.s
@@ -415,7 +422,7 @@ if(ARCH MATCHES i386)
         list(APPEND CRT_SOURCE
             except/i386/cpp.s)
     endif()
-elseif(ARCH MATCHES amd64)
+elseif(ARCH STREQUAL "amd64")
     list(APPEND CRT_SOURCE
         except/amd64/seh.s
         except/amd64/ehandler.c
@@ -451,7 +458,7 @@ elseif(ARCH MATCHES amd64)
     endif()
 endif()
 
-if(NOT ARCH MATCHES i386)
+if(NOT ARCH STREQUAL "i386")
     list(APPEND CRT_SOURCE
         math/cos.c
         math/sin.c
