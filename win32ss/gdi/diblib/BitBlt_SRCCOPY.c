@@ -1,6 +1,7 @@
 
 #include "DibLib.h"
 
+/* This is a fast xlateless memmove version that can be used for R2L as well */
 VOID
 FASTCALL
 Dib_BitBlt_SRCCOPY_EqSurf(PBLTDATA pBltData)
@@ -16,7 +17,8 @@ Dib_BitBlt_SRCCOPY_EqSurf(PBLTDATA pBltData)
     cLines = pBltData->ulHeight;
     while (cLines--)
     {
-        memcpy(pjDestBase, pjSrcBase, cjWidth);
+        /* Use memmove to handle copying right-to-left with overlap */
+        memmove(pjDestBase, pjSrcBase, cjWidth);
         pjDestBase += pBltData->siDst.cjAdvanceY;
         pjSrcBase += pBltData->siSrc.cjAdvanceY;
     }
@@ -25,18 +27,23 @@ Dib_BitBlt_SRCCOPY_EqSurf(PBLTDATA pBltData)
 #define Dib_BitBlt_SRCCOPY_S8_D8_EqSurf Dib_BitBlt_SRCCOPY_EqSurf
 #define Dib_BitBlt_SRCCOPY_S16_D16_EqSurf Dib_BitBlt_SRCCOPY_EqSurf
 #define Dib_BitBlt_SRCCOPY_S24_D24_EqSurf Dib_BitBlt_SRCCOPY_EqSurf
+#define Dib_BitBlt_SRCCOPY_S8_D8_EqSurfR2L Dib_BitBlt_SRCCOPY_EqSurf
+#define Dib_BitBlt_SRCCOPY_S16_D16_EqSurfR2L Dib_BitBlt_SRCCOPY_EqSurf
+#define Dib_BitBlt_SRCCOPY_S24_D24_EqSurfR2L Dib_BitBlt_SRCCOPY_EqSurf
+#define Dib_BitBlt_SRCCOPY_S32_D32_EqSurfR2L Dib_BitBlt_SRCCOPY_EqSurf
 
-/* special movsd optimization on x86 */
+/* special movsd optimization on x86, only for left-to-right */
 #if defined(_M_IX86) || defined(_M_AMD64)
 VOID
 FASTCALL
 Dib_BitBlt_SRCCOPY_S32_D32_EqSurf(PBLTDATA pBltData)
 {
-    ULONG cLines, cRows = pBltData->ulWidth;
+    ULONG cLines, cRows;
     PBYTE pjDestBase = pBltData->siDst.pjBase;
     PBYTE pjSrcBase = pBltData->siSrc.pjBase;
 
     /* Loop all lines */
+    cRows = pBltData->ulWidth;
     cLines = pBltData->ulHeight;
     while (cLines--)
     {
