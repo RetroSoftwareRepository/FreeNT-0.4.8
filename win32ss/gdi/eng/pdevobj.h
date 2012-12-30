@@ -190,4 +190,11 @@ PDEVOBJ_sizl(
     _In_ PPDEVOBJ ppdev,
     _Out_ PSIZEL psizl);
 
+BOOL
+FORCEINLINE
+PDEVOBJ_bLockIsOwned(PPDEVOBJ ppdev)
+{
+    return ExIsResourceAcquiredExclusiveLite((PERESOURCE)ppdev->hsemDevLock);
+}
+
 #endif /* !__WIN32K_PDEVOBJ_H */

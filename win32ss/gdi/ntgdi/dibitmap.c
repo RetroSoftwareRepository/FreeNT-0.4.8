@@ -1092,7 +1092,6 @@ NtGdiGetDIBitsInternal(
     if ((pbmi->bmiHeader.biSize < sizeof(BITMAPINFOHEADER)) ||
         (pbmi->bmiHeader.biSize > cjMaxInfo))
     {
-        iResult = 0;
         goto cleanup;
     }
 

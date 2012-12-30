@@ -291,6 +291,17 @@ SURFACE_iCompression(
     return BI_BITFIELDS;
 }
 
+BOOL
+NTAPI
+SURFACE_bIsDeviceSurface(
+    _In_ PSURFACE psurf)
+{
+    PPDEVOBJ ppdev = (PPDEVOBJ)psurf->SurfObj.hdev;
+
+    /* Check if the surface is the related PDEVOBJ's surface */
+    return ((ppdev != 0) && (psurf == ppdev->pSurface));
+}
+
 HBITMAP
 APIENTRY
 EngCreateBitmap(

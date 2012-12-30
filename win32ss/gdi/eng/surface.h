@@ -81,6 +81,8 @@ enum _SURFACEFLAGS
     PDEV_SURFACE              = 0x80000000
 };
 
+#define SURFOBJ_TO_SURFACE(pso) CONTAINING_RECORD(pso, SURFACE, SurfObj)
+
 #define BMF_POOLALLOC 0x100
 #define PDEV_SURFACE              0x80000000
 
@@ -131,6 +133,17 @@ NTAPI
 SURFACE_iCompression(
     _In_ PSURFACE psurf);
 
+BOOL
+NTAPI
+SURFACE_bIsDeviceSurface(
+    _In_ PSURFACE psurf);
+
+#define SURFOBJ_bIsDeviceSurface(pso) \
+    SURFACE_bIsDeviceSurface(SURFOBJ_TO_SURFACE(pso))
+
+#define ASSERT_DEVLOCK(pso) \
+    ASSERT(!pso || !SURFOBJ_bIsDeviceSurface(pso) || \
+           PDEVOBJ_bLockIsOwned((PPDEVOBJ)pso->hdev))
 
 
 VOID
@@ -145,4 +158,5 @@ SURFACE_vSetPalette(
         GDIOBJ_vReferenceObjectByPointer((POBJ)ppal);
     *(PVOID*)&psurf->ppal = ppal;
 }
+
 

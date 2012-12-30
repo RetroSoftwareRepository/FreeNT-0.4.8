@@ -132,6 +132,9 @@ EngBitBlt(
     ASSERT(prclTrg->top >= 0);
     ASSERT(prclTrg->right <= psoTrg->sizlBitmap.cx);
     ASSERT(prclTrg->bottom <= psoTrg->sizlBitmap.cy);
+    ASSERT_DEVLOCK(psoTrg);
+    ASSERT_DEVLOCK(psoSrc);
+    ASSERT_DEVLOCK(psoMask);
 
     rcTrg = *prclTrg;
 
