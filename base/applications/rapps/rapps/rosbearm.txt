@@ -8,7 +8,7 @@ Description = Allows you to build the ReactOS ARM Source. For more instructions 
 Size = 11.15MB
 Category = 7
 URLSite = http://reactos.org/wiki/Build_Environment/
-URLDownload = http://ovh.dl.sourceforge.net/project/reactos/RosBE-Windows/arm/1.0/RosBE-ARM-1.0.exe
+URLDownload = http://garr.dl.sourceforge.net/project/reactos/RosBE-Windows/arm/1.0/RosBE-ARM-1.0.exe
 CDPath = none
 
 [Section.0407]
@@ -19,6 +19,10 @@ Description = Te permite compilar el código de ReactOS ARM. Para más instrucci
 
 [Section.040c]
 Description = Vous permet de compiler le code source de ReactOS pour ARM. Pour plus d'instruction, reportez-vous au wiki ReactOS.
+Size = 11,15 Mo
+
+[Section.0410]
+Description = Permette di compilare i sorgenti di ReactOS ARM. Per maggiori informazioni consultare il Wiki di ReactOS.
 
 [Section.0413]
 Description = Maakt het mogelijk om de ReactOS ARM broncode te bouwen. Meer instructies vind u op de ReactOS wiki.

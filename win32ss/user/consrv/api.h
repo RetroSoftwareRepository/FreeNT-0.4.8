@@ -24,6 +24,7 @@ CSR_API(SrvFlushConsoleInputBuffer);
 CSR_API(SrvGetConsoleNumberOfInputEvents);
 
 /* conoutput.c */
+CSR_API(SrvInvalidateBitMapRect);
 CSR_API(SrvReadConsoleOutput);
 CSR_API(SrvWriteConsole);
 CSR_API(SrvWriteConsoleOutput);
@@ -53,6 +54,10 @@ CSR_API(SrvSetConsoleHardwareState);
 CSR_API(SrvGetConsoleDisplayMode);
 CSR_API(SrvSetConsoleDisplayMode);
 CSR_API(SrvGetLargestConsoleWindowSize);
+CSR_API(SrvShowConsoleCursor);
+CSR_API(SrvSetConsoleCursor);
+CSR_API(SrvConsoleMenuControl);
+CSR_API(SrvSetConsoleMenuClose);
 CSR_API(SrvSetConsoleWindowInfo);
 CSR_API(SrvGetConsoleWindow);
 CSR_API(SrvSetConsoleIcon);

@@ -37,16 +37,16 @@ reactos/dll/directx/dsound        # Synced to Wine-1.5.26
 reactos/dll/directx/dxdiagn       # Synced to Wine-0_9_5
 reactos/dll/directx/msdmo         # Autosync
 reactos/dll/directx/qedit         # Autosync
-reactos/dll/directx/quartz        # Autosync
+reactos/dll/directx/quartz        # Synced to Wine-1.5.26
 reactos/dll/win32/activeds        # Synced to Wine-1.1.43?
 reactos/dll/win32/actxprxy        # Synced to Wine-1.5.26
-reactos/dll/win32/advpack         # Synced to Wine-1.5.19
+reactos/dll/win32/advpack         # Synced to Wine-1.5.26
 reactos/dll/win32/atl             # Synced to Wine-1.5.19
 reactos/dll/win32/atl100          # Synced to Wine-1.5.19
-reactos/dll/win32/avifil32        # Synced to Wine-1.3.37
+reactos/dll/win32/avifil32        # Synced to Wine-1.5.26
 reactos/dll/win32/bcrypt          # Synced to Wine-1.5.19
 reactos/dll/win32/browseui        # Out of sync
-reactos/dll/win32/cabinet         # Synced to Wine-1.5.19
+reactos/dll/win32/cabinet         # Synced to Wine-1.5.26
 reactos/dll/win32/clusapi         # Synced to Wine-1.5.19
 reactos/dll/win32/comcat          # Synced to Wine-1.5.4
 reactos/dll/win32/comctl32        # Synced to Wine 1.5.26
@@ -58,12 +58,12 @@ reactos/dll/win32/cryptdlg        # Synced to Wine-1.5.26
 reactos/dll/win32/cryptdll        # Synced to Wine-1.5.26
 reactos/dll/win32/cryptnet        # Synced to Wine-1.5.26
 reactos/dll/win32/cryptui         # Synced to Wine-1.5.26
-reactos/dll/win32/dbghelp         # Synced to Wine-1.3.37
+reactos/dll/win32/dbghelp         # Synced to Wine-1.5.26
 reactos/dll/win32/dciman32        # Synced to Wine-1.5.19
 reactos/dll/win32/dwmapi          # Synced to Wine-1.5.19
 reactos/dll/win32/faultrep        # Synced to Wine-1.5.4
 reactos/dll/win32/fusion          # Synced to Wine-1.5.26
-reactos/dll/win32/gdiplus         # Synced to Wine-1.5.4
+reactos/dll/win32/gdiplus         # Synced to Wine-1.5.26
 reactos/dll/win32/hhctrl.ocx      # Synced to Wine-1.5.26
 reactos/dll/win32/hlink           # Synced to Wine-1.5.4
 reactos/dll/win32/hnetcfg         # Synced to Wine-1.5.4
@@ -83,7 +83,7 @@ reactos/dll/win32/itircl          # Synced to Wine-1.5.19
 reactos/dll/win32/itss            # Synced to Wine-1.5.4
 reactos/dll/win32/jscript         # Synced to Wine-1.5.26
 reactos/dll/win32/loadperf        # Synced to Wine-1.5.19
-reactos/dll/win32/localspl        # Synced to Wine-1.1.14?
+reactos/dll/win32/localspl        # Synced to Wine-1.5.26
 reactos/dll/win32/localui         # Synced to Wine-1.5.19
 reactos/dll/win32/lz32            # Synced to Wine-1.5.19
 reactos/dll/win32/mapi32          # Autosync
@@ -104,8 +104,8 @@ reactos/dll/win32/msctf           # Synced to Wine-1.5.4
 reactos/dll/win32/msftedit        # Synced to Wine-1.5.19
 reactos/dll/win32/msg711.acm      # Synced to Wine-1.5.19
 reactos/dll/win32/msgsm32.acm     # Synced to Wine-1.5.4
-reactos/dll/win32/mshtml          # Autosync
-reactos/dll/win32/mshtml.tlb      # Synced to Wine-1.5.19
+reactos/dll/win32/mshtml          # Synced to Wine-1.5.26
+reactos/dll/win32/mshtml.tlb      # Synced to Wine-1.5.26
 reactos/dll/win32/msi             # Synced to Wine-1.5.26
 reactos/dll/win32/msimg32         # Synced to Wine-1.5.19
 reactos/dll/win32/msimtf          # Synced to Wine-1.5.19
@@ -146,8 +146,8 @@ reactos/dll/win32/powrprof        # Forked at Wine-1.0rc5
 reactos/dll/win32/printui         # Synced to Wine-1.5.4
 reactos/dll/win32/propsys         # Synced to Wine-1.5.26
 reactos/dll/win32/pstorec         # Synced to Wine-1.5.4
-reactos/dll/win32/qmgr            # Synced to Wine-1.2-rc5?
-reactos/dll/win32/qmgrprxy        # Synced to Wine-1.14?
+reactos/dll/win32/qmgr            # Synced to Wine-1.5.26
+reactos/dll/win32/qmgrprxy        # Synced to Wine-1.5.26
 reactos/dll/win32/query           # Synced to Wine-1.5.19
 reactos/dll/win32/rasapi32        # Synced to Wine-1.5.4
 reactos/dll/win32/resutils        # Synced to Wine-1.5.19
@@ -184,13 +184,14 @@ reactos/dll/win32/url             # Synced to Wine-1.5.19
 reactos/dll/win32/urlmon          # Synced to Wine-1.5.26
 reactos/dll/win32/usp10           # Synced to Wine-1.5.26
 reactos/dll/win32/uxtheme         # Forked
+reactos/dll/win32/vbscript        # Synced to Wine-1.5.26
 reactos/dll/win32/version         # Autosync
 reactos/dll/win32/wer             # Autosync
-reactos/dll/win32/windowscodecs   # Synced to Wine-1.5.19
+reactos/dll/win32/windowscodecs   # Synced to Wine-1.5.26
 reactos/dll/win32/winemp3.acm     # Synced to Wine-1.5.19
 reactos/dll/win32/wing32          # Out of sync
-reactos/dll/win32/winhttp         # Synced to Wine-1.5.4
-reactos/dll/win32/wininet         # Synced to Wine-1.5.4
+reactos/dll/win32/winhttp         # Synced to Wine-1.5.26
+reactos/dll/win32/wininet         # Synced to Wine-1.5.26
 reactos/dll/win32/winmm           # Forked at Wine-20050628
 reactos/dll/win32/winmm/midimap   # Forked at Wine-20050628
 reactos/dll/win32/winmm/wavemap   # Forked at Wine-20050628
@@ -220,14 +221,15 @@ reactos/base/applications/winhlp32        # Synced to Wine-1.5.26
 reactos/base/applications/wordpad         # Synced to Wine-1.5.26
 reactos/base/services/rpcss               # Synced to Wine-20081105
 reactos/base/system/expand                # Synced to Wine-1.5.26
-reactos/base/system/msiexec               # Autosync
+reactos/base/system/msiexec               # Synced to Wine-1.5.26
 reactos/modules/rosapps/winfile           # Autosync
 
 In addition the following libs, dlls and source files are mostly based on code ported
 from Winehq CVS. If you are looking to update something in these files
 check Wine current souces first as it may already be fixed.
 
-reactos/lib/sdk/uuid                  # Synced to Wine-1.1.42
+reactos/lib/3rdparty/strmbase             # Synced to Wine-1.5.26
+reactos/lib/sdk/uuid                      # Synced to Wine-1.1.42
 
 advapi32 -
   reactos/dll/win32/advapi32/crypt/*.c          # Unknown

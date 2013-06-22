@@ -59,7 +59,7 @@ ConsoleCreateUnicodeString(IN OUT PUNICODE_STRING UniDest,
     SIZE_T Size = (wcslen(Source) + 1) * sizeof(WCHAR);
     if (Size > MAXUSHORT) return FALSE;
 
-    UniDest->Buffer = RtlAllocateHeap(ConSrvHeap, HEAP_ZERO_MEMORY, Size);
+    UniDest->Buffer = ConsoleAllocHeap(HEAP_ZERO_MEMORY, Size);
     if (UniDest->Buffer == NULL) return FALSE;
 
     RtlCopyMemory(UniDest->Buffer, Source, Size);
@@ -75,7 +75,7 @@ ConsoleFreeUnicodeString(IN PUNICODE_STRING UnicodeString)
 {
     if (UnicodeString->Buffer)
     {
-        RtlFreeHeap(ConSrvHeap, 0, UnicodeString->Buffer);
+        ConsoleFreeHeap(UnicodeString->Buffer);
         RtlZeroMemory(UnicodeString, sizeof(UNICODE_STRING));
     }
 }
@@ -310,7 +310,7 @@ ConSrvGetConsole(PCONSOLE_PROCESS_DATA ProcessData,
     NTSTATUS Status = STATUS_SUCCESS;
     PCONSOLE ProcessConsole;
 
-    RtlEnterCriticalSection(&ProcessData->HandleTableLock);
+    // RtlEnterCriticalSection(&ProcessData->HandleTableLock);
     ProcessConsole = ProcessData->Console;
 
     if (ConSrvValidateConsole(ProcessConsole, CONSOLE_RUNNING, LockConsole))
@@ -324,7 +324,7 @@ ConSrvGetConsole(PCONSOLE_PROCESS_DATA ProcessData,
         Status = STATUS_INVALID_HANDLE;
     }
 
-    RtlLeaveCriticalSection(&ProcessData->HandleTableLock);
+    // RtlLeaveCriticalSection(&ProcessData->HandleTableLock);
     return Status;
 }
 
@@ -479,13 +479,14 @@ ConSrvInitConsole(OUT PCONSOLE* NewConsole,
 {
     NTSTATUS Status;
     SECURITY_ATTRIBUTES SecurityAttributes;
-    CONSOLE_INFO ConsoleInfo;
     SIZE_T Length = 0;
     DWORD ProcessId = HandleToUlong(ConsoleLeaderProcess->ClientId.UniqueProcess);
+    CONSOLE_INFO ConsoleInfo;
+    TEXTMODE_BUFFER_INFO ScreenBufferInfo;
     PCONSOLE Console;
     PCONSOLE_SCREEN_BUFFER NewBuffer;
     BOOL GuiMode;
-    WCHAR Title[128];
+    WCHAR DefaultTitle[128];
     WCHAR IconPath[MAX_PATH + 1] = L"";
     INT iIcon = 0;
 
@@ -495,7 +496,7 @@ ConSrvInitConsole(OUT PCONSOLE* NewConsole,
     /*
      * Allocate a console structure
      */
-    Console = RtlAllocateHeap(ConSrvHeap, HEAP_ZERO_MEMORY, sizeof(CONSOLE));
+    Console = ConsoleAllocHeap(HEAP_ZERO_MEMORY, sizeof(CONSOLE));
     if (NULL == Console)
     {
         DPRINT1("Not enough memory for console creation.\n");
@@ -564,29 +565,34 @@ ConSrvInitConsole(OUT PCONSOLE* NewConsole,
             ConsoleInfo.ConsoleSize.X = (SHORT)ConsoleStartInfo->ConsoleWindowSize.cx;
             ConsoleInfo.ConsoleSize.Y = (SHORT)ConsoleStartInfo->ConsoleWindowSize.cy;
         }
-        /*
-        if (ConsoleStartInfo->dwStartupFlags & STARTF_RUNFULLSCREEN)
-        {
-            ConsoleInfo.FullScreen = TRUE;
-        }
-        */
     }
+
+    /*
+     * Fix the screen buffer size if needed. The rule is:
+     * ScreenBufferSize >= ConsoleSize
+     */
+    if (ConsoleInfo.ScreenBufferSize.X < ConsoleInfo.ConsoleSize.X)
+        ConsoleInfo.ScreenBufferSize.X = ConsoleInfo.ConsoleSize.X;
+    if (ConsoleInfo.ScreenBufferSize.Y < ConsoleInfo.ConsoleSize.Y)
+        ConsoleInfo.ScreenBufferSize.Y = ConsoleInfo.ConsoleSize.Y;
 
     /*
      * Initialize the console
      */
     Console->State = CONSOLE_INITIALIZING;
-    InitializeCriticalSection(&Console->Lock);
     Console->ReferenceCount = 0;
+    InitializeCriticalSection(&Console->Lock);
     InitializeListHead(&Console->ProcessList);
+    RtlZeroMemory(&Console->TermIFace, sizeof(Console->TermIFace));
+
     memcpy(Console->Colors, ConsoleInfo.Colors, sizeof(ConsoleInfo.Colors));
     Console->ConsoleSize = ConsoleInfo.ConsoleSize;
+    Console->FixedSize   = FALSE; // Value by default; is reseted by the front-ends if needed.
 
     /*
      * Initialize the input buffer
      */
-    Console->InputBuffer.Header.Type = INPUT_BUFFER;
-    Console->InputBuffer.Header.Console = Console;
+    ConSrvInitObject(&Console->InputBuffer.Header, INPUT_BUFFER, Console);
 
     SecurityAttributes.nLength = sizeof(SECURITY_ATTRIBUTES);
     SecurityAttributes.lpSecurityDescriptor = NULL;
@@ -595,46 +601,59 @@ ConSrvInitConsole(OUT PCONSOLE* NewConsole,
     if (NULL == Console->InputBuffer.ActiveEvent)
     {
         DeleteCriticalSection(&Console->Lock);
-        RtlFreeHeap(ConSrvHeap, 0, Console);
+        ConsoleFreeHeap(Console);
         return STATUS_UNSUCCESSFUL;
     }
 
+    Console->InputBuffer.InputBufferSize = 0; // FIXME!
+    InitializeListHead(&Console->InputBuffer.InputEvents);
+    InitializeListHead(&Console->InputBuffer.ReadWaitQueue);
     Console->InputBuffer.Mode = ENABLE_PROCESSED_INPUT | ENABLE_LINE_INPUT |
                                 ENABLE_ECHO_INPUT      | ENABLE_MOUSE_INPUT;
+
     Console->QuickEdit  = ConsoleInfo.QuickEdit;
     Console->InsertMode = ConsoleInfo.InsertMode;
-    InitializeListHead(&Console->InputBuffer.ReadWaitQueue);
-    InitializeListHead(&Console->InputBuffer.InputEvents);
     Console->LineBuffer = NULL;
+    Console->LineMaxSize = Console->LineSize = Console->LinePos = 0;
+    Console->LineComplete = Console->LineUpPressed = Console->LineInsertToggle = FALSE;
+    // LineWakeupMask
+    RtlZeroMemory(&Console->Selection, sizeof(CONSOLE_SELECTION_INFO));
+    Console->Selection.dwFlags = CONSOLE_NO_SELECTION;
+    // dwSelectionCursor
+
     Console->CodePage = GetOEMCP();
     Console->OutputCodePage = GetOEMCP();
 
-    /* Initialize a new screen buffer with default settings */
+    /* Initialize a new text-mode screen buffer with default settings */
+    ScreenBufferInfo.ScreenBufferSize = ConsoleInfo.ScreenBufferSize;
+    ScreenBufferInfo.ScreenAttrib     = ConsoleInfo.ScreenAttrib;
+    ScreenBufferInfo.PopupAttrib      = ConsoleInfo.PopupAttrib;
+    ScreenBufferInfo.IsCursorVisible  = TRUE;
+    ScreenBufferInfo.CursorSize       = ConsoleInfo.CursorSize;
+
     InitializeListHead(&Console->BufferList);
-    Status = ConSrvCreateScreenBuffer(Console,
-                                      &NewBuffer,
-                                      ConsoleInfo.ScreenBufferSize,
-                                      ConsoleInfo.ScreenAttrib,
-                                      ConsoleInfo.PopupAttrib,
-                                      (ConsoleInfo.FullScreen ? CONSOLE_FULLSCREEN_MODE
-                                                              : CONSOLE_WINDOWED_MODE),
-                                      TRUE,
-                                      ConsoleInfo.CursorSize);
+    Status = ConSrvCreateScreenBuffer(&NewBuffer,
+                                      Console,
+                                      CONSOLE_TEXTMODE_BUFFER,
+                                      &ScreenBufferInfo);
     if (!NT_SUCCESS(Status))
     {
         DPRINT1("ConSrvCreateScreenBuffer: failed, Status = 0x%08lx\n", Status);
         CloseHandle(Console->InputBuffer.ActiveEvent);
         DeleteCriticalSection(&Console->Lock);
-        RtlFreeHeap(ConSrvHeap, 0, Console);
+        ConsoleFreeHeap(Console);
         return Status;
     }
     /* Make the new screen buffer active */
     Console->ActiveBuffer = NewBuffer;
     InitializeListHead(&Console->WriteWaitQueue);
+    Console->PauseFlags = 0;
+    Console->UnpauseEvent = NULL;
 
     /*
-     * Initialize the history buffers
+     * Initialize the alias and history buffers
      */
+    Console->Aliases = NULL;
     InitializeListHead(&Console->HistoryBuffers);
     Console->HistoryBufferSize = ConsoleInfo.HistoryBufferSize;
     Console->NumberOfHistoryBuffers = ConsoleInfo.NumberOfHistoryBuffers;
@@ -644,9 +663,9 @@ ConSrvInitConsole(OUT PCONSOLE* NewConsole,
     ConsoleCreateUnicodeString(&Console->OriginalTitle, ConsoleInfo.ConsoleTitle);
     if (ConsoleInfo.ConsoleTitle[0] == L'\0')
     {
-        if (LoadStringW(ConSrvDllInstance, IDS_CONSOLE_TITLE, Title, sizeof(Title) / sizeof(Title[0])))
+        if (LoadStringW(ConSrvDllInstance, IDS_CONSOLE_TITLE, DefaultTitle, sizeof(DefaultTitle) / sizeof(DefaultTitle[0])))
         {
-            ConsoleCreateUnicodeString(&Console->Title, Title);
+            ConsoleCreateUnicodeString(&Console->Title, DefaultTitle);
         }
         else
         {
@@ -709,7 +728,7 @@ ConSrvInitConsole(OUT PCONSOLE* NewConsole,
             CloseHandle(Console->InputBuffer.ActiveEvent);
             // LeaveCriticalSection(&Console->Lock);
             DeleteCriticalSection(&Console->Lock);
-            RtlFreeHeap(ConSrvHeap, 0, Console);
+            ConsoleFreeHeap(Console);
             return Status;
         }
     }
@@ -827,7 +846,7 @@ ConSrvDeleteConsole(PCONSOLE Console)
     /* Discard all entries in the input event queue */
     PurgeInputBuffer(Console);
 
-    if (Console->LineBuffer) RtlFreeHeap(ConSrvHeap, 0, Console->LineBuffer);
+    if (Console->LineBuffer) ConsoleFreeHeap(Console->LineBuffer);
 
     IntDeleteAllAliases(Console);
     HistoryDeleteBuffers(Console);
@@ -850,7 +869,7 @@ ConSrvDeleteConsole(PCONSOLE Console)
     DeleteCriticalSection(&Console->Lock);
     DPRINT("ConSrvDeleteConsole - Lock destroyed ; freeing console\n");
 
-    RtlFreeHeap(ConSrvHeap, 0, Console);
+    ConsoleFreeHeap(Console);
     DPRINT("ConSrvDeleteConsole - Console freed\n");
 
     /* Unlock the console list and return */
@@ -880,18 +899,6 @@ CSR_API(SrvAllocConsole)
     {
         return STATUS_INVALID_PARAMETER;
     }
-
-    /*
-     * We are about to create a new console. However when ConSrvNewProcess
-     * was called, we didn't know that we wanted to create a new console and
-     * therefore, we by default inherited the handles table from our parent
-     * process. It's only now that we notice that in fact we do not need
-     * them, because we've created a new console and thus we must use it.
-     *
-     * Therefore, free the console we can have and our handles table,
-     * and recreate a new one later on.
-     */
-    ConSrvRemoveConsole(ProcessData);
 
     /* Initialize a new Console owned by the Console Leader Process */
     Status = ConSrvAllocateConsole(ProcessData,
@@ -971,18 +978,6 @@ CSR_API(SrvAttachConsole)
     }
 
     /*
-     * We are about to create a new console. However when ConSrvNewProcess
-     * was called, we didn't know that we wanted to create a new console and
-     * therefore, we by default inherited the handles table from our parent
-     * process. It's only now that we notice that in fact we do not need
-     * them, because we've created a new console and thus we must use it.
-     *
-     * Therefore, free the console we can have and our handles table,
-     * and recreate a new one later on.
-     */
-    ConSrvRemoveConsole(TargetProcessData);
-
-    /*
      * Inherit the console from the parent,
      * if any, otherwise return an error.
      */
@@ -1054,7 +1049,7 @@ CSR_API(SrvGetConsoleMode)
 
         ConsoleModeRequest->ConsoleMode = ConsoleMode;
     }
-    else if (SCREEN_BUFFER == Object->Type)
+    else if (TEXTMODE_BUFFER == Object->Type || GRAPHICS_BUFFER == Object->Type)
     {
         PCONSOLE_SCREEN_BUFFER Buffer = (PCONSOLE_SCREEN_BUFFER)Object;
         ConsoleModeRequest->ConsoleMode = Buffer->Mode;
@@ -1126,7 +1121,7 @@ CSR_API(SrvSetConsoleMode)
         }
         InputBuffer->Mode = (ConsoleMode & CONSOLE_VALID_INPUT_MODES);
     }
-    else if (SCREEN_BUFFER == Object->Type)
+    else if (TEXTMODE_BUFFER == Object->Type || GRAPHICS_BUFFER == Object->Type)
     {
         PCONSOLE_SCREEN_BUFFER Buffer = (PCONSOLE_SCREEN_BUFFER)Object;
 
@@ -1212,7 +1207,7 @@ CSR_API(SrvSetConsoleTitle)
     }
 
     /* Allocate a new buffer to hold the new title (NULL-terminated) */
-    Buffer = RtlAllocateHeap(ConSrvHeap, 0, TitleRequest->Length + sizeof(WCHAR));
+    Buffer = ConsoleAllocHeap(0, TitleRequest->Length + sizeof(WCHAR));
     if (Buffer)
     {
         /* Free the old title */
@@ -1253,6 +1248,7 @@ CSR_API(SrvSetConsoleTitle)
  *      ConsoleHwState has the correct size to be compatible
  *      with NT's, but values are not.
  */
+#if 0
 static NTSTATUS FASTCALL
 SetConsoleHardwareState(PCONSOLE Console, ULONG ConsoleHwState)
 {
@@ -1273,15 +1269,17 @@ SetConsoleHardwareState(PCONSOLE Console, ULONG ConsoleHwState)
 
     return STATUS_INVALID_PARAMETER_3; /* Client: (handle, set_get, [mode]) */
 }
+#endif
 
 CSR_API(SrvGetConsoleHardwareState)
 {
+#if 0
     NTSTATUS Status;
     PCONSOLE_GETSETHWSTATE HardwareStateRequest = &((PCONSOLE_API_MESSAGE)ApiMessage)->Data.HardwareStateRequest;
     PCONSOLE_SCREEN_BUFFER Buff;
     PCONSOLE Console;
 
-    Status = ConSrvGetScreenBuffer(ConsoleGetPerProcessData(CsrGetClientThread()->Process),
+    Status = ConSrvGetTextModeBuffer(ConsoleGetPerProcessData(CsrGetClientThread()->Process),
                                    HardwareStateRequest->OutputHandle,
                                    &Buff,
                                    GENERIC_READ,
@@ -1297,16 +1295,21 @@ CSR_API(SrvGetConsoleHardwareState)
 
     ConSrvReleaseScreenBuffer(Buff, TRUE);
     return Status;
+#else
+    UNIMPLEMENTED;
+    return STATUS_NOT_IMPLEMENTED;
+#endif
 }
 
 CSR_API(SrvSetConsoleHardwareState)
 {
+#if 0
     NTSTATUS Status;
     PCONSOLE_GETSETHWSTATE HardwareStateRequest = &((PCONSOLE_API_MESSAGE)ApiMessage)->Data.HardwareStateRequest;
     PCONSOLE_SCREEN_BUFFER Buff;
     PCONSOLE Console;
 
-    Status = ConSrvGetScreenBuffer(ConsoleGetPerProcessData(CsrGetClientThread()->Process),
+    Status = ConSrvGetTextModeBuffer(ConsoleGetPerProcessData(CsrGetClientThread()->Process),
                                    HardwareStateRequest->OutputHandle,
                                    &Buff,
                                    GENERIC_WRITE,
@@ -1323,6 +1326,10 @@ CSR_API(SrvSetConsoleHardwareState)
 
     ConSrvReleaseScreenBuffer(Buff, TRUE);
     return Status;
+#else
+    UNIMPLEMENTED;
+    return STATUS_NOT_IMPLEMENTED;
+#endif
 }
 
 CSR_API(SrvGetConsoleDisplayMode)
@@ -1330,32 +1337,22 @@ CSR_API(SrvGetConsoleDisplayMode)
     NTSTATUS Status;
     PCONSOLE_GETDISPLAYMODE GetDisplayModeRequest = &((PCONSOLE_API_MESSAGE)ApiMessage)->Data.GetDisplayModeRequest;
     PCONSOLE Console;
-    ULONG DisplayMode = 0;
 
     Status = ConSrvGetConsole(ConsoleGetPerProcessData(CsrGetClientThread()->Process),
                               &Console, TRUE);
-    if (!NT_SUCCESS(Status))
-    {
-        DPRINT1("Failed to get console handle in SrvGetConsoleDisplayMode\n");
-        return Status;
-    }
+    if (!NT_SUCCESS(Status)) return Status;
 
-    if (Console->ActiveBuffer->DisplayMode & CONSOLE_FULLSCREEN_MODE)
-        DisplayMode |= CONSOLE_FULLSCREEN_HARDWARE; // CONSOLE_FULLSCREEN
-    else if (Console->ActiveBuffer->DisplayMode & CONSOLE_WINDOWED_MODE)
-        DisplayMode |= CONSOLE_WINDOWED;
-
-    GetDisplayModeRequest->DisplayMode = DisplayMode;
-    Status = STATUS_SUCCESS;
+    GetDisplayModeRequest->DisplayMode = ConioGetDisplayMode(Console);
 
     ConSrvReleaseConsole(Console, TRUE);
-    return Status;
+    return STATUS_SUCCESS;
 }
 
 CSR_API(SrvSetConsoleDisplayMode)
 {
     NTSTATUS Status;
     PCONSOLE_SETDISPLAYMODE SetDisplayModeRequest = &((PCONSOLE_API_MESSAGE)ApiMessage)->Data.SetDisplayModeRequest;
+    PCONSOLE Console;
     PCONSOLE_SCREEN_BUFFER Buff;
 
     Status = ConSrvGetScreenBuffer(ConsoleGetPerProcessData(CsrGetClientThread()->Process),
@@ -1363,23 +1360,18 @@ CSR_API(SrvSetConsoleDisplayMode)
                                    &Buff,
                                    GENERIC_WRITE,
                                    TRUE);
-    if (!NT_SUCCESS(Status))
-    {
-        DPRINT1("Failed to get console handle in SrvSetConsoleDisplayMode\n");
-        return Status;
-    }
+    if (!NT_SUCCESS(Status)) return Status;
 
-    if (SetDisplayModeRequest->DisplayMode & ~(CONSOLE_FULLSCREEN_MODE | CONSOLE_WINDOWED_MODE))
+    Console = Buff->Header.Console;
+
+    if (ConioSetDisplayMode(Console, SetDisplayModeRequest->DisplayMode))
     {
-        Status = STATUS_INVALID_PARAMETER;
+        SetDisplayModeRequest->NewSBDim = Buff->ScreenBufferSize;
+        Status = STATUS_SUCCESS;
     }
     else
     {
-        Buff->DisplayMode = SetDisplayModeRequest->DisplayMode;
-        // TODO: Change the display mode
-        SetDisplayModeRequest->NewSBDim = Buff->ScreenBufferSize;
-
-        Status = STATUS_SUCCESS;
+        Status = STATUS_INVALID_PARAMETER;
     }
 
     ConSrvReleaseScreenBuffer(Buff, TRUE);
@@ -1393,7 +1385,7 @@ CSR_API(SrvGetLargestConsoleWindowSize)
     PCONSOLE_SCREEN_BUFFER Buff;
     PCONSOLE Console;
 
-    Status = ConSrvGetScreenBuffer(ConsoleGetPerProcessData(CsrGetClientThread()->Process),
+    Status = ConSrvGetTextModeBuffer(ConsoleGetPerProcessData(CsrGetClientThread()->Process),
                                    GetLargestWindowSizeRequest->OutputHandle,
                                    &Buff,
                                    GENERIC_READ,
@@ -1407,64 +1399,141 @@ CSR_API(SrvGetLargestConsoleWindowSize)
     return STATUS_SUCCESS;
 }
 
-CSR_API(SrvSetConsoleWindowInfo)
+CSR_API(SrvShowConsoleCursor)
 {
-#if 0
     NTSTATUS Status;
-#endif
-    PCONSOLE_SETWINDOWINFO SetWindowInfoRequest = &((PCONSOLE_API_MESSAGE)ApiMessage)->Data.SetWindowInfoRequest;
-#if 0
-    PCONSOLE_SCREEN_BUFFER Buff;
+    PCONSOLE_SHOWCURSOR ShowCursorRequest = &((PCONSOLE_API_MESSAGE)ApiMessage)->Data.ShowCursorRequest;
     PCONSOLE Console;
-#endif
-    SMALL_RECT WindowRect = SetWindowInfoRequest->WindowRect;
+    PCONSOLE_SCREEN_BUFFER Buff;
 
-#if 0
     Status = ConSrvGetScreenBuffer(ConsoleGetPerProcessData(CsrGetClientThread()->Process),
-                                   SetWindowInfoRequest->OutputHandle,
+                                   ShowCursorRequest->OutputHandle,
                                    &Buff,
-                                   GENERIC_READ,
+                                   GENERIC_WRITE,
                                    TRUE);
     if (!NT_SUCCESS(Status)) return Status;
 
     Console = Buff->Header.Console;
 
+    ShowCursorRequest->RefCount = ConioShowMouseCursor(Console, ShowCursorRequest->Show);
+
+    ConSrvReleaseScreenBuffer(Buff, TRUE);
+    return STATUS_SUCCESS;
+}
+
+CSR_API(SrvSetConsoleCursor)
+{
+    NTSTATUS Status;
+    BOOL Success;
+    PCONSOLE_SETCURSOR SetCursorRequest = &((PCONSOLE_API_MESSAGE)ApiMessage)->Data.SetCursorRequest;
+    PCONSOLE Console;
+    PCONSOLE_SCREEN_BUFFER Buff;
+
+    // FIXME: Tests show that this function is used only for graphics screen buffers
+    // and otherwise it returns false + set last error to invalid handle.
+    // NOTE: I find that behaviour is ridiculous but ok, let's accept that at the moment...
+    Status = ConSrvGetGraphicsBuffer(ConsoleGetPerProcessData(CsrGetClientThread()->Process),
+                                     SetCursorRequest->OutputHandle,
+                                     &Buff,
+                                     GENERIC_WRITE,
+                                     TRUE);
+    if (!NT_SUCCESS(Status)) return Status;
+
+    Console = Buff->Header.Console;
+
+    Success = ConioSetMouseCursor(Console, SetCursorRequest->hCursor);
+
+    ConSrvReleaseScreenBuffer(Buff, TRUE);
+    return (Success ? STATUS_SUCCESS : STATUS_UNSUCCESSFUL);
+}
+
+CSR_API(SrvConsoleMenuControl)
+{
+    NTSTATUS Status;
+    PCONSOLE_MENUCONTROL MenuControlRequest = &((PCONSOLE_API_MESSAGE)ApiMessage)->Data.MenuControlRequest;
+    PCONSOLE Console;
+    PCONSOLE_SCREEN_BUFFER Buff;
+
+    Status = ConSrvGetScreenBuffer(ConsoleGetPerProcessData(CsrGetClientThread()->Process),
+                                   MenuControlRequest->OutputHandle,
+                                   &Buff,
+                                   GENERIC_WRITE,
+                                   TRUE);
+    if (!NT_SUCCESS(Status)) return Status;
+
+    Console = Buff->Header.Console;
+
+    MenuControlRequest->hMenu = ConioMenuControl(Console,
+                                                 MenuControlRequest->dwCmdIdLow,
+                                                 MenuControlRequest->dwCmdIdHigh);
+
+    ConSrvReleaseScreenBuffer(Buff, TRUE);
+    return STATUS_SUCCESS;
+}
+
+CSR_API(SrvSetConsoleMenuClose)
+{
+    NTSTATUS Status;
+    BOOL Success;
+    PCONSOLE_SETMENUCLOSE SetMenuCloseRequest = &((PCONSOLE_API_MESSAGE)ApiMessage)->Data.SetMenuCloseRequest;
+    PCONSOLE Console;
+
+    Status = ConSrvGetConsole(ConsoleGetPerProcessData(CsrGetClientThread()->Process),
+                              &Console, TRUE);
+    if (!NT_SUCCESS(Status)) return Status;
+
+    Success = ConioSetMenuClose(Console, SetMenuCloseRequest->Enable);
+
+    ConSrvReleaseConsole(Console, TRUE);
+    return (Success ? STATUS_SUCCESS : STATUS_UNSUCCESSFUL);
+}
+
+CSR_API(SrvSetConsoleWindowInfo)
+{
+    NTSTATUS Status;
+    PCONSOLE_SETWINDOWINFO SetWindowInfoRequest = &((PCONSOLE_API_MESSAGE)ApiMessage)->Data.SetWindowInfoRequest;
+    PCONSOLE_SCREEN_BUFFER Buff;
+    SMALL_RECT WindowRect = SetWindowInfoRequest->WindowRect;
+
+    DPRINT("SrvSetConsoleWindowInfo(0x%08x, %d, {L%d, T%d, R%d, B%d}) called\n",
+            SetWindowInfoRequest->OutputHandle, SetWindowInfoRequest->Absolute,
+            WindowRect.Left, WindowRect.Top, WindowRect.Right, WindowRect.Bottom);
+
+    Status = ConSrvGetTextModeBuffer(ConsoleGetPerProcessData(CsrGetClientThread()->Process),
+                                     SetWindowInfoRequest->OutputHandle,
+                                     &Buff,
+                                     GENERIC_READ,
+                                     TRUE);
+    if (!NT_SUCCESS(Status)) return Status;
+
     if (SetWindowInfoRequest->Absolute == FALSE)
     {
         /* Relative positions given. Transform them to absolute ones */
-        WindowRect.Left   += Buff->ShowX;
-        WindowRect.Top    += Buff->ShowY;
-        WindowRect.Right  += Buff->ShowX + Console->ConsoleSize.X - 1;
-        WindowRect.Bottom += Buff->ShowY + Console->ConsoleSize.Y - 1;
+        WindowRect.Left   += Buff->ViewOrigin.X;
+        WindowRect.Top    += Buff->ViewOrigin.Y;
+        WindowRect.Right  += Buff->ViewOrigin.X + Buff->ViewSize.X - 1;
+        WindowRect.Bottom += Buff->ViewOrigin.Y + Buff->ViewSize.Y - 1;
     }
 
-    if ( (WindowRect.Left < 0) || (WindowRect.Top < 0) ||
-         (WindowRect.Right  > ScreenBufferSize.X)      ||
-         (WindowRect.Bottom > ScreenBufferSize.Y)      ||
-         (WindowRect.Right  <= WindowRect.Left)        ||
+    /* See MSDN documentation on SetConsoleWindowInfo about the performed checks */
+    if ( (WindowRect.Left < 0) || (WindowRect.Top < 0)   ||
+         (WindowRect.Right  >= Buff->ScreenBufferSize.X) ||
+         (WindowRect.Bottom >= Buff->ScreenBufferSize.Y) ||
+         (WindowRect.Right  <= WindowRect.Left)          ||
          (WindowRect.Bottom <= WindowRect.Top) )
     {
         ConSrvReleaseScreenBuffer(Buff, TRUE);
         return STATUS_INVALID_PARAMETER;
     }
 
-    Buff->ShowX = WindowRect.Left;
-    Buff->ShowY = WindowRect.Top;
+    Buff->ViewOrigin.X = WindowRect.Left;
+    Buff->ViewOrigin.Y = WindowRect.Top;
 
-    // These two lines are frontend-specific.
-    Console->ConsoleSize.X = WindowRect.Right - WindowRect.Left + 1;
-    Console->ConsoleSize.Y = WindowRect.Bottom - WindowRect.Top + 1;
-
-    // ConioGetLargestConsoleWindowSize(Console, &GetLargestWindowSizeRequest->Size);
+    Buff->ViewSize.X = WindowRect.Right - WindowRect.Left + 1;
+    Buff->ViewSize.Y = WindowRect.Bottom - WindowRect.Top + 1;
 
     ConSrvReleaseScreenBuffer(Buff, TRUE);
     return STATUS_SUCCESS;
-#else
-    DPRINT1("SrvSetConsoleWindowInfo(0x%08x, %d, {L%d, T%d, R%d, B%d}) UNIMPLEMENTED\n",
-            SetWindowInfoRequest->OutputHandle, SetWindowInfoRequest->Absolute,
-            WindowRect.Left, WindowRect.Top, WindowRect.Right, WindowRect.Bottom);
-    return STATUS_NOT_IMPLEMENTED;
-#endif
 }
 
 CSR_API(SrvGetConsoleWindow)

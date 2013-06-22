@@ -45,15 +45,14 @@ HistoryCurrentBuffer(PCONSOLE Console)
     }
 
     /* Couldn't find the buffer, create a new one */
-    Hist = RtlAllocateHeap(ConSrvHeap, 0, sizeof(HISTORY_BUFFER) + ExeName.Length);
-    if (!Hist)
-        return NULL;
+    Hist = ConsoleAllocHeap(0, sizeof(HISTORY_BUFFER) + ExeName.Length);
+    if (!Hist) return NULL;
     Hist->MaxEntries = Console->HistoryBufferSize;
     Hist->NumEntries = 0;
-    Hist->Entries = RtlAllocateHeap(ConSrvHeap, 0, Hist->MaxEntries * sizeof(UNICODE_STRING));
+    Hist->Entries = ConsoleAllocHeap(0, Hist->MaxEntries * sizeof(UNICODE_STRING));
     if (!Hist->Entries)
     {
-        RtlFreeHeap(ConSrvHeap, 0, Hist);
+        ConsoleFreeHeap(Hist);
         return NULL;
     }
     Hist->ExeName.Length = Hist->ExeName.MaximumLength = ExeName.Length;
@@ -148,9 +147,9 @@ HistoryDeleteBuffer(PHISTORY_BUFFER Hist)
     while (Hist->NumEntries != 0)
         RtlFreeUnicodeString(&Hist->Entries[--Hist->NumEntries]);
 
-    RtlFreeHeap(ConSrvHeap, 0, Hist->Entries);
+    ConsoleFreeHeap(Hist->Entries);
     RemoveEntryList(&Hist->ListEntry);
-    RtlFreeHeap(ConSrvHeap, 0, Hist);
+    ConsoleFreeHeap(Hist);
 }
 
 VOID FASTCALL
@@ -194,9 +193,13 @@ LineInputSetPos(PCONSOLE Console, UINT Pos)
 static VOID
 LineInputEdit(PCONSOLE Console, UINT NumToDelete, UINT NumToInsert, WCHAR *Insertion)
 {
+    PTEXTMODE_SCREEN_BUFFER ActiveBuffer;
     UINT Pos = Console->LinePos;
     UINT NewSize = Console->LineSize - NumToDelete + NumToInsert;
     UINT i;
+
+    if (GetType(Console->ActiveBuffer) != TEXTMODE_BUFFER) return;
+    ActiveBuffer = (PTEXTMODE_SCREEN_BUFFER)Console->ActiveBuffer;
 
     /* Make sure there's always enough room for ending \r\n */
     if (NewSize + 2 > Console->LineMaxSize)
@@ -211,15 +214,11 @@ LineInputEdit(PCONSOLE Console, UINT NumToDelete, UINT NumToInsert, WCHAR *Inser
     {
         for (i = Pos; i < NewSize; i++)
         {
-            CHAR AsciiChar;
-            WideCharToMultiByte(Console->OutputCodePage, 0,
-                                &Console->LineBuffer[i], 1,
-                                &AsciiChar, 1, NULL, NULL);
-            ConioWriteConsole(Console, Console->ActiveBuffer, &AsciiChar, 1, TRUE);
+            ConioWriteConsole(Console, ActiveBuffer, &Console->LineBuffer[i], 1, TRUE);
         }
         for (; i < Console->LineSize; i++)
         {
-            ConioWriteConsole(Console, Console->ActiveBuffer, " ", 1, TRUE);
+            ConioWriteConsole(Console, ActiveBuffer, L" ", 1, TRUE);
         }
         Console->LinePos = i;
     }
@@ -407,7 +406,12 @@ LineInputKeyDown(PCONSOLE Console, KEY_EVENT_RECORD *KeyEvent)
         LineInputSetPos(Console, Console->LineSize);
         Console->LineBuffer[Console->LineSize++] = L'\r';
         if (Console->InputBuffer.Mode & ENABLE_ECHO_INPUT)
-            ConioWriteConsole(Console, Console->ActiveBuffer, "\r", 1, TRUE);
+        {
+            if (GetType(Console->ActiveBuffer) == TEXTMODE_BUFFER)
+            {
+                ConioWriteConsole(Console, (PTEXTMODE_SCREEN_BUFFER)(Console->ActiveBuffer), L"\r", 1, TRUE);
+            }
+        }
 
         /* Add \n if processed input. There should usually be room for it,
          * but an exception to the rule exists: the buffer could have been 
@@ -417,7 +421,12 @@ LineInputKeyDown(PCONSOLE Console, KEY_EVENT_RECORD *KeyEvent)
         {
             Console->LineBuffer[Console->LineSize++] = L'\n';
             if (Console->InputBuffer.Mode & ENABLE_ECHO_INPUT)
-                ConioWriteConsole(Console, Console->ActiveBuffer, "\n", 1, TRUE);
+            {
+                if (GetType(Console->ActiveBuffer) == TEXTMODE_BUFFER)
+                {
+                    ConioWriteConsole(Console, (PTEXTMODE_SCREEN_BUFFER)(Console->ActiveBuffer), L"\n", 1, TRUE);
+                }
+            }
         }
         Console->LineComplete = TRUE;
         Console->LinePos = 0;
@@ -577,8 +586,7 @@ CSR_API(SrvSetConsoleNumberOfCommands)
         if (Hist)
         {
             OldEntryList = Hist->Entries;
-            NewEntryList = RtlAllocateHeap(ConSrvHeap, 0,
-                                           MaxEntries * sizeof(UNICODE_STRING));
+            NewEntryList = ConsoleAllocHeap(0, MaxEntries * sizeof(UNICODE_STRING));
             if (!NewEntryList)
             {
                 Status = STATUS_NO_MEMORY;
@@ -595,7 +603,7 @@ CSR_API(SrvSetConsoleNumberOfCommands)
                 Hist->MaxEntries = MaxEntries;
                 Hist->Entries = memcpy(NewEntryList, Hist->Entries,
                                        Hist->NumEntries * sizeof(UNICODE_STRING));
-                RtlFreeHeap(ConSrvHeap, 0, OldEntryList);
+                ConsoleFreeHeap(OldEntryList);
             }
         }
         ConSrvReleaseConsole(Console, TRUE);

@@ -82,7 +82,7 @@ ConioProcessInputEvent(PCONSOLE Console,
             if (Console->InputBuffer.Mode & ENABLE_LINE_INPUT &&
                 (vk == VK_PAUSE || (vk == 'S' &&
                                     (cks & (LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED)) &&
-                                    !(cks & (LEFT_ALT_PRESSED | RIGHT_ALT_PRESSED)))))
+                                   !(cks & (LEFT_ALT_PRESSED  | RIGHT_ALT_PRESSED)))))
             {
                 ConioPause(Console, PAUSED_FROM_KEYBOARD);
                 return STATUS_SUCCESS;
@@ -99,10 +99,10 @@ ConioProcessInputEvent(PCONSOLE Console,
         }
     }
 
-    /* add event to the queue */
-    ConInRec = RtlAllocateHeap(ConSrvHeap, 0, sizeof(ConsoleInput));
-    if (ConInRec == NULL)
-        return STATUS_INSUFFICIENT_RESOURCES;
+    /* Add event to the queue */
+    ConInRec = ConsoleAllocHeap(0, sizeof(ConsoleInput));
+    if (ConInRec == NULL) return STATUS_INSUFFICIENT_RESOURCES;
+
     ConInRec->InputEvent = *InputEvent;
     InsertTailList(&Console->InputBuffer.InputEvents, &ConInRec->ListEntry);
 
@@ -129,7 +129,7 @@ PurgeInputBuffer(PCONSOLE Console)
     {
         CurrentEntry = RemoveHeadList(&Console->InputBuffer.InputEvents);
         Event = CONTAINING_RECORD(CurrentEntry, ConsoleInput, ListEntry);
-        RtlFreeHeap(ConSrvHeap, 0, Event);
+        ConsoleFreeHeap(Event);
     }
 
     CloseHandle(Console->InputBuffer.ActiveEvent);
@@ -178,7 +178,6 @@ ConioProcessKey(PCONSOLE Console, MSG* msg)
      * or translated keys may be involved. */
     static UINT LastVirtualKey = 0;
     DWORD ShiftState;
-    UINT RepeatCount;
     WCHAR UnicodeChar;
     UINT VirtualKeyCode;
     UINT VirtualScanCode;
@@ -193,8 +192,7 @@ ConioProcessKey(PCONSOLE Console, MSG* msg)
         return;
     }
 
-    RepeatCount = 1;
-    VirtualScanCode = (msg->lParam >> 16) & 0xff;
+    VirtualScanCode = HIWORD(msg->lParam) & 0xFF;
     Down = msg->message == WM_KEYDOWN || msg->message == WM_CHAR ||
            msg->message == WM_SYSKEYDOWN || msg->message == WM_SYSCHAR;
 
@@ -218,17 +216,17 @@ ConioProcessKey(PCONSOLE Console, MSG* msg)
                                Chars,
                                2,
                                0,
-                               0);
+                               NULL);
         UnicodeChar = (1 == RetChars ? Chars[0] : 0);
     }
 
     er.EventType = KEY_EVENT;
     er.Event.KeyEvent.bKeyDown = Down;
-    er.Event.KeyEvent.wRepeatCount = RepeatCount;
-    er.Event.KeyEvent.uChar.UnicodeChar = UnicodeChar;
-    er.Event.KeyEvent.dwControlKeyState = ShiftState;
+    er.Event.KeyEvent.wRepeatCount = 1;
     er.Event.KeyEvent.wVirtualKeyCode = VirtualKeyCode;
     er.Event.KeyEvent.wVirtualScanCode = VirtualScanCode;
+    er.Event.KeyEvent.uChar.UnicodeChar = UnicodeChar;
+    er.Event.KeyEvent.dwControlKeyState = ShiftState;
 
     if (ConioProcessKeyCallback(Console,
                                 msg,
@@ -324,7 +322,7 @@ WaitBeforeReading(IN PGET_INPUT_INFO InputInfo,
     {
         PGET_INPUT_INFO CapturedInputInfo;
 
-        CapturedInputInfo = RtlAllocateHeap(ConSrvHeap, 0, sizeof(GET_INPUT_INFO));
+        CapturedInputInfo = ConsoleAllocHeap(0, sizeof(GET_INPUT_INFO));
         if (!CapturedInputInfo) return STATUS_NO_MEMORY;
 
         RtlMoveMemory(CapturedInputInfo, InputInfo, sizeof(GET_INPUT_INFO));
@@ -336,7 +334,7 @@ WaitBeforeReading(IN PGET_INPUT_INFO InputInfo,
                            CapturedInputInfo,
                            NULL))
         {
-            RtlFreeHeap(ConSrvHeap, 0, CapturedInputInfo);
+            ConsoleFreeHeap(CapturedInputInfo);
             return STATUS_NO_MEMORY;
         }
     }
@@ -407,7 +405,7 @@ Quit:
     if (Status != STATUS_PENDING)
     {
         WaitApiMessage->Status = Status;
-        RtlFreeHeap(ConSrvHeap, 0, InputInfo);
+        ConsoleFreeHeap(InputInfo);
     }
 
     return (Status == STATUS_PENDING ? FALSE : TRUE);
@@ -466,7 +464,7 @@ ReadInputBuffer(IN PGET_INPUT_INFO InputInfo,
             if (Wait) // TRUE --> Read, we remove inputs from the buffer ; FALSE --> Peek, we keep inputs.
             {
                 RemoveEntryList(&Input->ListEntry);
-                RtlFreeHeap(ConSrvHeap, 0, Input);
+                ConsoleFreeHeap(Input);
             }
         }
 
@@ -539,7 +537,7 @@ Quit:
     if (Status != STATUS_PENDING)
     {
         WaitApiMessage->Status = Status;
-        RtlFreeHeap(ConSrvHeap, 0, InputInfo);
+        ConsoleFreeHeap(InputInfo);
     }
 
     return (Status == STATUS_PENDING ? FALSE : TRUE);
@@ -569,7 +567,7 @@ ReadChars(IN PGET_INPUT_INFO InputInfo,
         {
             /* Starting a new line */
             Console->LineMaxSize = (WORD)max(256, nNumberOfCharsToRead);
-            Console->LineBuffer = RtlAllocateHeap(ConSrvHeap, 0, Console->LineMaxSize * sizeof(WCHAR));
+            Console->LineBuffer = ConsoleAllocHeap(0, Console->LineMaxSize * sizeof(WCHAR));
             if (Console->LineBuffer == NULL)
             {
                 return STATUS_NO_MEMORY;
@@ -612,7 +610,7 @@ ReadChars(IN PGET_INPUT_INFO InputInfo,
                 LineInputKeyDown(Console, &Input->InputEvent.Event.KeyEvent);
                 ReadConsoleRequest->ControlKeyState = Input->InputEvent.Event.KeyEvent.dwControlKeyState;
             }
-            RtlFreeHeap(ConSrvHeap, 0, Input);
+            ConsoleFreeHeap(Input);
         }
 
         /* Check if we have a complete line to read from */
@@ -640,7 +638,7 @@ ReadChars(IN PGET_INPUT_INFO InputInfo,
             if (Console->LinePos == Console->LineSize)
             {
                 /* Entire line has been read */
-                RtlFreeHeap(ConSrvHeap, 0, Console->LineBuffer);
+                ConsoleFreeHeap(Console->LineBuffer);
                 Console->LineBuffer = NULL;
             }
 
@@ -684,7 +682,7 @@ ReadChars(IN PGET_INPUT_INFO InputInfo,
                 /* Did read something */
                 WaitForMoreToRead = FALSE;
             }
-            RtlFreeHeap(ConSrvHeap, 0, Input);
+            ConsoleFreeHeap(Input);
         }
     }
 
@@ -862,7 +860,7 @@ CSR_API(SrvFlushConsoleInputBuffer)
     {
         CurrentEntry = RemoveHeadList(&InputBuffer->InputEvents);
         Event = CONTAINING_RECORD(CurrentEntry, ConsoleInput, ListEntry);
-        RtlFreeHeap(ConSrvHeap, 0, Event);
+        ConsoleFreeHeap(Event);
     }
     ResetEvent(InputBuffer->ActiveEvent);
 

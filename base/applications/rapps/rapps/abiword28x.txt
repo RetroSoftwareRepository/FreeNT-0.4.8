@@ -19,6 +19,10 @@ Description = Procesador de textos.
 
 [Section.040c]
 Description = Éditeur de texte.
+Size = 9,4 Mo
+
+[Section.0410]
+Description = Editor di testo.
 
 [Section.0413]
 Description = Tekstverwerker.
@@ -28,7 +32,7 @@ Description = Edytor tekstu.
 
 [Section.0418]
 Description = Procesor de text.
-Size = 9,33 Mo
+Size = 9,4 Mo
 
 [Section.0422]
 Description = Текстовий процесор.

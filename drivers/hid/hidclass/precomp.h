@@ -10,6 +10,8 @@
 #include <wdmguid.h>
 #include <debug.h>
 
+#define HIDCLASS_TAG 'CdiH'
+
 typedef struct
 {
     PDRIVER_OBJECT DriverObject;
@@ -20,7 +22,7 @@ typedef struct
     PDRIVER_UNLOAD DriverUnload;
     KSPIN_LOCK Lock;
 
-}HIDCLASS_DRIVER_EXTENSION, *PHIDCLASS_DRIVER_EXTENSION;
+} HIDCLASS_DRIVER_EXTENSION, *PHIDCLASS_DRIVER_EXTENSION;
 
 typedef struct
 {
@@ -49,7 +51,7 @@ typedef struct
     //
     HID_DEVICE_ATTRIBUTES Attributes;
 
-}HIDCLASS_COMMON_DEVICE_EXTENSION, *PHIDCLASS_COMMON_DEVICE_EXTENSION;
+} HIDCLASS_COMMON_DEVICE_EXTENSION, *PHIDCLASS_COMMON_DEVICE_EXTENSION;
 
 typedef struct
 {
@@ -78,7 +80,7 @@ typedef struct
     //
     PDEVICE_RELATIONS DeviceRelations;
 
-}HIDCLASS_FDO_EXTENSION, *PHIDCLASS_FDO_EXTENSION;
+} HIDCLASS_FDO_EXTENSION, *PHIDCLASS_FDO_EXTENSION;
 
 typedef struct
 {
@@ -98,7 +100,7 @@ typedef struct
     ULONG CollectionNumber;
 
     //
-    // device interface 
+    // device interface
     //
     UNICODE_STRING DeviceInterface;
 
@@ -112,7 +114,7 @@ typedef struct
     //
     PHIDCLASS_FDO_EXTENSION FDODeviceExtension;
 
-}HIDCLASS_PDO_DEVICE_EXTENSION, *PHIDCLASS_PDO_DEVICE_EXTENSION;
+} HIDCLASS_PDO_DEVICE_EXTENSION, *PHIDCLASS_PDO_DEVICE_EXTENSION;
 
 typedef struct __HIDCLASS_FILEOP_CONTEXT__
 {
@@ -146,7 +148,7 @@ typedef struct __HIDCLASS_FILEOP_CONTEXT__
     //
     KEVENT IrpReadComplete;
 
-}HIDCLASS_FILEOP_CONTEXT, *PHIDCLASS_FILEOP_CONTEXT;
+} HIDCLASS_FILEOP_CONTEXT, *PHIDCLASS_FILEOP_CONTEXT;
 
 typedef struct
 {
@@ -175,11 +177,16 @@ typedef struct
     //
     PIO_WORKITEM CompletionWorkItem;
 
-}HIDCLASS_IRP_CONTEXT, *PHIDCLASS_IRP_CONTEXT;
+} HIDCLASS_IRP_CONTEXT, *PHIDCLASS_IRP_CONTEXT;
 
 /* fdo.c */
 NTSTATUS
 HidClassFDO_PnP(
+    IN PDEVICE_OBJECT DeviceObject,
+    IN PIRP Irp);
+
+NTSTATUS
+HidClassFDO_DispatchRequest(
     IN PDEVICE_OBJECT DeviceObject,
     IN PIRP Irp);
 

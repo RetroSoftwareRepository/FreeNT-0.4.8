@@ -615,6 +615,7 @@ ExpRemovePoolTracker(IN ULONG Key,
     Table = PoolTrackTable;
     TableMask = PoolTrackTableMask;
     TableSize = PoolTrackTableSize;
+    DBG_UNREFERENCED_LOCAL_VARIABLE(TableSize);
 
     //
     // Compute the hash for this key, and loop all the possible buckets
@@ -717,6 +718,7 @@ ExpInsertPoolTracker(IN ULONG Key,
     Table = PoolTrackTable;
     TableMask = PoolTrackTableMask;
     TableSize = PoolTrackTableSize;
+    DBG_UNREFERENCED_LOCAL_VARIABLE(TableSize);
 
     //
     // Compute the hash for this key, and loop all the possible buckets
@@ -1673,7 +1675,7 @@ ExAllocatePoolWithTag(IN POOL_TYPE PoolType,
     //
     // Handle lookaside list optimization for both paged and nonpaged pool
     //
-    if (i <= MAXIMUM_PROCESSORS)
+    if (i <= NUMBER_POOL_LOOKASIDE_LISTS)
     {
         //
         // Try popping it from the per-CPU lookaside list
@@ -2256,7 +2258,7 @@ ExFreePoolWithTag(IN PVOID P,
     //
     // Is this allocation small enough to have come from a lookaside list?
     //
-    if (BlockSize <= MAXIMUM_PROCESSORS)
+    if (BlockSize <= NUMBER_POOL_LOOKASIDE_LISTS)
     {
         //
         // Try pushing it into the per-CPU lookaside list

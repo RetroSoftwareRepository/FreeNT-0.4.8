@@ -118,6 +118,8 @@ typedef struct _SAM_USER_FIXED_DATA
 
 
 extern PGENERIC_MAPPING pServerMapping;
+extern ENCRYPTED_NT_OWF_PASSWORD EmptyNtHash;
+extern ENCRYPTED_LM_OWF_PASSWORD EmptyLmHash;
 
 
 /* alias.c */
@@ -127,6 +129,15 @@ SampOpenAliasObject(IN PSAM_DB_OBJECT DomainObject,
                     IN ULONG AliasId,
                     IN ACCESS_MASK DesiredAccess,
                     OUT PSAM_DB_OBJECT *AliasObject);
+
+NTSTATUS
+SampAddMemberToAlias(IN PSAM_DB_OBJECT AliasObject,
+                     IN PRPC_SID MemberId);
+
+NTSTATUS
+NTAPI
+SampRemoveMemberFromAlias(IN PSAM_DB_OBJECT AliasObject,
+                          IN PRPC_SID MemberId);
 
 
 /* database.c */
@@ -200,6 +211,10 @@ SampRemoveAccountNameFromDomain(IN PSAM_DB_OBJECT DomainObject,
 NTSTATUS
 SampCheckAccountNameInDomain(IN PSAM_DB_OBJECT DomainObject,
                              IN LPCWSTR lpAccountName);
+
+NTSTATUS
+SampRemoveMemberFromAllAliases(IN PSAM_DB_OBJECT DomainObject,
+                               IN PRPC_SID MemberSid);
 
 
 /* group.h */
@@ -281,13 +296,14 @@ SampRegSetValue(IN HANDLE KeyHandle,
 
 /* samspc.c */
 
-VOID SampStartRpcServer(VOID);
+VOID
+SampStartRpcServer(VOID);
 
 
 /* setup.c */
 
-BOOL SampIsSetupRunning(VOID);
-BOOL SampInitializeSAM(VOID);
+BOOL
+SampInitializeSAM(VOID);
 
 
 /* user.c */
@@ -336,5 +352,38 @@ SampGetLogonHoursAttrbute(IN PSAM_DB_OBJECT UserObject,
 NTSTATUS
 SampSetLogonHoursAttrbute(IN PSAM_DB_OBJECT UserObject,
                           IN PSAMPR_LOGON_HOURS LogonHours);
+
+
+/* utils.c */
+
+INT
+SampLoadString(HINSTANCE hInstance,
+               UINT uId,
+               LPWSTR lpBuffer,
+               INT nBufferMax);
+
+BOOL
+SampIsSetupRunning(VOID);
+
+PSID
+AppendRidToSid(PSID SrcSid,
+               ULONG Rid);
+
+NTSTATUS
+SampGetRidFromSid(IN PSID Sid,
+                  OUT PULONG Rid);
+
+
+/* Undocumented advapi32 functions */
+
+NTSTATUS
+WINAPI
+SystemFunction006(LPCSTR password,
+                  LPSTR hash);
+
+NTSTATUS
+WINAPI
+SystemFunction007(PUNICODE_STRING string,
+                  LPBYTE hash);
 
 /* EOF */

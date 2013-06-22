@@ -24,6 +24,7 @@
 #include <wincon.h>
 #include <winuser.h>
 #define NTOS_MODE_USER
+#include <ndk/exfuncs.h>
 #include <ndk/iofuncs.h>
 #include <ndk/mmfuncs.h>
 #include <ndk/obfuncs.h>
@@ -45,9 +46,11 @@
 #include <win/conmsg.h>
 
 
+/* Heap Helpers */
+#include "heap.h"
+
 /* Globals */
 extern HINSTANCE ConSrvDllInstance;
-extern HANDLE ConSrvHeap;
 
 #define ConsoleGetPerProcessData(Process)   \
     ((PCONSOLE_PROCESS_DATA)((Process)->ServerData[CONSRV_SERVERDLL_INDEX]))

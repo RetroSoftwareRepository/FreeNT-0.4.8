@@ -51,3 +51,25 @@ InstallSelectedDriverW(
 	SetLastError(ERROR_GEN_FAILURE);
 	return FALSE;
 }
+
+/*
+* @unimplemented
+*/
+BOOL WINAPI
+DiShowUpdateDevice(
+    IN HWND hwndParent OPTIONAL,
+    IN HDEVINFO DeviceInfoSet,
+    IN PSP_DEVINFO_DATA DeviceInfoData,
+    IN DWORD Flags,
+    OUT PBOOL NeedReboot OPTIONAL)
+{
+    if (Flags != 0)
+    {
+        SetLastError(ERROR_INVALID_FLAGS);
+        return FALSE;
+    }
+ 
+    UNIMPLEMENTED;
+    SetLastError(ERROR_GEN_FAILURE);
+    return FALSE;
+}

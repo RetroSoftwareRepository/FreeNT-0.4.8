@@ -60,11 +60,11 @@ typedef enum _CONSRV_API_NUMBER
     ConsolepGetTitle,
     ConsolepSetTitle,
     ConsolepCreateScreenBuffer,
-    // ConsolepInvalidateBitMapRect,
+    ConsolepInvalidateBitMapRect,
     // ConsolepVDMOperation,
-    // ConsolepSetCursor,
-    // ConsolepShowCursor,
-    // ConsolepMenuControl,
+    ConsolepSetCursor,
+    ConsolepShowCursor,
+    ConsolepMenuControl,
     // ConsolepSetPalette,
     ConsolepSetDisplayMode,
     // ConsolepRegisterVDM,
@@ -85,7 +85,7 @@ typedef enum _CONSRV_API_NUMBER
     ConsolepGetCP,
     ConsolepSetCP,
     // ConsolepSetKeyShortcuts,
-    // ConsolepSetMenuClose,
+    ConsolepSetMenuClose,
     // ConsolepNotifyLastClose,
     ConsolepGenerateCtrlEvent,
     // ConsolepGetKeyboardLayoutName,
@@ -122,6 +122,8 @@ typedef struct _CONSOLE_START_INFO
     // UNICODE_STRING ConsoleTitle;
     WCHAR ConsoleTitle[MAX_PATH + 1];   // Console title or full path to the startup shortcut
     WCHAR AppPath[MAX_PATH + 1];        // Full path of the launched app
+    WCHAR IconPath[MAX_PATH + 1];       // Path to the file containing the icon
+    INT   IconIndex;                    // Index of the icon
 } CONSOLE_START_INFO, *PCONSOLE_START_INFO;
 
 typedef struct _CONSOLE_CONNECTION_INFO
@@ -221,6 +223,19 @@ typedef struct
 typedef struct
 {
     HANDLE OutputHandle;
+    BOOL   Show;
+    INT    RefCount;
+} CONSOLE_SHOWCURSOR, *PCONSOLE_SHOWCURSOR;
+
+typedef struct
+{
+    HANDLE  OutputHandle;
+    HCURSOR hCursor;
+} CONSOLE_SETCURSOR, *PCONSOLE_SETCURSOR;
+
+typedef struct
+{
+    HANDLE OutputHandle;
     CONSOLE_CURSOR_INFO Info;
 } CONSOLE_GETSETCURSORINFO, *PCONSOLE_GETSETCURSORINFO;
 
@@ -236,8 +251,6 @@ typedef struct
     DWORD ConsoleMode;
 } CONSOLE_GETSETCONSOLEMODE, *PCONSOLE_GETSETCONSOLEMODE;
 
-
-#define CONSOLE_WINDOWED    0 /* Internal console hardware state */
 typedef struct
 {
     // HANDLE OutputHandle;
@@ -266,17 +279,29 @@ typedef struct
 
 typedef struct
 {
-    HANDLE OutputHandle;  /* Handle to newly created screen buffer */
+    HANDLE OutputHandle;     /* Handle to newly created screen buffer */
+    DWORD  ScreenBufferType; /* Type of the screen buffer: CONSOLE_TEXTMODE_BUFFER or CONSOLE_GRAPHICS_BUFFER */
+    /*
+     * If we are creating a graphics screen buffer,
+     * this structure holds the initialization information.
+     */
+    CONSOLE_GRAPHICS_BUFFER_INFO GraphicsBufferInfo;
 
     DWORD Access;
     DWORD ShareMode;
-    BOOL Inheritable;
+    BOOL  Inheritable;
 } CONSOLE_CREATESCREENBUFFER, *PCONSOLE_CREATESCREENBUFFER;
 
 typedef struct
 {
     HANDLE OutputHandle;  /* Handle to screen buffer to switch to */
 } CONSOLE_SETACTIVESCREENBUFFER, *PCONSOLE_SETACTIVESCREENBUFFER;
+
+typedef struct
+{
+    HANDLE OutputHandle;
+    SMALL_RECT Region;
+} CONSOLE_INVALIDATEDIBITS, *PCONSOLE_INVALIDATEDIBITS;
 
 typedef struct
 {
@@ -292,7 +317,7 @@ typedef struct
     COORD BufferSize;
     COORD BufferCoord;
     SMALL_RECT WriteRegion;
-    CHAR_INFO* CharInfo;
+    PCHAR_INFO CharInfo;
 } CONSOLE_WRITEOUTPUT, *PCONSOLE_WRITEOUTPUT;
 
 typedef struct
@@ -338,10 +363,10 @@ typedef struct
     CODE_TYPE CodeType;
     union
     {
-        PVOID pCode;
-        PCHAR AsciiChar;
+        PVOID  pCode;
+        PCHAR  AsciiChar;
         PWCHAR UnicodeChar;
-        PWORD Attribute;
+        PWORD  Attribute;
     } pCode;    // Either a pointer to a character or to an attribute.
 } CONSOLE_READOUTPUTCODE, *PCONSOLE_READOUTPUTCODE;
 
@@ -349,21 +374,20 @@ typedef struct
 {
     HANDLE OutputHandle;
 
-    ULONG BufferSize;
+    ULONG BufferSize; // Seems unusued
     WORD Length;
     COORD Coord;
     COORD EndCoord;
 
-    ULONG NrCharactersWritten;
+    ULONG NrCharactersWritten; // Seems unusued
 
-    USHORT CodeType;
+    CODE_TYPE CodeType;
     union
     {
-        // PVOID String;
-        PVOID pCode;
-        PCHAR AsciiChar;
+        PVOID  pCode;
+        PCHAR  AsciiChar;
         PWCHAR UnicodeChar;
-        PWORD Attribute;
+        PWORD  Attribute;
     } pCode;    // Either a pointer to a character or to an attribute.
 } CONSOLE_WRITEOUTPUTCODE, *PCONSOLE_WRITEOUTPUTCODE;
 
@@ -374,9 +398,9 @@ typedef struct
     CODE_TYPE CodeType;
     union
     {
-        CHAR AsciiChar;
+        CHAR  AsciiChar;
         WCHAR UnicodeChar;
-        WORD Attribute;
+        WORD  Attribute;
     } Code; // Either a character or an attribute.
 
     COORD Coord;
@@ -405,7 +429,7 @@ typedef struct
     COORD BufferSize;
     COORD BufferCoord;
     SMALL_RECT ReadRegion;
-    CHAR_INFO* CharInfo;
+    PCHAR_INFO CharInfo;
 } CONSOLE_READOUTPUT, *PCONSOLE_READOUTPUT;
 
 typedef struct
@@ -462,6 +486,19 @@ typedef struct
 typedef struct
 {
     HANDLE OutputHandle;
+    DWORD  dwCmdIdLow;
+    DWORD  dwCmdIdHigh;
+    HMENU  hMenu;
+} CONSOLE_MENUCONTROL, *PCONSOLE_MENUCONTROL;
+
+typedef struct
+{
+    BOOL Enable;
+} CONSOLE_SETMENUCLOSE, *PCONSOLE_SETMENUCLOSE;
+
+typedef struct
+{
+    HANDLE OutputHandle;
     BOOL   Absolute;
     SMALL_RECT WindowRect; // New console window position in the screen-buffer frame (Absolute == TRUE)
                            // or in the old window position frame (Absolute == FALSE).
@@ -469,12 +506,12 @@ typedef struct
 
 typedef struct
 {
-    HWND    WindowHandle;
+    HWND WindowHandle;
 } CONSOLE_GETWINDOW, *PCONSOLE_GETWINDOW;
 
 typedef struct
 {
-    HICON   WindowIcon;
+    HICON WindowIcon;
 } CONSOLE_SETICON, *PCONSOLE_SETICON;
 
 
@@ -604,6 +641,8 @@ typedef struct _CONSOLE_API_MESSAGE
         CONSOLE_DUPLICATEHANDLE DuplicateHandleRequest;
 
         /* Cursor */
+        CONSOLE_SHOWCURSOR ShowCursorRequest;
+        CONSOLE_SETCURSOR SetCursorRequest;
         CONSOLE_GETSETCURSORINFO CursorInfoRequest;
         CONSOLE_SETCURSORPOSITION SetCursorPositionRequest;
 
@@ -624,8 +663,11 @@ typedef struct _CONSOLE_API_MESSAGE
         CONSOLE_GETSETHWSTATE HardwareStateRequest;
 
         /* Console window */
+        CONSOLE_INVALIDATEDIBITS InvalidateDIBitsRequest;
         CONSOLE_GETSETCONSOLETITLE TitleRequest;
         CONSOLE_GETLARGESTWINDOWSIZE GetLargestWindowSizeRequest;
+        CONSOLE_MENUCONTROL MenuControlRequest;
+        CONSOLE_SETMENUCLOSE SetMenuCloseRequest;
         CONSOLE_SETWINDOWINFO SetWindowInfoRequest;
         CONSOLE_GETWINDOW GetWindowRequest;
         CONSOLE_SETICON SetIconRequest;

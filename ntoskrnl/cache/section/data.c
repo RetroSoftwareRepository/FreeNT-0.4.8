@@ -456,6 +456,7 @@ MmCreateCacheSection(PROS_SECTION_OBJECT *SectionObject,
                                         &Information);
         Iosb.Information = Information;
         DPRINT("Query => %x\n", Status);
+        DBG_UNREFERENCED_LOCAL_VARIABLE(Iosb);
 
         if (!NT_SUCCESS(Status))
         {
@@ -818,7 +819,11 @@ MmUnmapViewOfCacheSegment(PMMSUPPORT AddressSpace,
            MmGetAddressSpaceOwner(AddressSpace),
            MemoryArea->StartingAddress);
 
+    MmLockAddressSpace(AddressSpace);
+
     MmFreeMemoryArea(AddressSpace, MemoryArea, MmFreeCacheSectionPage, Context);
+
+    MmUnlockAddressSpace(AddressSpace);
 
     MmUnlockSectionSegment(Segment);
 

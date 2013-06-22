@@ -1733,9 +1733,9 @@ Initialize()
 #ifdef INCLUDE_CMD_COLOR
 			else if (!_tcsnicmp(ptr, _T("/T:"), 3))
 			{
-				/* process /t (color) argument */
+				/* process /T (color) argument */
 				wDefColor = (WORD)_tcstoul(&ptr[3], &ptr, 16);
-				SetScreenColor(wDefColor, TRUE);
+				SetScreenColor(wDefColor, FALSE);
 			}
 #endif
 			else if (option == _T('U'))
@@ -1815,7 +1815,7 @@ static VOID Cleanup()
 /*
  * main function
  */
-int cmd_main (int argc, const TCHAR *argv[])
+int _tmain(int argc, const TCHAR *argv[])
 {
 	HANDLE hConsole;
 	TCHAR startPath[MAX_PATH];
@@ -1828,7 +1828,7 @@ int cmd_main (int argc, const TCHAR *argv[])
 	_tchdir(startPath);
 
 	SetFileApisToOEM();
-	InputCodePage= 0;
+	InputCodePage = 0;
 	OutputCodePage = 0;
 
 	hConsole = CreateFile(_T("CONOUT$"), GENERIC_READ|GENERIC_WRITE,
@@ -1845,7 +1845,7 @@ int cmd_main (int argc, const TCHAR *argv[])
 		CloseHandle(hConsole);
 	}
 
-	InputCodePage= GetConsoleCP();
+	InputCodePage = GetConsoleCP();
 	OutputCodePage = GetConsoleOutputCP();
 	CMD_ModuleHandle = GetModuleHandle(NULL);
 

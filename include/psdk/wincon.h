@@ -24,12 +24,15 @@ extern "C" {
 /*
  * Console display modes
  */
+// These codes are answered by GetConsoleDisplayMode
+#define CONSOLE_WINDOWED            0
 #define CONSOLE_FULLSCREEN          1
-#define CONSOLE_FULLSCREEN_HARDWARE 2
 #if (_WIN32_WINNT >= 0x0600)
 #define CONSOLE_OVERSTRIKE          1
 #endif
+#define CONSOLE_FULLSCREEN_HARDWARE 2
 
+// These codes should be given to SetConsoleDisplayMode
 #define CONSOLE_FULLSCREEN_MODE     1
 #define CONSOLE_WINDOWED_MODE       2
 
@@ -52,6 +55,12 @@ extern "C" {
 #define COMMON_LVB_GRID_RVERTICAL       0x1000
 #define COMMON_LVB_REVERSE_VIDEO        0x4000
 #define COMMON_LVB_UNDERSCORE           0x8000
+
+/*
+ * Screen buffer types
+ */
+#define CONSOLE_TEXTMODE_BUFFER         1
+#define CONSOLE_GRAPHICS_BUFFER         2   /* Undocumented, see http://blog.airesoft.co.uk/2012/10/things-ms-can-do-that-they-dont-tell-you-about-console-graphics/ */
 
 /*
  * Control handler codes
@@ -154,29 +163,35 @@ typedef struct _CHAR_INFO {
     } Char;
     WORD Attributes;
 } CHAR_INFO,*PCHAR_INFO;
+
 typedef struct _SMALL_RECT {
     SHORT Left;
     SHORT Top;
     SHORT Right;
     SHORT Bottom;
 } SMALL_RECT,*PSMALL_RECT;
+
 typedef struct _CONSOLE_CURSOR_INFO {
     DWORD dwSize;
     BOOL  bVisible;
 } CONSOLE_CURSOR_INFO,*PCONSOLE_CURSOR_INFO;
+
 typedef struct _COORD {
     SHORT X;
     SHORT Y;
 } COORD, *PCOORD;
+
 typedef struct _CONSOLE_SELECTION_INFO {
     DWORD dwFlags;
     COORD dwSelectionAnchor;
     SMALL_RECT srSelection;
 } CONSOLE_SELECTION_INFO, *PCONSOLE_SELECTION_INFO;
+
 typedef struct _CONSOLE_FONT_INFO {
     DWORD nFont;
     COORD dwFontSize;
 } CONSOLE_FONT_INFO, *PCONSOLE_FONT_INFO;
+
 typedef struct _CONSOLE_SCREEN_BUFFER_INFO {
     COORD      dwSize;
     COORD      dwCursorPosition;
@@ -184,7 +199,20 @@ typedef struct _CONSOLE_SCREEN_BUFFER_INFO {
     SMALL_RECT srWindow;
     COORD      dwMaximumWindowSize;
 } CONSOLE_SCREEN_BUFFER_INFO,*PCONSOLE_SCREEN_BUFFER_INFO;
+
+/* Undocumented, see http://blog.airesoft.co.uk/2012/10/things-ms-can-do-that-they-dont-tell-you-about-console-graphics/ */
+#if defined(_WINGDI_) && !defined(NOGDI)
+typedef struct _CONSOLE_GRAPHICS_BUFFER_INFO {
+    DWORD        dwBitMapInfoLength;
+    LPBITMAPINFO lpBitMapInfo;
+    DWORD        dwUsage;    // DIB_PAL_COLORS or DIB_RGB_COLORS
+    HANDLE       hMutex;
+    PVOID        lpBitMap;
+} CONSOLE_GRAPHICS_BUFFER_INFO, *PCONSOLE_GRAPHICS_BUFFER_INFO;
+#endif
+
 typedef BOOL(CALLBACK *PHANDLER_ROUTINE)(_In_ DWORD);
+
 typedef struct _KEY_EVENT_RECORD {
     BOOL bKeyDown;
     WORD wRepeatCount;
@@ -198,18 +226,21 @@ typedef struct _KEY_EVENT_RECORD {
 }
 #ifdef __GNUC__
 /* gcc's alignment is not what win32 expects */
- PACKED
+PACKED
 #endif
 KEY_EVENT_RECORD;
+
 typedef struct _MOUSE_EVENT_RECORD {
     COORD dwMousePosition;
     DWORD dwButtonState;
     DWORD dwControlKeyState;
     DWORD dwEventFlags;
 } MOUSE_EVENT_RECORD;
-typedef struct _WINDOW_BUFFER_SIZE_RECORD {	COORD dwSize; } WINDOW_BUFFER_SIZE_RECORD;
-typedef struct _MENU_EVENT_RECORD {	UINT dwCommandId; } MENU_EVENT_RECORD,*PMENU_EVENT_RECORD;
+
+typedef struct _WINDOW_BUFFER_SIZE_RECORD { COORD dwSize; } WINDOW_BUFFER_SIZE_RECORD;
+typedef struct _MENU_EVENT_RECORD { UINT dwCommandId; } MENU_EVENT_RECORD,*PMENU_EVENT_RECORD;
 typedef struct _FOCUS_EVENT_RECORD { BOOL bSetFocus; } FOCUS_EVENT_RECORD;
+
 typedef struct _INPUT_RECORD {
     WORD EventType;
     union {
@@ -322,6 +353,9 @@ BOOL WINAPI GetConsoleMode(HANDLE,PDWORD);
 UINT WINAPI GetConsoleOutputCP(VOID);
 BOOL WINAPI GetConsoleScreenBufferInfo(_In_ HANDLE, _Out_ PCONSOLE_SCREEN_BUFFER_INFO);
 
+/* Undocumented, see http://blog.airesoft.co.uk/2012/10/things-ms-can-do-that-they-dont-tell-you-about-console-graphics/ */
+BOOL WINAPI InvalidateConsoleDIBits(_In_ HANDLE, _In_ PSMALL_RECT);
+
 DWORD
 WINAPI
 GetConsoleTitleA(
@@ -334,6 +368,19 @@ GetConsoleTitleW(
   _Out_writes_(nSize) LPWSTR lpConsoleTitle,
   _In_ DWORD nSize);
 
+COORD
+WINAPI
+GetConsoleFontSize(
+  _In_ HANDLE hConsoleOutput,
+  _In_ DWORD nFont);
+
+BOOL
+WINAPI
+GetCurrentConsoleFont(
+  _In_  HANDLE hConsoleOutput,
+  _In_  BOOL bMaximumWindow,
+  _Out_ PCONSOLE_FONT_INFO lpConsoleCurrentFont);
+
 #if (_WIN32_WINNT >= 0x0500)
 HWND WINAPI GetConsoleWindow(VOID);
 BOOL APIENTRY GetConsoleDisplayMode(_Out_ LPDWORD lpModeFlags);
@@ -342,6 +389,7 @@ BOOL APIENTRY SetConsoleDisplayMode(_In_ HANDLE hConsoleOutput, _In_ DWORD dwFla
 COORD WINAPI GetLargestConsoleWindowSize(_In_ HANDLE);
 BOOL WINAPI GetNumberOfConsoleInputEvents(HANDLE,PDWORD);
 BOOL WINAPI GetNumberOfConsoleMouseButtons(_Out_ PDWORD);
+
 BOOL WINAPI PeekConsoleInputA(HANDLE,PINPUT_RECORD,DWORD,PDWORD);
 
 BOOL
@@ -416,6 +464,16 @@ BOOL WINAPI SetConsoleTextAttribute(_In_ HANDLE, _In_ WORD);
 BOOL WINAPI SetConsoleTitleA(_In_ LPCSTR);
 BOOL WINAPI SetConsoleTitleW(_In_ LPCWSTR);
 BOOL WINAPI SetConsoleWindowInfo(_In_ HANDLE, _In_ BOOL, _In_ const SMALL_RECT*);
+
+/* Undocumented, see http://undoc.airesoft.co.uk/kernel32.dll/ConsoleMenuControl.php */
+HMENU WINAPI ConsoleMenuControl(_In_ HANDLE, _In_ DWORD, _In_ DWORD);
+/* Undocumented */
+BOOL WINAPI SetConsoleMenuClose(_In_ BOOL);
+/* Undocumented, see http://undoc.airesoft.co.uk/kernel32.dll/SetConsoleCursor.php */
+BOOL WINAPI SetConsoleCursor(_In_ HANDLE, _In_ HCURSOR);
+/* Undocumented, see http://undoc.airesoft.co.uk/kernel32.dll/ShowConsoleCursor.php */
+INT WINAPI ShowConsoleCursor(_In_ HANDLE, _In_ BOOL);
+
 BOOL WINAPI WriteConsoleA(HANDLE,CONST VOID*,DWORD,LPDWORD,LPVOID);
 BOOL WINAPI WriteConsoleW(HANDLE,CONST VOID*,DWORD,LPDWORD,LPVOID);
 

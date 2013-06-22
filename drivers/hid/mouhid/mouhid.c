@@ -10,7 +10,7 @@
 
 #include "mouhid.h"
 
-static USHORT MouHid_ButtonUpFlags[] = 
+static USHORT MouHid_ButtonUpFlags[] =
 {
     0xFF, /* unused */
     MOUSE_LEFT_BUTTON_DOWN,
@@ -20,7 +20,7 @@ static USHORT MouHid_ButtonUpFlags[] =
     MOUSE_BUTTON_5_DOWN
 };
 
-static USHORT MouHid_ButtonDownFlags[] = 
+static USHORT MouHid_ButtonDownFlags[] =
 {
     0xFF, /* unused */
     MOUSE_LEFT_BUTTON_UP,
@@ -29,6 +29,7 @@ static USHORT MouHid_ButtonDownFlags[] =
     MOUSE_BUTTON_4_UP,
     MOUSE_BUTTON_5_UP
 };
+
 
 VOID
 MouHid_GetButtonMove(
@@ -43,49 +44,134 @@ MouHid_GetButtonMove(
     *LastX = 0;
     *LastY = 0;
 
-    /* get scaled usage value x */
-    Status =  HidP_GetScaledUsageValue(HidP_Input, HID_USAGE_PAGE_GENERIC, HIDP_LINK_COLLECTION_UNSPECIFIED, HID_USAGE_GENERIC_X, (PLONG)LastX, DeviceExtension->PreparsedData, DeviceExtension->Report, DeviceExtension->ReportLength);
-    if (Status != HIDP_STATUS_SUCCESS)
+    if (!DeviceExtension->MouseAbsolute) 
     {
-        /* FIXME: handle more errors */
-        if (Status == HIDP_STATUS_BAD_LOG_PHY_VALUES)
+        /* get scaled usage value x */
+        Status =  HidP_GetScaledUsageValue(HidP_Input,
+                                       HID_USAGE_PAGE_GENERIC,
+                                       HIDP_LINK_COLLECTION_UNSPECIFIED,
+                                       HID_USAGE_GENERIC_X,
+                                       LastX,
+                                       DeviceExtension->PreparsedData,
+                                       DeviceExtension->Report,
+                                       DeviceExtension->ReportLength);
+
+        if (Status != HIDP_STATUS_SUCCESS)
         {
-            /* FIXME: assume it operates in absolute mode */
-            DeviceExtension->MouseAbsolute = TRUE;
+            /* FIXME: handle more errors */
+            if (Status == HIDP_STATUS_BAD_LOG_PHY_VALUES)
+            {
+                /* FIXME: assume it operates in absolute mode */
+                DeviceExtension->MouseAbsolute = TRUE;
 
-            /* get unscaled value */
-            Status = HidP_GetUsageValue(HidP_Input, HID_USAGE_PAGE_GENERIC, HIDP_LINK_COLLECTION_UNSPECIFIED, HID_USAGE_GENERIC_X, (PULONG)&ValueX, DeviceExtension->PreparsedData, DeviceExtension->Report, DeviceExtension->ReportLength);
+                /* get unscaled value */
+                Status = HidP_GetUsageValue(HidP_Input,
+                                        HID_USAGE_PAGE_GENERIC,
+                                        HIDP_LINK_COLLECTION_UNSPECIFIED,
+                                        HID_USAGE_GENERIC_X,
+                                        &ValueX,
+                                        DeviceExtension->PreparsedData,
+                                        DeviceExtension->Report,
+                                        DeviceExtension->ReportLength);
 
-            /* FIXME handle error */
-            ASSERT(Status == HIDP_STATUS_SUCCESS);
+                /* FIXME handle error */
+                ASSERT(Status == HIDP_STATUS_SUCCESS);
 
-            /* absolute pointing devices values need be in range 0 - 0xffff */
-            ASSERT(DeviceExtension->ValueCapsX.LogicalMax > 0);
+                /* absolute pointing devices values need be in range 0 - 0xffff */
+                ASSERT(DeviceExtension->ValueCapsX.LogicalMax > 0);
+                ASSERT(DeviceExtension->ValueCapsX.LogicalMax > DeviceExtension->ValueCapsX.LogicalMin);
 
-            *LastX = (ValueX * 0xFFFF) / DeviceExtension->ValueCapsX.LogicalMax;
+                /* convert to logical range */
+                *LastX = (ValueX * VIRTUAL_SCREEN_SIZE_X) / DeviceExtension->ValueCapsX.LogicalMax;
+            }
         }
     }
-
-    /* get scaled usage value y */
-    Status =  HidP_GetScaledUsageValue(HidP_Input, HID_USAGE_PAGE_GENERIC, HIDP_LINK_COLLECTION_UNSPECIFIED, HID_USAGE_GENERIC_Y, (PLONG)LastY, DeviceExtension->PreparsedData, DeviceExtension->Report, DeviceExtension->ReportLength);
-    if (Status != HIDP_STATUS_SUCCESS)
+    else
     {
-        // FIXME: handle more errors
-        if (Status == HIDP_STATUS_BAD_LOG_PHY_VALUES)
+        /* get unscaled value */
+        Status = HidP_GetUsageValue(HidP_Input,
+                                    HID_USAGE_PAGE_GENERIC,
+                                    HIDP_LINK_COLLECTION_UNSPECIFIED,
+                                    HID_USAGE_GENERIC_X,
+                                    &ValueX,
+                                    DeviceExtension->PreparsedData,
+                                    DeviceExtension->Report,
+                                    DeviceExtension->ReportLength);
+
+        /* FIXME handle error */
+        ASSERT(Status == HIDP_STATUS_SUCCESS);
+
+        /* absolute pointing devices values need be in range 0 - 0xffff */
+        ASSERT(DeviceExtension->ValueCapsX.LogicalMax > 0);
+        ASSERT(DeviceExtension->ValueCapsX.LogicalMax > DeviceExtension->ValueCapsX.LogicalMin);
+
+        /* convert to logical range */
+        *LastX = (ValueX * VIRTUAL_SCREEN_SIZE_X) / DeviceExtension->ValueCapsX.LogicalMax;
+    }
+
+    if (!DeviceExtension->MouseAbsolute)
+    {
+        /* get scaled usage value y */
+        Status =  HidP_GetScaledUsageValue(HidP_Input,
+                                       HID_USAGE_PAGE_GENERIC,
+                                       HIDP_LINK_COLLECTION_UNSPECIFIED,
+                                       HID_USAGE_GENERIC_Y,
+                                       LastY,
+                                       DeviceExtension->PreparsedData,
+                                       DeviceExtension->Report,
+                                       DeviceExtension->ReportLength);
+
+        if (Status != HIDP_STATUS_SUCCESS)
         {
-            // assume it operates in absolute mode
-            DeviceExtension->MouseAbsolute = TRUE;
+            // FIXME: handle more errors
+            if (Status == HIDP_STATUS_BAD_LOG_PHY_VALUES)
+            {
+                // assume it operates in absolute mode
+                DeviceExtension->MouseAbsolute = TRUE;
 
-            // get unscaled value
-            Status = HidP_GetUsageValue(HidP_Input, HID_USAGE_PAGE_GENERIC, HIDP_LINK_COLLECTION_UNSPECIFIED, HID_USAGE_GENERIC_Y, (PULONG)&ValueY, DeviceExtension->PreparsedData, DeviceExtension->Report, DeviceExtension->ReportLength);
+                // get unscaled value
+                Status = HidP_GetUsageValue(HidP_Input,
+                                        HID_USAGE_PAGE_GENERIC,
+                                        HIDP_LINK_COLLECTION_UNSPECIFIED,
+                                        HID_USAGE_GENERIC_Y,
+                                        &ValueY,
+                                        DeviceExtension->PreparsedData,
+                                        DeviceExtension->Report,
+                                        DeviceExtension->ReportLength);
 
-            /* FIXME handle error */
-            ASSERT(Status == HIDP_STATUS_SUCCESS);
+                /* FIXME handle error */
+                ASSERT(Status == HIDP_STATUS_SUCCESS);
 
-            /* absolute pointing devices values need be in range 0 - 0xffff */
-            ASSERT(DeviceExtension->ValueCapsY.LogicalMax);
-            *LastY = (ValueY * 0xFFFF) / DeviceExtension->ValueCapsY.LogicalMax;
+                /* absolute pointing devices values need be in range 0 - 0xffff */
+                ASSERT(DeviceExtension->ValueCapsY.LogicalMax > 0);
+                ASSERT(DeviceExtension->ValueCapsY.LogicalMax > DeviceExtension->ValueCapsY.LogicalMin);
+
+                /* convert to logical range */
+                *LastY = (ValueY * VIRTUAL_SCREEN_SIZE_Y) / DeviceExtension->ValueCapsY.LogicalMax;
+            }
         }
+    }
+    else
+    {
+        // get unscaled value
+        Status = HidP_GetUsageValue(HidP_Input,
+                                HID_USAGE_PAGE_GENERIC,
+                                HIDP_LINK_COLLECTION_UNSPECIFIED,
+                                HID_USAGE_GENERIC_Y,
+                                &ValueY,
+                                DeviceExtension->PreparsedData,
+                                DeviceExtension->Report,
+                                DeviceExtension->ReportLength);
+
+        /* FIXME handle error */
+        ASSERT(Status == HIDP_STATUS_SUCCESS);
+
+        /* absolute pointing devices values need be in range 0 - 0xffff */
+        ASSERT(DeviceExtension->ValueCapsY.LogicalMax > 0);
+        ASSERT(DeviceExtension->ValueCapsY.LogicalMax > DeviceExtension->ValueCapsY.LogicalMin);
+
+        /* convert to logical range */
+        *LastY = (ValueY * VIRTUAL_SCREEN_SIZE_Y) / DeviceExtension->ValueCapsY.LogicalMax;
     }
 }
 
@@ -107,7 +193,14 @@ MouHid_GetButtonFlags(
 
     /* get usages */
     CurrentUsageListLength = DeviceExtension->UsageListLength;
-    Status = HidP_GetUsages(HidP_Input, HID_USAGE_PAGE_BUTTON, HIDP_LINK_COLLECTION_UNSPECIFIED, DeviceExtension->CurrentUsageList, &CurrentUsageListLength, DeviceExtension->PreparsedData, DeviceExtension->Report, DeviceExtension->ReportLength);
+    Status = HidP_GetUsages(HidP_Input,
+                            HID_USAGE_PAGE_BUTTON,
+                            HIDP_LINK_COLLECTION_UNSPECIFIED,
+                            DeviceExtension->CurrentUsageList,
+                            &CurrentUsageListLength,
+                            DeviceExtension->PreparsedData,
+                            DeviceExtension->Report,
+                            DeviceExtension->ReportLength);
     if (Status != HIDP_STATUS_SUCCESS)
     {
         DPRINT1("MouHid_GetButtonFlags failed to get usages with %x\n", Status);
@@ -115,7 +208,11 @@ MouHid_GetButtonFlags(
     }
 
     /* extract usage list difference */
-    Status = HidP_UsageListDifference(DeviceExtension->PreviousUsageList, DeviceExtension->CurrentUsageList, DeviceExtension->BreakUsageList, DeviceExtension->MakeUsageList, DeviceExtension->UsageListLength);
+    Status = HidP_UsageListDifference(DeviceExtension->PreviousUsageList,
+                                      DeviceExtension->CurrentUsageList,
+                                      DeviceExtension->BreakUsageList,
+                                      DeviceExtension->MakeUsageList,
+                                      DeviceExtension->UsageListLength);
     if (Status != HIDP_STATUS_SUCCESS)
     {
         DPRINT1("MouHid_GetButtonFlags failed to get usages with %x\n", Status);
@@ -217,7 +314,7 @@ MouHid_ReadCompletion(
     USHORT Flags;
 
     /* get device extension */
-    DeviceExtension = (PMOUHID_DEVICE_EXTENSION)Context;
+    DeviceExtension = Context;
 
     if (Irp->IoStatus.Status == STATUS_PRIVILEGE_NOT_HELD ||
         Irp->IoStatus.Status == STATUS_DEVICE_NOT_CONNECTED ||
@@ -258,7 +355,14 @@ MouHid_ReadCompletion(
     {
         /* get usage */
         UsageValue = 0;
-        Status = HidP_GetScaledUsageValue(HidP_Input, HID_USAGE_PAGE_GENERIC, HIDP_LINK_COLLECTION_UNSPECIFIED, HID_USAGE_GENERIC_WHEEL, &UsageValue, DeviceExtension->PreparsedData, DeviceExtension->Report, DeviceExtension->ReportLength);
+        Status = HidP_GetScaledUsageValue(HidP_Input,
+                                          HID_USAGE_PAGE_GENERIC,
+                                          HIDP_LINK_COLLECTION_UNSPECIFIED,
+                                          HID_USAGE_GENERIC_WHEEL,
+                                          &UsageValue,
+                                          DeviceExtension->PreparsedData,
+                                          DeviceExtension->Report,
+                                          DeviceExtension->ReportLength);
         if (Status == HIDP_STATUS_SUCCESS && UsageValue != 0)
         {
             /* store wheel status */
@@ -277,7 +381,7 @@ MouHid_ReadCompletion(
         DeviceExtension->Report[3] & 0xFF, DeviceExtension->Report[4] & 0xFF,
         DeviceExtension->Report[5] & 0xFF, DeviceExtension->Report[6] & 0xFF);
 
-    DPRINT("[MOUHID] LastX %ld LastY %ld Flags %x ButtonData %x\n", MouseInputData.LastX, MouseInputData.LastY, MouseInputData.ButtonFlags, MouseInputData.ButtonData);
+    DPRINT("[MOUHID] LastX %ld LastY %ld Flags %x ButtonFlags %x ButtonData %x\n", MouseInputData.LastX, MouseInputData.LastY, MouseInputData.Flags, MouseInputData.ButtonFlags, MouseInputData.ButtonData);
 
     /* dispatch mouse action */
     MouHid_DispatchInputData(DeviceExtension, &MouseInputData);
@@ -332,7 +436,7 @@ MouHid_CreateCompletion(
     IN PIRP  Irp,
     IN PVOID  Context)
 {
-    KeSetEvent((PKEVENT)Context, 0, FALSE);
+    KeSetEvent(Context, 0, FALSE);
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
 
@@ -351,7 +455,7 @@ MouHid_Create(
     DPRINT("MOUHID: IRP_MJ_CREATE\n");
 
     /* get device extension */
-    DeviceExtension = (PMOUHID_DEVICE_EXTENSION)DeviceObject->DeviceExtension;
+    DeviceExtension = DeviceObject->DeviceExtension;
 
     /* get stack location */
     IoStack = IoGetCurrentIrpStackLocation(Irp);
@@ -422,7 +526,7 @@ MouHid_Close(
     PMOUHID_DEVICE_EXTENSION DeviceExtension;
 
     /* get device extension */
-    DeviceExtension = (PMOUHID_DEVICE_EXTENSION)DeviceObject->DeviceExtension;
+    DeviceExtension = DeviceObject->DeviceExtension;
 
     DPRINT("[MOUHID] IRP_MJ_CLOSE ReadReportActive %x\n", DeviceExtension->ReadReportActive);
 
@@ -467,11 +571,12 @@ MouHid_InternalDeviceControl(
     DPRINT("[MOUHID] InternalDeviceControl %x\n", IoStack->Parameters.DeviceIoControl.IoControlCode);
 
     /* get device extension */
-    DeviceExtension = (PMOUHID_DEVICE_EXTENSION)DeviceObject->DeviceExtension;
+    DeviceExtension = DeviceObject->DeviceExtension;
 
     /* handle requests */
-    if (IoStack->Parameters.DeviceIoControl.IoControlCode == IOCTL_MOUSE_QUERY_ATTRIBUTES)
+    switch (IoStack->Parameters.DeviceIoControl.IoControlCode)
     {
+    case IOCTL_MOUSE_QUERY_ATTRIBUTES:
          /* verify output buffer length */
          if (IoStack->Parameters.DeviceIoControl.OutputBufferLength < sizeof(MOUSE_ATTRIBUTES))
          {
@@ -483,7 +588,7 @@ MouHid_InternalDeviceControl(
          }
 
          /* get output buffer */
-         Attributes = (PMOUSE_ATTRIBUTES)Irp->AssociatedIrp.SystemBuffer;
+         Attributes = Irp->AssociatedIrp.SystemBuffer;
 
          /* type of mouse */
          Attributes->MouseIdentifier = DeviceExtension->MouseIdentifier;
@@ -507,9 +612,8 @@ MouHid_InternalDeviceControl(
          Irp->IoStatus.Status = STATUS_SUCCESS;
          IoCompleteRequest(Irp, IO_NO_INCREMENT);
          return STATUS_SUCCESS;
-    }
-    else if (IoStack->Parameters.DeviceIoControl.IoControlCode == IOCTL_INTERNAL_MOUSE_CONNECT)
-    {
+
+    case IOCTL_INTERNAL_MOUSE_CONNECT:
          /* verify input buffer length */
          if (IoStack->Parameters.DeviceIoControl.InputBufferLength < sizeof(CONNECT_DATA))
          {
@@ -529,7 +633,7 @@ MouHid_InternalDeviceControl(
          }
 
          /* get connect data */
-         Data = (PCONNECT_DATA)IoStack->Parameters.DeviceIoControl.Type3InputBuffer;
+         Data = IoStack->Parameters.DeviceIoControl.Type3InputBuffer;
 
          /* store connect details */
          DeviceExtension->ClassDeviceObject = Data->ClassDeviceObject;
@@ -539,23 +643,20 @@ MouHid_InternalDeviceControl(
          Irp->IoStatus.Status = STATUS_SUCCESS;
          IoCompleteRequest(Irp, IO_NO_INCREMENT);
          return STATUS_SUCCESS;
-    }
-    else if (IoStack->Parameters.DeviceIoControl.IoControlCode == IOCTL_INTERNAL_MOUSE_DISCONNECT)
-    {
+
+    case IOCTL_INTERNAL_MOUSE_DISCONNECT:
         /* not supported */
         Irp->IoStatus.Status = STATUS_NOT_IMPLEMENTED;
         IoCompleteRequest(Irp, IO_NO_INCREMENT);
         return STATUS_NOT_IMPLEMENTED;
-    }
-    else if (IoStack->Parameters.DeviceIoControl.IoControlCode == IOCTL_INTERNAL_MOUSE_ENABLE)
-    {
+
+    case IOCTL_INTERNAL_MOUSE_ENABLE:
         /* not supported */
         Irp->IoStatus.Status = STATUS_NOT_SUPPORTED;
         IoCompleteRequest(Irp, IO_NO_INCREMENT);
         return STATUS_NOT_SUPPORTED;
-    }
-    else if (IoStack->Parameters.DeviceIoControl.IoControlCode == IOCTL_INTERNAL_MOUSE_DISABLE)
-    {
+
+    case IOCTL_INTERNAL_MOUSE_DISABLE:
         /* not supported */
         Irp->IoStatus.Status = STATUS_INVALID_DEVICE_REQUEST;
         IoCompleteRequest(Irp, IO_NO_INCREMENT);
@@ -578,7 +679,7 @@ MouHid_DeviceControl(
     PMOUHID_DEVICE_EXTENSION DeviceExtension;
 
     /* get device extension */
-    DeviceExtension = (PMOUHID_DEVICE_EXTENSION)DeviceObject->DeviceExtension;
+    DeviceExtension = DeviceObject->DeviceExtension;
 
     /* skip stack location */
     IoSkipCurrentIrpStackLocation(Irp);
@@ -593,8 +694,25 @@ MouHid_Power(
     IN PDEVICE_OBJECT DeviceObject,
     IN PIRP Irp)
 {
-    UNIMPLEMENTED
-    return STATUS_NOT_IMPLEMENTED;
+    PMOUHID_DEVICE_EXTENSION DeviceExtension;
+
+    DeviceExtension = DeviceObject->DeviceExtension;
+    PoStartNextPowerIrp(Irp);
+    IoSkipCurrentIrpStackLocation(Irp);
+    return PoCallDriver(DeviceExtension->NextDeviceObject, Irp);
+}
+
+NTSTATUS
+NTAPI
+MouHid_SystemControl(
+    IN PDEVICE_OBJECT DeviceObject,
+    IN PIRP Irp)
+{
+    PMOUHID_DEVICE_EXTENSION DeviceExtension;
+
+    DeviceExtension = DeviceObject->DeviceExtension;
+    IoSkipCurrentIrpStackLocation(Irp);
+    return IoCallDriver(DeviceExtension->NextDeviceObject, Irp);
 }
 
 NTSTATUS
@@ -613,13 +731,21 @@ MouHid_SubmitRequest(
     IO_STATUS_BLOCK IoStatus;
 
     /* get device extension */
-    DeviceExtension = (PMOUHID_DEVICE_EXTENSION)DeviceObject->DeviceExtension;
+    DeviceExtension = DeviceObject->DeviceExtension;
 
     /* init event */
     KeInitializeEvent(&Event, NotificationEvent, FALSE);
 
     /* build request */
-    Irp = IoBuildDeviceIoControlRequest(IoControlCode, DeviceExtension->NextDeviceObject, InputBuffer, InputBufferSize, OutputBuffer, OutputBufferSize, FALSE, &Event, &IoStatus);
+    Irp = IoBuildDeviceIoControlRequest(IoControlCode,
+                                        DeviceExtension->NextDeviceObject,
+                                        InputBuffer,
+                                        InputBufferSize,
+                                        OutputBuffer,
+                                        OutputBufferSize,
+                                        FALSE,
+                                        &Event,
+                                        &IoStatus);
     if (!Irp)
     {
         /* no memory */
@@ -649,16 +775,21 @@ MouHid_StartDevice(
     HID_COLLECTION_INFORMATION Information;
     PVOID PreparsedData;
     HIDP_CAPS Capabilities;
-    ULONG ValueCapsLength;
+    USHORT ValueCapsLength;
     HIDP_VALUE_CAPS ValueCaps;
     PMOUHID_DEVICE_EXTENSION DeviceExtension;
-    PUSHORT Buffer;
+    PUSAGE Buffer;
 
     /* get device extension */
-    DeviceExtension = (PMOUHID_DEVICE_EXTENSION)DeviceObject->DeviceExtension;
+    DeviceExtension = DeviceObject->DeviceExtension;
 
     /* query collection information */
-    Status = MouHid_SubmitRequest(DeviceObject, IOCTL_HID_GET_COLLECTION_INFORMATION, 0, NULL, sizeof(HID_COLLECTION_INFORMATION), &Information);
+    Status = MouHid_SubmitRequest(DeviceObject,
+                                  IOCTL_HID_GET_COLLECTION_INFORMATION,
+                                  0,
+                                  NULL,
+                                  sizeof(HID_COLLECTION_INFORMATION),
+                                  &Information);
     if (!NT_SUCCESS(Status))
     {
         /* failed to query collection information */
@@ -667,7 +798,7 @@ MouHid_StartDevice(
     }
 
     /* lets allocate space for preparsed data */
-    PreparsedData = ExAllocatePool(NonPagedPool, Information.DescriptorSize);
+    PreparsedData = ExAllocatePoolWithTag(NonPagedPool, Information.DescriptorSize, MOUHID_TAG);
     if (!PreparsedData)
     {
         /* no memory */
@@ -676,12 +807,17 @@ MouHid_StartDevice(
     }
 
     /* now obtain the preparsed data */
-    Status = MouHid_SubmitRequest(DeviceObject, IOCTL_HID_GET_COLLECTION_DESCRIPTOR, 0, NULL, Information.DescriptorSize, PreparsedData);
+    Status = MouHid_SubmitRequest(DeviceObject,
+                                  IOCTL_HID_GET_COLLECTION_DESCRIPTOR,
+                                  0,
+                                  NULL,
+                                  Information.DescriptorSize,
+                                  PreparsedData);
     if (!NT_SUCCESS(Status))
     {
         /* failed to get preparsed data */
         DPRINT1("[MOUHID] failed to obtain collection information with %x\n", Status);
-        ExFreePool(PreparsedData);
+        ExFreePoolWithTag(PreparsedData, MOUHID_TAG);
         return Status;
     }
 
@@ -691,7 +827,7 @@ MouHid_StartDevice(
     {
         /* failed to get capabilities */
         DPRINT1("[MOUHID] failed to obtain caps with %x\n", Status);
-        ExFreePool(PreparsedData);
+        ExFreePoolWithTag(PreparsedData, MOUHID_TAG);
         return Status;
     }
 
@@ -701,37 +837,44 @@ MouHid_StartDevice(
     if ((Capabilities.Usage != HID_USAGE_GENERIC_POINTER && Capabilities.Usage != HID_USAGE_GENERIC_MOUSE) || Capabilities.UsagePage != HID_USAGE_PAGE_GENERIC)
     {
         /* not supported */
-        ExFreePool(PreparsedData);
+        ExFreePoolWithTag(PreparsedData, MOUHID_TAG);
         return STATUS_UNSUCCESSFUL;
     }
 
-    /* init input report*/
+    /* init input report */
     DeviceExtension->ReportLength = Capabilities.InputReportByteLength;
     ASSERT(DeviceExtension->ReportLength);
-    DeviceExtension->Report = (PCHAR)ExAllocatePool(NonPagedPool, DeviceExtension->ReportLength);
+    DeviceExtension->Report = ExAllocatePoolWithTag(NonPagedPool, DeviceExtension->ReportLength, MOUHID_TAG);
     ASSERT(DeviceExtension->Report);
     RtlZeroMemory(DeviceExtension->Report, DeviceExtension->ReportLength);
 
     /* build mdl */
-    DeviceExtension->ReportMDL = IoAllocateMdl(DeviceExtension->Report, DeviceExtension->ReportLength, FALSE, FALSE, NULL);
+    DeviceExtension->ReportMDL = IoAllocateMdl(DeviceExtension->Report,
+                                               DeviceExtension->ReportLength,
+                                               FALSE,
+                                               FALSE,
+                                               NULL);
     ASSERT(DeviceExtension->ReportMDL);
 
     /* init mdl */
     MmBuildMdlForNonPagedPool(DeviceExtension->ReportMDL);
 
     /* get max number of buttons */
-    Buttons = HidP_MaxUsageListLength(HidP_Input, HID_USAGE_PAGE_BUTTON, PreparsedData);
+    Buttons = HidP_MaxUsageListLength(HidP_Input,
+                                      HID_USAGE_PAGE_BUTTON,
+                                      PreparsedData);
     DPRINT("[MOUHID] Buttons %lu\n", Buttons);
     ASSERT(Buttons > 0);
 
     /* now allocate an array for those buttons */
-    Buffer = ExAllocatePool(NonPagedPool, sizeof(USAGE) * 4 * Buttons);
+    Buffer = ExAllocatePoolWithTag(NonPagedPool, sizeof(USAGE) * 4 * Buttons, MOUHID_TAG);
     if (!Buffer)
     {
         /* no memory */
-        ExFreePool(PreparsedData);
+        ExFreePoolWithTag(PreparsedData, MOUHID_TAG);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
+    DeviceExtension->UsageListBuffer = Buffer;
 
     /* init usage lists */
     RtlZeroMemory(Buffer, sizeof(USAGE) * 4 * Buttons);
@@ -750,14 +893,32 @@ MouHid_StartDevice(
     DeviceExtension->PreparsedData = PreparsedData;
 
     ValueCapsLength = 1;
-    HidP_GetSpecificValueCaps(HidP_Input, HID_USAGE_PAGE_GENERIC, HIDP_LINK_COLLECTION_UNSPECIFIED, HID_USAGE_GENERIC_X, &DeviceExtension->ValueCapsX, &ValueCapsLength, PreparsedData);
+    HidP_GetSpecificValueCaps(HidP_Input,
+                              HID_USAGE_PAGE_GENERIC,
+                              HIDP_LINK_COLLECTION_UNSPECIFIED,
+                              HID_USAGE_GENERIC_X,
+                              &DeviceExtension->ValueCapsX,
+                              &ValueCapsLength,
+                              PreparsedData);
 
     ValueCapsLength = 1;
-    HidP_GetSpecificValueCaps(HidP_Input, HID_USAGE_PAGE_GENERIC, HIDP_LINK_COLLECTION_UNSPECIFIED, HID_USAGE_GENERIC_Y, &DeviceExtension->ValueCapsY, &ValueCapsLength, PreparsedData);
+    HidP_GetSpecificValueCaps(HidP_Input,
+                              HID_USAGE_PAGE_GENERIC,
+                              HIDP_LINK_COLLECTION_UNSPECIFIED,
+                              HID_USAGE_GENERIC_Y,
+                              &DeviceExtension->ValueCapsY,
+                              &ValueCapsLength,
+                              PreparsedData);
 
     /* now check for wheel mouse support */
     ValueCapsLength = 1;
-    Status = HidP_GetSpecificValueCaps(HidP_Input, HID_USAGE_PAGE_GENERIC, HIDP_LINK_COLLECTION_UNSPECIFIED, HID_USAGE_GENERIC_WHEEL, &ValueCaps, &ValueCapsLength, PreparsedData);
+    Status = HidP_GetSpecificValueCaps(HidP_Input,
+                                       HID_USAGE_PAGE_GENERIC,
+                                       HIDP_LINK_COLLECTION_UNSPECIFIED,
+                                       HID_USAGE_GENERIC_WHEEL,
+                                       &ValueCaps,
+                                       &ValueCapsLength,
+                                       PreparsedData);
     if (Status == HIDP_STATUS_SUCCESS )
     {
         /* mouse has wheel support */
@@ -769,7 +930,13 @@ MouHid_StartDevice(
     {
         /* check if the mouse has z-axis */
         ValueCapsLength = 1;
-        Status = HidP_GetSpecificValueCaps(HidP_Input, HID_USAGE_PAGE_GENERIC, HIDP_LINK_COLLECTION_UNSPECIFIED, HID_USAGE_GENERIC_Z, &ValueCaps, &ValueCapsLength, PreparsedData);
+        Status = HidP_GetSpecificValueCaps(HidP_Input,
+                                           HID_USAGE_PAGE_GENERIC,
+                                           HIDP_LINK_COLLECTION_UNSPECIFIED,
+                                           HID_USAGE_GENERIC_Z,
+                                           &ValueCaps,
+                                           &ValueCapsLength,
+                                           PreparsedData);
         if (Status == HIDP_STATUS_SUCCESS && ValueCapsLength == 1)
         {
             /* wheel support */
@@ -777,6 +944,14 @@ MouHid_StartDevice(
             DeviceExtension->WheelUsagePage = ValueCaps.UsagePage;
             DPRINT("[MOUHID] mouse wheel support detected with z-axis\n", Status);
         }
+    }
+
+    /* check if mice is absolute */
+    if (DeviceExtension->ValueCapsY.LogicalMax > DeviceExtension->ValueCapsY.LogicalMin ||
+        DeviceExtension->ValueCapsX.LogicalMax > DeviceExtension->ValueCapsX.LogicalMin)
+    {
+        /* mice is absolute */
+        DeviceExtension->MouseAbsolute = TRUE;
     }
 
     /* completed successfully */
@@ -790,8 +965,50 @@ MouHid_StartDeviceCompletion(
     IN PIRP  Irp,
     IN PVOID  Context)
 {
-    KeSetEvent((PKEVENT)Context, 0, FALSE);
+    KeSetEvent(Context, 0, FALSE);
     return STATUS_MORE_PROCESSING_REQUIRED;
+}
+
+NTSTATUS
+NTAPI
+MouHid_FreeResources(
+    IN PDEVICE_OBJECT DeviceObject)
+{
+    PMOUHID_DEVICE_EXTENSION DeviceExtension;
+
+    /* get device extension */
+    DeviceExtension = DeviceObject->DeviceExtension;
+
+    /* free resources */
+    if (DeviceExtension->PreparsedData)
+    {
+        ExFreePoolWithTag(DeviceExtension->PreparsedData, MOUHID_TAG);
+        DeviceExtension->PreparsedData = NULL;
+    }
+
+    if (DeviceExtension->UsageListBuffer)
+    {
+        ExFreePoolWithTag(DeviceExtension->UsageListBuffer, MOUHID_TAG);
+        DeviceExtension->UsageListBuffer = NULL;
+        DeviceExtension->CurrentUsageList = NULL;
+        DeviceExtension->PreviousUsageList = NULL;
+        DeviceExtension->MakeUsageList = NULL;
+        DeviceExtension->BreakUsageList = NULL;
+    }
+
+    if (DeviceExtension->ReportMDL)
+    {
+        IoFreeMdl(DeviceExtension->ReportMDL);
+        DeviceExtension->ReportMDL = NULL;
+    }
+
+    if (DeviceExtension->Report)
+    {
+        ExFreePoolWithTag(DeviceExtension->Report, MOUHID_TAG);
+        DeviceExtension->Report = NULL;
+    }
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -804,7 +1021,7 @@ MouHid_Flush(
     PMOUHID_DEVICE_EXTENSION DeviceExtension;
 
     /* get device extension */
-    DeviceExtension = (PMOUHID_DEVICE_EXTENSION)DeviceObject->DeviceExtension;
+    DeviceExtension = DeviceObject->DeviceExtension;
 
     /* skip current stack location */
     IoSkipCurrentIrpStackLocation(Irp);
@@ -832,18 +1049,22 @@ MouHid_Pnp(
     PMOUHID_DEVICE_EXTENSION DeviceExtension;
 
     /* get device extension */
-    DeviceExtension = (PMOUHID_DEVICE_EXTENSION)DeviceObject->DeviceExtension;
+    DeviceExtension = DeviceObject->DeviceExtension;
 
     /* get current irp stack */
     IoStack = IoGetCurrentIrpStackLocation(Irp);
     DPRINT("[MOUHID] IRP_MJ_PNP Request: %x\n", IoStack->MinorFunction);
 
-    if (IoStack->MinorFunction == IRP_MN_STOP_DEVICE ||
-        IoStack->MinorFunction == IRP_MN_CANCEL_REMOVE_DEVICE ||
-        IoStack->MinorFunction == IRP_MN_QUERY_STOP_DEVICE ||
-        IoStack->MinorFunction == IRP_MN_CANCEL_STOP_DEVICE ||
-        IoStack->MinorFunction == IRP_MN_QUERY_REMOVE_DEVICE)
+    switch (IoStack->MinorFunction)
     {
+    case IRP_MN_STOP_DEVICE:
+    case IRP_MN_SURPRISE_REMOVAL:
+        /* free resources */
+        MouHid_FreeResources(DeviceObject);
+    case IRP_MN_CANCEL_REMOVE_DEVICE:
+    case IRP_MN_QUERY_STOP_DEVICE:
+    case IRP_MN_CANCEL_STOP_DEVICE:
+    case IRP_MN_QUERY_REMOVE_DEVICE:
         /* indicate success */
         Irp->IoStatus.Status = STATUS_SUCCESS;
 
@@ -852,9 +1073,8 @@ MouHid_Pnp(
 
         /* dispatch to lower device */
         return IoCallDriver(DeviceExtension->NextDeviceObject, Irp);
-    }
-    else if (IoStack->MinorFunction == IRP_MN_REMOVE_DEVICE)
-    {
+
+    case IRP_MN_REMOVE_DEVICE:
         /* FIXME synchronization */
 
         /* request stop */
@@ -862,6 +1082,9 @@ MouHid_Pnp(
 
         /* cancel irp */
         IoCancelIrp(DeviceExtension->Irp);
+
+        /* free resources */
+        MouHid_FreeResources(DeviceObject);
 
         /* indicate success */
         Irp->IoStatus.Status = STATUS_SUCCESS;
@@ -886,9 +1109,8 @@ MouHid_Pnp(
 
         /* done */
         return Status;
-    }
-    else if (IoStack->MinorFunction == IRP_MN_START_DEVICE)
-    {
+
+    case IRP_MN_START_DEVICE:
         /* init event */
         KeInitializeEvent(&Event, NotificationEvent, FALSE);
 
@@ -925,9 +1147,8 @@ MouHid_Pnp(
 
         /* done */
         return Status;
-    }
-    else
-    {
+
+    default:
         /* skip irp stack location */
         IoSkipCurrentIrpStackLocation(Irp);
 
@@ -948,7 +1169,13 @@ MouHid_AddDevice(
     POWER_STATE State;
 
     /* create device object */
-    Status = IoCreateDevice(DriverObject, sizeof(MOUHID_DEVICE_EXTENSION), NULL, FILE_DEVICE_MOUSE, 0, FALSE, &DeviceObject);
+    Status = IoCreateDevice(DriverObject,
+                            sizeof(MOUHID_DEVICE_EXTENSION),
+                            NULL,
+                            FILE_DEVICE_MOUSE,
+                            0,
+                            FALSE,
+                            &DeviceObject);
     if (!NT_SUCCESS(Status))
     {
         /* failed to create device object */
@@ -965,7 +1192,7 @@ MouHid_AddDevice(
     }
 
     /* get device extension */
-    DeviceExtension = (PMOUHID_DEVICE_EXTENSION)DeviceObject->DeviceExtension;
+    DeviceExtension = DeviceObject->DeviceExtension;
 
     /* zero extension */
     RtlZeroMemory(DeviceExtension, sizeof(MOUHID_DEVICE_EXTENSION));
@@ -1021,6 +1248,7 @@ DriverEntry(
     DriverObject->MajorFunction[IRP_MJ_INTERNAL_DEVICE_CONTROL] = MouHid_InternalDeviceControl;
     DriverObject->MajorFunction[IRP_MJ_POWER] = MouHid_Power;
     DriverObject->MajorFunction[IRP_MJ_PNP] = MouHid_Pnp;
+    DriverObject->MajorFunction[IRP_MJ_SYSTEM_CONTROL] = MouHid_SystemControl;
     DriverObject->DriverUnload = MouHid_Unload;
     DriverObject->DriverExtension->AddDevice = MouHid_AddDevice;
 

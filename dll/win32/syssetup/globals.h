@@ -61,10 +61,14 @@ extern HINSTANCE hDllInstance;
 extern HINF hSysSetupInf;
 extern SETUPDATA SetupData;
 
+BOOL RegisterTypeLibraries (HINF hinf, LPCWSTR szSection);
+
 /* security.c */
 NTSTATUS SetAccountDomain(LPCWSTR DomainName,
                           PSID DomainSid);
 VOID InstallSecurity(VOID);
+NTSTATUS
+SetAdministratorPassword(LPCWSTR Password);
 
 /* wizard.c */
 VOID InstallWizard (VOID);

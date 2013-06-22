@@ -194,7 +194,6 @@ extern "C" {
 #define PROFILE_USER			0x10000000
 #define PROFILE_KERNEL			0x20000000
 #define PROFILE_SERVER			0x40000000
-#define CONSOLE_TEXTMODE_BUFFER 1
 #define CREATE_NEW	1
 #define CREATE_ALWAYS	2
 #define OPEN_EXISTING	3
@@ -769,10 +768,15 @@ typedef struct _DEBUG_EVENT {
 typedef struct _OVERLAPPED {
 	ULONG_PTR Internal;
 	ULONG_PTR InternalHigh;
-	DWORD Offset;
-	DWORD OffsetHigh;
+	union {
+		struct {
+			DWORD Offset;
+			DWORD OffsetHigh;
+		} DUMMYSTRUCTNAME;
+		PVOID Pointer;
+	} DUMMYUNIONNAME;
 	HANDLE hEvent;
-} OVERLAPPED,*POVERLAPPED,*LPOVERLAPPED;
+} OVERLAPPED, *POVERLAPPED, *LPOVERLAPPED;
 
 typedef struct _STARTUPINFOA {
 	DWORD	cb;

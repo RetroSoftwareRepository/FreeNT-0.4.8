@@ -68,9 +68,8 @@ ScmLoadDriver(LPCWSTR lpServiceName)
 
     /* Build the driver path */
     /* 52 = wcslen(L"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\") */
-    pszDriverPath = RtlAllocateHeap(ConSrvHeap,
-                                    HEAP_ZERO_MEMORY,
-                                    (52 + wcslen(lpServiceName) + 1) * sizeof(WCHAR));
+    pszDriverPath = ConsoleAllocHeap(HEAP_ZERO_MEMORY,
+                                     (52 + wcslen(lpServiceName) + 1) * sizeof(WCHAR));
     if (pszDriverPath == NULL)
         return ERROR_NOT_ENOUGH_MEMORY;
 
@@ -105,7 +104,7 @@ ScmLoadDriver(LPCWSTR lpServiceName)
                        &WasPrivilegeEnabled);
 
 done:
-    RtlFreeHeap(ConSrvHeap, 0, pszDriverPath);
+    ConsoleFreeHeap(pszDriverPath);
     return RtlNtStatusToDosError(Status);
 }
 
@@ -120,9 +119,8 @@ ScmUnloadDriver(LPCWSTR lpServiceName)
 
     /* Build the driver path */
     /* 52 = wcslen(L"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\") */
-    pszDriverPath = RtlAllocateHeap(ConSrvHeap,
-                                    HEAP_ZERO_MEMORY,
-                                    (52 + wcslen(lpServiceName) + 1) * sizeof(WCHAR));
+    pszDriverPath = ConsoleAllocHeap(HEAP_ZERO_MEMORY,
+                                     (52 + wcslen(lpServiceName) + 1) * sizeof(WCHAR));
     if (pszDriverPath == NULL)
         return ERROR_NOT_ENOUGH_MEMORY;
 
@@ -157,7 +155,7 @@ ScmUnloadDriver(LPCWSTR lpServiceName)
                        &WasPrivilegeEnabled);
 
 done:
-    RtlFreeHeap(ConSrvHeap, 0, pszDriverPath);
+    ConsoleFreeHeap(pszDriverPath);
     return RtlNtStatusToDosError(Status);
 }
 #endif
@@ -185,8 +183,7 @@ TuiSwapConsole(INT Next)
         SwapConsole = (0 < Next ? GetNextConsole(SwapConsole) : GetPrevConsole(SwapConsole));
         Title.MaximumLength = RtlUnicodeStringToAnsiSize(&SwapConsole->Console->Title);
         Title.Length = 0;
-        Buffer = RtlAllocateHeap(ConSrvHeap, 0,
-                                 sizeof(COORD) + Title.MaximumLength);
+        Buffer = ConsoleAllocHeap(0, sizeof(COORD) + Title.MaximumLength);
         pos = (PCOORD)Buffer;
         Title.Buffer = (PVOID)((ULONG_PTR)Buffer + sizeof(COORD));
 
@@ -201,7 +198,7 @@ TuiSwapConsole(INT Next)
         {
             DPRINT1( "Error writing to console\n" );
         }
-        RtlFreeHeap(ConSrvHeap, 0, Buffer);
+        ConsoleFreeHeap(Buffer);
         LeaveCriticalSection(&ActiveVirtConsLock);
 
         return TRUE;
@@ -233,23 +230,25 @@ TuiSwapConsole(INT Next)
 }
 
 static VOID FASTCALL
-TuiCopyRect(char *Dest, PCONSOLE_SCREEN_BUFFER Buff, SMALL_RECT* Region)
+TuiCopyRect(PCHAR Dest, PTEXTMODE_SCREEN_BUFFER Buff, SMALL_RECT* Region)
 {
     UINT SrcDelta, DestDelta;
     LONG i;
-    PBYTE Src, SrcEnd;
+    PCHAR_INFO Src, SrcEnd;
 
     Src = ConioCoordToPointer(Buff, Region->Left, Region->Top);
-    SrcDelta = Buff->ScreenBufferSize.X * 2;
-    SrcEnd = Buff->Buffer + Buff->ScreenBufferSize.Y * Buff->ScreenBufferSize.X * 2;
-    DestDelta = ConioRectWidth(Region) * 2;
+    SrcDelta = Buff->ScreenBufferSize.X * sizeof(CHAR_INFO);
+    SrcEnd = Buff->Buffer + Buff->ScreenBufferSize.Y * Buff->ScreenBufferSize.X * sizeof(CHAR_INFO);
+    DestDelta = ConioRectWidth(Region) * 2 /* 2 == sizeof(CHAR) + sizeof(BYTE) */;
     for (i = Region->Top; i <= Region->Bottom; i++)
     {
-        memcpy(Dest, Src, DestDelta);
+        ConsoleUnicodeCharToAnsiChar(Buff->Header.Console, (PCHAR)Dest, &Src->Char.UnicodeChar);
+        *(PBYTE)(Dest + 1) = (BYTE)Src->Attributes;
+
         Src += SrcDelta;
         if (SrcEnd <= Src)
         {
-            Src -= Buff->ScreenBufferSize.Y * Buff->ScreenBufferSize.X * 2;
+            Src -= Buff->ScreenBufferSize.Y * Buff->ScreenBufferSize.X * sizeof(CHAR_INFO);
         }
         Dest += DestDelta;
     }
@@ -476,22 +475,7 @@ TuiCleanupConsole(PCONSOLE Console)
 
     Console->TermIFace.Data = NULL;
     DeleteCriticalSection(&TuiData->Lock);
-    RtlFreeHeap(ConSrvHeap, 0, TuiData);
-}
-
-static VOID WINAPI
-TuiWriteStream(PCONSOLE Console, SMALL_RECT* Region, SHORT CursorStartX, SHORT CursorStartY,
-               UINT ScrolledLines, CHAR *Buffer, UINT Length)
-{
-    DWORD BytesWritten;
-    PCONSOLE_SCREEN_BUFFER Buff = Console->ActiveBuffer;
-
-    if (ActiveConsole->Console->ActiveBuffer != Buff) return;
-
-    if (!WriteFile(ConsoleDeviceHandle, Buffer, Length, &BytesWritten, NULL))
-    {
-        DPRINT1("Error writing to BlueScreen\n");
-    }
+    ConsoleFreeHeap(TuiData);
 }
 
 static VOID WINAPI
@@ -502,14 +486,14 @@ TuiDrawRegion(PCONSOLE Console, SMALL_RECT* Region)
     PCONSOLE_DRAW ConsoleDraw;
     UINT ConsoleDrawSize;
 
-    if (ActiveConsole->Console != Console) return;
+    if (ActiveConsole->Console != Console || GetType(Buff) != TEXTMODE_BUFFER) return;
 
     ConsoleDrawSize = sizeof(CONSOLE_DRAW) +
                       (ConioRectWidth(Region) * ConioRectHeight(Region)) * 2;
-    ConsoleDraw = RtlAllocateHeap(ConSrvHeap, 0, ConsoleDrawSize);
+    ConsoleDraw = ConsoleAllocHeap(0, ConsoleDrawSize);
     if (NULL == ConsoleDraw)
     {
-        DPRINT1("RtlAllocateHeap failed\n");
+        DPRINT1("ConsoleAllocHeap failed\n");
         return;
     }
     ConsoleDraw->X = Region->Left;
@@ -519,17 +503,46 @@ TuiDrawRegion(PCONSOLE Console, SMALL_RECT* Region)
     ConsoleDraw->CursorX = Buff->CursorPosition.X;
     ConsoleDraw->CursorY = Buff->CursorPosition.Y;
 
-    TuiCopyRect((char *) (ConsoleDraw + 1), Buff, Region);
+    TuiCopyRect((PCHAR)(ConsoleDraw + 1), (PTEXTMODE_SCREEN_BUFFER)Buff, Region);
 
     if (!DeviceIoControl(ConsoleDeviceHandle, IOCTL_CONSOLE_DRAW,
                          NULL, 0, ConsoleDraw, ConsoleDrawSize, &BytesReturned, NULL))
     {
         DPRINT1("Failed to draw console\n");
-        RtlFreeHeap(ConSrvHeap, 0, ConsoleDraw);
+        ConsoleFreeHeap(ConsoleDraw);
         return;
     }
 
-    RtlFreeHeap(ConSrvHeap, 0, ConsoleDraw);
+    ConsoleFreeHeap(ConsoleDraw);
+}
+
+static VOID WINAPI
+TuiWriteStream(PCONSOLE Console, SMALL_RECT* Region, SHORT CursorStartX, SHORT CursorStartY,
+               UINT ScrolledLines, PWCHAR Buffer, UINT Length)
+{
+    PCONSOLE_SCREEN_BUFFER Buff = Console->ActiveBuffer;
+    PCHAR NewBuffer;
+    ULONG NewLength;
+    DWORD BytesWritten;
+
+    if (ActiveConsole->Console->ActiveBuffer != Buff) return;
+
+    NewLength = WideCharToMultiByte(Console->OutputCodePage, 0,
+                                    Buffer, Length,
+                                    NULL, 0, NULL, NULL);
+    NewBuffer = RtlAllocateHeap(RtlGetProcessHeap(), 0, NewLength * sizeof(CHAR));
+    if (!NewBuffer) return;
+
+    WideCharToMultiByte(Console->OutputCodePage, 0,
+                        Buffer, Length,
+                        NewBuffer, NewLength, NULL, NULL);
+
+    if (!WriteFile(ConsoleDeviceHandle, NewBuffer, NewLength * sizeof(CHAR), &BytesWritten, NULL))
+    {
+        DPRINT1("Error writing to BlueScreen\n");
+    }
+
+    RtlFreeHeap(RtlGetProcessHeap(), 0, NewBuffer);
 }
 
 static BOOL WINAPI
@@ -560,9 +573,10 @@ TuiSetScreenInfo(PCONSOLE Console, PCONSOLE_SCREEN_BUFFER Buff, SHORT OldCursorX
     DWORD BytesReturned;
 
     if (ActiveConsole->Console->ActiveBuffer != Buff) return TRUE;
+    if (GetType(Buff) != TEXTMODE_BUFFER) return FALSE;
 
     Info.dwCursorPosition = Buff->CursorPosition;
-    Info.wAttributes = Buff->ScreenDefaultAttrib;
+    Info.wAttributes = ((PTEXTMODE_SCREEN_BUFFER)Buff)->ScreenDefaultAttrib;
 
     if (!DeviceIoControl(ConsoleDeviceHandle, IOCTL_CONSOLE_SET_SCREEN_BUFFER_INFO,
                          &Info, sizeof(CONSOLE_SCREEN_BUFFER_INFO), NULL, 0,
@@ -573,18 +587,6 @@ TuiSetScreenInfo(PCONSOLE Console, PCONSOLE_SCREEN_BUFFER Buff, SHORT OldCursorX
     }
 
     return TRUE;
-}
-
-static BOOL WINAPI
-TuiUpdateScreenInfo(PCONSOLE Console, PCONSOLE_SCREEN_BUFFER Buff)
-{
-    return TRUE;
-}
-
-static BOOL WINAPI
-TuiIsBufferResizeSupported(PCONSOLE Console)
-{
-    return (Console && Console->State == CONSOLE_INITIALIZING ? TRUE : FALSE);
 }
 
 static VOID WINAPI
@@ -643,22 +645,64 @@ TuiGetLargestConsoleWindowSize(PCONSOLE Console, PCOORD pSize)
     *pSize = PhysicalConsoleSize;
 }
 
+static ULONG WINAPI
+TuiGetDisplayMode(PCONSOLE Console)
+{
+    return CONSOLE_FULLSCREEN_HARDWARE; // CONSOLE_FULLSCREEN;
+}
+
+static BOOL WINAPI
+TuiSetDisplayMode(PCONSOLE Console, ULONG NewMode)
+{
+    // if (NewMode & ~(CONSOLE_FULLSCREEN_MODE | CONSOLE_WINDOWED_MODE))
+    //     return FALSE;
+    return TRUE;
+}
+
+static INT WINAPI
+TuiShowMouseCursor(PCONSOLE Console, BOOL Show)
+{
+    return 0;
+}
+
+static BOOL WINAPI
+TuiSetMouseCursor(PCONSOLE Console, HCURSOR hCursor)
+{
+    return TRUE;
+}
+
+static HMENU WINAPI
+TuiMenuControl(PCONSOLE Console, UINT cmdIdLow, UINT cmdIdHigh)
+{
+    return NULL;
+}
+
+static BOOL WINAPI
+TuiSetMenuClose(PCONSOLE Console, BOOL Enable)
+{
+    return TRUE;
+}
+
 static FRONTEND_VTBL TuiVtbl =
 {
     TuiCleanupConsole,
-    TuiWriteStream,
     TuiDrawRegion,
+    TuiWriteStream,
     TuiSetCursorInfo,
     TuiSetScreenInfo,
-    TuiUpdateScreenInfo,
-    TuiIsBufferResizeSupported,
     TuiResizeTerminal,
     TuiProcessKeyCallback,
     TuiRefreshInternalInfo,
     TuiChangeTitle,
     TuiChangeIcon,
     TuiGetConsoleWindowHandle,
-    TuiGetLargestConsoleWindowSize
+    TuiGetLargestConsoleWindowSize,
+    TuiGetDisplayMode,
+    TuiSetDisplayMode,
+    TuiShowMouseCursor,
+    TuiSetMouseCursor,
+    TuiMenuControl,
+    TuiSetMenuClose,
 };
 
 NTSTATUS FASTCALL
@@ -673,14 +717,16 @@ TuiInitConsole(PCONSOLE Console,
     if (Console == NULL || ConsoleInfo == NULL)
         return STATUS_INVALID_PARAMETER;
 
+    if (GetType(Console->ActiveBuffer) != TEXTMODE_BUFFER)
+        return STATUS_INVALID_PARAMETER;
+
     /* Initialize the TUI terminal emulator */
     if (!TuiInit(Console->CodePage)) return STATUS_UNSUCCESSFUL;
 
     /* Initialize the console */
     Console->TermIFace.Vtbl = &TuiVtbl;
 
-    TuiData = RtlAllocateHeap(ConSrvHeap, HEAP_ZERO_MEMORY,
-                              sizeof(TUI_CONSOLE_DATA));
+    TuiData = ConsoleAllocHeap(HEAP_ZERO_MEMORY, sizeof(TUI_CONSOLE_DATA));
     if (!TuiData)
     {
         DPRINT1("CONSRV: Failed to create TUI_CONSOLE_DATA\n");
@@ -697,8 +743,10 @@ TuiInitConsole(PCONSOLE Console,
      * the console size when we display it with the hardware.
      */
     Console->ConsoleSize = PhysicalConsoleSize;
-    ConioResizeBuffer(Console, Console->ActiveBuffer, PhysicalConsoleSize);
-    Console->ActiveBuffer->DisplayMode |= CONSOLE_FULLSCREEN_MODE;
+    ConioResizeBuffer(Console, (PTEXTMODE_SCREEN_BUFFER)(Console->ActiveBuffer), PhysicalConsoleSize);
+
+    /* The console cannot be resized anymore */
+    Console->FixedSize = TRUE; // MUST be placed AFTER the call to ConioResizeBuffer !!
     // ConioResizeTerminal(Console);
 
     /*

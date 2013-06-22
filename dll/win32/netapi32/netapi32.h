@@ -24,6 +24,7 @@
 #include <wine/list.h>
 
 #define NTOS_MODE_USER
+#include <ndk/kefuncs.h>
 #include <ndk/rtlfuncs.h>
 #include <ntsam.h>
 
@@ -51,5 +52,15 @@ NTSTATUS
 OpenBuiltinDomain(IN SAM_HANDLE ServerHandle,
                   IN ULONG DesiredAccess,
                   OUT SAM_HANDLE *DomainHandle);
+
+NET_API_STATUS
+BuildSidFromSidAndRid(IN PSID SrcSid,
+                      IN ULONG RelativeId,
+                      OUT PSID *DestSid);
+
+/* wksta.c */
+
+BOOL
+NETAPI_IsLocalComputer(LMCSTR ServerName);
 
 #endif

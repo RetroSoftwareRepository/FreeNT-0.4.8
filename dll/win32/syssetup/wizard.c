@@ -709,7 +709,8 @@ ComputerPageDlgProc(HWND hwndDlg,
                         Password++;
                     }
 
-                    /* FIXME: Set admin password */
+                    /* Set admin password */
+                    SetAdministratorPassword(Password1);
                     break;
 
                 case PSN_WIZBACK:
@@ -1684,6 +1685,8 @@ RegistrationProc(LPVOID Parameter)
 
     SetupTermDefaultQueueCallback(RegistrationData->DefaultContext);
     HeapFree(GetProcessHeap(), 0, RegistrationData);
+
+    RegisterTypeLibraries(hSysSetupInf, L"TypeLibraries");
 
     // FIXME: Move this call to a separate cleanup page!
     RtlCreateBootStatusDataFile();
