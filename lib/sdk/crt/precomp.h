@@ -30,7 +30,10 @@
 
 /* PSDK/NDK Headers */
 #define WIN32_NO_STATUS
-#include <windows.h>
+#include <windef.h>
+#include <winbase.h>
+#include <wincon.h>
+#include <winuser.h>
 #include <ndk/rtlfuncs.h>
 
 #if !defined(_MSC_VER)
@@ -60,6 +63,7 @@ WINE_DEFAULT_DEBUG_CHANNEL(msvcrt);
 #include <internal/locale.h>
 #include <internal/math.h>
 #include <internal/mbstring.h>
+#include <internal/misc.h>
 #include <internal/mtdll.h>
 #include <internal/rterror.h>
 #include <internal/safecrt.h>

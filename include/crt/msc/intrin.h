@@ -117,6 +117,8 @@ void __movsd(unsigned long * Destination, unsigned long const * Source, size_t C
 #pragma intrinsic(__movsd)
 #endif
 #ifdef _M_AMD64
+void __stosq(unsigned __int64 * Dest, unsigned __int64 Data, size_t Count);
+#pragma intrinsic(__stosq)
 void __movsq(unsigned __int64 * Destination, unsigned __int64 const * Source, size_t Count);
 #pragma intrinsic(__movsq)
 #endif
@@ -189,6 +191,12 @@ unsigned char _BitScanForward(unsigned long * Index, unsigned long Mask);
 #pragma intrinsic(_BitScanForward)
 unsigned char _BitScanReverse(unsigned long * Index, unsigned long Mask);
 #pragma intrinsic(_BitScanReverse)
+#ifdef _WIN64
+unsigned char _BitScanForward64(unsigned long * Index, unsigned long long Mask);
+#pragma intrinsic(_BitScanForward64)
+unsigned char _BitScanReverse64(unsigned long * Index, unsigned long long Mask);
+#pragma intrinsic(_BitScanReverse64)
+#endif
 unsigned char _bittest(const long * a, long b);
 #pragma intrinsic(_bittest)
 unsigned char _bittestandcomplement(long * a, long b);

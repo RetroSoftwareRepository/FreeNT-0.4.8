@@ -48,7 +48,7 @@ TODO:
 13. Reorder of columns doesn't work - might be bug in comctl32
 */
 
-#include <precomp.h>
+#include "precomp.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(shell);
 
@@ -2407,7 +2407,8 @@ HRESULT STDMETHODCALLTYPE CDefView::SetCurrentViewMode(UINT ViewMode)
     DWORD dwStyle;
     TRACE("(%p)->(%u), stub\n", this, ViewMode);
 
-    if ((ViewMode < FVM_FIRST || ViewMode > FVM_LAST) /* && (ViewMode != FVM_AUTO) */ )
+    /* It's not redundant to check FVM_AUTO because it's a (UINT)-1 */
+    if ((ViewMode < FVM_FIRST || ViewMode > FVM_LAST) && (ViewMode != (UINT)FVM_AUTO))
         return E_INVALIDARG;
 
     /* Windows before Vista uses LVM_SETVIEW and possibly

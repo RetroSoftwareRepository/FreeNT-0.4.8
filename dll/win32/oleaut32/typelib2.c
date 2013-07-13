@@ -26,30 +26,33 @@
  *
  */
 
-#include "config.h"
-#include "wine/port.h"
+#define WIN32_NO_STATUS
+#define _INC_WINDOWS
 
-#include <stdlib.h>
-#include <string.h>
-#include <stdarg.h>
-#include <stdio.h>
-#include <ctype.h>
+#include <config.h>
+//#include "wine/port.h"
+
+//#include <stdlib.h>
+//#include <string.h>
+//#include <stdarg.h>
+//#include <stdio.h>
+//#include <ctype.h>
 
 #define COBJMACROS
 #define NONAMELESSUNION
 #define NONAMELESSSTRUCT
 
-#include "winerror.h"
-#include "windef.h"
-#include "winbase.h"
-#include "winnls.h"
-#include "winreg.h"
-#include "winuser.h"
+//#include "winerror.h"
+//#include "windef.h"
+//#include "winbase.h"
+//#include "winnls.h"
+//#include "winreg.h"
+//#include "winuser.h"
 
-#include "wine/unicode.h"
-#include "objbase.h"
+#include <wine/unicode.h>
+#include <objbase.h>
 #include "typelib.h"
-#include "wine/debug.h"
+#include <wine/debug.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(typelib2);
 /* WINE_DEFAULT_DEBUG_CHANNEL(ole); */
@@ -2050,8 +2053,10 @@ static HRESULT WINAPI ICreateTypeInfo2_fnAddFuncDesc(
         if(This->dual)
             This->dual->typedata = This->typedata;
     } else {
+        unsigned int j;
+
         iter = This->typedata->next;
-        for(i=0; i<index; i++)
+        for (j = 0; j < index; j++)
             iter = iter->next;
 
         insert->next = iter->next;

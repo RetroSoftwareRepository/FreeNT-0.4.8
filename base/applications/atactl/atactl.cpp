@@ -1,6 +1,9 @@
-#include <windows.h>
+#include <stdarg.h>
+#include <windef.h>
+#include <winbase.h>
+#include <winreg.h>
 #include <winioctl.h>
-#include <stdio.h>
+#include <stdlib.h>
 //#include <ntdddisk.h>
 //#include <ntddscsi.h>
 #include <ntddscsi.h>
@@ -334,7 +337,7 @@ ata_send_scsi(
 {
     ULONG status;
     PSCSI_PASS_THROUGH_WITH_BUFFERS sptwb;
-    ULONG data_len = BufferLength;
+    //ULONG data_len = BufferLength;
     ULONG len;
 
     len = BufferLength + offsetof(SCSI_PASS_THROUGH_WITH_BUFFERS, ucDataBuf);
@@ -1062,7 +1065,7 @@ ata_list(
 {
     char dev_name[64];
     HANDLE h;
-    BOOLEAN uniata_driven;
+    //BOOLEAN uniata_driven;
 
     if(bus_id == -1) {
         for(bus_id=0; TRUE; bus_id++) {
@@ -1071,7 +1074,7 @@ ata_list(
         }
         return TRUE;
     }
-    uniata_driven = ata_adapter_info(bus_id, g_adapter_info);
+    /*uniata_driven =*/ ata_adapter_info(bus_id, g_adapter_info);
     sprintf(dev_name, "\\\\.\\Scsi%d:", bus_id);
     h = ata_open_dev(dev_name);
     if(!h)
@@ -1227,8 +1230,13 @@ ata_hide(
                             &to, sizeof(to),
                             NULL, 0,
                             &returned);
+    if(!status) {
+        printf("Delete failed\n");
+    } else {
+        printf("Device is detached\n");
+    }
     ata_close_dev(h);
-    return TRUE;
+    return status ? TRUE : FALSE;
 } // end ata_hide()
 
 BOOLEAN
@@ -1286,7 +1294,7 @@ ata_scan(
                                  FALSE);
     }
     ata_close_dev(h);
-    return TRUE;
+    return status ? TRUE : FALSE;
 } // end ata_scan()
 
 CHAR*
@@ -1653,7 +1661,7 @@ ata_power_mode(
                             NULL, 0, FALSE,
                             &senseData, &returned);
     ata_close_dev(h);
-    return TRUE;
+    return status ? TRUE : FALSE;
 } // end ata_power_mode()
 
 int

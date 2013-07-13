@@ -105,8 +105,8 @@ MiLoadImageSection(IN OUT PVOID *SectionPtr,
     if (SessionLoad)
     {
         /* Fail */
-        DPRINT1("Session loading not yet supported!\n");
-        while (TRUE);
+        UNIMPLEMENTED_DBGBREAK("Session loading not yet supported!\n");
+        return STATUS_NOT_IMPLEMENTED;
     }
 
     /* Not session load, shouldn't have an entry */
@@ -1216,8 +1216,7 @@ CheckDllState:
                 {
                     /* We failed, unload the image */
                     MmUnloadSystemImage(DllEntry);
-                    DPRINT1("MmCallDllInitialize failed with status 0x%x\n", Status);
-                    while (TRUE);
+                    ERROR_DBGBREAK("MmCallDllInitialize failed with status 0x%x\n", Status);
                     Loaded = FALSE;
                 }
             }
@@ -1560,7 +1559,6 @@ MmFreeDriverInitialization(IN PLDR_DATA_TABLE_ENTRY LdrEntry)
     ULONG i;
     PIMAGE_NT_HEADERS NtHeader;
     PIMAGE_SECTION_HEADER Section, DiscardSection;
-    ULONG PagesDeleted;
 
     /* Get the base address and the page count */
     DllBase = LdrEntry->DllBase;
@@ -1605,7 +1603,7 @@ MmFreeDriverInitialization(IN PLDR_DATA_TABLE_ENTRY LdrEntry)
     if (!PageCount) return;
 
     /* Delete this many PTEs */
-    PagesDeleted = MiDeleteSystemPageableVm(StartPte, PageCount, 0, NULL);
+    MiDeleteSystemPageableVm(StartPte, PageCount, 0, NULL);
 }
 
 VOID
@@ -1719,8 +1717,8 @@ MiReloadBootLoadedDrivers(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
         if (!PointerPte)
         {
             /* Shouldn't happen */
-            DPRINT1("[Mm0]: Couldn't allocate driver section!\n");
-            while (TRUE);
+            ERROR_FATAL("[Mm0]: Couldn't allocate driver section!\n");
+            return;
         }
 
         /* This is the new virtual address for the module */
@@ -1772,8 +1770,8 @@ MiReloadBootLoadedDrivers(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
             if (!NT_SUCCESS(Status))
             {
                 /* This shouldn't happen */
-                DPRINT1("Relocations failed!\n");
-                while (TRUE);
+                ERROR_FATAL("Relocations failed!\n");
+                return;
             }
         }
 
@@ -1970,9 +1968,8 @@ MiBuildImportsForBootDrivers(VOID)
                 if (*ImageThunk)
                 {
                     /* Should not be happening */
-                    DPRINT1("Broken IAT entry for %p at %p (%lx)\n",
-                            LdrEntry, ImageThunk, *ImageThunk);
-                    ASSERT(FALSE);
+                    ERROR_FATAL("Broken IAT entry for %p at %p (%lx)\n",
+                                LdrEntry, ImageThunk, *ImageThunk);
                 }
 
                 /* Reset if we hit this */
@@ -2360,8 +2357,7 @@ MiWriteProtectSystemImage(IN PVOID ImageBase)
     else
     {
         /* Not supported */
-        DPRINT1("Session drivers not supported\n");
-        ASSERT(FALSE);
+        UNIMPLEMENTED_DBGBREAK("Session drivers not supported\n");
     }
 
     /* These are the only protection masks we care about */
@@ -2921,8 +2917,8 @@ LoaderScan:
         else
         {
             /* We don't support session loading yet */
-            DPRINT1("Unsupported Session-Load!\n");
-            while (TRUE);
+            UNIMPLEMENTED_DBGBREAK("Unsupported Session-Load!\n");
+            Status = STATUS_NOT_IMPLEMENTED;
         }
 
         /* Do cleanup */
@@ -3022,8 +3018,8 @@ LoaderScan:
         if (Flags)
         {
             /* We don't support session loading yet */
-            DPRINT1("Unsupported Session-Load!\n");
-            while (TRUE);
+            UNIMPLEMENTED_DBGBREAK("Unsupported Session-Load!\n");
+            goto Quickie;
         }
 
         /* Check the loader list again, we should end up in the path below */

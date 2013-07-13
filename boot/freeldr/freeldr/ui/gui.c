@@ -40,6 +40,10 @@ VOID GuiDrawText(ULONG X, ULONG Y, PUCHAR Text, UCHAR Attr)
 {
 }
 
+VOID GuiDrawText2(ULONG X, ULONG Y, ULONG MaxNumChars, PUCHAR Text, UCHAR Attr)
+{
+}
+
 VOID GuiDrawStatusText(PCSTR StatusText)
 {
 }
@@ -70,38 +74,43 @@ VOID GuiDrawProgressBar(ULONG Position, ULONG Range)
 
 UCHAR GuiTextToColor(PCSTR ColorText)
 {
-	return 0;
+    return 0;
 }
 
 UCHAR GuiTextToFillStyle(PCSTR FillStyleText)
 {
-	return 0;
+    return 0;
 }
 
 const UIVTBL GuiVtbl =
 {
-	/*GuiInitialize,
-	GuiUnInitialize,
-	GuiDrawBackdrop,
-	GuiFillArea,
-	GuiDrawShadow,
-	GuiDrawBox,
-	GuiDrawText,
-	GuiDrawCenteredText,
-	GuiDrawStatusText,
-	GuiUpdateDateTime,
-	GuiMessageBox,
-	GuiMessageBoxCritical,
-	GuiDrawProgressBarCenter,
-	GuiDrawProgressBar,
-	GuiEditBox,
-	GuiTextToColor,
-	GuiTextToFillStyle,
-	GuiFadeInBackdrop,
-	GuiFadeOut,
-	GuiDisplayMenu,*/
-	NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-	NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-	NULL, NULL, NULL, NULL, NULL, NULL, NULL
+    /*
+    GuiInitialize,
+    GuiUnInitialize,
+    GuiDrawBackdrop,
+    GuiFillArea,
+    GuiDrawShadow,
+    GuiDrawBox,
+    GuiDrawText,
+    GuiDrawText2,
+    GuiDrawCenteredText,
+    GuiDrawStatusText,
+    GuiUpdateDateTime,
+    GuiMessageBox,
+    GuiMessageBoxCritical,
+    GuiDrawProgressBarCenter,
+    GuiDrawProgressBar,
+    GuiEditBox,
+    GuiTextToColor,
+    GuiTextToFillStyle,
+    GuiFadeInBackdrop,
+    GuiFadeOut,
+    GuiDisplayMenu,
+    GuiDrawMenu,
+    */
+    NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+    NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+    NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+    NULL
 };
 #endif

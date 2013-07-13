@@ -148,11 +148,11 @@ else()
   if(MSVC_VERSION GREATER 1310)
     set(_RTC1 "/RTC1")
     set(_FLAGS_CXX " /GR /EHsc")
-    set(CMAKE_C_STANDARD_LIBRARIES_INIT "kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib")
+    set(CMAKE_C_STANDARD_LIBRARIES_INIT "")
   else()
     set(_RTC1 "/GZ")
     set(_FLAGS_CXX " /GR /GX")
-    set(CMAKE_C_STANDARD_LIBRARIES_INIT "kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib")
+    set(CMAKE_C_STANDARD_LIBRARIES_INIT "")
   endif()
 endif()
 
@@ -221,7 +221,7 @@ macro(__windows_compiler_msvc lang)
   set(CMAKE_${lang}_CREATE_STATIC_LIBRARY  "<CMAKE_LINKER> /lib ${CMAKE_CL_NOLOGO} <LINK_FLAGS> /out:<TARGET> <OBJECTS> ")
 
   set(CMAKE_${lang}_COMPILE_OBJECT
-    "<CMAKE_${lang}_COMPILER> ${CMAKE_START_TEMP_FILE} ${CMAKE_CL_NOLOGO}${_COMPILE_${lang}} <FLAGS> <DEFINES> /Fo<OBJECT> /Fd<TARGET_PDB> -c <SOURCE>${CMAKE_END_TEMP_FILE}")
+    "<CMAKE_${lang}_COMPILER> ${CMAKE_START_TEMP_FILE} ${CMAKE_CL_NOLOGO}${_COMPILE_${lang}} <FLAGS> <DEFINES> /Fo<OBJECT> /Fd<OBJECT_DIR>/ -c <SOURCE>${CMAKE_END_TEMP_FILE}")
   set(CMAKE_${lang}_CREATE_PREPROCESSED_SOURCE
     "<CMAKE_${lang}_COMPILER> > <PREPROCESSED_SOURCE> ${CMAKE_START_TEMP_FILE} ${CMAKE_CL_NOLOGO}${_COMPILE_${lang}} <FLAGS> <DEFINES> -E <SOURCE>${CMAKE_END_TEMP_FILE}")
   set(CMAKE_${lang}_CREATE_ASSEMBLY_SOURCE
@@ -229,7 +229,8 @@ macro(__windows_compiler_msvc lang)
 
   set(CMAKE_${lang}_COMPILER_LINKER_OPTION_FLAG_EXECUTABLE "/link")
   set(CMAKE_${lang}_USE_RESPONSE_FILE_FOR_OBJECTS 1)
-  set(CMAKE_${lang}_LINK_EXECUTABLE "<CMAKE_${lang}_COMPILER> ${CMAKE_CL_NOLOGO} ${CMAKE_START_TEMP_FILE} <FLAGS> /Fe<TARGET> /Fd<TARGET_PDB> <OBJECTS> /link /implib:<TARGET_IMPLIB> /version:<TARGET_VERSION_MAJOR>.<TARGET_VERSION_MINOR> <CMAKE_${lang}_LINK_FLAGS> <LINK_FLAGS> <LINK_LIBRARIES>${CMAKE_END_TEMP_FILE}")
+  set(CMAKE_${lang}_LINK_EXECUTABLE
+    "${_CMAKE_VS_LINK_EXE}<CMAKE_LINKER> ${CMAKE_CL_NOLOGO} <OBJECTS> ${CMAKE_START_TEMP_FILE} /out:<TARGET> /implib:<TARGET_IMPLIB> /pdb:<TARGET_PDB> /version:<TARGET_VERSION_MAJOR>.<TARGET_VERSION_MINOR> <CMAKE_${lang}_LINK_FLAGS> <LINK_FLAGS> <LINK_LIBRARIES>${CMAKE_END_TEMP_FILE}")
 
   set(CMAKE_${lang}_FLAGS_INIT "")
   set(CMAKE_${lang}_FLAGS_DEBUG_INIT "")

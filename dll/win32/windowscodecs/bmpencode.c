@@ -16,22 +16,26 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "config.h"
+#define WIN32_NO_STATUS
+#define _INC_WINDOWS
+#define COM_NO_WINDOWS_H
+
+#include <config.h>
 
 #include <stdarg.h>
 
 #define COBJMACROS
 
-#include "windef.h"
-#include "winbase.h"
-#include "winreg.h"
-#include "wingdi.h"
-#include "objbase.h"
-#include "wincodec.h"
+#include <windef.h>
+#include <winbase.h>
+//#include "winreg.h"
+#include <wingdi.h>
+#include <objbase.h>
+#include <wincodec.h>
 
 #include "wincodecs_private.h"
 
-#include "wine/debug.h"
+#include <wine/debug.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(wincodecs);
 
@@ -538,7 +542,7 @@ static HRESULT WINAPI BmpEncoder_CreateNewFrame(IWICBitmapEncoder *iface,
 
     if (!This->stream) return WINCODEC_ERR_NOTINITIALIZED;
 
-    hr = CreatePropertyBag2(ppIEncoderOptions);
+    hr = CreatePropertyBag2(NULL, 0, ppIEncoderOptions);
     if (FAILED(hr)) return hr;
 
     encode = HeapAlloc(GetProcessHeap(), 0, sizeof(BmpFrameEncode));

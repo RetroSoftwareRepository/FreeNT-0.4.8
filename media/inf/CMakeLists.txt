@@ -27,10 +27,12 @@ list(APPEND INF_FILES
     NET_NIC.inf
     netamd.inf
     netisa.inf
+    netrtl.inf
     netrtpnt.inf
     nettcpip.inf
     ports.inf
     scsi.inf
+    shortcuts.inf
     unknown.inf
     usb.inf
     usbport.inf

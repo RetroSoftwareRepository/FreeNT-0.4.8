@@ -120,6 +120,7 @@ list(APPEND CRT_SOURCE
     mem/memcmp.c
     mem/memccpy.c
     mem/memicmp.c
+    misc/__crt_MessageBoxA.c
     misc/amsg.c
     misc/assert.c
     misc/environ.c
@@ -134,13 +135,17 @@ list(APPEND CRT_SOURCE
     printf/_cprintf.c
     printf/_cwprintf.c
     printf/_snprintf.c
+    printf/_snprintf_s.c
     printf/_snwprintf.c
+    printf/_snwprintf_s.c
     printf/_vcprintf.c
     printf/_vcwprintf.c
     printf/_vscprintf.c
     printf/_vscwprintf.c
     printf/_vsnprintf.c
+    printf/_vsnprintf_s.c
     printf/_vsnwprintf.c
+    printf/_vsnwprintf_s.c
     printf/_vsprintf_p.c
     printf/fprintf.c
     printf/fprintf_s.c
@@ -149,8 +154,10 @@ list(APPEND CRT_SOURCE
     printf/printf.c
     printf/printf_s.c
     printf/sprintf.c
+    printf/sprintf_s.c
     printf/streamout.c
     printf/swprintf.c
+    printf/swprintf_s.c
     printf/vfprintf.c
     printf/vfprintf_s.c
     printf/vfwprintf.c
@@ -158,7 +165,9 @@ list(APPEND CRT_SOURCE
     printf/vprintf.c
     printf/vprintf_s.c
     printf/vsprintf.c
+    printf/vsprintf_s.c
     printf/vswprintf.c
+    printf/vswprintf_s.c
     printf/vwprintf.c
     printf/vwprintf_s.c
     printf/wprintf.c
@@ -224,6 +233,7 @@ list(APPEND CRT_SOURCE
     stdio/wstat.c
     stdio/wstat64.c
     stdlib/_exit.c
+    stdlib/_set_abort_behavior.c
     stdlib/abort.c
     stdlib/atexit.c
     stdlib/ecvt.c
@@ -250,6 +260,11 @@ list(APPEND CRT_SOURCE
     stdlib/wmakpath_s.c
     string/_mbsnlen.c
     string/_mbstrnlen.c
+    string/_splitpath.c
+    string/_splitpath_s.c
+    string/_wcslwr_s.c
+    string/_wsplitpath.c
+    string/_wsplitpath_s.c
     string/atof.c
     string/atoi.c
     string/atoi64.c
@@ -261,7 +276,6 @@ list(APPEND CRT_SOURCE
     string/itow.c
     string/mbstowcs_s.c
     string/scanf.c
-    string/splitp.c
     string/strcoll.c
     string/strcspn.c
     string/strdup.c
@@ -289,7 +303,6 @@ list(APPEND CRT_SOURCE
     string/wcstombs_s.c
     string/wcstoul.c
     string/wctype.c
-    string/wsplitp.c
     string/wtoi.c
     string/wtoi64.c
     string/wtol.c
@@ -346,17 +359,11 @@ list(APPEND CRT_SOURCE
     wine/undname.c)
 
 if(ARCH STREQUAL "i386")
-    list(APPEND CRT_SOURCE
+    list(APPEND CRT_ASM_SOURCE
         except/i386/chkesp.s
         except/i386/prolog.s
         except/i386/seh.s
         except/i386/seh_prolog.s
-        except/i386/unwind.c
-        float/i386/clearfp.c
-        float/i386/cntrlfp.c
-        float/i386/fpreset.c
-        float/i386/logb.c
-        float/i386/statfp.c
         math/i386/alldiv_asm.s
         math/i386/alldvrm_asm.s
         math/i386/allmul_asm.s
@@ -383,16 +390,9 @@ if(ARCH STREQUAL "i386")
         math/i386/sqrt_asm.s
         math/i386/tan_asm.s
         math/i386/atan2_asm.s
-        math/i386/ci.c
-        math/i386/cicos.c
-        math/i386/cilog.c
-        math/i386/cipow.c
-        math/i386/cisin.c
-        math/i386/cisqrt.c
         math/i386/exp_asm.s
         math/i386/fmod_asm.s
         math/i386/fmodf_asm.s
-        math/i386/ldexp.c
         mem/i386/memchr_asm.s
         mem/i386/memmove_asm.s
         mem/i386/memset_asm.s
@@ -418,21 +418,33 @@ if(ARCH STREQUAL "i386")
         string/i386/wcsncpy_asm.s
         string/i386/wcsnlen_asm.s
         string/i386/wcsrchr_asm.s)
+
+    list(APPEND CRT_SOURCE
+        except/i386/unwind.c
+        float/i386/clearfp.c
+        float/i386/cntrlfp.c
+        float/i386/fpreset.c
+        float/i386/logb.c
+        float/i386/statfp.c
+        math/i386/ci.c
+        math/i386/cicos.c
+        math/i386/cilog.c
+        math/i386/cipow.c
+        math/i386/cisin.c
+        math/i386/cisqrt.c
+        math/i386/ldexp.c)
     if(MSVC)
-        list(APPEND CRT_SOURCE
+        list(APPEND CRT_ASM_SOURCE
             except/i386/cpp.s)
     endif()
 elseif(ARCH STREQUAL "amd64")
-    list(APPEND CRT_SOURCE
+    list(APPEND CRT_ASM_SOURCE
         except/amd64/seh.s
-        except/amd64/ehandler.c
         float/amd64/clearfp.S
         float/amd64/getsetfpcw.S
-        float/i386/cntrlfp.c
         float/amd64/fpreset.S
         float/amd64/logb.S
-        float/i386/statfp.c
-        math/amd64/acos.S
+        # math/amd64/acos.S
         math/amd64/acosf.S
         math/amd64/atan.S
         math/amd64/atan2.S
@@ -452,8 +464,13 @@ elseif(ARCH STREQUAL "amd64")
         math/amd64/sqrtf.S
         math/amd64/tan.S
         setjmp/amd64/setjmp.s)
+
+    list(APPEND CRT_SOURCE
+        except/amd64/ehandler.c
+        float/i386/cntrlfp.c
+        float/i386/statfp.c)
     if(MSVC)
-        list(APPEND CRT_SOURCE
+        list(APPEND CRT_ASM_SOURCE
             except/amd64/cpp.s)
     endif()
 endif()
@@ -489,7 +506,10 @@ if(NOT ARCH STREQUAL "i386")
         string/wcsrchr.c)
 endif()
 
-add_library(crt ${CRT_SOURCE})
+set_source_files_properties(${CRT_ASM_SOURCE} PROPERTIES COMPILE_DEFINITIONS "__MINGW_IMPORT=extern;USE_MSVCRT_PREFIX;_MSVCRT_LIB_;_MSVCRT_;_MT;CRTDLL")
+add_asm_files(crt_asm ${CRT_ASM_SOURCE})
+
+add_library(crt ${CRT_SOURCE} ${crt_asm})
 target_link_libraries(crt chkstk)
 add_target_compile_definitions(crt
     __MINGW_IMPORT=extern

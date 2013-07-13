@@ -23,7 +23,7 @@ HWND hwndSAS = NULL;
 /* Full path to WindowStations directory */
 UNICODE_STRING gustrWindowStationsDir;
 
-/* INITALIZATION FUNCTIONS ****************************************************/
+/* INITIALIZATION FUNCTIONS ****************************************************/
 
 INIT_FUNCTION
 NTSTATUS
@@ -45,7 +45,7 @@ InitWindowStationImpl(VOID)
 
 NTSTATUS
 NTAPI
-UserCreateWinstaDirectoy()
+UserCreateWinstaDirectory()
 {
     PPEB Peb;
     NTSTATUS Status;
@@ -235,6 +235,7 @@ co_IntInitializeDesktopGraphics(VOID)
 {
    TEXTMETRICW tmw;
    UNICODE_STRING DriverName = RTL_CONSTANT_STRING(L"DISPLAY");
+   PDESKTOP pdesk;
 
    ScreenDeviceContext = IntGdiCreateDC(&DriverName, NULL, NULL, NULL, FALSE);
    if (NULL == ScreenDeviceContext)
@@ -249,15 +250,14 @@ co_IntInitializeDesktopGraphics(VOID)
       return FALSE;
    }
 
-   /* Setup the cursor */
-   co_IntLoadDefaultCursors();
-
    hSystemBM = NtGdiCreateCompatibleDC(ScreenDeviceContext);
 
    NtGdiSelectFont(hSystemBM, NtGdiGetStockObject(SYSTEM_FONT));
    GreSetDCOwner(hSystemBM, GDI_OBJ_HMGR_PUBLIC);
 
-   // FIXME: Move these to a update routine.
+   /* Update the SERVERINFO */
+   gpsi->aiSysMet[SM_CXSCREEN] = gppdevPrimary->gdiinfo.ulHorzRes;
+   gpsi->aiSysMet[SM_CYSCREEN] = gppdevPrimary->gdiinfo.ulVertRes;
    gpsi->Planes        = NtGdiGetDeviceCaps(ScreenDeviceContext, PLANES);
    gpsi->BitsPixel     = NtGdiGetDeviceCaps(ScreenDeviceContext, BITSPIXEL);
    gpsi->BitCount      = gpsi->Planes * gpsi->BitsPixel;
@@ -271,6 +271,21 @@ co_IntInitializeDesktopGraphics(VOID)
    // Font is realized and this dc was previously set to internal DC_ATTR.
    gpsi->cxSysFontChar = IntGetCharDimensions(hSystemBM, &tmw, (DWORD*)&gpsi->cySysFontChar);
    gpsi->tmSysFont     = tmw;
+
+   /* Put the pointer in the center of the screen */
+   gpsi->ptCursor.x = gpsi->aiSysMet[SM_CXSCREEN] / 2;
+   gpsi->ptCursor.y = gpsi->aiSysMet[SM_CYSCREEN] / 2;
+
+   /* Attach monitor */
+   UserAttachMonitor((HDEV)gppdevPrimary);
+
+   /* Setup the cursor */
+   co_IntLoadDefaultCursors();
+
+   /* Show the desktop */
+   pdesk = IntGetActiveDesktop();
+   ASSERT(pdesk);
+   co_IntShowDesktop(pdesk, gpsi->aiSysMet[SM_CXSCREEN], gpsi->aiSysMet[SM_CYSCREEN], TRUE);
 
    return TRUE;
 }
@@ -432,6 +447,7 @@ NtUserCreateWindowStation(
    Status = RtlCreateAtomTable(37, &WindowStationObject->AtomTable);
    WindowStationObject->SystemMenuTemplate = (HANDLE)0;
    WindowStationObject->Name = WindowStationName;
+   WindowStationObject->dwSessionId = NtCurrentPeb()->SessionId;
 
    if (InputWindowStation == NULL)
    {
@@ -1318,6 +1334,29 @@ NtUserSetLogonNotifyWindow(HWND hWnd)
     hwndSAS = hWnd;
 
     return TRUE;
+}
+
+BOOL
+APIENTRY
+NtUserLockWorkStation(VOID)
+{
+    BOOL ret;
+    PTHREADINFO pti = PsGetCurrentThreadWin32Thread();
+
+    UserEnterExclusive();
+
+    if (pti->rpdesk == IntGetActiveDesktop())
+    {
+        ret = UserPostMessage(hwndSAS, WM_LOGONNOTIFY, LN_LOCK_WORKSTATION, 0);
+    }
+    else
+    {
+        ret = FALSE;
+    }
+
+    UserLeave();
+
+   return ret;
 }
 
 /* EOF */

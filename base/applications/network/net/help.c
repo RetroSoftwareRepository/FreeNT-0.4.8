@@ -11,7 +11,7 @@
 
 INT cmdHelp(INT argc, WCHAR **argv)
 {
-    if (argc > 3)
+    if (argc != 3)
     {
       return 0;
     }
@@ -166,7 +166,6 @@ INT cmdHelp(INT argc, WCHAR **argv)
     help();
     return 0;
 }
-
 
 VOID help(VOID)
 {

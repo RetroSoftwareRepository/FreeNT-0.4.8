@@ -17,50 +17,72 @@
 
 #ifdef _PREFAST_
 
-// Stubs
-#define ___drv_unit_internal_kernel_driver
-#define ___drv_unit_kernel_code
-#define ___drv_unit_kernel_driver
-#define ___drv_unit_user_code
-#define ___drv_unit_user_driver
-#define __drv_acquiresCancelSpinLock
-#define __drv_acquiresCriticalRegion
-#define __drv_acquiresExclusiveResource(kind)
-#define __drv_acquiresExclusiveResourceGlobal(kind,param)
-#define __drv_acquiresPriorityRegion
-#define __drv_acquiresResource(kind)
-#define __drv_acquiresResourceGlobal(kind,param)
-#define __drv_aliasesMem            _Post_ _SA_annotes0(SAL_IsAliased)
-#define __drv_allocatesMem(kind)    _Post_ _SA_annotes1(SAL_NeedsRelease,__yes)
-#define __drv_arg(expr,annotes)
-#define __drv_at(expr,annotes)
-#define __drv_callbackType(kind)
-#define __drv_clearDoInit
-#define __drv_completionType(kindlist)
-#define __drv_constant
-#define __drv_defined(x)
-#define __drv_deref(annotes)
-#define __drv_dispatchType_other
-#define __drv_dispatchType(x)
-#define __drv_floatRestored
-#define __drv_floatSaved
-#define __drv_floatUsed
-#define __drv_formatString(kind)
-#define __drv_freesMem(kind)    _Post_ _SA_annotes1(SAL_NeedsRelease,__no)
-#define __drv_fun(annotes)
-#define __drv_functionClass
-#define __drv_holdsCancelSpinLock()
-#define __drv_holdsCriticalRegion()
-#define __drv_holdsPriorityRegion()
-#define __drv_in_deref(annotes)
-#define __drv_in(annotes)
-#define __drv_innerAcquiresGlobal(kind,param)
+/* IRQL annotations are only valid when included from kernelspecs.h */
+#define _IRQL_always_function_max_(irql)
+#define _IRQL_always_function_min_(irql)
+#define _IRQL_is_cancel_
+#define _IRQL_raises_(irql)
+#define _IRQL_requires_(irql)
+#define _IRQL_requires_max_(irql)
+#define _IRQL_requires_max_defined
+#define _IRQL_requires_min_(irql)
+#define _IRQL_requires_same_
+#define _IRQL_restores_
+#define _IRQL_restores_global_(kind,param)
+#define _IRQL_saves_
+#define _IRQL_saves_global_(kind,param)
+#define _IRQL_uses_cancel_
+#define __drv_setsIRQL(irql)
+
+#define _Dispatch_type_                             _Function_class_
+#define _Kernel_clear_do_init_(yesNo)               _Post_ _SA_annotes1(SAL_clearDoInit,yesNo)
+#define _Kernel_float_restored_                     _Post_ _SA_annotes0(SAL_floatRestored)
+#define _Kernel_float_saved_                        _Post_ _SA_annotes0(SAL_floatSaved)
+#define _Kernel_float_used_                         _Post_ _SA_annotes0(SAL_floatUsed)
+#define _Kernel_IoGetDmaAdapter_                    _Post_ _SA_annotes0(SAL_IoGetDmaAdapter)
+#define _Kernel_releases_resource_(kind)            _Post_ _SA_annotes1(SAL_release, #kind)
+#define _Kernel_requires_resource_held_(kind)       _Pre_ _SA_annotes1(SAL_mustHold, #kind)
+#define _Kernel_requires_resource_not_held_(kind)   _Pre_ _SA_annotes1(SAL_neverHold, #kind)
+#define _Kernel_acquires_resource_(kind)            _Post_ _SA_annotes1(SAL_acquire, #kind)
+
+#define __drv_acquiresCancelSpinLock                _Acquires_nonreentrant_lock_(_Global_cancel_spin_lock_)
+#define __drv_acquiresCriticalRegion                _Acquires_lock_(_Global_critical_region_)
+#define __drv_acquiresExclusiveResource(kind)       _Acquires_nonreentrant_lock_(_Curr_)
+#define __drv_acquiresExclusiveResourceGlobal(kind,param)   _Acquires_nonreentrant_lock_(param)
+#define __drv_acquiresPriorityRegion                _Acquires_lock_(_Global_priority_region_)
+#define __drv_acquiresResource(kind)                _Acquires_lock_(_Curr_)
+#define __drv_acquiresResourceGlobal(kind,param)    _Acquires_lock_(param)
+#define __drv_aliasesMem                            _Post_ _SA_annotes0(SAL_IsAliased)
+#define __drv_allocatesMem(kind)                    _Post_ _SA_annotes1(SAL_NeedsRelease,__yes)
+#define __drv_arg(expr,annotes)                     _At_(expr,annotes)
+#define __drv_at(expr,annotes)                      _At_(expr,annotes)
+#define __drv_callbackType(kind)                    _SA_annotes1(SAL_callbackType, #kind)
+#define __drv_clearDoInit                           _Kernel_clear_do_init_
+#define __drv_completionType(kindlist)              _SA_annotes1(SAL_completionType, #kindlist)
+#define __drv_constant                              _Literal_
+#define __drv_defined(x)                            _Macro_defined_(#x)
+#define __drv_deref(annotes)                        __deref _Group_(annotes)
+#define __drv_dispatchType_other                    _Dispatch_type_(IRP_MJ_OTHER)
+#define __drv_dispatchType(x)                       _Dispatch_type_(x)
+#define __drv_floatRestored                         _Kernel_float_restored_
+#define __drv_floatSaved                            _Kernel_float_saved_
+#define __drv_floatUsed                             _Kernel_float_used_
+#define __drv_formatString(kind)                    _SA_annotes1(SAL_IsFormatString, #kind)
+#define __drv_freesMem(kind)                        _Post_ _SA_annotes1(SAL_NeedsRelease,__no)
+#define __drv_fun(annotes)                          _At_(return, annotes)
+#define __drv_functionClass                         _Function_class_
+#define __drv_holdsCancelSpinLock()                 _Holds_resource_global_("CancelSpinLock",)
+#define __drv_holdsCriticalRegion()                 _Holds_resource_global_("CriticalRegion",)
+#define __drv_holdsPriorityRegion()                 _Holds_resource_global_("PriorityRegion",)
+#define __drv_in_deref(annotes)                     _Pre_ __deref _Group_(annotes)
+#define __drv_in(annotes)                           _Pre_ _Group_(annotes)
+#define __drv_innerAcquiresGlobal(kind,param)       _Post_ _SA_annotes2(SAL_acquireGlobal, #kind, param\t)
 #define __drv_innerMustHoldGlobal(kind,param)
 #define __drv_innerNeverHoldGlobal(kind,param)
 #define __drv_innerReleasesGlobal(kind,param)
 #define __drv_interlocked
 #define __drv_IoGetDmaAdapter
-#define __drv_isCancelIRQL
+#define __drv_isCancelIRQL                          _IRQL_is_cancel_
 #define __drv_isObjectPointer
 #define __drv_KMDF
 #define __drv_maxFunctionIRQL
@@ -101,7 +123,6 @@
 #define __drv_sameIRQL
 #define __drv_savesIRQL
 #define __drv_savesIRQLGlobal
-#define __drv_setsIRQL(irql)
 #define __drv_strictType(typename,mode)
 #define __drv_strictTypeMatch(mode)
 #define __drv_unit(p)
@@ -116,13 +137,35 @@
 #define __prefast_operator_new_throws
 #define __user_code
 #define __user_driver
+#define ___drv_unit_internal_kernel_driver
+#define ___drv_unit_kernel_code
+#define ___drv_unit_kernel_driver
+#define ___drv_unit_user_code
+#define ___drv_unit_user_driver
+
+__ANNOTATION(SAL_neverHold(_In_ char *);)
+__ANNOTATION(SAL_acquire(_In_ char *);)
+__ANNOTATION(SAL_floatUsed(void);)
+__ANNOTATION(SAL_floatSaved(void);)
+__ANNOTATION(SAL_floatRestored(void);)
+__ANNOTATION(SAL_clearDoInit(enum __SAL_YesNo);)
+__ANNOTATION(SAL_maxIRQL(__int64);)
+__ANNOTATION(SAL_IsAliased(void);)
+__ANNOTATION(SAL_NeedsRelease(enum __SAL_YesNo);)
+__ANNOTATION(SAL_mustHold(_In_ char *);)
+__ANNOTATION(SAL_release(_In_ char *);)
+__ANNOTATION(SAL_IoGetDmaAdapter(void);)
+
+#else
+
+/* Dummys */
 #define _Dispatch_type_
 #define _IRQL_always_function_max_(irql)
 #define _IRQL_always_function_min_(irql)
 #define _IRQL_is_cancel_
 #define _IRQL_raises_(irql)
 #define _IRQL_requires_(irql)
-#define _IRQL_requires_max_(irql)                       _Pre_ _SA_annotes1(SAL_maxIRQL,irql)
+#define _IRQL_requires_max_(irql)
 #define _IRQL_requires_min_(irql)
 #define _IRQL_requires_same_
 #define _IRQL_restores_
@@ -137,23 +180,8 @@
 #define _Kernel_IoGetDmaAdapter_
 #define _Kernel_releases_resource_(kind)
 #define _Kernel_requires_resource_held_(kind)
-#define _Kernel_requires_resource_not_held_(kind)   _Pre_ _SA_annotes1(SAL_neverHold, #kind)
-#define _Kernel_acquires_resource_(kind)            _Post_ _SA_annotes1(SAL_acquire, #kind)
-
-__ANNOTATION(SAL_maxIRQL(__int64);)
-__ANNOTATION(SAL_IsAliased(void);)
-__ANNOTATION(SAL_NeedsRelease(enum __SAL_YesNo);)
-__ANNOTATION(SAL_neverHold(__In_impl_ char *);)
-__ANNOTATION(SAL_acquire(__In_impl_ char *);)
-
-#else
-
-/* Dummys */
-#define ___drv_unit_internal_kernel_driver
-#define ___drv_unit_kernel_code
-#define ___drv_unit_kernel_driver
-#define ___drv_unit_user_code
-#define ___drv_unit_user_driver
+#define _Kernel_requires_resource_not_held_(kind)
+#define _Kernel_acquires_resource_(kind)
 #define __drv_acquiresCancelSpinLock
 #define __drv_acquiresCriticalRegion
 #define __drv_acquiresExclusiveResource(kind)
@@ -247,29 +275,11 @@ __ANNOTATION(SAL_acquire(__In_impl_ char *);)
 #define __prefast_operator_new_throws
 #define __user_code
 #define __user_driver
-#define _Dispatch_type_
-#define _IRQL_always_function_max_(irql)
-#define _IRQL_always_function_min_(irql)
-#define _IRQL_is_cancel_
-#define _IRQL_raises_(irql)
-#define _IRQL_requires_(irql)
-#define _IRQL_requires_max_(irql)
-#define _IRQL_requires_min_(irql)
-#define _IRQL_requires_same_
-#define _IRQL_restores_
-#define _IRQL_restores_global_(kind,param)
-#define _IRQL_saves_
-#define _IRQL_saves_global_(kind,param)
-#define _IRQL_uses_cancel_
-#define _Kernel_clear_do_init_(yesNo)
-#define _Kernel_float_restored_
-#define _Kernel_float_saved_
-#define _Kernel_float_used_
-#define _Kernel_IoGetDmaAdapter_
-#define _Kernel_releases_resource_(kind)
-#define _Kernel_requires_resource_held_(kind)
-#define _Kernel_requires_resource_not_held_(kind)
-#define _Kernel_acquires_resource_(kind)
+#define ___drv_unit_internal_kernel_driver
+#define ___drv_unit_kernel_code
+#define ___drv_unit_kernel_driver
+#define ___drv_unit_user_code
+#define ___drv_unit_user_driver
 
 #endif
 

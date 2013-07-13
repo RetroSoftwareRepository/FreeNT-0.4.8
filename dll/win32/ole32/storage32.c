@@ -31,27 +31,27 @@
  */
 
 #include <assert.h>
-#include <stdarg.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+//#include <stdarg.h>
+//#include <stdio.h>
+//#include <stdlib.h>
+//#include <string.h>
 
 #define COBJMACROS
 #define NONAMELESSUNION
 #define NONAMELESSSTRUCT
 
-#include "windef.h"
-#include "winbase.h"
-#include "winnls.h"
-#include "winuser.h"
-#include "wine/unicode.h"
-#include "wine/debug.h"
+//#include "windef.h"
+//#include "winbase.h"
+//#include "winnls.h"
+//#include "winuser.h"
+#include <wine/unicode.h>
+#include <wine/debug.h>
 
 #include "storage32.h"
-#include "ole2.h"      /* For Write/ReadClassStm */
+#include <ole2.h>      /* For Write/ReadClassStm */
 
-#include "winreg.h"
-#include "wine/wingdi16.h"
+//#include "winreg.h"
+#include <wine/wingdi16.h>
 #include "compobj_private.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(storage);
@@ -1767,7 +1767,7 @@ static HRESULT WINAPI StorageBaseImpl_CopyTo(
   StorageBaseImpl *This = impl_from_IStorage(iface);
 
   BOOL         skip_storage = FALSE, skip_stream = FALSE;
-  int          i;
+  DWORD        i;
 
   TRACE("(%p, %d, %p, %p, %p)\n",
 	iface, ciidExclude, rgiidExclude,
@@ -2822,7 +2822,7 @@ static HRESULT StorageImpl_Construct(
   {
     ULONG current_block = This->extBigBlockDepotStart;
     ULONG cache_size = This->extBigBlockDepotCount * 2;
-    int i;
+    ULONG i;
 
     This->extBigBlockDepotLocations = HeapAlloc(GetProcessHeap(), 0, sizeof(ULONG) * cache_size);
     if (!This->extBigBlockDepotLocations)

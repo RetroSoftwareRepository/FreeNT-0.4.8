@@ -17,28 +17,32 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#define WIN32_NO_STATUS
+#define _INC_WINDOWS
+#define COM_NO_WINDOWS_H
+
 #include <stdarg.h>
 
 #define COBJMACROS
 
-#include "windef.h"
-#include "winbase.h"
-#include "winnls.h"
-#include "wingdi.h"
-#include "winuser.h"
-#include "winreg.h"
-#include "winerror.h"
+#include <windef.h>
+#include <winbase.h>
+//#include "winnls.h"
+#include <wingdi.h>
+//#include "winuser.h"
+#include <winreg.h>
+//#include "winerror.h"
 
-#include "ole2.h"
-#include "shellapi.h"
-#include "shlobj.h"
-#include "vfw.h"
-#include "msacm.h"
+//#include "ole2.h"
+//#include "shellapi.h"
+//#include "shlobj.h"
+#include <vfw.h>
+//#include "msacm.h"
 
 #include "avifile_private.h"
 
-#include "wine/debug.h"
-#include "wine/unicode.h"
+#include <wine/debug.h>
+#include <wine/unicode.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(avifile);
 
@@ -1244,7 +1248,7 @@ static BOOL AVISaveOptionsFmtChoose(HWND hWnd)
       pOptions->dwFlags |= AVICOMPRESSF_VALID;
 
     HeapFree(GetProcessHeap(), 0, afmtc.pwfxEnum);
-    return (ret == S_OK ? TRUE : FALSE);
+    return ret == S_OK;
   } else {
     ERR(": unknown streamtype 0x%08X\n", sInfo.fccType);
     return FALSE;

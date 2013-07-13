@@ -1,4 +1,4 @@
-/* 
+/*
  * environ.c
  *
  * ReactOS MSVCRT.DLL Compatibility Library
@@ -64,11 +64,11 @@ int BlockEnvToEnvironA(void)
          {
             if ((*envptr = malloc(len)) == NULL)
             {
-               for (envptr--; envptr >= _environ; envptr--);
+               for (envptr--; envptr >= _environ; envptr--)
                   free(*envptr);
                FreeEnvironmentStringsA(environment_strings);
                free(_environ);
-	       __initenv = _environ = NULL;
+               __initenv = _environ = NULL;
                return -1;
             }
             memcpy(*envptr++, ptr, len);
@@ -116,11 +116,11 @@ int BlockEnvToEnvironW(void)
          {
             if ((*envptr = malloc(len * sizeof(wchar_t))) == NULL)
             {
-               for (envptr--; envptr >= _wenviron; envptr--);
+               for (envptr--; envptr >= _wenviron; envptr--)
                   free(*envptr);
                FreeEnvironmentStringsW(environment_strings);
                free(_wenviron);
-	       __winitenv = _wenviron = NULL;
+               __winitenv = _wenviron = NULL;
                return -1;
             }
             memcpy(*envptr++, ptr, len * sizeof(wchar_t));
@@ -168,7 +168,7 @@ char **DuplicateEnvironment(char **original_environment, int wide)
          *newenvptr = _strdup(*envptr++);
       if (*newenvptr == NULL)
       {
-         for (newenvptr--; newenvptr >= newenv; newenvptr--);
+         for (newenvptr--; newenvptr >= newenv; newenvptr--)
             free(*newenvptr);
          free(newenv);
          return original_environment;
@@ -214,6 +214,8 @@ int SetEnv(const wchar_t *option)
    wchar_t *woption;
    char *mboption;
    int remove, index, count, size, result = 0, found = 0;
+   wchar_t **wnewenv;
+   char **mbnewenv;
 
    if (option == NULL || (epos = wcschr(option, L'=')) == NULL)
       return -1;
@@ -261,14 +263,18 @@ int SetEnv(const wchar_t *option)
       free(*wenvptr);
       for (count = index; *wenvptr != NULL; wenvptr++, count++)
          *wenvptr = *(wenvptr + 1);
-      _wenviron = realloc(_wenviron, count * sizeof(wchar_t*));
+      wnewenv = realloc(_wenviron, count * sizeof(wchar_t*));
+      if (wnewenv != NULL)
+         _wenviron = wnewenv;
 
       /* Remove the option from multibyte environment. We assume
        * the environments are in sync and the option is at the
        * same position. */
       free(_environ[index]);
       memmove(&_environ[index], &_environ[index+1], (count - index) * sizeof(char*));
-      _environ = realloc(_environ, count * sizeof(char*));
+      mbnewenv = realloc(_environ, count * sizeof(char*));
+      if (mbnewenv != NULL)
+         _environ = mbnewenv;
 
       result = SetEnvironmentVariableW(name, NULL) ? 0 : -1;
    }
@@ -303,9 +309,6 @@ int SetEnv(const wchar_t *option)
       }
       else
       {
-         wchar_t **wnewenv;
-         char **mbnewenv;
-
          /* Get the size of the original environment. */
          for (count = index; *wenvptr != NULL; wenvptr++, count++)
             ;

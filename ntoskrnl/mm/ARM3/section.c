@@ -906,9 +906,10 @@ MiSessionCommitPageTables(IN PVOID StartVa,
     Index = ((ULONG_PTR)StartVa - (ULONG_PTR)MmSessionBase) >> 22;
     while (StartPde <= EndPde)
     {
+#ifndef _M_AMD64
         /* If we don't already have a page table for it, increment count */
         if (MmSessionSpace->PageTables[Index].u.Long == 0) PageCount++;
-
+#endif
         /* Move to the next one */
         StartPde++;
         Index++;
@@ -924,6 +925,7 @@ MiSessionCommitPageTables(IN PVOID StartVa,
     /* Loop each PDE while holding the working set lock */
 //  MiLockWorkingSet(PsGetCurrentThread(),
 //                   &MmSessionSpace->GlobalVirtualAddress->Vm);
+#ifndef _M_AMD64
     while (StartPde <= EndPde)
     {
         /* Check if we already have a page table */
@@ -966,6 +968,7 @@ MiSessionCommitPageTables(IN PVOID StartVa,
         StartPde++;
         Index++;
     }
+#endif
 
     /* Make sure we didn't do more pages than expected */
     ASSERT(ActualPages <= PageCount);
@@ -1992,7 +1995,7 @@ MiRemoveMappedPtes(IN PVOID BaseAddress,
                    IN PCONTROL_AREA ControlArea,
                    IN PMMSUPPORT Ws)
 {
-    PMMPTE PointerPte, FirstPte;
+    PMMPTE PointerPte;//, FirstPte;
     PMMPDE PointerPde, SystemMapPde;
     PMMPFN Pfn1, Pfn2;
     MMPTE PteContents;
@@ -2001,7 +2004,7 @@ MiRemoveMappedPtes(IN PVOID BaseAddress,
 
     /* Get the PTE and loop each one */
     PointerPte = MiAddressToPte(BaseAddress);
-    FirstPte = PointerPte;
+    //FirstPte = PointerPte;
     while (NumberOfPtes)
     {
         /* Check if the PTE is already valid */
@@ -2038,6 +2041,7 @@ MiRemoveMappedPtes(IN PVOID BaseAddress,
             /* Dereference the PDE and the PTE */
             Pfn2 = MiGetPfnEntry(PFN_FROM_PTE(PointerPde));
             //MiDecrementShareCount(Pfn2, PFN_FROM_PTE(PointerPde));
+            DBG_UNREFERENCED_LOCAL_VARIABLE(Pfn2);
             MiDecrementShareCount(Pfn1, PFN_FROM_PTE(&PteContents));
 
             /* Release the PFN lock */
@@ -3035,6 +3039,13 @@ NtMapViewOfSection(IN HANDLE SectionHandle,
     {
         DPRINT1("Invalid page protection\n");
         return STATUS_INVALID_PAGE_PROTECTION;
+    }
+
+    /* Check for non-allocation-granularity-aligned BaseAddress */
+    if (BaseAddress && (*BaseAddress != ALIGN_DOWN_POINTER_BY(*BaseAddress, MM_VIRTMEM_GRANULARITY)))
+    {
+       DPRINT("BaseAddress is not at 64-kilobyte address boundary.");
+       return STATUS_MAPPED_ALIGNMENT;
     }
 
     /* Now convert the protection mask into desired section access mask */

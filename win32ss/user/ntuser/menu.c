@@ -63,7 +63,7 @@ PMENU_OBJECT FASTCALL UserGetMenuObject(HMENU hMenu)
       return NULL;
    }
 
-   Menu = (PMENU_OBJECT)UserGetObject(gHandleTable, hMenu, otMenu);
+   Menu = (PMENU_OBJECT)UserGetObject(gHandleTable, hMenu, TYPE_MENU);
    if (!Menu)
    {
       EngSetLastError(ERROR_INVALID_MENU_HANDLE);
@@ -234,7 +234,7 @@ IntDestroyMenuObject(PMENU_OBJECT Menu,
             }
          }
 //         UserDereferenceObject(Menu);
-         ret = UserDeleteObject(Menu->MenuInfo.Self, otMenu);
+         ret = UserDeleteObject(Menu->MenuInfo.Self, TYPE_MENU);
          ObDereferenceObject(WindowStation);
          return ret;
       }
@@ -252,7 +252,7 @@ IntCreateMenu(PHANDLE Handle, BOOL IsMenuBar)
                                           NULL,
                                           NULL,
                                           Handle,
-                                          otMenu,
+                                          TYPE_MENU,
                                           sizeof(MENU_OBJECT));
    if(!Menu)
    {
@@ -364,7 +364,7 @@ IntCloneMenu(PMENU_OBJECT Source)
                                           NULL,
                                           NULL,
                                           &hMenu,
-                                          otMenu,
+                                          TYPE_MENU,
                                           sizeof(MENU_OBJECT));
    if(!Menu)
       return NULL;
@@ -1527,14 +1527,13 @@ HMENU FASTCALL UserCreateMenu(BOOL PopupMenu)
    NTSTATUS Status;
    PEPROCESS CurrentProcess = PsGetCurrentProcess();
 
-   if (CsrProcess != CurrentProcess)
+   if (gpepCSRSS != CurrentProcess)
    {
       /*
-       * CsrProcess does not have a Win32WindowStation
-	   *
-	   */
+       * gpepCSRSS does not have a Win32WindowStation
+       */
 
-      Status = IntValidateWindowStationHandle(PsGetCurrentProcess()->Win32WindowStation,
+      Status = IntValidateWindowStationHandle(CurrentProcess->Win32WindowStation,
                      KernelMode,
                      0,
                      &WinStaObject);

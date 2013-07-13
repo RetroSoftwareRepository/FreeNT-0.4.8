@@ -265,8 +265,8 @@ IopCompleteRequest(IN PKAPC Apc,
             (Irp->IoStatus.Information == IO_REPARSE_TAG_MOUNT_POINT))
         {
             /* We should never get this yet */
-            DPRINT1("Reparse support not yet present!\n");
-            while (TRUE);
+            UNIMPLEMENTED_DBGBREAK("Reparse support not yet present!\n");
+            return;
         }
     }
 
@@ -622,6 +622,40 @@ IoAllocateIrp(IN CCHAR StackSize,
             __FUNCTION__,
             Irp,
             Flags);
+    return Irp;
+}
+
+/*
+ * @implemented
+ */
+PIRP
+NTAPI
+IopAllocateIrpMustSucceed(IN CCHAR StackSize)
+{
+    LONG i;
+    PIRP Irp;
+    LARGE_INTEGER Sleep;
+
+    /* Try to get an IRP */
+    Irp = IoAllocateIrp(StackSize, FALSE);
+    if (Irp)
+        return Irp;
+
+    /* If we fail, start looping till we may get one */
+    i = LONG_MAX;
+    do {
+        i--;
+
+        /* First, sleep for 10ms */
+        Sleep.QuadPart = -10 * 1000 * 10;;
+        KeDelayExecutionThread(KernelMode, FALSE, &Sleep);
+
+        /* Then, retry allocation */
+        Irp = IoAllocateIrp(StackSize, FALSE);
+        if (Irp)
+            return Irp;
+    } while (i > 0);
+
     return Irp;
 }
 
@@ -1372,8 +1406,7 @@ IofCompleteRequest(IN PIRP Irp,
                              PriorityBoost);
 #else
             /* Not implemented yet. */
-            DPRINT1("Not supported!\n");
-            while (TRUE);
+            UNIMPLEMENTED_DBGBREAK("Not supported!\n");
 #endif
         }
 

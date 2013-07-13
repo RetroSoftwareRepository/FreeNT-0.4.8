@@ -202,8 +202,8 @@ else()
             include/psdk
             include/dxsdk
             ${REACTOS_BINARY_DIR}/include
-            ${REACTOS_BINARY_DIR}/include/dxsdk
             ${REACTOS_BINARY_DIR}/include/psdk
+			${REACTOS_BINARY_DIR}/include/dxsdk
             ${REACTOS_BINARY_DIR}/include/reactos
             include/crt
             include/ddk
@@ -232,6 +232,9 @@ else()
     add_subdirectory(include/asm)
 
     include(cmake/baseaddress.cmake)
+    
+    # For MSVC builds, this puts all debug symbols file in the same directory.
+    set(CMAKE_PDB_OUTPUT_DIRECTORY "${REACTOS_BINARY_DIR}/msvc_pdb")
 
     #begin with boot so reactos_cab target is defined before all other modules
     add_subdirectory(boot)

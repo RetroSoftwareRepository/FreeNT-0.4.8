@@ -1,4 +1,6 @@
 
+set_cpp(WITH_STL)
+
 add_definitions(
     -DFEATURE_GL=1
     -D_GDI32_           # prevent gl* being declared __declspec(dllimport) in MS headers
@@ -12,16 +14,13 @@ include_directories(
     ../glsl
     .
     ../../generated/mesa)
-    
-# This library uses C++
-set_cpp()
 
 if((ARCH STREQUAL "i386") AND (NOT MSVC))
     list(APPEND SOURCE
         x86/common_x86.c
         # x86/x86_xform.c
         # x86/3dnow.c
-        # x86/sse.c
+        x86/sse.c
         x86/common_x86_asm.S
         x86/x86_xform2.S
         x86/x86_xform3.S
@@ -43,7 +42,8 @@ if((ARCH STREQUAL "i386") AND (NOT MSVC))
         -DUSE_X86_ASM
         -DUSE_MMX_ASM
         -DUSE_3DNOW_ASM
-        -DUSE_SSE_ASM)
+        -DUSE_SSE_ASM
+    )
 endif()
 
 list(APPEND SOURCE
@@ -295,7 +295,7 @@ list(APPEND SOURCE
     # drivers/common/driverfuncs.c
     # drivers/common/meta.c
 )
-    
+
 if(NOT MSVC)
     add_compile_flags("-Wno-format")
 endif()

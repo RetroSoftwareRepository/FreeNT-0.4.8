@@ -18,7 +18,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
-#include <precomp.h>
+#include "precomp.h"
 
 /* Set DUMP_TASKS to 1 to enable a dump of the tasks and task groups every
    5 seconds */
@@ -709,13 +709,10 @@ TaskSwitchWnd_AddToTaskGroup(IN OUT PTASK_SWITCH_WND This,
 
     /* Allocate a new task group */
     TaskGroup = HeapAlloc(hProcessHeap,
-                          0,
+                          HEAP_ZERO_MEMORY,
                           sizeof(*TaskGroup));
     if (TaskGroup != NULL)
     {
-        ZeroMemory(TaskGroup,
-                   sizeof(*TaskGroup));
-
         TaskGroup->dwTaskCount = 1;
         TaskGroup->dwProcessId = dwProcessId;
         TaskGroup->Index = -1;
@@ -852,7 +849,19 @@ TaskSwitchWnd_AllocTaskItem(IN OUT PTASK_SWITCH_WND This)
 
     ASSERT(This->AllocatedTaskItems >= This->TaskItemCount);
 
-    if (This->TaskItemCount != 0)
+    if (This->TaskItemCount == 0)
+    {
+        This->TaskItems = HeapAlloc(hProcessHeap,
+                                    0,
+                                    TASK_ITEM_ARRAY_ALLOC * sizeof(*This->TaskItems));
+        if (This->TaskItems != NULL)
+        {
+            This->AllocatedTaskItems = TASK_ITEM_ARRAY_ALLOC;
+        }
+        else
+            return NULL;
+    }
+    else if (This->TaskItemCount >= This->AllocatedTaskItems)
     {
         PTASK_ITEM NewArray;
         SIZE_T NewArrayLength, ActiveTaskItemIndex;
@@ -873,18 +882,6 @@ TaskSwitchWnd_AllocTaskItem(IN OUT PTASK_SWITCH_WND This)
             }
             This->AllocatedTaskItems = (WORD)NewArrayLength;
             This->TaskItems = NewArray;
-        }
-        else
-            return NULL;
-    }
-    else
-    {
-        This->TaskItems = HeapAlloc(hProcessHeap,
-                                    0,
-                                    TASK_ITEM_ARRAY_ALLOC * sizeof(*This->TaskItems));
-        if (This->TaskItems != NULL)
-        {
-            This->AllocatedTaskItems = TASK_ITEM_ARRAY_ALLOC;
         }
         else
             return NULL;
@@ -945,58 +942,49 @@ TaskSwitchWnd_CheckActivateTaskItem(IN OUT PTASK_SWITCH_WND This,
     if (TaskItem != NULL)
         TaskGroup = TaskItem->Group;
 
-    if (This->IsGroupingEnabled && TaskGroup != NULL)
+    if (This->IsGroupingEnabled &&
+        TaskGroup != NULL &&
+        TaskGroup->IsCollapsed)
     {
-        if (TaskGroup->IsCollapsed)
+        /* FIXME */
+        return;
+    }
+
+    if (ActiveTaskItem != NULL)
+    {
+        PTASK_GROUP ActiveTaskGroup;
+
+        if (ActiveTaskItem == TaskItem)
+            return;
+
+        ActiveTaskGroup = ActiveTaskItem->Group;
+
+        if (This->IsGroupingEnabled &&
+            ActiveTaskGroup != NULL &&
+            ActiveTaskGroup->IsCollapsed)
         {
+            if (ActiveTaskGroup == TaskGroup)
+                return;
+
             /* FIXME */
         }
         else
-            goto ChangeTaskItemButton;
+        {
+            This->ActiveTaskItem = NULL;
+            if (ActiveTaskItem->Index >= 0)
+            {
+                TaskSwitchWnd_UpdateTaskItemButton(This,
+                                                   ActiveTaskItem);
+            }
+        }
     }
-    else
+
+    This->ActiveTaskItem = TaskItem;
+
+    if (TaskItem != NULL && TaskItem->Index >= 0)
     {
-ChangeTaskItemButton:
-        if (ActiveTaskItem != NULL)
-        {
-            PTASK_GROUP ActiveTaskGroup;
-
-            if (ActiveTaskItem == TaskItem)
-                return;
-
-            ActiveTaskGroup = ActiveTaskItem->Group;
-
-            if (This->IsGroupingEnabled && ActiveTaskGroup != NULL)
-            {
-                if (ActiveTaskGroup->IsCollapsed)
-                {
-                    if (ActiveTaskGroup == TaskGroup)
-                        return;
-
-                    /* FIXME */
-                }
-                else
-                    goto ChangeActiveTaskItemButton;
-            }
-            else
-            {
-ChangeActiveTaskItemButton:
-                This->ActiveTaskItem = NULL;
-                if (ActiveTaskItem->Index >= 0)
-                {
-                    TaskSwitchWnd_UpdateTaskItemButton(This,
-                                                       ActiveTaskItem);
-                }
-            }
-        }
-
-        This->ActiveTaskItem = TaskItem;
-
-        if (TaskItem != NULL && TaskItem->Index >= 0)
-        {
-            TaskSwitchWnd_UpdateTaskItemButton(This,
-                                               TaskItem);
-        }
+        TaskSwitchWnd_UpdateTaskItemButton(This,
+                                           TaskItem);
     }
 }
 
@@ -1474,7 +1462,7 @@ TaskSwitchWnd_Create(IN OUT PTASK_SWITCH_WND This)
                     sizeof(TBBUTTON),
                     0);
 
-        This->TaskIcons = ImageList_Create(16, 16, ILC_COLOR32, 0, 1000);
+        This->TaskIcons = ImageList_Create(16, 16, ILC_COLOR32 | ILC_MASK, 0, 1000);
         SendMessage(This->hWndToolbar, TB_SETIMAGELIST, 0, (LPARAM)This->TaskIcons);
 
         /* Calculate the default button size. Don't save this in This->ButtonSize.cx so that
@@ -2073,14 +2061,12 @@ ForwardContextMenuMsg:
             case WM_NCCREATE:
             {
                 LPCREATESTRUCT CreateStruct = (LPCREATESTRUCT)lParam;
-                This = (PTASK_SWITCH_WND)HeapAlloc(hProcessHeap,
-                                                   0,
-                                                   sizeof(*This));
+                This = HeapAlloc(hProcessHeap,
+                                 HEAP_ZERO_MEMORY,
+                                 sizeof(*This));
                 if (This == NULL)
                     return FALSE;
 
-                ZeroMemory(This,
-                           sizeof(*This));
                 This->hWnd = hwnd;
                 This->hWndNotify = CreateStruct->hwndParent;
                 This->Tray = (ITrayWindow*)CreateStruct->lpCreateParams;

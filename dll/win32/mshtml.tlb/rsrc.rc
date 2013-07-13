@@ -16,9 +16,11 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "windef.h"
+#include <windef.h>
 
 LANGUAGE LANG_NEUTRAL, SUBLANG_NEUTRAL
 
 /* @makedep: mshtml_tlb.tlb */
 1 TYPELIB mshtml_tlb.tlb
+
+1 WINE_REGISTRY mshtml_tlb.rgs

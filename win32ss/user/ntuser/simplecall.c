@@ -15,9 +15,8 @@ PPROCESSINFO LogonProcess = NULL;
 BOOL FASTCALL
 co_IntRegisterLogonProcess(HANDLE ProcessId, BOOL Register)
 {
-   PEPROCESS Process;
    NTSTATUS Status;
-   CSR_API_MESSAGE Request;
+   PEPROCESS Process;
 
    Status = PsLookupProcessByProcessId(ProcessId,
                                        &Process);
@@ -51,17 +50,6 @@ co_IntRegisterLogonProcess(HANDLE ProcessId, BOOL Register)
    }
 
    ObDereferenceObject(Process);
-
-   Request.Type = MAKE_CSR_API(REGISTER_LOGON_PROCESS, CSR_GUI);
-   Request.Data.RegisterLogonProcessRequest.ProcessId = ProcessId;
-   Request.Data.RegisterLogonProcessRequest.Register = Register;
-
-   Status = co_CsrNotify(&Request);
-   if (! NT_SUCCESS(Status))
-   {
-      ERR("Failed to register logon process with CSRSS\n");
-      return FALSE;
-   }
 
    return TRUE;
 }
@@ -129,6 +117,10 @@ NtUserCallNoParam(DWORD Routine)
          RETURN(0);
       }
 
+      /* this is a Reactos only case and is needed for gui-on-demand */
+      case NOPARAM_ROUTINE_ISCONSOLEMODE:
+          RETURN( ScreenDeviceContext == NULL );
+
       default:
          ERR("Calling invalid routine number 0x%x in NtUserCallNoParam\n", Routine);
          EngSetLastError(ERROR_INVALID_PARAMETER);
@@ -164,7 +156,7 @@ NtUserCallOneParam(
           {
                 PTHREADINFO pti;
                 pti = PsGetCurrentThreadWin32Thread();
-                MsqPostQuitMessage(pti->MessageQueue, Param);
+                MsqPostQuitMessage(pti, Param);
                 RETURN(TRUE);
           }
 
@@ -186,13 +178,13 @@ NtUserCallOneParam(
                                                NULL, 
                                                NULL, 
                                               (PHANDLE)&hDwp,
-                                               otSMWP,
+                                               TYPE_SETWINDOWPOS,
                                                sizeof(SMWP));
              if (!psmwp) RETURN(0);
              psmwp->acvr = ExAllocatePoolWithTag(PagedPool, count * sizeof(CVR), USERTAG_SWP);
              if (!psmwp->acvr)
              {
-                UserDeleteObject(hDwp, otSMWP);
+                UserDeleteObject(hDwp, TYPE_SETWINDOWPOS);
                 RETURN(0);
              }
              RtlZeroMemory(psmwp->acvr, count * sizeof(CVR));
@@ -346,7 +338,7 @@ NtUserCallOneParam(
           BOOL Ret = TRUE;
           PPROCESSINFO ppi;
           PDWORD pdwLayout;
-          if ( PsGetCurrentProcess() == CsrProcess)
+          if ( PsGetCurrentProcess() == gpepCSRSS)
           {
              EngSetLastError(ERROR_INVALID_ACCESS);
              RETURN(FALSE);
@@ -427,10 +419,9 @@ NtUserCallTwoParam(
 
       case TWOPARAM_ROUTINE_SETGUITHRDHANDLE:
          {
-            PUSER_MESSAGE_QUEUE MsgQueue = ((PTHREADINFO)PsGetCurrentThread()->Tcb.Win32Thread)->MessageQueue;
-
-            ASSERT(MsgQueue);
-            RETURN( (DWORD_PTR)MsqSetStateWindow(MsgQueue, (ULONG)Param1, (HWND)Param2));
+            PTHREADINFO pti = (PTHREADINFO)PsGetCurrentThreadWin32Thread();
+            ASSERT(pti->MessageQueue);
+            RETURN( (DWORD_PTR)MsqSetStateWindow(pti, (ULONG)Param1, (HWND)Param2));
          }
 
       case TWOPARAM_ROUTINE_ENABLEWINDOW:
@@ -473,6 +464,13 @@ NtUserCallTwoParam(
 
       case TWOPARAM_ROUTINE_UNHOOKWINDOWSHOOK:
          RETURN( IntUnhookWindowsHook((int)Param1, (HOOKPROC)Param2));
+      case TWOPARAM_ROUTINE_EXITREACTOS:
+          if(hwndSAS == NULL)
+          {
+              ASSERT(hwndSAS);
+              RETURN(STATUS_NOT_FOUND);
+          }
+         RETURN( co_IntSendMessage (hwndSAS, PM_WINLOGON_EXITWINDOWS, (WPARAM) Param1, (LPARAM)Param2));
    }
    ERR("Calling invalid routine number 0x%x in NtUserCallTwoParam(), Param1=0x%x Parm2=0x%x\n",
            Routine, Param1, Param2);
@@ -561,9 +559,15 @@ NtUserCallHwndLock(
          break;
 
       case HWNDLOCK_ROUTINE_SETFOREGROUNDWINDOW:
-         TRACE("co_IntSetForegroundWindow 1 %p\n",hWnd);
+         TRACE("co_IntSetForegroundWindow 1 0x%p\n",hWnd);
          Ret = co_IntSetForegroundWindow(Window);
-         TRACE("co_IntSetForegroundWindow 2 \n");
+         TRACE("co_IntSetForegroundWindow 2 0x%p\n",hWnd);
+         break;
+
+      case HWNDLOCK_ROUTINE_SETFOREGROUNDWINDOWMOUSE:
+         TRACE("co_IntSetForegroundWindow 1 0x%p\n",hWnd);
+         Ret = co_IntSetForegroundWindowMouse(Window);
+         TRACE("co_IntSetForegroundWindow 2 0x%p\n",hWnd);
          break;
 
       case HWNDLOCK_ROUTINE_UPDATEWINDOW:

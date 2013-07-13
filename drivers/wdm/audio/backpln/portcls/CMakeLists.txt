@@ -4,7 +4,7 @@ set_cpp()
 remove_definitions(-D_WIN32_WINNT=0x502)
 add_definitions(-D_WIN32_WINNT=0x600)
 
-spec2def(portcls.sys portcls.spec)
+spec2def(portcls.sys portcls.spec ADD_IMPORTLIB)
 
 list(APPEND SOURCE
     adapter.cpp
@@ -20,7 +20,6 @@ list(APPEND SOURCE
     filter_wavecyclic.cpp
     filter_wavepci.cpp
     filter_wavert.cpp
-    guids.cpp
     interrupt.cpp
     irp.cpp
     irpstream.cpp
@@ -57,15 +56,6 @@ add_library(portcls SHARED
 target_link_libraries(portcls
     libcntpr
     ${PSEH_LIB})
-
-# FIXME: http://www.cmake.org/Bug/view.php?id=12998
-if(MSVC)
-    #add_target_compile_flags(portcls "/GR-")
-    set_source_files_properties(${SOURCE} PROPERTIES COMPILE_FLAGS "/GR-")
-else()
-    #add_target_compile_flags(portcls "-fno-exceptions -fno-rtti")
-    set_source_files_properties(${SOURCE} PROPERTIES COMPILE_FLAGS "-fno-exceptions -fno-rtti")
-endif()
 
 set_module_type(portcls kernelmodedriver ENTRYPOINT 0 )
 add_pch(portcls private.hpp)

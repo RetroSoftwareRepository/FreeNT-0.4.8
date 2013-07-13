@@ -21,14 +21,8 @@
 #pragma once
 
 #define CONFIG_CMD(bus, dev_fn, where) \
-	(0x80000000 | (((ULONG)(bus)) << 16) | (((dev_fn) & 0x1F) << 11) | (((dev_fn) & 0xE0) << 3) | ((where) & ~3))
+    (0x80000000 | (((ULONG)(bus)) << 16) | (((dev_fn) & 0x1F) << 11) | (((dev_fn) & 0xE0) << 3) | ((where) & ~3))
 
-
-//
-// Static heap for ARC Hardware Component Tree
-// 16KB oughta be enough for anyone.
-//
-#define HW_MAX_ARC_HEAP_SIZE 16 * 1024
 
 //
 // ARC Component Configuration Routines
@@ -74,9 +68,9 @@ VOID DetectPciBios(PCONFIGURATION_COMPONENT_DATA SystemKey, ULONG *BusNumber);
 /* i386pnp.S */
 ULONG_PTR PnpBiosSupported(VOID);
 ULONG PnpBiosGetDeviceNodeCount(ULONG *NodeSize,
-			      ULONG *NodeCount);
+                  ULONG *NodeCount);
 ULONG PnpBiosGetDeviceNode(UCHAR *NodeId,
-			 UCHAR *NodeBuffer);
+             UCHAR *NodeBuffer);
 
 /* i386pxe.S */
 USHORT PxeCallApi(USHORT Segment, USHORT Offset, USHORT Service, VOID* Parameter);

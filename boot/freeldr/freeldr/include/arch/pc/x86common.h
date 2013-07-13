@@ -16,13 +16,14 @@
 #define DISKREADBUFFER     HEX(80000) /* Buffer to store data read in from the disk via the BIOS */
 #define STACKLOWLIMIT      HEX(90000)
 #define STACK32ADDR        HEX(98000) /* The 32-bit stack top will be at 9000:8000, or 0xA8000 */
-#define STACK64ADDR	       HEX(98000) /* The 64-bit stack top will be at 98000 */
+#define STACK64ADDR           HEX(98000) /* The 64-bit stack top will be at 98000 */
 #define BIOSCALLBUFFER     HEX(98000) /* Buffer to store temporary data for any Int386() call */
 #define DISKREADBUFFER_SIZE HEX(10000)
 
 #define BIOSCALLBUFSEGMENT (BIOSCALLBUFFER/16) /* Buffer to store temporary data for any Int386() call */
 #define BIOSCALLBUFOFFSET   HEX(0000) /* Buffer to store temporary data for any Int386() call */
 #define BIOSCALLBUFSIZE     PAGE_SIZE /* max is sizeof(VESA_SVGA_INFO) = 512 */
+#define MAX_FREELDR_PE_SIZE (DISKREADBUFFER - FREELDR_PE_BASE)
 
 /* These addresses specify the realmode "BSS section" layout */
 #define BSS_RealModeEntry        (BSS_START +  0)
@@ -56,16 +57,16 @@
 #define FNID_BootLinuxKernel 6
 
 /* Flag Masks */
-#define CR0_PE_SET	HEX(00000001)	/* OR this value with CR0 to enable pmode */
-#define CR0_PE_CLR	HEX(FFFFFFFE)	/* AND this value with CR0 to disable pmode */
+#define CR0_PE_SET    HEX(00000001)    /* OR this value with CR0 to enable pmode */
+#define CR0_PE_CLR    HEX(FFFFFFFE)    /* AND this value with CR0 to disable pmode */
 
 /* Defines needed for switching between real and protected mode */
 //#ifdef _M_IX86
-#define NULL_DESC	HEX(00)	/* NULL descriptor */
-#define PMODE_CS	HEX(08)	/* PMode code selector, base 0 limit 4g */
-#define PMODE_DS	HEX(10)	/* PMode data selector, base 0 limit 4g */
-#define RMODE_CS	HEX(18)	/* RMode code selector, base 0 limit 64k */
-#define RMODE_DS	HEX(20)	/* RMode data selector, base 0 limit 64k */
+#define NULL_DESC    HEX(00)    /* NULL descriptor */
+#define PMODE_CS    HEX(08)    /* PMode code selector, base 0 limit 4g */
+#define PMODE_DS    HEX(10)    /* PMode data selector, base 0 limit 4g */
+#define RMODE_CS    HEX(18)    /* RMode code selector, base 0 limit 64k */
+#define RMODE_DS    HEX(20)    /* RMode data selector, base 0 limit 64k */
 //#else
 /* Long mode selectors */
 #define LMODE_CS HEX(10)
@@ -74,4 +75,4 @@
 //#endif
 
 /* Makes "x" a global variable or label */
-#define EXTERN(x)	.global x; x:
+#define EXTERN(x)    .global x; x:

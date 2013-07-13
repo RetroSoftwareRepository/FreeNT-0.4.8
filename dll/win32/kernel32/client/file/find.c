@@ -116,20 +116,21 @@ CopyDeviceFindData(OUT LPWIN32_FIND_DATAW lpFindFileData,
                    IN LPCWSTR lpFileName,
                    IN ULONG DeviceNameInfo)
 {
-    UNICODE_STRING DeviceName;
+    LPCWSTR DeviceName;
+    SIZE_T Length;
 
     _SEH2_TRY
     {
         /* DeviceNameInfo == { USHORT Offset; USHORT Length } */
-        DeviceName.Length = DeviceName.MaximumLength = (USHORT)(DeviceNameInfo & 0xFFFF);
-        DeviceName.Buffer = (LPWSTR)((ULONG_PTR)lpFileName + ((DeviceNameInfo >> 16) & 0xFFFF));
+        Length     =  (SIZE_T)(DeviceNameInfo & 0xFFFF);
+        DeviceName = (LPCWSTR)((ULONG_PTR)lpFileName + ((DeviceNameInfo >> 16) & 0xFFFF));
 
         /* Return the data */
         RtlZeroMemory(lpFindFileData, sizeof(*lpFindFileData));
         lpFindFileData->dwFileAttributes = FILE_ATTRIBUTE_ARCHIVE;
         RtlCopyMemory(lpFindFileData->cFileName,
-                      DeviceName.Buffer,
-                      DeviceName.Length);
+                      DeviceName,
+                      Length);
     }
     _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
     {
@@ -668,7 +669,7 @@ FindFirstFileExW(IN LPCWSTR lpFileName,
         PFIND_DATA_HANDLE FindDataHandle;
         PFIND_FILE_DATA FindFileData;
 
-        UNICODE_STRING NtPath, FilePattern;
+        UNICODE_STRING NtPath, FilePattern, FileName;
         PWSTR NtPathBuffer;
         RTL_RELATIVE_NAME_U RelativePath;
         ULONG DeviceNameInfo = 0;
@@ -677,6 +678,8 @@ FindFirstFileExW(IN LPCWSTR lpFileName,
         OBJECT_ATTRIBUTES ObjectAttributes;
         IO_STATUS_BLOCK IoStatusBlock;
         HANDLE hDirectory = NULL;
+
+        BOOLEAN HadADot = FALSE;
 
         /*
          * May represent many FILE_BOTH_DIR_INFORMATION
@@ -690,6 +693,12 @@ FindFirstFileExW(IN LPCWSTR lpFileName,
         {
             SetLastError(ERROR_INVALID_PARAMETER);
             return INVALID_HANDLE_VALUE;
+        }
+
+        RtlInitUnicodeString(&FileName, lpFileName);
+        if (FileName.Length != 0 && FileName.Buffer[FileName.Length / sizeof(WCHAR) - 1] == L'.')
+        {
+            HadADot = TRUE;
         }
 
         if (!RtlDosPathNameToNtPathName_U(lpFileName,
@@ -815,6 +824,55 @@ FindFirstFileExW(IN LPCWSTR lpFileName,
             RtlCompareMemory(FilePattern.Buffer, L"*.*", 6) == 6)
         {
             FilePattern.Length = 2;
+        }
+        else
+        {
+            /* Translate wildcard from "real" world to DOS world for lower interpretation */
+            USHORT PatternIndex = 0;
+            while (PatternIndex < FilePattern.Length / sizeof(WCHAR))
+            {
+                if (PatternIndex > 0)
+                {
+                    if (FilePattern.Buffer[PatternIndex] == L'.' &&
+                        FilePattern.Buffer[PatternIndex - 1] == L'*')
+                    {
+                        FilePattern.Buffer[PatternIndex - 1] = L'<';
+                    }
+                }
+
+                if (FilePattern.Buffer[PatternIndex] == L'?')
+                {
+                    FilePattern.Buffer[PatternIndex] = L'>';
+                    if (PatternIndex > 0)
+                    {
+                        if (FilePattern.Buffer[PatternIndex - 1] == L'.')
+                        {
+                            FilePattern.Buffer[PatternIndex - 1] = L'\"';
+                        }
+                    }
+                }
+                else if (FilePattern.Buffer[PatternIndex] == L'*')
+                {
+                    if (PatternIndex > 0)
+                    {
+                        if (FilePattern.Buffer[PatternIndex - 1] == L'.')
+                        {
+                            FilePattern.Buffer[PatternIndex - 1] = L'\"';
+                        }
+                    }
+                }
+
+                PatternIndex++;
+            }
+
+            /* Handle partial wc if our last dot was eaten */
+            if (HadADot)
+            {
+                if (FilePattern.Buffer[FilePattern.Length / sizeof(WCHAR) - 1] == L'*')
+                {
+                    FilePattern.Buffer[FilePattern.Length / sizeof(WCHAR) - 1] = L'<';
+                }
+            }
         }
 
         Status = NtQueryDirectoryFile(hDirectory,

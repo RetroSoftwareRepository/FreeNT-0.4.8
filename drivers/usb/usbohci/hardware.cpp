@@ -101,6 +101,7 @@ protected:
     HD_INIT_CALLBACK* m_SCECallBack;                                                   // status change callback routine
     PVOID m_SCEContext;                                                                // status change callback routine context
     WORK_QUEUE_ITEM m_StatusChangeWorkItem;                                            // work item for status change callback
+    volatile LONG m_StatusChangeWorkItemStatus;                                        // work item active status
     ULONG m_SyncFramePhysAddr;                                                         // periodic frame list physical address
     ULONG m_IntervalValue;                                                             // periodic interval value
 };
@@ -123,6 +124,14 @@ CUSBHardwareDevice::QueryInterface(
 
     return STATUS_UNSUCCESSFUL;
 }
+
+LPCSTR
+STDMETHODCALLTYPE
+CUSBHardwareDevice::GetUSBType()
+{
+    return "USBOHCI";
+}
+
 
 NTSTATUS
 STDMETHODCALLTYPE
@@ -545,7 +554,7 @@ retry:
             // delay is 100 ms
             //
             Timeout.QuadPart = WaitInMs;
-            DPRINT1("Waiting %d milliseconds for controller to transition state\n", Timeout.LowPart);
+            DPRINT1("Waiting %lu milliseconds for controller to transition state\n", Timeout.LowPart);
             
             //
             // convert to 100 ns units (absolute)
@@ -1125,7 +1134,7 @@ CUSBHardwareDevice::ClearPortStatus(
             // delay is 100 ms
             //
             Timeout.QuadPart = 100;
-            DPRINT1("Waiting %d milliseconds for port to stabilize after connection\n", Timeout.LowPart);
+            DPRINT1("Waiting %lu milliseconds for port to stabilize after connection\n", Timeout.LowPart);
 
             //
             // convert to 100 ns units (absolute)
@@ -1196,7 +1205,7 @@ CUSBHardwareDevice::SetPortFeature(
         // delay is multiplied by 2 ms
         //
         Timeout.QuadPart *= 2;
-        DPRINT1("Waiting %d milliseconds for port power up\n", Timeout.LowPart);
+        DPRINT1("Waiting %lu milliseconds for port power up\n", Timeout.LowPart);
 
         //
         // convert to 100 ns units (absolute)
@@ -1464,7 +1473,7 @@ OhciDefferedRoutine(
                     //
                     // device connected
                     //
-                    DPRINT1("New device arrival at Port %d LowSpeed %x\n", Index, (PortStatus & OHCI_RH_PORTSTATUS_LSDA));
+                    DPRINT1("New device arrival at Port %lu LowSpeed %x\n", Index, (PortStatus & OHCI_RH_PORTSTATUS_LSDA));
 
                     //
                     // enable port
@@ -1501,7 +1510,7 @@ OhciDefferedRoutine(
                 //
                 // This is a port reset complete interrupt
                 //
-                DPRINT1("Port %d completed reset\n", Index);
+                DPRINT1("Port %lu completed reset\n", Index);
 
                 //
                 // Queue a work item
@@ -1515,10 +1524,13 @@ OhciDefferedRoutine(
         //
         if (QueueSCEWorkItem && This->m_SCECallBack != NULL)
         {
-            //
-            // queue work item for processing
-            //
-            ExQueueWorkItem(&This->m_StatusChangeWorkItem, DelayedWorkQueue);
+            if (InterlockedCompareExchange(&This->m_StatusChangeWorkItemStatus, 1, 0) == 0)
+            {
+                //
+                // queue work item for processing
+                //
+                ExQueueWorkItem(&This->m_StatusChangeWorkItem, DelayedWorkQueue);
+            }
         }
     }
 }
@@ -1544,6 +1556,10 @@ StatusChangeWorkItemRoutine(
         This->m_SCECallBack(This->m_SCEContext);
     }
 
+    //
+    // reset active status
+    //
+    InterlockedDecrement(&This->m_StatusChangeWorkItemStatus);
 }
 
 NTSTATUS

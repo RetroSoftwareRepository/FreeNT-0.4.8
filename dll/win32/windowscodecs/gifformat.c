@@ -17,24 +17,29 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "config.h"
+#define WIN32_NO_STATUS
+#define _INC_WINDOWS
+#define COM_NO_WINDOWS_H
+
+#include <config.h>
 
 #include <stdarg.h>
 
 #define COBJMACROS
 #define NONAMELESSUNION
 
-#include "windef.h"
-#include "winbase.h"
-#include "objbase.h"
-#include "wincodec.h"
-#include "wincodecsdk.h"
+#include <windef.h>
+#include <winbase.h>
+#include <winnls.h>
+#include <ole2.h>
+//#include "wincodec.h"
+#include <wincodecsdk.h>
 
 #include "ungif.h"
 
 #include "wincodecs_private.h"
 
-#include "wine/debug.h"
+#include <wine/debug.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(wincodecs);
 
@@ -1140,7 +1145,7 @@ static HRESULT WINAPI GifDecoder_Initialize(IWICBitmapDecoder *iface, IStream *p
 
     seek.QuadPart = 0;
     IStream_Seek(pIStream, seek, STREAM_SEEK_SET, NULL);
-    IStream_Read(pIStream, &This->LSD_data, sizeof(This->LSD_data), NULL);
+    IStream_Read(pIStream, This->LSD_data, sizeof(This->LSD_data), NULL);
 
     This->initialized = TRUE;
 

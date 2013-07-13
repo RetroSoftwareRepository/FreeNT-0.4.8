@@ -1,11 +1,11 @@
-set_cpp()
+
+set_cpp(WITH_RUNTIME)
 
 remove_definitions(-D_WIN32_WINNT=0x502)
 add_definitions(-D_WIN32_WINNT=0x600)
 
 add_definitions(
     -D_SHELL32_
-    -DCOM_NO_WINDOWS_H
     -D_WINE)
 
 include_directories(
@@ -108,6 +108,6 @@ add_importlibs(shell32
     kernel32
     ntdll)
 
-add_dependencies(shdocvw shdocvw_v1)
+add_dependencies(shell32 shdocvw_v1)
 add_pch(shell32 precomp.h)
 add_cd_file(TARGET shell32 DESTINATION reactos/system32 FOR all)

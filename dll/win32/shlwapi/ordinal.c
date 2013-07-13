@@ -20,37 +20,42 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "config.h"
-#include "wine/port.h"
+#define WIN32_NO_STATUS
+#define _INC_WINDOWS
+#define COM_NO_WINDOWS_H
 
-#include <stdarg.h>
+#include <config.h>
+//#include "wine/port.h"
+
+//#include <stdarg.h>
 #include <stdio.h>
-#include <string.h>
+//#include <string.h>
 
 #define COBJMACROS
 #define NONAMELESSUNION
 #define NONAMELESSSTRUCT
 
-#include "windef.h"
-#include "winbase.h"
-#include "winnls.h"
-#include "winreg.h"
-#include "wingdi.h"
-#include "winuser.h"
-#include "winver.h"
-#include "winnetwk.h"
-#include "mmsystem.h"
-#include "objbase.h"
-#include "exdisp.h"
-#include "shdeprecated.h"
-#include "shlobj.h"
-#include "shlwapi.h"
-#include "shellapi.h"
-#include "commdlg.h"
-#include "mlang.h"
-#include "mshtmhst.h"
-#include "wine/unicode.h"
-#include "wine/debug.h"
+#include <windef.h>
+#include <winbase.h>
+//#include "winnls.h"
+#include <winreg.h>
+#include <wingdi.h>
+//#include "winuser.h"
+#include <winver.h>
+#include <winnetwk.h>
+#include <wincon.h>
+#include <mmsystem.h>
+//#include "objbase.h"
+//#include "exdisp.h"
+//#include "shdeprecated.h"
+#include <shlobj.h>
+#include <shlwapi.h>
+#include <shellapi.h>
+#include <commdlg.h>
+#include <mlang.h>
+#include <mshtmhst.h>
+#include <wine/unicode.h>
+#include <wine/debug.h>
 
 
 WINE_DEFAULT_DEBUG_CHANNEL(shell);
@@ -635,25 +640,6 @@ INT WINAPI SHStringFromGUIDW(REFGUID guid, LPWSTR lpszDest, INT cchMax)
     return 0;
   memcpy(lpszDest, xguid, iLen*sizeof(WCHAR));
   return iLen;
-}
-
-/*************************************************************************
- *      @	[SHLWAPI.29]
- *
- * Determine if a Unicode character is a space.
- *
- * PARAMS
- *  wc [I] Character to check.
- *
- * RETURNS
- *  TRUE, if wc is a space,
- *  FALSE otherwise.
- */
-BOOL WINAPI IsCharSpaceW(WCHAR wc)
-{
-    WORD CharType;
-
-    return GetStringTypeW(CT_CTYPE1, &wc, 1, &CharType) && (CharType & C1_SPACE);
 }
 
 /*************************************************************************
@@ -2676,7 +2662,7 @@ DWORD WINAPI SHGetRestriction(LPCWSTR lpSubKey, LPCWSTR lpSubName, LPCWSTR lpVal
 	  lpSubKey = strRegistryPolicyW;
 
 	retval = RegOpenKeyW(HKEY_LOCAL_MACHINE, lpSubKey, &hKey);
-    if (retval != ERROR_SUCCESS)
+        if (retval != ERROR_SUCCESS)
 	  retval = RegOpenKeyW(HKEY_CURRENT_USER, lpSubKey, &hKey);
 	if (retval != ERROR_SUCCESS)
 	  return 0;
@@ -2724,7 +2710,7 @@ DWORD WINAPI SHRestrictionLookup(
 	    /* we have a known policy */
 
 	    /* check if this policy has been cached */
-		if (*polArr == SHELL_NO_POLICY)
+            if (*polArr == SHELL_NO_POLICY)
 	      *polArr = SHGetRestriction(initial, polTable->appstr, polTable->keystr);
 	    return *polArr;
 	  }

@@ -135,7 +135,7 @@ MiSimpleRead(PFILE_OBJECT FileObject,
 
     ASSERT(DeviceObject);
 
-    DPRINT("PAGING READ: FileObject %p <%wZ> Offset %08x%08x Length %d\n",
+    DPRINT("PAGING READ: FileObject %p <%wZ> Offset %08x%08x Length %ul\n",
            FileObject,
            &FileObject->FileName,
            FileOffset->HighPart,
@@ -187,7 +187,9 @@ MiSimpleRead(PFILE_OBJECT FileObject,
     }
 
     DPRINT("Paging IO Done: %08x\n", ReadStatus->Status);
-    Status = ReadStatus->Status == STATUS_END_OF_FILE ? STATUS_SUCCESS : ReadStatus->Status;
+    /* When "ReadStatus->Information > 0" is false and "ReadStatus->Status == STATUS_END_OF_FILE" is true
+     * it means that read pointer is out of file, so we must fail */
+    Status = ReadStatus->Status == STATUS_END_OF_FILE && ReadStatus->Information > 0 ? STATUS_SUCCESS : ReadStatus->Status;
     return Status;
 }
 
@@ -222,10 +224,10 @@ _MiSimpleWrite(PFILE_OBJECT FileObject,
     DeviceObject = MmGetDeviceObjectForFile(FileObject);
     ASSERT(DeviceObject);
 
-    DPRINT("PAGING WRITE: FileObject %x <%wZ> Offset %x Length %d (%s:%d)\n",
+    DPRINT("PAGING WRITE: FileObject %p <%wZ> Offset 0x%I64x Length %lu (%s:%d)\n",
            FileObject,
            &FileObject->FileName,
-           FileOffset->LowPart,
+           FileOffset->QuadPart,
            Length,
            File,
            Line);

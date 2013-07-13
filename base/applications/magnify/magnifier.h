@@ -18,12 +18,15 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
-//////////////////////////////////////////////////////////////////
-
-#include <windows.h>
-#include <commctrl.h>
+#include <stdarg.h>
+#include <windef.h>
+#include <winbase.h>
+#include <winuser.h>
+#include <winreg.h>
+#include <wingdi.h>
 #include <tchar.h>
-#include <shellapi.h>
+#include <winnls.h> //test
+
 #include "resource.h"
 
 extern int iZoom;

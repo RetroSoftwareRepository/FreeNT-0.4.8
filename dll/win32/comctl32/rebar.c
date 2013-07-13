@@ -78,21 +78,21 @@
  */
 
 #include <assert.h>
-#include <stdarg.h>
+//#include <stdarg.h>
 #include <stdlib.h>
-#include <string.h>
+//#include <string.h>
 
-#include "windef.h"
-#include "winbase.h"
-#include "wingdi.h"
-#include "wine/unicode.h"
-#include "winuser.h"
-#include "winnls.h"
-#include "commctrl.h"
+//#include "windef.h"
+//#include "winbase.h"
+//#include "wingdi.h"
+//#include "wine/unicode.h"
+//#include "winuser.h"
+//#include "winnls.h"
+//#include "commctrl.h"
 #include "comctl32.h"
-#include "uxtheme.h"
-#include "vssym32.h"
-#include "wine/debug.h"
+#include <uxtheme.h>
+#include <vssym32.h>
+#include <wine/debug.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(rebar);
 
@@ -1123,7 +1123,7 @@ REBAR_MoveChildWindows (const REBAR_INFO *infoPtr, UINT start, UINT endplus)
  * or infoPtr->uNumBands if none */
 static int next_visible(const REBAR_INFO *infoPtr, int i)
 {
-    int n;
+    unsigned int n;
     for (n = i + 1; n < infoPtr->uNumBands; n++)
         if (!HIDDENBAND(REBAR_GetBand(infoPtr, n)))
             break;

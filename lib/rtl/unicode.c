@@ -584,14 +584,17 @@ RtlInitUnicodeString(
     IN PCWSTR SourceString)
 {
     SIZE_T Size;
-    CONST SIZE_T MaxSize = (MAXUSHORT & ~1) - sizeof(WCHAR); // an even number
+    CONST SIZE_T MaxSize = (MAXUSHORT & ~1) - sizeof(UNICODE_NULL); // an even number
 
     if (SourceString)
     {
         Size = wcslen(SourceString) * sizeof(WCHAR);
-        if (Size > MaxSize) Size = MaxSize;
+        __analysis_assume(Size <= MaxSize);
+
+        if (Size > MaxSize)
+            Size = MaxSize;
         DestinationString->Length = (USHORT)Size;
-        DestinationString->MaximumLength = (USHORT)Size + sizeof(WCHAR);
+        DestinationString->MaximumLength = (USHORT)Size + sizeof(UNICODE_NULL);
     }
     else
     {
@@ -872,24 +875,24 @@ NTAPI
 RtlPrefixUnicodeString(
     PCUNICODE_STRING String1,
     PCUNICODE_STRING String2,
-    BOOLEAN  CaseInsensitive)
+    BOOLEAN CaseInsensitive)
 {
     PWCHAR pc1;
     PWCHAR pc2;
-    ULONG Length;
+    ULONG NumChars;
 
     if (String2->Length < String1->Length)
         return FALSE;
 
-    Length = String1->Length / 2;
+    NumChars = String1->Length / sizeof(WCHAR);
     pc1 = String1->Buffer;
-    pc2  = String2->Buffer;
+    pc2 = String2->Buffer;
 
     if (pc1 && pc2)
     {
         if (CaseInsensitive)
         {
-            while (Length--)
+            while (NumChars--)
             {
                 if (RtlUpcaseUnicodeChar(*pc1++) !=
                     RtlUpcaseUnicodeChar(*pc2++))
@@ -898,9 +901,9 @@ RtlPrefixUnicodeString(
         }
         else
         {
-            while (Length--)
+            while (NumChars--)
             {
-                if( *pc1++ != *pc2++ )
+                if (*pc1++ != *pc2++)
                     return FALSE;
             }
         }
@@ -1932,7 +1935,7 @@ RtlUpcaseUnicodeStringToCountedOemString(
 /*
  * @implemented
  * NOTES
- *  Oem string is allways nullterminated
+ *  OEM string is always nullterminated
  *  It performs a partial copy if oem is too small.
  */
 NTSTATUS

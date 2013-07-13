@@ -305,11 +305,11 @@ SURFACE_bIsDeviceSurface(
 HBITMAP
 APIENTRY
 EngCreateBitmap(
-    IN SIZEL sizl,
-    IN LONG lWidth,
-    IN ULONG iFormat,
-    IN ULONG fl,
-    IN PVOID pvBits)
+    _In_ SIZEL sizl,
+    _In_ LONG lWidth,
+    _In_ ULONG iFormat,
+    _In_ ULONG fl,
+    _In_opt_ PVOID pvBits)
 {
     PSURFACE psurf;
     HBITMAP hbmp;
@@ -345,9 +345,9 @@ EngCreateBitmap(
 HBITMAP
 APIENTRY
 EngCreateDeviceBitmap(
-    IN DHSURF dhsurf,
-    IN SIZEL sizl,
-    IN ULONG iFormat)
+    _In_ DHSURF dhsurf,
+    _In_ SIZEL sizl,
+    _In_ ULONG iFormat)
 {
     PSURFACE psurf;
     HBITMAP hbmp;
@@ -369,11 +369,11 @@ EngCreateDeviceBitmap(
     /* Set the device handle */
     psurf->SurfObj.dhsurf = dhsurf;
 
-    /* Get the handle for the bitmap */
-    hbmp = (HBITMAP)psurf->SurfObj.hsurf;
-
     /* Set public ownership */
     GDIOBJ_vSetObjectOwner(&psurf->BaseObject, GDI_OBJ_HMGR_PUBLIC);
+
+    /* Get the handle for the bitmap */
+    hbmp = (HBITMAP)psurf->SurfObj.hsurf;
 
     /* Unlock the surface and return */
     SURFACE_UnlockSurface(psurf);
@@ -383,9 +383,9 @@ EngCreateDeviceBitmap(
 HSURF
 APIENTRY
 EngCreateDeviceSurface(
-    IN DHSURF dhsurf,
-    IN SIZEL sizl,
-    IN ULONG iFormat)
+    _In_ DHSURF dhsurf,
+    _In_ SIZEL sizl,
+    _In_ ULONG iFormat)
 {
     PSURFACE psurf;
     HSURF hsurf;
@@ -407,11 +407,11 @@ EngCreateDeviceSurface(
     /* Set the device handle */
     psurf->SurfObj.dhsurf = dhsurf;
 
-    /* Get the handle for the surface */
-    hsurf = psurf->SurfObj.hsurf;
-
     /* Set public ownership */
     GDIOBJ_vSetObjectOwner(&psurf->BaseObject, GDI_OBJ_HMGR_PUBLIC);
+
+    /* Get the handle for the surface */
+    hsurf = psurf->SurfObj.hsurf;
 
     /* Unlock the surface and return */
     SURFACE_UnlockSurface(psurf);
@@ -421,9 +421,9 @@ EngCreateDeviceSurface(
 BOOL
 APIENTRY
 EngAssociateSurface(
-    IN HSURF hsurf,
-    IN HDEV hdev,
-    IN FLONG flHooks)
+    _In_ HSURF hsurf,
+    _In_ HDEV hdev,
+    _In_ FLONG flHooks)
 {
     SURFOBJ *pso;
     PSURFACE psurf;
@@ -461,14 +461,14 @@ EngAssociateSurface(
 BOOL
 APIENTRY
 EngModifySurface(
-    IN HSURF hsurf,
-    IN HDEV hdev,
-    IN FLONG flHooks,
-    IN FLONG flSurface,
-    IN DHSURF dhsurf,
-    OUT VOID *pvScan0,
-    IN LONG lDelta,
-    IN VOID *pvReserved)
+    _In_ HSURF hsurf,
+    _In_ HDEV hdev,
+    _In_ FLONG flHooks,
+    _In_ FLONG flSurface,
+    _In_ DHSURF dhsurf,
+    _In_ VOID *pvScan0,
+    _In_ LONG lDelta,
+    _Reserved_ VOID *pvReserved)
 {
     SURFOBJ *pso;
     PSURFACE psurf;
@@ -508,7 +508,8 @@ EngModifySurface(
 
 BOOL
 APIENTRY
-EngDeleteSurface(IN HSURF hsurf)
+EngDeleteSurface(
+    _In_ _Post_ptr_invalid_ HSURF hsurf)
 {
     PSURFACE psurf;
 
@@ -526,9 +527,9 @@ EngDeleteSurface(IN HSURF hsurf)
 BOOL
 APIENTRY
 EngEraseSurface(
-    SURFOBJ *pso,
-    RECTL *prcl,
-    ULONG iColor)
+    _In_ SURFOBJ *pso,
+    _In_ RECTL *prcl,
+    _In_ ULONG iColor)
 {
     ASSERT(pso);
     ASSERT(prcl);
@@ -547,7 +548,8 @@ NtGdiEngLockSurface(IN HSURF hsurf)
 
 SURFOBJ *
 APIENTRY
-EngLockSurface(IN HSURF hsurf)
+EngLockSurface(
+    _In_ HSURF hsurf)
 {
     SURFACE *psurf = SURFACE_ShareLockSurface(hsurf);
 
@@ -564,7 +566,8 @@ NtGdiEngUnlockSurface(IN SURFOBJ *pso)
 
 VOID
 APIENTRY
-EngUnlockSurface(IN SURFOBJ *pso)
+EngUnlockSurface(
+    _In_ _Post_ptr_invalid_ SURFOBJ *pso)
 {
     if (pso != NULL)
     {

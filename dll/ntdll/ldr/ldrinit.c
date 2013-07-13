@@ -48,7 +48,7 @@ LIST_ENTRY LdrpTlsList;
 ULONG LdrpNumberOfTlsEntries;
 ULONG LdrpNumberOfProcessors;
 PVOID NtDllBase;
-LARGE_INTEGER RtlpTimeout;
+extern LARGE_INTEGER RtlpTimeout;
 BOOLEAN RtlpTimeoutDisable;
 LIST_ENTRY LdrpHashTable[LDR_HASH_TABLE_ENTRIES];
 LIST_ENTRY LdrpDllNotificationList;
@@ -80,7 +80,7 @@ ULONG LdrpActiveUnloadCount;
 
 VOID RtlpInitializeVectoredExceptionHandling(VOID);
 VOID NTAPI RtlpInitDeferedCriticalSection(VOID);
-VOID RtlInitializeHeapManager(VOID);
+VOID NTAPI RtlInitializeHeapManager(VOID);
 extern BOOLEAN RtlpPageHeapEnabled;
 
 ULONG RtlpDisableHeapLookaside; // TODO: Move to heap.c
@@ -508,7 +508,7 @@ LdrpInitializeThread(IN PCONTEXT Context)
 
     /* Allocate an Activation Context Stack */
     DPRINT("ActivationContextStack %p\n", NtCurrentTeb()->ActivationContextStackPointer);
-    Status = RtlAllocateActivationContextStack((PVOID*)&NtCurrentTeb()->ActivationContextStackPointer);
+    Status = RtlAllocateActivationContextStack(&NtCurrentTeb()->ActivationContextStackPointer);
     if (!NT_SUCCESS(Status))
     {
         DPRINT1("Warning: Unable to allocate ActivationContextStack\n");
@@ -1709,7 +1709,7 @@ LdrpInitializeProcess(IN PCONTEXT Context,
     }
 
     /* Allocate an Activation Context Stack */
-    Status = RtlAllocateActivationContextStack((PVOID *)&Teb->ActivationContextStackPointer);
+    Status = RtlAllocateActivationContextStack(&Teb->ActivationContextStackPointer);
     if (!NT_SUCCESS(Status)) return Status;
 
     // FIXME: Loader private heap is missing

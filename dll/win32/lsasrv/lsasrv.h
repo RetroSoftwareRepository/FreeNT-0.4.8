@@ -8,25 +8,34 @@
  */
 
 #define WIN32_NO_STATUS
-#include <windows.h>
+#define _INC_WINDOWS
+#define COM_NO_WINDOWS_H
+#include <stdarg.h>
+#include <windef.h>
+#include <winbase.h>
+#include <winreg.h>
 #define NTOS_MODE_USER
 #include <ndk/cmfuncs.h>
 #include <ndk/kefuncs.h>
 #include <ndk/lpctypes.h>
 #include <ndk/lpcfuncs.h>
+#include <ndk/mmfuncs.h>
 #include <ndk/obfuncs.h>
+#include <ndk/psfuncs.h>
 #include <ndk/rtlfuncs.h>
 #include <ndk/setypes.h>
+#include <ndk/sefuncs.h>
+#include <ndk/umfuncs.h>
 
 #include <ntsam.h>
 #include <ntlsa.h>
-#include <ntsecapi.h>
+//#include <ntsecapi.h>
 #include <sddl.h>
 
-#include <string.h>
+//#include <string.h>
 
-#include "lsass.h"
-#include "lsa_s.h"
+#include <lsass.h>
+#include <lsa_s.h>
 
 #include <wine/debug.h>
 
@@ -61,6 +70,12 @@ typedef struct _LSAP_POLICY_AUDIT_EVENTS_DATA
     DWORD AuditEvents[0];
 } LSAP_POLICY_AUDIT_EVENTS_DATA, *PLSAP_POLICY_AUDIT_EVENTS_DATA;
 
+typedef struct _LSAP_LOGON_CONTEXT
+{
+    LIST_ENTRY Entry;
+    HANDLE ClientProcessHandle;
+    HANDLE ConnectionHandle;
+} LSAP_LOGON_CONTEXT, *PLSAP_LOGON_CONTEXT;
 
 extern SID_IDENTIFIER_AUTHORITY NullSidAuthority;
 extern SID_IDENTIFIER_AUTHORITY WorldSidAuthority;
@@ -73,6 +88,21 @@ extern UNICODE_STRING BuiltinDomainName;
 extern PSID AccountDomainSid;
 extern UNICODE_STRING AccountDomainName;
 
+/* authpackage.c */
+NTSTATUS
+LsapInitAuthPackages(VOID);
+
+NTSTATUS
+LsapLookupAuthenticationPackage(PLSA_API_MSG RequestMsg,
+                                PLSAP_LOGON_CONTEXT LogonContext);
+
+NTSTATUS
+LsapCallAuthenticationPackage(PLSA_API_MSG RequestMsg,
+                              PLSAP_LOGON_CONTEXT LogonContext);
+
+NTSTATUS
+LsapLogonUser(PLSA_API_MSG RequestMsg,
+              PLSAP_LOGON_CONTEXT LogonContext);
 
 /* authport.c */
 NTSTATUS

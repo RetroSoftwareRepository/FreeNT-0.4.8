@@ -16,25 +16,28 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "config.h"
+#define WIN32_NO_STATUS
+#define _INC_WINDOWS
+#define COM_NO_WINDOWS_H
+#include <config.h>
 
 #include <stdarg.h>
 
 #define COBJMACROS
 
-#include "windef.h"
-#include "winbase.h"
-#include "wingdi.h"
-#include "objbase.h"
-#include "wincodec.h"
+#include <windef.h>
+#include <winbase.h>
+#include <wingdi.h>
+#include <objbase.h>
+#include <wincodec.h>
 
 #include "wincodecs_private.h"
 
-#include "wine/debug.h"
+#include <wine/debug.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(wincodecs);
 
-#include "pshpack1.h"
+#include <pshpack1.h>
 
 typedef struct {
     BYTE bWidth;
@@ -54,7 +57,7 @@ typedef struct
     WORD idCount;
 } ICONHEADER;
 
-#include "poppack.h"
+#include <poppack.h>
 
 typedef struct {
     IWICBitmapDecoder IWICBitmapDecoder_iface;
@@ -200,8 +203,8 @@ static HRESULT WINAPI IcoFrameDecode_GetColorContexts(IWICBitmapFrameDecode *ifa
 static HRESULT WINAPI IcoFrameDecode_GetThumbnail(IWICBitmapFrameDecode *iface,
     IWICBitmapSource **ppIThumbnail)
 {
-    FIXME("(%p,%p)\n", iface, ppIThumbnail);
-    return E_NOTIMPL;
+    TRACE("(%p,%p)\n", iface, ppIThumbnail);
+    return IWICBitmapFrameDecode_QueryInterface(iface, &IID_IWICBitmapSource, (void **)ppIThumbnail);
 }
 
 static const IWICBitmapFrameDecodeVtbl IcoFrameDecode_Vtbl = {
@@ -293,7 +296,7 @@ static HRESULT ReadIcoDib(IStream *stream, IcoFrameDecode *result)
         {
             /* If the alpha channel is fully transparent, we should ignore it. */
             int nonzero_alpha = 0;
-            int i;
+            UINT i;
 
             for (i=0; i<(result->height*result->width); i++)
             {

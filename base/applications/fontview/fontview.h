@@ -1,4 +1,8 @@
-#include <windows.h>
+#include <stdarg.h>
+#include <windef.h>
+#include <winbase.h>
+#include <winnls.h>
+#include <shellapi.h>
 
 #include "resource.h"
 #include "display.h"

@@ -17,8 +17,66 @@ WINE_DEFAULT_DEBUG_CHANNEL(samsrv);
 
 static SID_IDENTIFIER_AUTHORITY NtSidAuthority = {SECURITY_NT_AUTHORITY};
 
+static GENERIC_MAPPING ServerMapping =
+{
+    SAM_SERVER_READ,
+    SAM_SERVER_WRITE,
+    SAM_SERVER_EXECUTE,
+    SAM_SERVER_ALL_ACCESS
+};
+
+static GENERIC_MAPPING DomainMapping =
+{
+    DOMAIN_READ,
+    DOMAIN_WRITE,
+    DOMAIN_EXECUTE,
+    DOMAIN_ALL_ACCESS
+};
+
+static GENERIC_MAPPING AliasMapping =
+{
+    ALIAS_READ,
+    ALIAS_WRITE,
+    ALIAS_EXECUTE,
+    ALIAS_ALL_ACCESS
+};
+
+static GENERIC_MAPPING GroupMapping =
+{
+    GROUP_READ,
+    GROUP_WRITE,
+    GROUP_EXECUTE,
+    GROUP_ALL_ACCESS
+};
+
+static GENERIC_MAPPING UserMapping =
+{
+    USER_READ,
+    USER_WRITE,
+    USER_EXECUTE,
+    USER_ALL_ACCESS
+};
+
+PGENERIC_MAPPING pServerMapping = &ServerMapping;
+
 
 /* FUNCTIONS *****************************************************************/
+
+static
+LARGE_INTEGER
+SampAddRelativeTimeToTime(IN LARGE_INTEGER AbsoluteTime,
+                          IN LARGE_INTEGER RelativeTime)
+{
+    LARGE_INTEGER NewTime;
+
+    NewTime.QuadPart = AbsoluteTime.QuadPart - RelativeTime.QuadPart;
+
+    if (NewTime.QuadPart < 0)
+        NewTime.QuadPart = 0;
+
+    return NewTime;
+}
+
 
 VOID
 SampStartRpcServer(VOID)
@@ -68,9 +126,11 @@ void __RPC_USER midl_user_free(void __RPC_FAR * ptr)
     HeapFree(GetProcessHeap(), 0, ptr);
 }
 
+
 void __RPC_USER SAMPR_HANDLE_rundown(SAMPR_HANDLE hHandle)
 {
 }
+
 
 /* Function 0 */
 NTSTATUS
@@ -85,9 +145,15 @@ SamrConnect(IN PSAMPR_SERVER_NAME ServerName,
     TRACE("SamrConnect(%p %p %lx)\n",
           ServerName, ServerHandle, DesiredAccess);
 
+    /* Map generic access rights */
+    RtlMapGenericMask(&DesiredAccess,
+                      &ServerMapping);
+
+    /* Open the Server Object */
     Status = SampOpenDbObject(NULL,
                               NULL,
                               L"SAM",
+                              0,
                               SamDbServerObject,
                               DesiredAccess,
                               &ServerObject);
@@ -98,6 +164,7 @@ SamrConnect(IN PSAMPR_SERVER_NAME ServerName,
 
     return Status;
 }
+
 
 /* Function 1 */
 NTSTATUS
@@ -124,6 +191,7 @@ SamrCloseHandle(IN OUT SAMPR_HANDLE *SamHandle)
     return Status;
 }
 
+
 /* Function 2 */
 NTSTATUS
 NTAPI
@@ -135,24 +203,41 @@ SamrSetSecurityObject(IN SAMPR_HANDLE ObjectHandle,
     return STATUS_NOT_IMPLEMENTED;
 }
 
+
 /* Function 3 */
 NTSTATUS
 NTAPI
 SamrQuerySecurityObject(IN SAMPR_HANDLE ObjectHandle,
                         IN SECURITY_INFORMATION SecurityInformation,
-                        OUT PSAMPR_SR_SECURITY_DESCRIPTOR * SecurityDescriptor)
+                        OUT PSAMPR_SR_SECURITY_DESCRIPTOR *SecurityDescriptor)
 {
     UNIMPLEMENTED;
     return STATUS_NOT_IMPLEMENTED;
 }
+
 
 /* Function 4 */
 NTSTATUS
 NTAPI
 SamrShutdownSamServer(IN SAMPR_HANDLE ServerHandle)
 {
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
+    PSAM_DB_OBJECT ServerObject;
+    NTSTATUS Status;
+
+    TRACE("(%p)\n", ServerHandle);
+
+    /* Validate the server handle */
+    Status = SampValidateDbObject(ServerHandle,
+                                  SamDbServerObject,
+                                  SAM_SERVER_SHUTDOWN,
+                                  &ServerObject);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    /* Shut the server down */
+    RpcMgmtStopServerListening(0);
+
+    return STATUS_SUCCESS;
 }
 
 
@@ -469,6 +554,7 @@ done:
     return Status;
 }
 
+
 /* Function 7 */
 NTSTATUS
 NTAPI
@@ -483,6 +569,10 @@ SamrOpenDomain(IN SAMPR_HANDLE ServerHandle,
 
     TRACE("SamrOpenDomain(%p %lx %p %p)\n",
           ServerHandle, DesiredAccess, DomainId, DomainHandle);
+
+    /* Map generic access rights */
+    RtlMapGenericMask(&DesiredAccess,
+                      &DomainMapping);
 
     /* Validate the server handle */
     Status = SampValidateDbObject(ServerHandle,
@@ -508,6 +598,7 @@ SamrOpenDomain(IN SAMPR_HANDLE ServerHandle,
         Status = SampOpenDbObject(ServerObject,
                                   L"Domains",
                                   L"Builtin",
+                                  0,
                                   SamDbDomainObject,
                                   DesiredAccess,
                                   &DomainObject);
@@ -523,6 +614,7 @@ SamrOpenDomain(IN SAMPR_HANDLE ServerHandle,
         Status = SampOpenDbObject(ServerObject,
                                   L"Domains",
                                   L"Account",
+                                  0,
                                   SamDbDomainObject,
                                   DesiredAccess,
                                   &DomainObject);
@@ -590,6 +682,45 @@ done:
 
 
 static NTSTATUS
+SampGetNumberOfAccounts(PSAM_DB_OBJECT DomainObject,
+                        LPCWSTR AccountType,
+                        PULONG Count)
+{
+    HANDLE AccountKeyHandle = NULL;
+    HANDLE NamesKeyHandle = NULL;
+    NTSTATUS Status;
+
+    *Count = 0;
+
+    Status = SampRegOpenKey(DomainObject->KeyHandle,
+                            AccountType,
+                            KEY_READ,
+                            &AccountKeyHandle);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    Status = SampRegOpenKey(AccountKeyHandle,
+                            L"Names",
+                            KEY_READ,
+                            &NamesKeyHandle);
+    if (!NT_SUCCESS(Status))
+        goto done;
+
+    Status = SampRegQueryKeyInfo(NamesKeyHandle,
+                                 NULL,
+                                 Count);
+done:
+    if (NamesKeyHandle != NULL)
+        SampRegCloseKey(NamesKeyHandle);
+
+    if (AccountKeyHandle != NULL)
+        SampRegCloseKey(AccountKeyHandle);
+
+    return Status;
+}
+
+
+static NTSTATUS
 SampQueryDomainGeneral(PSAM_DB_OBJECT DomainObject,
                        PSAMPR_DOMAIN_INFO_BUFFER *Buffer)
 {
@@ -651,9 +782,35 @@ SampQueryDomainGeneral(PSAM_DB_OBJECT DomainObject,
         goto done;
     }
 
-    InfoBuffer->General.UserCount = 0;  /* FIXME */
-    InfoBuffer->General.GroupCount = 0; /* FIXME */
-    InfoBuffer->General.AliasCount = 0; /* FIXME */
+    /* Get the number of Users in the Domain */
+    Status = SampGetNumberOfAccounts(DomainObject,
+                                     L"Users",
+                                     &InfoBuffer->General.UserCount);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("Status 0x%08lx\n", Status);
+        goto done;
+    }
+
+    /* Get the number of Groups in the Domain */
+    Status = SampGetNumberOfAccounts(DomainObject,
+                                     L"Groups",
+                                     &InfoBuffer->General.GroupCount);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("Status 0x%08lx\n", Status);
+        goto done;
+    }
+
+    /* Get the number of Aliases in the Domain */
+    Status = SampGetNumberOfAccounts(DomainObject,
+                                     L"Aliases",
+                                     &InfoBuffer->General.AliasCount);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("Status 0x%08lx\n", Status);
+        goto done;
+    }
 
     *Buffer = InfoBuffer;
 
@@ -1036,9 +1193,35 @@ SampQueryDomainGeneral2(PSAM_DB_OBJECT DomainObject,
         goto done;
     }
 
-    InfoBuffer->General2.I1.UserCount = 0;  /* FIXME */
-    InfoBuffer->General2.I1.GroupCount = 0; /* FIXME */
-    InfoBuffer->General2.I1.AliasCount = 0; /* FIXME */
+    /* Get the number of Users in the Domain */
+    Status = SampGetNumberOfAccounts(DomainObject,
+                                     L"Users",
+                                     &InfoBuffer->General2.I1.UserCount);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("Status 0x%08lx\n", Status);
+        goto done;
+    }
+
+    /* Get the number of Groups in the Domain */
+    Status = SampGetNumberOfAccounts(DomainObject,
+                                     L"Groups",
+                                     &InfoBuffer->General2.I1.GroupCount);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("Status 0x%08lx\n", Status);
+        goto done;
+    }
+
+    /* Get the number of Aliases in the Domain */
+    Status = SampGetNumberOfAccounts(DomainObject,
+                                     L"Aliases",
+                                     &InfoBuffer->General2.I1.AliasCount);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("Status 0x%08lx\n", Status);
+        goto done;
+    }
 
     *Buffer = InfoBuffer;
 
@@ -1535,6 +1718,7 @@ SamrSetInformationDomain(IN SAMPR_HANDLE DomainHandle,
     return Status;
 }
 
+
 /* Function 10 */
 NTSTATUS
 NTAPI
@@ -1556,6 +1740,10 @@ SamrCreateGroupInDomain(IN SAMPR_HANDLE DomainHandle,
 
     TRACE("SamrCreateGroupInDomain(%p %p %lx %p %p)\n",
           DomainHandle, Name, DesiredAccess, GroupHandle, RelativeId);
+
+    /* Map generic access rights */
+    RtlMapGenericMask(&DesiredAccess,
+                      &GroupMapping);
 
     /* Validate the domain handle */
     Status = SampValidateDbObject(DomainHandle,
@@ -1616,6 +1804,7 @@ SamrCreateGroupInDomain(IN SAMPR_HANDLE DomainHandle,
     Status = SampCreateDbObject(DomainObject,
                                 L"Groups",
                                 szRid,
+                                ulRid,
                                 SamDbGroupObject,
                                 DesiredAccess,
                                 &GroupObject);
@@ -1907,6 +2096,8 @@ SamrCreateUserInDomain(IN SAMPR_HANDLE DomainHandle,
     SAM_USER_FIXED_DATA FixedUserData;
     PSAM_DB_OBJECT DomainObject;
     PSAM_DB_OBJECT UserObject;
+    GROUP_MEMBERSHIP GroupMembership;
+    UCHAR LogonHours[23];
     ULONG ulSize;
     ULONG ulRid;
     WCHAR szRid[9];
@@ -1921,6 +2112,10 @@ SamrCreateUserInDomain(IN SAMPR_HANDLE DomainHandle,
         UserHandle == NULL ||
         RelativeId == NULL)
         return STATUS_INVALID_PARAMETER;
+
+    /* Map generic access rights */
+    RtlMapGenericMask(&DesiredAccess,
+                      &UserMapping);
 
     /* Validate the domain handle */
     Status = SampValidateDbObject(DomainHandle,
@@ -1981,6 +2176,7 @@ SamrCreateUserInDomain(IN SAMPR_HANDLE DomainHandle,
     Status = SampCreateDbObject(DomainObject,
                                 L"Users",
                                 szRid,
+                                ulRid,
                                 SamDbUserObject,
                                 DesiredAccess,
                                 &UserObject);
@@ -2004,6 +2200,7 @@ SamrCreateUserInDomain(IN SAMPR_HANDLE DomainHandle,
     /* Initialize fixed user data */
     memset(&FixedUserData, 0, sizeof(SAM_USER_FIXED_DATA));
     FixedUserData.Version = 1;
+    FixedUserData.Reserved = 0;
     FixedUserData.LastLogon.QuadPart = 0;
     FixedUserData.LastLogoff.QuadPart = 0;
     FixedUserData.PasswordLastSet.QuadPart = 0;
@@ -2015,6 +2212,12 @@ SamrCreateUserInDomain(IN SAMPR_HANDLE DomainHandle,
     FixedUserData.UserAccountControl = USER_ACCOUNT_DISABLED |
                                        USER_PASSWORD_NOT_REQUIRED |
                                        USER_NORMAL_ACCOUNT;
+    FixedUserData.CountryCode = 0;
+    FixedUserData.CodePage = 0;
+    FixedUserData.BadPasswordCount = 0;
+    FixedUserData.LogonCount = 0;
+    FixedUserData.AdminCount = 0;
+    FixedUserData.OperatorCount = 0;
 
     /* Set fixed user data attribute */
     Status = SampSetObjectAttribute(UserObject,
@@ -2136,7 +2339,99 @@ SamrCreateUserInDomain(IN SAMPR_HANDLE DomainHandle,
         return Status;
     }
 
-    /* FIXME: Set default user attributes */
+    /* Set the Parameters attribute */
+    Status = SampSetObjectAttribute(UserObject,
+                                    L"Parameters",
+                                    REG_SZ,
+                                    EmptyString.Buffer,
+                                    EmptyString.MaximumLength);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("failed with status 0x%08lx\n", Status);
+        return Status;
+    }
+
+    /* Set LogonHours attribute*/
+    *((PUSHORT)LogonHours) = 168;
+    memset(&(LogonHours[2]), 0xff, 21);
+
+    Status = SampSetObjectAttribute(UserObject,
+                                    L"LogonHours",
+                                    REG_BINARY,
+                                    &LogonHours,
+                                    sizeof(LogonHours));
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("failed with status 0x%08lx\n", Status);
+        return Status;
+    }
+
+    /* Set Groups attribute*/
+    GroupMembership.RelativeId = DOMAIN_GROUP_RID_USERS;
+    GroupMembership.Attributes = SE_GROUP_MANDATORY |
+                                 SE_GROUP_ENABLED |
+                                 SE_GROUP_ENABLED_BY_DEFAULT;
+
+    Status = SampSetObjectAttribute(UserObject,
+                                    L"Groups",
+                                    REG_BINARY,
+                                    &GroupMembership,
+                                    sizeof(GROUP_MEMBERSHIP));
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("failed with status 0x%08lx\n", Status);
+        return Status;
+    }
+
+    /* Set LMPwd attribute*/
+    Status = SampSetObjectAttribute(UserObject,
+                                    L"LMPwd",
+                                    REG_BINARY,
+                                    &EmptyLmHash,
+                                    sizeof(ENCRYPTED_LM_OWF_PASSWORD));
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("failed with status 0x%08lx\n", Status);
+        return Status;
+    }
+
+    /* Set NTPwd attribute*/
+    Status = SampSetObjectAttribute(UserObject,
+                                    L"NTPwd",
+                                    REG_BINARY,
+                                    &EmptyNtHash,
+                                    sizeof(ENCRYPTED_NT_OWF_PASSWORD));
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("failed with status 0x%08lx\n", Status);
+        return Status;
+    }
+
+    /* Set LMPwdHistory attribute*/
+    Status = SampSetObjectAttribute(UserObject,
+                                    L"LMPwdHistory",
+                                    REG_BINARY,
+                                    NULL,
+                                    0);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("failed with status 0x%08lx\n", Status);
+        return Status;
+    }
+
+    /* Set NTPwdHistory attribute*/
+    Status = SampSetObjectAttribute(UserObject,
+                                    L"NTPwdHistory",
+                                    REG_BINARY,
+                                    NULL,
+                                    0);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("failed with status 0x%08lx\n", Status);
+        return Status;
+    }
+
+    /* FIXME: Set SecDesc attribute*/
 
     if (NT_SUCCESS(Status))
     {
@@ -2375,6 +2670,10 @@ SamrCreateAliasInDomain(IN SAMPR_HANDLE DomainHandle,
     TRACE("SamrCreateAliasInDomain(%p %p %lx %p %p)\n",
           DomainHandle, AccountName, DesiredAccess, AliasHandle, RelativeId);
 
+    /* Map generic access rights */
+    RtlMapGenericMask(&DesiredAccess,
+                      &AliasMapping);
+
     /* Validate the domain handle */
     Status = SampValidateDbObject(DomainHandle,
                                   SamDbDomainObject,
@@ -2434,6 +2733,7 @@ SamrCreateAliasInDomain(IN SAMPR_HANDLE DomainHandle,
     Status = SampCreateDbObject(DomainObject,
                                 L"Aliases",
                                 szRid,
+                                ulRid,
                                 SamDbAliasObject,
                                 DesiredAccess,
                                 &AliasObject);
@@ -2711,6 +3011,7 @@ SamrGetAliasMembership(IN SAMPR_HANDLE DomainHandle,
     ULONG DataLength;
     ULONG i, j;
     NTSTATUS Status;
+    WCHAR NameBuffer[9];
 
     TRACE("SamrGetAliasMembership(%p %p %p)\n",
           DomainHandle, SidArray, Membership);
@@ -2718,7 +3019,7 @@ SamrGetAliasMembership(IN SAMPR_HANDLE DomainHandle,
     /* Validate the domain handle */
     Status = SampValidateDbObject(DomainHandle,
                                   SamDbDomainObject,
-                                  DOMAIN_LOOKUP,
+                                  DOMAIN_GET_ALIAS_MEMBERSHIP,
                                   &DomainObject);
     if (!NT_SUCCESS(Status))
         return Status;
@@ -2736,6 +3037,13 @@ SamrGetAliasMembership(IN SAMPR_HANDLE DomainHandle,
                             KEY_READ,
                             &MembersKeyHandle);
     TRACE("SampRegOpenKey returned %08lX\n", Status);
+
+    if (Status == STATUS_OBJECT_NAME_NOT_FOUND)
+    {
+        Status = STATUS_SUCCESS;
+        goto done;
+    }
+
     if (!NT_SUCCESS(Status))
         goto done;
 
@@ -2760,11 +3068,19 @@ TRACE("Open %S\n", MemberSidString);
                 MaxSidCount += ValueCount;
             }
 
-
             NtClose(MemberKeyHandle);
         }
 
+        if (Status == STATUS_OBJECT_NAME_NOT_FOUND)
+            Status = STATUS_SUCCESS;
+
         LocalFree(MemberSidString);
+    }
+
+    if (MaxSidCount == 0)
+    {
+        Status = STATUS_SUCCESS;
+        goto done;
     }
 
     TRACE("Maximum sid count: %lu\n", MaxSidCount);
@@ -2796,14 +3112,18 @@ TRACE("Open %S\n", MemberSidString);
 
                 for (j = 0; j < ValueCount; j++)
                 {
-                    DataLength = sizeof(ULONG);
+                    DataLength = 9 * sizeof(WCHAR);
                     Status = SampRegEnumerateValue(MemberKeyHandle,
                                                    j,
-                      NULL,
-                      NULL,
-                      NULL,
-                      (PVOID)&RidArray[j],
-                      &DataLength);
+                                                   NameBuffer,
+                                                   &DataLength,
+                                                   NULL,
+                                                   NULL,
+                                                   NULL);
+                    if (NT_SUCCESS(Status))
+                    {
+                        RidArray[j] = wcstoul(NameBuffer, NULL, 16);
+                    }
                 }
             }
 
@@ -2812,7 +3132,6 @@ TRACE("Open %S\n", MemberSidString);
 
         LocalFree(MemberSidString);
     }
-
 
 done:
     if (NT_SUCCESS(Status))
@@ -3353,6 +3672,10 @@ SamrOpenGroup(IN SAMPR_HANDLE DomainHandle,
     TRACE("SamrOpenGroup(%p %lx %lx %p)\n",
           DomainHandle, DesiredAccess, GroupId, GroupHandle);
 
+    /* Map generic access rights */
+    RtlMapGenericMask(&DesiredAccess,
+                      &GroupMapping);
+
     /* Validate the domain handle */
     Status = SampValidateDbObject(DomainHandle,
                                   SamDbDomainObject,
@@ -3371,6 +3694,7 @@ SamrOpenGroup(IN SAMPR_HANDLE DomainHandle,
     Status = SampOpenDbObject(DomainObject,
                               L"Groups",
                               szRid,
+                              GroupId,
                               SamDbGroupObject,
                               DesiredAccess,
                               &GroupObject);
@@ -3391,8 +3715,8 @@ SampQueryGroupGeneral(PSAM_DB_OBJECT GroupObject,
                       PSAMPR_GROUP_INFO_BUFFER *Buffer)
 {
     PSAMPR_GROUP_INFO_BUFFER InfoBuffer = NULL;
-    HANDLE MembersKeyHandle = NULL;
     SAM_GROUP_FIXED_DATA FixedData;
+    ULONG MembersLength = 0;
     ULONG Length = 0;
     NTSTATUS Status;
 
@@ -3431,33 +3755,22 @@ SampQueryGroupGeneral(PSAM_DB_OBJECT GroupObject,
 
     InfoBuffer->General.Attributes = FixedData.Attributes;
 
-    /* Open the Members subkey */
-    Status = SampRegOpenKey(GroupObject->KeyHandle,
-                            L"Members",
-                            KEY_READ,
-                            &MembersKeyHandle);
-    if (!NT_SUCCESS(Status))
-    {
-        TRACE("Status 0x%08lx\n", Status);
+    Status = SampGetObjectAttribute(GroupObject,
+                                    L"Members",
+                                    NULL,
+                                    NULL,
+                                    &MembersLength);
+    if (!NT_SUCCESS(Status) && Status != STATUS_OBJECT_NAME_NOT_FOUND)
         goto done;
-    }
 
-    /* Retrieve the number of members of the alias */
-    Status = SampRegQueryKeyInfo(MembersKeyHandle,
-                                 NULL,
-                                 &InfoBuffer->General.MemberCount);
-    if (!NT_SUCCESS(Status))
-    {
-        TRACE("Status 0x%08lx\n", Status);
-        goto done;
-    }
+    if (Status == STATUS_OBJECT_NAME_NOT_FOUND)
+        InfoBuffer->General.MemberCount = 0;
+    else
+        InfoBuffer->General.MemberCount = MembersLength / sizeof(ULONG);
 
     *Buffer = InfoBuffer;
 
 done:
-    if (MembersKeyHandle != NULL)
-        SampRegCloseKey(MembersKeyHandle);
-
     if (!NT_SUCCESS(Status))
     {
         if (InfoBuffer != NULL)
@@ -3650,6 +3963,76 @@ SamrQueryInformationGroup(IN SAMPR_HANDLE GroupHandle,
 
 
 static NTSTATUS
+SampSetGroupName(PSAM_DB_OBJECT GroupObject,
+                 PSAMPR_GROUP_INFO_BUFFER Buffer)
+{
+    UNICODE_STRING OldGroupName = {0, 0, NULL};
+    UNICODE_STRING NewGroupName;
+    NTSTATUS Status;
+
+    Status = SampGetObjectAttributeString(GroupObject,
+                                          L"Name",
+                                          (PRPC_UNICODE_STRING)&OldGroupName);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SampGetObjectAttributeString failed (Status 0x%08lx)\n", Status);
+        goto done;
+    }
+
+    NewGroupName.Length = Buffer->Name.Name.Length;
+    NewGroupName.MaximumLength = Buffer->Name.Name.MaximumLength;
+    NewGroupName.Buffer = Buffer->Name.Name.Buffer;
+
+    if (!RtlEqualUnicodeString(&OldGroupName, &NewGroupName, TRUE))
+    {
+        Status = SampCheckAccountNameInDomain(GroupObject->ParentObject,
+                                              NewGroupName.Buffer);
+        if (!NT_SUCCESS(Status))
+        {
+            TRACE("Group name \'%S\' already exists in domain (Status 0x%08lx)\n",
+                  NewGroupName.Buffer, Status);
+            goto done;
+        }
+    }
+
+    Status = SampSetAccountNameInDomain(GroupObject->ParentObject,
+                                        L"Groups",
+                                        NewGroupName.Buffer,
+                                        GroupObject->RelativeId);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SampSetAccountNameInDomain failed (Status 0x%08lx)\n", Status);
+        goto done;
+    }
+
+    Status = SampRemoveAccountNameFromDomain(GroupObject->ParentObject,
+                                             L"Groups",
+                                             OldGroupName.Buffer);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SampRemoveAccountNameFromDomain failed (Status 0x%08lx)\n", Status);
+        goto done;
+    }
+
+    Status = SampSetObjectAttribute(GroupObject,
+                                    L"Name",
+                                    REG_SZ,
+                                    NewGroupName.Buffer,
+                                    NewGroupName.Length + sizeof(WCHAR));
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SampSetObjectAttribute failed (Status 0x%08lx)\n", Status);
+    }
+
+done:
+    if (OldGroupName.Buffer != NULL)
+        midl_user_free(OldGroupName.Buffer);
+
+    return Status;
+}
+
+
+static NTSTATUS
 SampSetGroupAttribute(PSAM_DB_OBJECT GroupObject,
                       PSAMPR_GROUP_INFO_BUFFER Buffer)
 {
@@ -3703,11 +4086,8 @@ SamrSetInformationGroup(IN SAMPR_HANDLE GroupHandle,
     switch (GroupInformationClass)
     {
         case GroupNameInformation:
-            Status = SampSetObjectAttribute(GroupObject,
-                                            L"Name",
-                                            REG_SZ,
-                                            Buffer->Name.Name.Buffer,
-                                            Buffer->Name.Name.Length + sizeof(WCHAR));
+            Status = SampSetGroupName(GroupObject,
+                                      Buffer);
             break;
 
         case GroupAttributeInformation:
@@ -3739,18 +4119,117 @@ SamrAddMemberToGroup(IN SAMPR_HANDLE GroupHandle,
                      IN unsigned long MemberId,
                      IN unsigned long Attributes)
 {
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
+    PSAM_DB_OBJECT GroupObject;
+    PSAM_DB_OBJECT UserObject = NULL;
+    NTSTATUS Status;
+
+    TRACE("(%p %lu %lx)\n",
+          GroupHandle, MemberId, Attributes);
+
+    /* Validate the group handle */
+    Status = SampValidateDbObject(GroupHandle,
+                                  SamDbGroupObject,
+                                  GROUP_ADD_MEMBER,
+                                  &GroupObject);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    /* Open the user object in the same domain */
+    Status = SampOpenUserObject(GroupObject->ParentObject,
+                                MemberId,
+                                0,
+                                &UserObject);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SampOpenUserObject() failed (Status 0x%08lx)\n", Status);
+        goto done;
+    }
+
+    /* Add group membership to the user object */
+    Status = SampAddGroupMembershipToUser(UserObject,
+                                          GroupObject->RelativeId,
+                                          Attributes);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SampAddGroupMembershipToUser() failed (Status 0x%08lx)\n", Status);
+        goto done;
+    }
+
+    /* Add the member to the group object */
+    Status = SampAddMemberToGroup(GroupObject,
+                                  MemberId);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SampAddMemberToGroup() failed (Status 0x%08lx)\n", Status);
+    }
+
+done:
+    if (UserObject)
+        SampCloseDbObject(UserObject);
+
+    return Status;
 }
+
 
 /* Function 21 */
 NTSTATUS
 NTAPI
 SamrDeleteGroup(IN OUT SAMPR_HANDLE *GroupHandle)
 {
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
+    PSAM_DB_OBJECT GroupObject;
+    ULONG Length = 0;
+    NTSTATUS Status;
+
+    TRACE("(%p)\n", GroupHandle);
+
+    /* Validate the group handle */
+    Status = SampValidateDbObject(*GroupHandle,
+                                  SamDbGroupObject,
+                                  DELETE,
+                                  &GroupObject);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SampValidateDbObject() failed (Status 0x%08lx)\n", Status);
+        return Status;
+    }
+
+    /* Fail, if the group is built-in */
+    if (GroupObject->RelativeId < 1000)
+    {
+        TRACE("You can not delete a special account!\n");
+        return STATUS_SPECIAL_ACCOUNT;
+    }
+
+    /* Get the length of the Members attribute */
+    SampGetObjectAttribute(GroupObject,
+                           L"Members",
+                           NULL,
+                           NULL,
+                           &Length);
+
+    /* Fail, if the group has members */
+    if (Length != 0)
+    {
+        TRACE("There are still members in the group!\n");
+        return STATUS_MEMBER_IN_GROUP;
+    }
+
+    /* FIXME: Remove the group from all aliases */
+
+    /* Delete the group from the database */
+    Status = SampDeleteAccountDbObject(GroupObject);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SampDeleteAccountDbObject() failed (Status 0x%08lx)\n", Status);
+        return Status;
+    }
+
+    /* Invalidate the handle */
+    *GroupHandle = NULL;
+
+    return STATUS_SUCCESS;
 }
+
 
 /* Function 24 */
 NTSTATUS
@@ -3758,9 +4237,56 @@ NTAPI
 SamrRemoveMemberFromGroup(IN SAMPR_HANDLE GroupHandle,
                           IN unsigned long MemberId)
 {
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
+    PSAM_DB_OBJECT GroupObject;
+    PSAM_DB_OBJECT UserObject = NULL;
+    NTSTATUS Status;
+
+    TRACE("(%p %lu)\n",
+          GroupHandle, MemberId);
+
+    /* Validate the group handle */
+    Status = SampValidateDbObject(GroupHandle,
+                                  SamDbGroupObject,
+                                  GROUP_REMOVE_MEMBER,
+                                  &GroupObject);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    /* Open the user object in the same domain */
+    Status = SampOpenUserObject(GroupObject->ParentObject,
+                                MemberId,
+                                0,
+                                &UserObject);
+    if (!NT_SUCCESS(Status))
+    {
+        ERR("SampOpenUserObject() failed (Status 0x%08lx)\n", Status);
+        goto done;
+    }
+
+    /* Remove group membership from the user object */
+    Status = SampRemoveGroupMembershipFromUser(UserObject,
+                                               GroupObject->RelativeId);
+    if (!NT_SUCCESS(Status))
+    {
+        ERR("SampAddGroupMembershipToUser() failed (Status 0x%08lx)\n", Status);
+        goto done;
+    }
+
+    /* Remove the member from the group object */
+    Status = SampRemoveMemberFromGroup(GroupObject,
+                                       MemberId);
+    if (!NT_SUCCESS(Status))
+    {
+        ERR("SampRemoveMemberFromGroup() failed (Status 0x%08lx)\n", Status);
+    }
+
+done:
+    if (UserObject)
+        SampCloseDbObject(UserObject);
+
+    return Status;
 }
+
 
 /* Function 25 */
 NTSTATUS
@@ -3768,9 +4294,101 @@ NTAPI
 SamrGetMembersInGroup(IN SAMPR_HANDLE GroupHandle,
                       OUT PSAMPR_GET_MEMBERS_BUFFER *Members)
 {
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
+    PSAMPR_GET_MEMBERS_BUFFER MembersBuffer = NULL;
+    PSAM_DB_OBJECT GroupObject;
+    ULONG Length = 0;
+    ULONG i;
+    NTSTATUS Status;
+
+    /* Validate the group handle */
+    Status = SampValidateDbObject(GroupHandle,
+                                  SamDbGroupObject,
+                                  GROUP_LIST_MEMBERS,
+                                  &GroupObject);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    MembersBuffer = midl_user_allocate(sizeof(SAMPR_GET_MEMBERS_BUFFER));
+    if (MembersBuffer == NULL)
+        return STATUS_INSUFFICIENT_RESOURCES;
+
+    SampGetObjectAttribute(GroupObject,
+                           L"Members",
+                           NULL,
+                           NULL,
+                           &Length);
+
+    if (Length == 0)
+    {
+        MembersBuffer->MemberCount = 0;
+        MembersBuffer->Members = NULL;
+        MembersBuffer->Attributes = NULL;
+
+        *Members = MembersBuffer;
+
+        return STATUS_SUCCESS;
+    }
+
+    MembersBuffer->Members = midl_user_allocate(Length);
+    if (MembersBuffer->Members == NULL)
+    {
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto done;
+    }
+
+    MembersBuffer->Attributes = midl_user_allocate(Length);
+    if (MembersBuffer->Attributes == NULL)
+    {
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto done;
+    }
+
+    Status = SampGetObjectAttribute(GroupObject,
+                                    L"Members",
+                                    NULL,
+                                    MembersBuffer->Members,
+                                    &Length);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SampGetObjectAttributes() failed (Status 0x%08lx)\n", Status);
+        goto done;
+    }
+
+    MembersBuffer->MemberCount = Length / sizeof(ULONG);
+
+    for (i = 0; i < MembersBuffer->MemberCount; i++)
+    {
+        Status = SampGetUserGroupAttributes(GroupObject->ParentObject,
+                                            MembersBuffer->Members[i],
+                                            GroupObject->RelativeId,
+                                            &(MembersBuffer->Attributes[i]));
+        if (!NT_SUCCESS(Status))
+        {
+            TRACE("SampGetUserGroupAttributes() failed (Status 0x%08lx)\n", Status);
+            goto done;
+        }
+    }
+
+    *Members = MembersBuffer;
+
+done:
+    if (!NT_SUCCESS(Status))
+    {
+        if (MembersBuffer != NULL)
+        {
+            if (MembersBuffer->Members != NULL)
+                midl_user_free(MembersBuffer->Members);
+
+            if (MembersBuffer->Attributes != NULL)
+                midl_user_free(MembersBuffer->Attributes);
+
+            midl_user_free(MembersBuffer);
+        }
+    }
+
+    return Status;
 }
+
 
 /* Function 26 */
 NTSTATUS
@@ -3779,8 +4397,30 @@ SamrSetMemberAttributesOfGroup(IN SAMPR_HANDLE GroupHandle,
                                IN unsigned long MemberId,
                                IN unsigned long Attributes)
 {
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
+    PSAM_DB_OBJECT GroupObject;
+    NTSTATUS Status;
+
+    /* Validate the group handle */
+    Status = SampValidateDbObject(GroupHandle,
+                                  SamDbGroupObject,
+                                  GROUP_ADD_MEMBER,
+                                  &GroupObject);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SampValidateDbObject failed with status 0x%08lx\n", Status);
+        return Status;
+    }
+
+    Status = SampSetUserGroupAttributes(GroupObject->ParentObject,
+                                        MemberId,
+                                        GroupObject->RelativeId,
+                                        Attributes);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SampSetUserGroupAttributes failed with status 0x%08lx\n", Status);
+    }
+
+    return Status;
 }
 
 
@@ -3800,6 +4440,10 @@ SamrOpenAlias(IN SAMPR_HANDLE DomainHandle,
     TRACE("SamrOpenAlias(%p %lx %lx %p)\n",
           DomainHandle, DesiredAccess, AliasId, AliasHandle);
 
+    /* Map generic access rights */
+    RtlMapGenericMask(&DesiredAccess,
+                      &AliasMapping);
+
     /* Validate the domain handle */
     Status = SampValidateDbObject(DomainHandle,
                                   SamDbDomainObject,
@@ -3818,6 +4462,7 @@ SamrOpenAlias(IN SAMPR_HANDLE DomainHandle,
     Status = SampOpenDbObject(DomainObject,
                               L"Aliases",
                               szRid,
+                              AliasId,
                               SamDbAliasObject,
                               DesiredAccess,
                               &AliasObject);
@@ -4044,6 +4689,76 @@ SamrQueryInformationAlias(IN SAMPR_HANDLE AliasHandle,
 }
 
 
+static NTSTATUS
+SampSetAliasName(PSAM_DB_OBJECT AliasObject,
+                 PSAMPR_ALIAS_INFO_BUFFER Buffer)
+{
+    UNICODE_STRING OldAliasName = {0, 0, NULL};
+    UNICODE_STRING NewAliasName;
+    NTSTATUS Status;
+
+    Status = SampGetObjectAttributeString(AliasObject,
+                                          L"Name",
+                                          (PRPC_UNICODE_STRING)&OldAliasName);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SampGetObjectAttributeString failed (Status 0x%08lx)\n", Status);
+        goto done;
+    }
+
+    NewAliasName.Length = Buffer->Name.Name.Length;
+    NewAliasName.MaximumLength = Buffer->Name.Name.MaximumLength;
+    NewAliasName.Buffer = Buffer->Name.Name.Buffer;
+
+    if (!RtlEqualUnicodeString(&OldAliasName, &NewAliasName, TRUE))
+    {
+        Status = SampCheckAccountNameInDomain(AliasObject->ParentObject,
+                                              NewAliasName.Buffer);
+        if (!NT_SUCCESS(Status))
+        {
+            TRACE("Alias name \'%S\' already exists in domain (Status 0x%08lx)\n",
+                  NewAliasName.Buffer, Status);
+            goto done;
+        }
+    }
+
+    Status = SampSetAccountNameInDomain(AliasObject->ParentObject,
+                                        L"Aliases",
+                                        NewAliasName.Buffer,
+                                        AliasObject->RelativeId);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SampSetAccountNameInDomain failed (Status 0x%08lx)\n", Status);
+        goto done;
+    }
+
+    Status = SampRemoveAccountNameFromDomain(AliasObject->ParentObject,
+                                             L"Aliases",
+                                             OldAliasName.Buffer);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SampRemoveAccountNameFromDomain failed (Status 0x%08lx)\n", Status);
+        goto done;
+    }
+
+    Status = SampSetObjectAttribute(AliasObject,
+                                    L"Name",
+                                    REG_SZ,
+                                    NewAliasName.Buffer,
+                                    NewAliasName.Length + sizeof(WCHAR));
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SampSetObjectAttribute failed (Status 0x%08lx)\n", Status);
+    }
+
+done:
+    if (OldAliasName.Buffer != NULL)
+        midl_user_free(OldAliasName.Buffer);
+
+    return Status;
+}
+
+
 /* Function 29 */
 NTSTATUS
 NTAPI
@@ -4068,11 +4783,8 @@ SamrSetInformationAlias(IN SAMPR_HANDLE AliasHandle,
     switch (AliasInformationClass)
     {
         case AliasNameInformation:
-            Status = SampSetObjectAttribute(AliasObject,
-                                            L"Name",
-                                            REG_SZ,
-                                            Buffer->Name.Name.Buffer,
-                                            Buffer->Name.Name.Length + sizeof(WCHAR));
+            Status = SampSetAliasName(AliasObject,
+                                      Buffer);
             break;
 
         case AliasAdminCommentInformation:
@@ -4097,8 +4809,41 @@ NTSTATUS
 NTAPI
 SamrDeleteAlias(IN OUT SAMPR_HANDLE *AliasHandle)
 {
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
+    PSAM_DB_OBJECT AliasObject;
+    NTSTATUS Status;
+
+    /* Validate the alias handle */
+    Status = SampValidateDbObject(*AliasHandle,
+                                  SamDbAliasObject,
+                                  DELETE,
+                                  &AliasObject);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SampValidateDbObject failed (Status 0x%08lx)\n", Status);
+        return Status;
+    }
+
+    /* Fail, if the alias is built-in */
+    if (AliasObject->RelativeId < 1000)
+    {
+        TRACE("You can not delete a special account!\n");
+        return STATUS_SPECIAL_ACCOUNT;
+    }
+
+    /* FIXME: Remove all members from the alias */
+
+    /* Delete the alias from the database */
+    Status = SampDeleteAccountDbObject(AliasObject);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SampDeleteAccountDbObject() failed (Status 0x%08lx)\n", Status);
+        return Status;
+    }
+
+    /* Invalidate the handle */
+    *AliasHandle = NULL;
+
+    return Status;
 }
 
 
@@ -4109,14 +4854,9 @@ SamrAddMemberToAlias(IN SAMPR_HANDLE AliasHandle,
                      IN PRPC_SID MemberId)
 {
     PSAM_DB_OBJECT AliasObject;
-    LPWSTR MemberIdString = NULL;
-    HANDLE MembersKeyHandle = NULL;
-    HANDLE MemberKeyHandle = NULL;
-    ULONG MemberIdLength;
     NTSTATUS Status;
 
-    TRACE("SamrAddMemberToAlias(%p %p)\n",
-          AliasHandle, MemberId);
+    TRACE("(%p %p)\n", AliasHandle, MemberId);
 
     /* Validate the alias handle */
     Status = SampValidateDbObject(AliasHandle,
@@ -4129,62 +4869,12 @@ SamrAddMemberToAlias(IN SAMPR_HANDLE AliasHandle,
         return Status;
     }
 
-    ConvertSidToStringSidW(MemberId, &MemberIdString);
-    TRACE("Member SID: %S\n", MemberIdString);
-
-    MemberIdLength = RtlLengthSid(MemberId);
-
-    Status = SampRegCreateKey(AliasObject->KeyHandle,
-                              L"Members",
-                              KEY_WRITE,
-                              &MembersKeyHandle);
+    Status = SampAddMemberToAlias(AliasObject,
+                                  MemberId);
     if (!NT_SUCCESS(Status))
     {
-        TRACE("SampRegCreateKey failed with status 0x%08lx\n", Status);
-        goto done;
+        TRACE("failed with status 0x%08lx\n", Status);
     }
-
-    Status = SampRegSetValue(MembersKeyHandle,
-                             MemberIdString,
-                             REG_BINARY,
-                             MemberId,
-                             MemberIdLength);
-    if (!NT_SUCCESS(Status))
-    {
-        TRACE("SampRegSetValue failed with status 0x%08lx\n", Status);
-        goto done;
-    }
-
-    Status = SampRegCreateKey(AliasObject->MembersKeyHandle,
-                              MemberIdString,
-                              KEY_WRITE,
-                              &MemberKeyHandle);
-    if (!NT_SUCCESS(Status))
-    {
-        TRACE("SampRegCreateKey failed with status 0x%08lx\n", Status);
-        goto done;
-    }
-
-    Status = SampRegSetValue(MemberKeyHandle,
-                             AliasObject->Name,
-                             REG_BINARY,
-                             MemberId,
-                             MemberIdLength);
-    if (!NT_SUCCESS(Status))
-    {
-        TRACE("SampRegSetValue failed with status 0x%08lx\n", Status);
-        goto done;
-    }
-
-done:
-    if (MemberKeyHandle != NULL)
-        SampRegCloseKey(MemberKeyHandle);
-
-    if (MembersKeyHandle != NULL)
-        SampRegCloseKey(MembersKeyHandle);
-
-    if (MemberIdString != NULL)
-        LocalFree(MemberIdString);
 
     return Status;
 }
@@ -4197,14 +4887,9 @@ SamrRemoveMemberFromAlias(IN SAMPR_HANDLE AliasHandle,
                           IN PRPC_SID MemberId)
 {
     PSAM_DB_OBJECT AliasObject;
-    LPWSTR MemberIdString = NULL;
-    HANDLE MembersKeyHandle = NULL;
-    HANDLE MemberKeyHandle = NULL;
-    ULONG ulValueCount;
     NTSTATUS Status;
 
-    TRACE("SamrRemoveMemberFromAlias(%p %p)\n",
-          AliasHandle, MemberId);
+    TRACE("(%p %p)\n", AliasHandle, MemberId);
 
     /* Validate the alias handle */
     Status = SampValidateDbObject(AliasHandle,
@@ -4217,100 +4902,12 @@ SamrRemoveMemberFromAlias(IN SAMPR_HANDLE AliasHandle,
         return Status;
     }
 
-    ConvertSidToStringSidW(MemberId, &MemberIdString);
-    TRACE("Member SID: %S\n", MemberIdString);
-
-    Status = SampRegOpenKey(AliasObject->MembersKeyHandle,
-                            MemberIdString,
-                            KEY_WRITE | KEY_QUERY_VALUE,
-                            &MemberKeyHandle);
+    Status = SampRemoveMemberFromAlias(AliasObject,
+                                       MemberId);
     if (!NT_SUCCESS(Status))
     {
-        TRACE("SampRegOpenKey failed with status 0x%08lx\n", Status);
-        goto done;
+        TRACE("failed with status 0x%08lx\n", Status);
     }
-
-    Status = SampRegDeleteValue(MemberKeyHandle,
-                                AliasObject->Name);
-    if (!NT_SUCCESS(Status))
-    {
-        TRACE("SampRegDeleteValue failed with status 0x%08lx\n", Status);
-        goto done;
-    }
-
-    Status = SampRegQueryKeyInfo(MemberKeyHandle,
-                                 NULL,
-                                 &ulValueCount);
-    if (!NT_SUCCESS(Status))
-    {
-        TRACE("SampRegQueryKeyInfo failed with status 0x%08lx\n", Status);
-        goto done;
-    }
-
-    if (ulValueCount == 0)
-    {
-        SampRegCloseKey(MemberKeyHandle);
-        MemberKeyHandle = NULL;
-
-        Status = SampRegDeleteKey(AliasObject->MembersKeyHandle,
-                                  MemberIdString);
-        if (!NT_SUCCESS(Status))
-        {
-            TRACE("SampRegDeleteKey failed with status 0x%08lx\n", Status);
-            goto done;
-        }
-    }
-
-    Status = SampRegOpenKey(AliasObject->KeyHandle,
-                            L"Members",
-                            KEY_WRITE | KEY_QUERY_VALUE,
-                            &MembersKeyHandle);
-    if (!NT_SUCCESS(Status))
-    {
-        TRACE("SampRegOpenKey failed with status 0x%08lx\n", Status);
-        goto done;
-    }
-
-    Status = SampRegDeleteValue(MembersKeyHandle,
-                                MemberIdString);
-    if (!NT_SUCCESS(Status))
-    {
-        TRACE("SampRegDeleteValue failed with status 0x%08lx\n", Status);
-        goto done;
-    }
-
-    Status = SampRegQueryKeyInfo(MembersKeyHandle,
-                                 NULL,
-                                 &ulValueCount);
-    if (!NT_SUCCESS(Status))
-    {
-        TRACE("SampRegQueryKeyInfo failed with status 0x%08lx\n", Status);
-        goto done;
-    }
-
-    if (ulValueCount == 0)
-    {
-        SampRegCloseKey(MembersKeyHandle);
-        MembersKeyHandle = NULL;
-
-        Status = SampRegDeleteKey(AliasObject->KeyHandle,
-                                  L"Members");
-        if (!NT_SUCCESS(Status))
-        {
-            TRACE("SampRegDeleteKey failed with status 0x%08lx\n", Status);
-            goto done;
-        }
-    }
-
-done:
-    if (MemberKeyHandle != NULL)
-        SampRegCloseKey(MemberKeyHandle);
-
-    if (MembersKeyHandle != NULL)
-        SampRegCloseKey(MembersKeyHandle);
-
-    if (MemberIdString != NULL)
-        LocalFree(MemberIdString);
 
     return Status;
 }
@@ -4464,6 +5061,10 @@ SamrOpenUser(IN SAMPR_HANDLE DomainHandle,
     TRACE("SamrOpenUser(%p %lx %lx %p)\n",
           DomainHandle, DesiredAccess, UserId, UserHandle);
 
+    /* Map generic access rights */
+    RtlMapGenericMask(&DesiredAccess,
+                      &UserMapping);
+
     /* Validate the domain handle */
     Status = SampValidateDbObject(DomainHandle,
                                   SamDbDomainObject,
@@ -4482,6 +5083,7 @@ SamrOpenUser(IN SAMPR_HANDLE DomainHandle,
     Status = SampOpenDbObject(DomainObject,
                               L"Users",
                               szRid,
+                              UserId,
                               SamDbUserObject,
                               DesiredAccess,
                               &UserObject);
@@ -4502,8 +5104,45 @@ NTSTATUS
 NTAPI
 SamrDeleteUser(IN OUT SAMPR_HANDLE *UserHandle)
 {
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
+    PSAM_DB_OBJECT UserObject;
+    NTSTATUS Status;
+
+    TRACE("(%p)\n", UserHandle);
+
+    /* Validate the user handle */
+    Status = SampValidateDbObject(*UserHandle,
+                                  SamDbUserObject,
+                                  DELETE,
+                                  &UserObject);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SampValidateDbObject() failed (Status 0x%08lx)\n", Status);
+        return Status;
+    }
+
+    /* Fail, if the user is built-in */
+    if (UserObject->RelativeId < 1000)
+    {
+        TRACE("You can not delete a special account!\n");
+        return STATUS_SPECIAL_ACCOUNT;
+    }
+
+    /* FIXME: Remove the user from all groups */
+
+    /* FIXME: Remove the user from all aliases */
+
+    /* Delete the user from the database */
+    Status = SampDeleteAccountDbObject(UserObject);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SampDeleteAccountDbObject() failed (Status 0x%08lx)\n", Status);
+        return Status;
+    }
+
+    /* Invalidate the handle */
+    *UserHandle = NULL;
+
+    return STATUS_SUCCESS;
 }
 
 
@@ -4663,7 +5302,10 @@ SampQueryUserLogon(PSAM_DB_OBJECT UserObject,
                    PSAMPR_USER_INFO_BUFFER *Buffer)
 {
     PSAMPR_USER_INFO_BUFFER InfoBuffer = NULL;
+    SAM_DOMAIN_FIXED_DATA DomainFixedData;
     SAM_USER_FIXED_DATA FixedData;
+    LARGE_INTEGER PasswordCanChange;
+    LARGE_INTEGER PasswordMustChange;
     ULONG Length = 0;
     NTSTATUS Status;
 
@@ -4673,6 +5315,17 @@ SampQueryUserLogon(PSAM_DB_OBJECT UserObject,
     if (InfoBuffer == NULL)
         return STATUS_INSUFFICIENT_RESOURCES;
 
+    /* Get the fixed size domain data */
+    Length = sizeof(SAM_DOMAIN_FIXED_DATA);
+    Status = SampGetObjectAttribute(UserObject->ParentObject,
+                                    L"F",
+                                    NULL,
+                                    (PVOID)&DomainFixedData,
+                                    &Length);
+    if (!NT_SUCCESS(Status))
+        goto done;
+
+    /* Get the fixed size user data */
     Length = sizeof(SAM_USER_FIXED_DATA);
     Status = SampGetObjectAttribute(UserObject,
                                     L"F",
@@ -4694,8 +5347,15 @@ SampQueryUserLogon(PSAM_DB_OBJECT UserObject,
     InfoBuffer->Logon.LogonCount = FixedData.LogonCount;
     InfoBuffer->Logon.UserAccountControl = FixedData.UserAccountControl;
 
-//  OLD_LARGE_INTEGER PasswordCanChange;
-//  OLD_LARGE_INTEGER PasswordMustChange;
+    PasswordCanChange = SampAddRelativeTimeToTime(FixedData.PasswordLastSet,
+                                                  DomainFixedData.MinPasswordAge);
+    InfoBuffer->Logon.PasswordCanChange.LowPart = PasswordCanChange.LowPart;
+    InfoBuffer->Logon.PasswordCanChange.HighPart = PasswordCanChange.HighPart;
+
+    PasswordMustChange = SampAddRelativeTimeToTime(FixedData.PasswordLastSet,
+                                                   DomainFixedData.MaxPasswordAge);
+    InfoBuffer->Logon.PasswordMustChange.LowPart = PasswordMustChange.LowPart;
+    InfoBuffer->Logon.PasswordMustChange.HighPart = PasswordMustChange.HighPart;
 
     /* Get the Name string */
     Status = SampGetObjectAttributeString(UserObject,
@@ -4767,7 +5427,14 @@ SampQueryUserLogon(PSAM_DB_OBJECT UserObject,
         goto done;
     }
 
-    /* FIXME: LogonHours */
+    /* Get the LogonHours attribute */
+    Status = SampGetLogonHoursAttrbute(UserObject,
+                                       &InfoBuffer->Logon.LogonHours);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("Status 0x%08lx\n", Status);
+        goto done;
+    }
 
     *Buffer = InfoBuffer;
 
@@ -4927,7 +5594,14 @@ SampQueryUserAccount(PSAM_DB_OBJECT UserObject,
         goto done;
     }
 
-    /* FIXME: LogonHours */
+    /* Get the LogonHours attribute */
+    Status = SampGetLogonHoursAttrbute(UserObject,
+                                       &InfoBuffer->Account.LogonHours);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("Status 0x%08lx\n", Status);
+        goto done;
+    }
 
     *Buffer = InfoBuffer;
 
@@ -4970,7 +5644,51 @@ done:
     return Status;
 }
 
-/* FIXME: SampQueryUserLogonHours */
+
+static
+NTSTATUS
+SampQueryUserLogonHours(PSAM_DB_OBJECT UserObject,
+                        PSAMPR_USER_INFO_BUFFER *Buffer)
+{
+    PSAMPR_USER_INFO_BUFFER InfoBuffer = NULL;
+    NTSTATUS Status;
+
+    TRACE("(%p %p)\n", UserObject, Buffer);
+
+    *Buffer = NULL;
+
+    InfoBuffer = midl_user_allocate(sizeof(SAMPR_USER_INFO_BUFFER));
+    if (InfoBuffer == NULL)
+    {
+        TRACE("Failed to allocate InfoBuffer!\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    Status = SampGetLogonHoursAttrbute(UserObject,
+                                       &InfoBuffer->LogonHours.LogonHours);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SampGetLogonHoursAttrbute failed (Status 0x%08lx)\n", Status);
+        goto done;
+    }
+
+    *Buffer = InfoBuffer;
+
+done:
+    if (!NT_SUCCESS(Status))
+    {
+        if (InfoBuffer != NULL)
+        {
+            if (InfoBuffer->LogonHours.LogonHours.LogonHours != NULL)
+                midl_user_free(InfoBuffer->LogonHours.LogonHours.LogonHours);
+
+            midl_user_free(InfoBuffer);
+        }
+    }
+
+    return Status;
+}
+
 
 static
 NTSTATUS
@@ -5454,6 +6172,404 @@ done:
 }
 
 
+static
+NTSTATUS
+SampQueryUserInternal1(PSAM_DB_OBJECT UserObject,
+                       PSAMPR_USER_INFO_BUFFER *Buffer)
+{
+    PSAMPR_USER_INFO_BUFFER InfoBuffer = NULL;
+    ULONG Length = 0;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    /* Fail, if the caller is not a trusted caller */
+    if (UserObject->Trusted == FALSE)
+        return STATUS_INVALID_INFO_CLASS;
+
+    *Buffer = NULL;
+
+    InfoBuffer = midl_user_allocate(sizeof(SAMPR_USER_INFO_BUFFER));
+    if (InfoBuffer == NULL)
+        return STATUS_INSUFFICIENT_RESOURCES;
+
+    /* Get the NT password */
+    Length = 0;
+    SampGetObjectAttribute(UserObject,
+                           L"NTPwd",
+                           NULL,
+                           NULL,
+                           &Length);
+
+    if (Length == sizeof(ENCRYPTED_NT_OWF_PASSWORD))
+    {
+        Status = SampGetObjectAttribute(UserObject,
+                                        L"NTPwd",
+                                        NULL,
+                                        (PVOID)&InfoBuffer->Internal1.EncryptedNtOwfPassword,
+                                        &Length);
+        if (!NT_SUCCESS(Status))
+            goto done;
+    }
+
+    InfoBuffer->Internal1.NtPasswordPresent = (Length == sizeof(ENCRYPTED_NT_OWF_PASSWORD));
+
+    /* Get the LM password */
+    Length = 0;
+    SampGetObjectAttribute(UserObject,
+                           L"LMPwd",
+                           NULL,
+                           NULL,
+                           &Length);
+
+    if (Length == sizeof(ENCRYPTED_LM_OWF_PASSWORD))
+    {
+        Status = SampGetObjectAttribute(UserObject,
+                                        L"LMPwd",
+                                        NULL,
+                                        (PVOID)&InfoBuffer->Internal1.EncryptedLmOwfPassword,
+                                        &Length);
+        if (!NT_SUCCESS(Status))
+            goto done;
+    }
+
+    InfoBuffer->Internal1.LmPasswordPresent = (Length == sizeof(ENCRYPTED_LM_OWF_PASSWORD));
+
+    InfoBuffer->Internal1.PasswordExpired = FALSE;
+
+    *Buffer = InfoBuffer;
+
+done:
+    if (!NT_SUCCESS(Status))
+    {
+        if (InfoBuffer != NULL)
+        {
+            midl_user_free(InfoBuffer);
+        }
+    }
+
+    return Status;
+}
+
+
+static NTSTATUS
+SampQueryUserParameters(PSAM_DB_OBJECT UserObject,
+                        PSAMPR_USER_INFO_BUFFER *Buffer)
+{
+    PSAMPR_USER_INFO_BUFFER InfoBuffer = NULL;
+    NTSTATUS Status;
+
+    *Buffer = NULL;
+
+    InfoBuffer = midl_user_allocate(sizeof(SAMPR_USER_INFO_BUFFER));
+    if (InfoBuffer == NULL)
+        return STATUS_INSUFFICIENT_RESOURCES;
+
+    /* Get the Parameters string */
+    Status = SampGetObjectAttributeString(UserObject,
+                                          L"Parameters",
+                                          &InfoBuffer->Parameters.Parameters);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("Status 0x%08lx\n", Status);
+        goto done;
+    }
+
+    *Buffer = InfoBuffer;
+
+done:
+    if (!NT_SUCCESS(Status))
+    {
+        if (InfoBuffer != NULL)
+        {
+            if (InfoBuffer->Parameters.Parameters.Buffer != NULL)
+                midl_user_free(InfoBuffer->Parameters.Parameters.Buffer);
+
+            midl_user_free(InfoBuffer);
+        }
+    }
+
+    return Status;
+}
+
+
+static NTSTATUS
+SampQueryUserAll(PSAM_DB_OBJECT UserObject,
+                 PSAMPR_USER_INFO_BUFFER *Buffer)
+{
+    PSAMPR_USER_INFO_BUFFER InfoBuffer = NULL;
+    SAM_DOMAIN_FIXED_DATA DomainFixedData;
+    SAM_USER_FIXED_DATA FixedData;
+    LARGE_INTEGER PasswordCanChange;
+    LARGE_INTEGER PasswordMustChange;
+    ULONG Length = 0;
+    NTSTATUS Status;
+
+    *Buffer = NULL;
+
+    InfoBuffer = midl_user_allocate(sizeof(SAMPR_USER_INFO_BUFFER));
+    if (InfoBuffer == NULL)
+        return STATUS_INSUFFICIENT_RESOURCES;
+
+    /* Get the fixed size domain data */
+    Length = sizeof(SAM_DOMAIN_FIXED_DATA);
+    Status = SampGetObjectAttribute(UserObject->ParentObject,
+                                    L"F",
+                                    NULL,
+                                    (PVOID)&DomainFixedData,
+                                    &Length);
+    if (!NT_SUCCESS(Status))
+        goto done;
+
+    /* Get the fixed size user data */
+    Length = sizeof(SAM_USER_FIXED_DATA);
+    Status = SampGetObjectAttribute(UserObject,
+                                    L"F",
+                                    NULL,
+                                    (PVOID)&FixedData,
+                                    &Length);
+    if (!NT_SUCCESS(Status))
+        goto done;
+
+    if (UserObject->Access & USER_READ_GENERAL)
+    {
+        /* Get the Name string */
+        Status = SampGetObjectAttributeString(UserObject,
+                                              L"Name",
+                                              &InfoBuffer->All.UserName);
+        if (!NT_SUCCESS(Status))
+        {
+            TRACE("Status 0x%08lx\n", Status);
+            goto done;
+        }
+
+        /* Get the FullName string */
+        Status = SampGetObjectAttributeString(UserObject,
+                                              L"FullName",
+                                              &InfoBuffer->All.FullName);
+        if (!NT_SUCCESS(Status))
+        {
+            TRACE("Status 0x%08lx\n", Status);
+            goto done;
+        }
+
+        /* Get the user ID*/
+        InfoBuffer->All.UserId = FixedData.UserId;
+
+        /* Get the primary group ID */
+        InfoBuffer->All.PrimaryGroupId = FixedData.PrimaryGroupId;
+
+        /* Get the AdminComment string */
+        Status = SampGetObjectAttributeString(UserObject,
+                                              L"AdminComment",
+                                              &InfoBuffer->All.AdminComment);
+        if (!NT_SUCCESS(Status))
+        {
+            TRACE("Status 0x%08lx\n", Status);
+            goto done;
+        }
+
+        /* Get the UserComment string */
+        Status = SampGetObjectAttributeString(UserObject,
+                                              L"UserComment",
+                                              &InfoBuffer->All.UserComment);
+        if (!NT_SUCCESS(Status))
+        {
+            TRACE("Status 0x%08lx\n", Status);
+            goto done;
+        }
+
+        InfoBuffer->All.WhichFields |= USER_ALL_READ_GENERAL_MASK;
+//            USER_ALL_USERNAME |
+//            USER_ALL_FULLNAME |
+//            USER_ALL_USERID |
+//            USER_ALL_PRIMARYGROUPID |
+//            USER_ALL_ADMINCOMMENT |
+//            USER_ALL_USERCOMMENT;
+    }
+
+    if (UserObject->Access & USER_READ_LOGON)
+    {
+        /* Get the HomeDirectory string */
+        Status = SampGetObjectAttributeString(UserObject,
+                                              L"HomeDirectory",
+                                              &InfoBuffer->All.HomeDirectory);
+        if (!NT_SUCCESS(Status))
+        {
+            TRACE("Status 0x%08lx\n", Status);
+            goto done;
+        }
+
+        /* Get the HomeDirectoryDrive string */
+        Status = SampGetObjectAttributeString(UserObject,
+                                              L"HomeDirectoryDrive",
+                                              &InfoBuffer->Home.HomeDirectoryDrive);
+        if (!NT_SUCCESS(Status))
+        {
+            TRACE("Status 0x%08lx\n", Status);
+            goto done;
+        }
+
+        /* Get the ScriptPath string */
+        Status = SampGetObjectAttributeString(UserObject,
+                                              L"ScriptPath",
+                                              &InfoBuffer->All.ScriptPath);
+        if (!NT_SUCCESS(Status))
+        {
+            TRACE("Status 0x%08lx\n", Status);
+            goto done;
+        }
+
+        /* Get the ProfilePath string */
+        Status = SampGetObjectAttributeString(UserObject,
+                                              L"ProfilePath",
+                                              &InfoBuffer->All.ProfilePath);
+        if (!NT_SUCCESS(Status))
+        {
+            TRACE("Status 0x%08lx\n", Status);
+            goto done;
+        }
+
+        /* Get the WorkStations string */
+        Status = SampGetObjectAttributeString(UserObject,
+                                              L"WorkStations",
+                                              &InfoBuffer->All.WorkStations);
+        if (!NT_SUCCESS(Status))
+        {
+            TRACE("Status 0x%08lx\n", Status);
+            goto done;
+        }
+
+        /* Get the LogonHours attribute */
+        Status = SampGetLogonHoursAttrbute(UserObject,
+                                           &InfoBuffer->All.LogonHours);
+        if (!NT_SUCCESS(Status))
+        {
+            TRACE("Status 0x%08lx\n", Status);
+            goto done;
+        }
+
+        InfoBuffer->All.LastLogon.LowPart = FixedData.LastLogon.LowPart;
+        InfoBuffer->All.LastLogon.HighPart = FixedData.LastLogon.HighPart;
+
+        InfoBuffer->All.LastLogoff.LowPart = FixedData.LastLogoff.LowPart;
+        InfoBuffer->All.LastLogoff.HighPart = FixedData.LastLogoff.HighPart;
+
+        InfoBuffer->All.BadPasswordCount = FixedData.BadPasswordCount;
+
+        InfoBuffer->All.LogonCount = FixedData.LogonCount;
+
+        PasswordCanChange = SampAddRelativeTimeToTime(FixedData.PasswordLastSet,
+                                                      DomainFixedData.MinPasswordAge);
+        InfoBuffer->All.PasswordCanChange.LowPart = PasswordCanChange.LowPart;
+        InfoBuffer->All.PasswordCanChange.HighPart = PasswordCanChange.HighPart;
+
+        PasswordMustChange = SampAddRelativeTimeToTime(FixedData.PasswordLastSet,
+                                                       DomainFixedData.MaxPasswordAge);
+        InfoBuffer->All.PasswordMustChange.LowPart = PasswordMustChange.LowPart;
+        InfoBuffer->All.PasswordMustChange.HighPart = PasswordMustChange.HighPart;
+
+        InfoBuffer->All. WhichFields |= USER_ALL_READ_LOGON_MASK;
+/*
+            USER_ALL_HOMEDIRECTORY |
+            USER_ALL_HOMEDIRECTORYDRIVE |
+            USER_ALL_SCRIPTPATH |
+            USER_ALL_PROFILEPATH |
+            USER_ALL_WORKSTATIONS |
+            USER_ALL_LASTLOGON |
+            USER_ALL_LASTLOGOFF |
+            USER_ALL_LOGONHOURS |
+            USER_ALL_BADPASSWORDCOUNT |
+            USER_ALL_LOGONCOUNT;
+            USER_ALL_PASSWORDCANCHANGE |
+            USER_ALL_PASSWORDMUSTCHANGE;
+*/
+    }
+
+    if (UserObject->Access & USER_READ_ACCOUNT)
+    {
+        InfoBuffer->All.PasswordLastSet.LowPart = FixedData.PasswordLastSet.LowPart;
+        InfoBuffer->All.PasswordLastSet.HighPart = FixedData.PasswordLastSet.HighPart;
+
+        InfoBuffer->All.AccountExpires.LowPart = FixedData.AccountExpires.LowPart;
+        InfoBuffer->All.AccountExpires.HighPart = FixedData.AccountExpires.HighPart;
+
+        InfoBuffer->All.UserAccountControl = FixedData.UserAccountControl;
+
+        /* Get the Parameters string */
+        Status = SampGetObjectAttributeString(UserObject,
+                                              L"Parameters",
+                                              &InfoBuffer->All.Parameters);
+        if (!NT_SUCCESS(Status))
+        {
+            TRACE("Status 0x%08lx\n", Status);
+            goto done;
+        }
+
+        InfoBuffer->All. WhichFields |= USER_ALL_READ_ACCOUNT_MASK;
+//            USER_ALL_PASSWORDLASTSET |
+//            USER_ALL_ACCOUNTEXPIRES |
+//            USER_ALL_USERACCOUNTCONTROL |
+//            USER_ALL_PARAMETERS;
+    }
+
+    if (UserObject->Access & USER_READ_PREFERENCES)
+    {
+        InfoBuffer->All.CountryCode = FixedData.CountryCode;
+
+        InfoBuffer->All.CodePage = FixedData.CodePage;
+
+        InfoBuffer->All. WhichFields |= USER_ALL_READ_PREFERENCES_MASK;
+//            USER_ALL_COUNTRYCODE |
+//            USER_ALL_CODEPAGE;
+    }
+
+    *Buffer = InfoBuffer;
+
+done:
+    if (!NT_SUCCESS(Status))
+    {
+        if (InfoBuffer != NULL)
+        {
+            if (InfoBuffer->All.UserName.Buffer != NULL)
+                midl_user_free(InfoBuffer->All.UserName.Buffer);
+
+            if (InfoBuffer->All.FullName.Buffer != NULL)
+                midl_user_free(InfoBuffer->All.FullName.Buffer);
+
+            if (InfoBuffer->All.AdminComment.Buffer != NULL)
+                midl_user_free(InfoBuffer->All.AdminComment.Buffer);
+
+            if (InfoBuffer->All.UserComment.Buffer != NULL)
+                midl_user_free(InfoBuffer->All.UserComment.Buffer);
+
+            if (InfoBuffer->All.HomeDirectory.Buffer != NULL)
+                midl_user_free(InfoBuffer->All.HomeDirectory.Buffer);
+
+            if (InfoBuffer->All.HomeDirectoryDrive.Buffer != NULL)
+                midl_user_free(InfoBuffer->All.HomeDirectoryDrive.Buffer);
+
+            if (InfoBuffer->All.ScriptPath.Buffer != NULL)
+                midl_user_free(InfoBuffer->All.ScriptPath.Buffer);
+
+            if (InfoBuffer->All.ProfilePath.Buffer != NULL)
+                midl_user_free(InfoBuffer->All.ProfilePath.Buffer);
+
+            if (InfoBuffer->All.WorkStations.Buffer != NULL)
+                midl_user_free(InfoBuffer->All.WorkStations.Buffer);
+
+            if (InfoBuffer->All.LogonHours.LogonHours != NULL)
+                midl_user_free(InfoBuffer->All.LogonHours.LogonHours);
+
+            if (InfoBuffer->All.Parameters.Buffer != NULL)
+                midl_user_free(InfoBuffer->All.Parameters.Buffer);
+
+            midl_user_free(InfoBuffer);
+        }
+    }
+
+    return Status;
+}
+
+
 /* Function 36 */
 NTSTATUS
 NTAPI
@@ -5489,6 +6605,7 @@ SamrQueryInformationUser(IN SAMPR_HANDLE UserHandle,
 
         case UserControlInformation:
         case UserExpiresInformation:
+        case UserParametersInformation:
             DesiredAccess = USER_READ_ACCOUNT;
             break;
 
@@ -5503,6 +6620,11 @@ SamrQueryInformationUser(IN SAMPR_HANDLE UserHandle,
                             USER_READ_PREFERENCES |
                             USER_READ_LOGON |
                             USER_READ_ACCOUNT;
+            break;
+
+        case UserInternal1Information:
+        case UserAllInformation:
+            DesiredAccess = 0;
             break;
 
         default:
@@ -5537,10 +6659,10 @@ SamrQueryInformationUser(IN SAMPR_HANDLE UserHandle,
                                         Buffer);
             break;
 
-//        case UserLogonHoursInformation:
-//            Status = SampQueryUserLogonHours(UserObject,
-//                                             Buffer);
-//            break;
+        case UserLogonHoursInformation:
+            Status = SampQueryUserLogonHours(UserObject,
+                                             Buffer);
+            break;
 
         case UserAccountInformation:
             Status = SampQueryUserAccount(UserObject,
@@ -5601,9 +6723,94 @@ SamrQueryInformationUser(IN SAMPR_HANDLE UserHandle,
                                           Buffer);
             break;
 
+        case UserInternal1Information:
+            Status = SampQueryUserInternal1(UserObject,
+                                            Buffer);
+            break;
+
+        case UserParametersInformation:
+            Status = SampQueryUserParameters(UserObject,
+                                             Buffer);
+            break;
+
+        case UserAllInformation:
+            Status = SampQueryUserAll(UserObject,
+                                      Buffer);
+            break;
+
+//        case UserInternal4Information:
+//        case UserInternal5Information:
+//        case UserInternal4InformationNew:
+//        case UserInternal5InformationNew:
+
         default:
             Status = STATUS_INVALID_INFO_CLASS;
     }
+
+    return Status;
+}
+
+
+static NTSTATUS
+SampSetUserName(PSAM_DB_OBJECT UserObject,
+                PRPC_UNICODE_STRING NewUserName)
+{
+    UNICODE_STRING OldUserName = {0, 0, NULL};
+    NTSTATUS Status;
+
+    Status = SampGetObjectAttributeString(UserObject,
+                                          L"Name",
+                                          (PRPC_UNICODE_STRING)&OldUserName);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SampGetObjectAttributeString failed (Status 0x%08lx)\n", Status);
+        goto done;
+    }
+
+    if (!RtlEqualUnicodeString(&OldUserName, (PCUNICODE_STRING)NewUserName, TRUE))
+    {
+        Status = SampCheckAccountNameInDomain(UserObject->ParentObject,
+                                              NewUserName->Buffer);
+        if (!NT_SUCCESS(Status))
+        {
+            TRACE("User name \'%S\' already exists in domain (Status 0x%08lx)\n",
+                  NewUserName->Buffer, Status);
+            goto done;
+        }
+    }
+
+    Status = SampSetAccountNameInDomain(UserObject->ParentObject,
+                                        L"Users",
+                                        NewUserName->Buffer,
+                                        UserObject->RelativeId);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SampSetAccountNameInDomain failed (Status 0x%08lx)\n", Status);
+        goto done;
+    }
+
+    Status = SampRemoveAccountNameFromDomain(UserObject->ParentObject,
+                                             L"Users",
+                                             OldUserName.Buffer);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SampRemoveAccountNameFromDomain failed (Status 0x%08lx)\n", Status);
+        goto done;
+    }
+
+    Status = SampSetObjectAttribute(UserObject,
+                                    L"Name",
+                                    REG_SZ,
+                                    NewUserName->Buffer,
+                                    NewUserName->Length + sizeof(WCHAR));
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SampSetObjectAttribute failed (Status 0x%08lx)\n", Status);
+    }
+
+done:
+    if (OldUserName.Buffer != NULL)
+        midl_user_free(OldUserName.Buffer);
 
     return Status;
 }
@@ -5636,11 +6843,8 @@ SampSetUserGeneral(PSAM_DB_OBJECT UserObject,
     if (!NT_SUCCESS(Status))
         goto done;
 
-    Status = SampSetObjectAttribute(UserObject,
-                                    L"Name",
-                                    REG_SZ,
-                                    Buffer->General.UserName.Buffer,
-                                    Buffer->General.UserName.MaximumLength);
+    Status = SampSetUserName(UserObject,
+                             &Buffer->General.UserName);
     if (!NT_SUCCESS(Status))
         goto done;
 
@@ -5801,6 +7005,242 @@ done:
 }
 
 
+static NTSTATUS
+SampSetUserInternal1(PSAM_DB_OBJECT UserObject,
+                     PSAMPR_USER_INFO_BUFFER Buffer)
+{
+    SAM_USER_FIXED_DATA FixedData;
+    ULONG Length = 0;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    /* FIXME: Decrypt NT password */
+    /* FIXME: Decrypt LM password */
+
+    Status = SampSetUserPassword(UserObject,
+                                 &Buffer->Internal1.EncryptedNtOwfPassword,
+                                 Buffer->Internal1.NtPasswordPresent,
+                                 &Buffer->Internal1.EncryptedLmOwfPassword,
+                                 Buffer->Internal1.LmPasswordPresent);
+    if (!NT_SUCCESS(Status))
+        goto done;
+
+    /* Get the fixed user attributes */
+    Length = sizeof(SAM_USER_FIXED_DATA);
+    Status = SampGetObjectAttribute(UserObject,
+                                    L"F",
+                                    NULL,
+                                    (PVOID)&FixedData,
+                                    &Length);
+    if (!NT_SUCCESS(Status))
+        goto done;
+
+    if (Buffer->Internal1.PasswordExpired)
+    {
+        /* The pasword was last set ages ago */
+        FixedData.PasswordLastSet.LowPart = 0;
+        FixedData.PasswordLastSet.HighPart = 0;
+    }
+    else
+    {
+        /* The pasword was last set right now */
+        Status = NtQuerySystemTime(&FixedData.PasswordLastSet);
+        if (!NT_SUCCESS(Status))
+            goto done;
+    }
+
+    /* Set the fixed user attributes */
+    Status = SampSetObjectAttribute(UserObject,
+                                    L"F",
+                                    REG_BINARY,
+                                    &FixedData,
+                                    Length);
+
+done:
+    return Status;
+}
+
+
+static NTSTATUS
+SampSetUserAll(PSAM_DB_OBJECT UserObject,
+               PSAMPR_USER_INFO_BUFFER Buffer)
+{
+    SAM_USER_FIXED_DATA FixedData;
+    ULONG Length = 0;
+    ULONG WhichFields;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    WhichFields = Buffer->All.WhichFields;
+
+    if (WhichFields & USER_ALL_USERNAME)
+    {
+        Status = SampSetUserName(UserObject,
+                                 &Buffer->All.UserName);
+        if (!NT_SUCCESS(Status))
+            goto done;
+    }
+
+    if (WhichFields & USER_ALL_FULLNAME)
+    {
+        Status = SampSetObjectAttribute(UserObject,
+                                        L"FullName",
+                                        REG_SZ,
+                                        Buffer->All.FullName.Buffer,
+                                        Buffer->All.FullName.MaximumLength);
+        if (!NT_SUCCESS(Status))
+            goto done;
+    }
+
+    if (WhichFields & USER_ALL_ADMINCOMMENT)
+    {
+        Status = SampSetObjectAttribute(UserObject,
+                                        L"AdminComment",
+                                        REG_SZ,
+                                        Buffer->All.AdminComment.Buffer,
+                                        Buffer->All.AdminComment.MaximumLength);
+        if (!NT_SUCCESS(Status))
+            goto done;
+    }
+
+    if (WhichFields & USER_ALL_USERCOMMENT)
+    {
+        Status = SampSetObjectAttribute(UserObject,
+                                        L"UserComment",
+                                        REG_SZ,
+                                        Buffer->All.UserComment.Buffer,
+                                        Buffer->All.UserComment.MaximumLength);
+        if (!NT_SUCCESS(Status))
+            goto done;
+    }
+
+    if (WhichFields & USER_ALL_HOMEDIRECTORY)
+    {
+        Status = SampSetObjectAttribute(UserObject,
+                                        L"HomeDirectory",
+                                        REG_SZ,
+                                        Buffer->All.HomeDirectory.Buffer,
+                                        Buffer->All.HomeDirectory.MaximumLength);
+        if (!NT_SUCCESS(Status))
+            goto done;
+    }
+
+    if (WhichFields & USER_ALL_HOMEDIRECTORYDRIVE)
+    {
+        Status = SampSetObjectAttribute(UserObject,
+                                        L"HomeDirectoryDrive",
+                                        REG_SZ,
+                                        Buffer->All.HomeDirectoryDrive.Buffer,
+                                        Buffer->All.HomeDirectoryDrive.MaximumLength);
+        if (!NT_SUCCESS(Status))
+            goto done;
+    }
+
+    if (WhichFields & USER_ALL_SCRIPTPATH)
+    {
+        Status = SampSetObjectAttribute(UserObject,
+                                        L"ScriptPath",
+                                        REG_SZ,
+                                        Buffer->All.ScriptPath.Buffer,
+                                        Buffer->All.ScriptPath.MaximumLength);
+        if (!NT_SUCCESS(Status))
+            goto done;
+    }
+
+    if (WhichFields & USER_ALL_PROFILEPATH)
+    {
+        Status = SampSetObjectAttribute(UserObject,
+                                        L"ProfilePath",
+                                        REG_SZ,
+                                        Buffer->All.ProfilePath.Buffer,
+                                        Buffer->All.ProfilePath.MaximumLength);
+        if (!NT_SUCCESS(Status))
+            goto done;
+    }
+
+    if (WhichFields & USER_ALL_WORKSTATIONS)
+    {
+        Status = SampSetObjectAttribute(UserObject,
+                                        L"WorkStations",
+                                        REG_SZ,
+                                        Buffer->All.WorkStations.Buffer,
+                                        Buffer->All.WorkStations.MaximumLength);
+        if (!NT_SUCCESS(Status))
+            goto done;
+    }
+
+    if (WhichFields & USER_ALL_PARAMETERS)
+    {
+        Status = SampSetObjectAttribute(UserObject,
+                                        L"Parameters",
+                                        REG_SZ,
+                                        Buffer->All.Parameters.Buffer,
+                                        Buffer->All.Parameters.MaximumLength);
+        if (!NT_SUCCESS(Status))
+            goto done;
+    }
+
+    if (WhichFields & USER_ALL_LOGONHOURS)
+    {
+        Status = SampSetLogonHoursAttrbute(UserObject,
+                                           &Buffer->All.LogonHours);
+        if (!NT_SUCCESS(Status))
+            goto done;
+    }
+
+    if (WhichFields & (USER_ALL_PRIMARYGROUPID |
+                       USER_ALL_ACCOUNTEXPIRES |
+                       USER_ALL_USERACCOUNTCONTROL |
+                       USER_ALL_COUNTRYCODE |
+                       USER_ALL_CODEPAGE))
+    {
+        Length = sizeof(SAM_USER_FIXED_DATA);
+        Status = SampGetObjectAttribute(UserObject,
+                                        L"F",
+                                        NULL,
+                                        (PVOID)&FixedData,
+                                        &Length);
+        if (!NT_SUCCESS(Status))
+            goto done;
+
+        if (WhichFields & USER_ALL_PRIMARYGROUPID)
+            FixedData.PrimaryGroupId = Buffer->All.PrimaryGroupId;
+
+        if (WhichFields & USER_ALL_ACCOUNTEXPIRES)
+        {
+            FixedData.AccountExpires.LowPart = Buffer->All.AccountExpires.LowPart;
+            FixedData.AccountExpires.HighPart = Buffer->All.AccountExpires.HighPart;
+        }
+
+        if (WhichFields & USER_ALL_USERACCOUNTCONTROL)
+            FixedData.UserAccountControl = Buffer->All.UserAccountControl;
+
+        if (WhichFields & USER_ALL_COUNTRYCODE)
+            FixedData.CountryCode = Buffer->Preferences.CountryCode;
+
+        if (WhichFields & USER_ALL_CODEPAGE)
+            FixedData.CodePage = Buffer->Preferences.CodePage;
+
+        Status = SampSetObjectAttribute(UserObject,
+                                        L"F",
+                                        REG_BINARY,
+                                        &FixedData,
+                                        Length);
+        if (!NT_SUCCESS(Status))
+            goto done;
+    }
+
+/*
+FIXME:
+    USER_ALL_NTPASSWORDPRESENT
+    USER_ALL_LMPASSWORDPRESENT
+    USER_ALL_PASSWORDEXPIRED
+*/
+
+done:
+
+    return Status;
+}
+
+
 /* Function 37 */
 NTSTATUS
 NTAPI
@@ -5829,6 +7269,7 @@ SamrSetInformationUser(IN SAMPR_HANDLE UserHandle,
         case UserWorkStationsInformation:
         case UserControlInformation:
         case UserExpiresInformation:
+        case UserParametersInformation:
             DesiredAccess = USER_WRITE_ACCOUNT;
             break;
 
@@ -5842,7 +7283,12 @@ SamrSetInformationUser(IN SAMPR_HANDLE UserHandle,
             break;
 
         case UserSetPasswordInformation:
+        case UserInternal1Information:
             DesiredAccess = USER_FORCE_PASSWORD_CHANGE;
+            break;
+
+        case UserAllInformation:
+            DesiredAccess = 0; /* FIXME */
             break;
 
         default:
@@ -5871,18 +7317,15 @@ SamrSetInformationUser(IN SAMPR_HANDLE UserHandle,
             Status = SampSetUserPreferences(UserObject,
                                             Buffer);
             break;
-/*
+
         case UserLogonHoursInformation:
-            Status = SampSetUserLogonHours(UserObject,
-                                           Buffer);
+            Status = SampSetLogonHoursAttrbute(UserObject,
+                                               &Buffer->LogonHours.LogonHours);
             break;
-*/
+
         case UserNameInformation:
-            Status = SampSetObjectAttribute(UserObject,
-                                            L"Name",
-                                            REG_SZ,
-                                            Buffer->Name.UserName.Buffer,
-                                            Buffer->Name.UserName.MaximumLength);
+            Status = SampSetUserName(UserObject,
+                                     &Buffer->Name.UserName);
             if (!NT_SUCCESS(Status))
                 break;
 
@@ -5894,11 +7337,8 @@ SamrSetInformationUser(IN SAMPR_HANDLE UserHandle,
             break;
 
         case UserAccountNameInformation:
-            Status = SampSetObjectAttribute(UserObject,
-                                            L"Name",
-                                            REG_SZ,
-                                            Buffer->AccountName.UserName.Buffer,
-                                            Buffer->AccountName.UserName.MaximumLength);
+            Status = SampSetUserName(UserObject,
+                                     &Buffer->AccountName.UserName);
             break;
 
         case UserFullNameInformation:
@@ -5983,9 +7423,24 @@ SamrSetInformationUser(IN SAMPR_HANDLE UserHandle,
                                         Buffer);
             break;
 
-//        case UserInternal1Information:
-//        case UserParametersInformation:
-//        case UserAllInformation:
+        case UserInternal1Information:
+            Status = SampSetUserInternal1(UserObject,
+                                          Buffer);
+            break;
+
+        case UserParametersInformation:
+            Status = SampSetObjectAttribute(UserObject,
+                                            L"Parameters",
+                                            REG_SZ,
+                                            Buffer->Parameters.Parameters.Buffer,
+                                            Buffer->Parameters.Parameters.MaximumLength);
+            break;
+
+        case UserAllInformation:
+            Status = SampSetUserAll(UserObject,
+                                    Buffer);
+            break;
+
 //        case UserInternal4Information:
 //        case UserInternal5Information:
 //        case UserInternal4InformationNew:
@@ -5997,6 +7452,7 @@ SamrSetInformationUser(IN SAMPR_HANDLE UserHandle,
 
     return Status;
 }
+
 
 /* Function 38 */
 NTSTATUS
@@ -6013,9 +7469,150 @@ SamrChangePasswordUser(IN SAMPR_HANDLE UserHandle,
                        IN unsigned char LmCrossEncryptionPresent,
                        IN PENCRYPTED_LM_OWF_PASSWORD NewLmEncryptedWithNewNt)
 {
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
+    ENCRYPTED_LM_OWF_PASSWORD StoredLmPassword;
+    ENCRYPTED_NT_OWF_PASSWORD StoredNtPassword;
+    PENCRYPTED_LM_OWF_PASSWORD OldLmPassword;
+    PENCRYPTED_LM_OWF_PASSWORD NewLmPassword;
+    PENCRYPTED_NT_OWF_PASSWORD OldNtPassword;
+    PENCRYPTED_NT_OWF_PASSWORD NewNtPassword;
+    PSAM_DB_OBJECT UserObject;
+    ULONG Length;
+    SAM_USER_FIXED_DATA FixedUserData;
+    NTSTATUS Status;
+
+    TRACE("(%p %u %p %p %u %p %p %u %p %u %p)\n",
+          UserHandle, LmPresent, OldLmEncryptedWithNewLm, NewLmEncryptedWithOldLm,
+          NtPresent, OldNtEncryptedWithNewNt, NewNtEncryptedWithOldNt, NtCrossEncryptionPresent,
+          NewNtEncryptedWithNewLm, LmCrossEncryptionPresent, NewLmEncryptedWithNewNt);
+
+    /* Validate the user handle */
+    Status = SampValidateDbObject(UserHandle,
+                                  SamDbUserObject,
+                                  USER_CHANGE_PASSWORD,
+                                  &UserObject);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SampValidateDbObject failed with status 0x%08lx\n", Status);
+        return Status;
+    }
+
+    /* Retrieve the LM password */
+    Length = sizeof(ENCRYPTED_LM_OWF_PASSWORD);
+    Status = SampGetObjectAttribute(UserObject,
+                                    L"LMPwd",
+                                    NULL,
+                                    &StoredLmPassword,
+                                    &Length);
+    if (!NT_SUCCESS(Status))
+    {
+
+    }
+
+    /* Retrieve the NT password */
+    Length = sizeof(ENCRYPTED_NT_OWF_PASSWORD);
+    Status = SampGetObjectAttribute(UserObject,
+                                    L"NTPwd",
+                                    NULL,
+                                    &StoredNtPassword,
+                                    &Length);
+    if (!NT_SUCCESS(Status))
+    {
+
+    }
+
+    /* FIXME: Decrypt passwords */
+    OldLmPassword = OldLmEncryptedWithNewLm;
+    NewLmPassword = NewLmEncryptedWithOldLm;
+    OldNtPassword = OldNtEncryptedWithNewNt;
+    NewNtPassword = NewNtEncryptedWithOldNt;
+
+    /* Check if the old passwords match the stored ones */
+    if (NtPresent)
+    {
+        if (LmPresent)
+        {
+            if (!RtlEqualMemory(&StoredLmPassword,
+                                OldLmPassword,
+                                sizeof(ENCRYPTED_LM_OWF_PASSWORD)))
+            {
+                TRACE("Old LM Password does not match!\n");
+                Status = STATUS_WRONG_PASSWORD;
+            }
+            else
+            {
+                if (!RtlEqualMemory(&StoredNtPassword,
+                                    OldNtPassword,
+                                    sizeof(ENCRYPTED_LM_OWF_PASSWORD)))
+                {
+                    TRACE("Old NT Password does not match!\n");
+                    Status = STATUS_WRONG_PASSWORD;
+                }
+            }
+        }
+        else
+        {
+            if (!RtlEqualMemory(&StoredNtPassword,
+                                OldNtPassword,
+                                sizeof(ENCRYPTED_LM_OWF_PASSWORD)))
+            {
+                TRACE("Old NT Password does not match!\n");
+                Status = STATUS_WRONG_PASSWORD;
+            }
+        }
+    }
+    else
+    {
+        if (LmPresent)
+        {
+            if (!RtlEqualMemory(&StoredLmPassword,
+                                OldLmPassword,
+                                sizeof(ENCRYPTED_LM_OWF_PASSWORD)))
+            {
+                TRACE("Old LM Password does not match!\n");
+                Status = STATUS_WRONG_PASSWORD;
+            }
+        }
+        else
+        {
+            Status = STATUS_INVALID_PARAMETER;
+        }
+    }
+
+    /* Store the new password hashes */
+    if (NT_SUCCESS(Status))
+    {
+        Status = SampSetUserPassword(UserObject,
+                                     NewNtPassword,
+                                     NtPresent,
+                                     NewLmPassword,
+                                     LmPresent);
+        if (NT_SUCCESS(Status))
+        {
+            /* Get the fixed size user data */
+            Length = sizeof(SAM_USER_FIXED_DATA);
+            Status = SampGetObjectAttribute(UserObject,
+                                            L"F",
+                                            NULL,
+                                            &FixedUserData,
+                                            &Length);
+            if (NT_SUCCESS(Status))
+            {
+                /* Update PasswordLastSet */
+                NtQuerySystemTime(&FixedUserData.PasswordLastSet);
+
+                /* Set the fixed size user data */
+                Status = SampSetObjectAttribute(UserObject,
+                                                L"F",
+                                                REG_BINARY,
+                                                &FixedUserData,
+                                                Length);
+            }
+        }
+    }
+
+    return Status;
 }
+
 
 /* Function 39 */
 NTSTATUS
@@ -6023,9 +7620,93 @@ NTAPI
 SamrGetGroupsForUser(IN SAMPR_HANDLE UserHandle,
                      OUT PSAMPR_GET_GROUPS_BUFFER *Groups)
 {
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
+    PSAMPR_GET_GROUPS_BUFFER GroupsBuffer = NULL;
+    PSAM_DB_OBJECT UserObject;
+    ULONG Length = 0;
+    NTSTATUS Status;
+
+    TRACE("SamrGetGroupsForUser(%p %p)\n",
+          UserHandle, Groups);
+
+    /* Validate the user handle */
+    Status = SampValidateDbObject(UserHandle,
+                                  SamDbUserObject,
+                                  USER_LIST_GROUPS,
+                                  &UserObject);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SampValidateDbObject failed with status 0x%08lx\n", Status);
+        return Status;
+    }
+
+    /* Allocate the groups buffer */
+    GroupsBuffer = midl_user_allocate(sizeof(SAMPR_GET_GROUPS_BUFFER));
+    if (GroupsBuffer == NULL)
+        return STATUS_INSUFFICIENT_RESOURCES;
+
+    /*
+     * Get the size of the Groups attribute.
+     * Do not check the status code because in case of an error
+     * Length will be 0. And that is all we need.
+     */
+    SampGetObjectAttribute(UserObject,
+                           L"Groups",
+                           NULL,
+                           NULL,
+                           &Length);
+
+    /* If there is no Groups attribute, return a groups buffer without an array */
+    if (Length == 0)
+    {
+        GroupsBuffer->MembershipCount = 0;
+        GroupsBuffer->Groups = NULL;
+
+        *Groups = GroupsBuffer;
+
+        return STATUS_SUCCESS;
+    }
+
+    /* Allocate a buffer for the Groups attribute */
+    GroupsBuffer->Groups = midl_user_allocate(Length);
+    if (GroupsBuffer->Groups == NULL)
+    {
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto done;
+    }
+
+    /* Retrieve the Grous attribute */
+    Status = SampGetObjectAttribute(UserObject,
+                                    L"Groups",
+                                    NULL,
+                                    GroupsBuffer->Groups,
+                                    &Length);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SampGetObjectAttribute failed with status 0x%08lx\n", Status);
+        goto done;
+    }
+
+    /* Calculate the membership count */
+    GroupsBuffer->MembershipCount = Length / sizeof(GROUP_MEMBERSHIP);
+
+    /* Return the groups buffer to the caller */
+    *Groups = GroupsBuffer;
+
+done:
+    if (!NT_SUCCESS(Status))
+    {
+        if (GroupsBuffer != NULL)
+        {
+            if (GroupsBuffer->Groups != NULL)
+                midl_user_free(GroupsBuffer->Groups);
+
+            midl_user_free(GroupsBuffer);
+        }
+    }
+
+    return Status;
 }
+
 
 /* Function 40 */
 NTSTATUS
@@ -6073,15 +7754,88 @@ SamrTestPrivateFunctionsUser(IN SAMPR_HANDLE UserHandle)
     return STATUS_NOT_IMPLEMENTED;
 }
 
+
 /* Function 44 */
 NTSTATUS
 NTAPI
 SamrGetUserDomainPasswordInformation(IN SAMPR_HANDLE UserHandle,
                                      OUT PUSER_DOMAIN_PASSWORD_INFORMATION PasswordInformation)
 {
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
+    SAM_DOMAIN_FIXED_DATA DomainFixedData;
+    SAM_USER_FIXED_DATA UserFixedData;
+    PSAM_DB_OBJECT DomainObject;
+    PSAM_DB_OBJECT UserObject;
+    ULONG Length = 0;
+    NTSTATUS Status;
+
+    TRACE("(%p %p)\n",
+          UserHandle, PasswordInformation);
+
+    /* Validate the user handle */
+    Status = SampValidateDbObject(UserHandle,
+                                  SamDbUserObject,
+                                  0,
+                                  &UserObject);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SampValidateDbObject failed with status 0x%08lx\n", Status);
+        return Status;
+    }
+
+    /* Validate the domain object */
+    Status = SampValidateDbObject((SAMPR_HANDLE)UserObject->ParentObject,
+                                  SamDbDomainObject,
+                                  DOMAIN_READ_PASSWORD_PARAMETERS,
+                                  &DomainObject);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SampValidateDbObject failed with status 0x%08lx\n", Status);
+        return Status;
+    }
+
+    /* Get fixed user data */
+    Length = sizeof(SAM_USER_FIXED_DATA);
+    Status = SampGetObjectAttribute(UserObject,
+                                    L"F",
+                                    NULL,
+                                    (PVOID)&UserFixedData,
+                                    &Length);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SampGetObjectAttribute failed with status 0x%08lx\n", Status);
+        return Status;
+    }
+
+    if ((UserObject->RelativeId == DOMAIN_USER_RID_KRBTGT) ||
+        (UserFixedData.UserAccountControl & (USER_INTERDOMAIN_TRUST_ACCOUNT |
+                                             USER_WORKSTATION_TRUST_ACCOUNT |
+                                             USER_SERVER_TRUST_ACCOUNT)))
+    {
+        PasswordInformation->MinPasswordLength = 0;
+        PasswordInformation->PasswordProperties = 0;
+    }
+    else
+    {
+        /* Get fixed domain data */
+        Length = sizeof(SAM_DOMAIN_FIXED_DATA);
+        Status = SampGetObjectAttribute(DomainObject,
+                                        L"F",
+                                        NULL,
+                                        (PVOID)&DomainFixedData,
+                                        &Length);
+        if (!NT_SUCCESS(Status))
+        {
+            TRACE("SampGetObjectAttribute failed with status 0x%08lx\n", Status);
+            return Status;
+        }
+
+        PasswordInformation->MinPasswordLength = DomainFixedData.MinPasswordLength;
+        PasswordInformation->PasswordProperties = DomainFixedData.PasswordProperties;
+    }
+
+    return STATUS_SUCCESS;
 }
+
 
 /* Function 45 */
 NTSTATUS
@@ -6089,9 +7843,51 @@ NTAPI
 SamrRemoveMemberFromForeignDomain(IN SAMPR_HANDLE DomainHandle,
                                   IN PRPC_SID MemberSid)
 {
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
+    PSAM_DB_OBJECT DomainObject;
+    ULONG Rid = 0;
+    NTSTATUS Status;
+
+    TRACE("(%p %p)\n",
+          DomainHandle, MemberSid);
+
+    /* Validate the domain object */
+    Status = SampValidateDbObject(DomainHandle,
+                                  SamDbDomainObject,
+                                  DOMAIN_LOOKUP,
+                                  &DomainObject);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SampValidateDbObject failed with status 0x%08lx\n", Status);
+        return Status;
+    }
+
+    /* Retrieve the RID from the MemberSID */
+    Status = SampGetRidFromSid((PSID)MemberSid,
+                               &Rid);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SampGetRidFromSid failed with status 0x%08lx\n", Status);
+        return Status;
+    }
+
+    /* Fail, if the RID represents a special account */
+    if (Rid < 1000)
+    {
+        TRACE("Cannot remove a special account (RID: %lu)\n", Rid);
+        return STATUS_SPECIAL_ACCOUNT;
+    }
+
+    /* Remove the member from all aliases in the domain */
+    Status = SampRemoveMemberFromAllAliases(DomainObject,
+                                            MemberSid);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SampRemoveMemberFromAllAliases failed with status 0x%08lx\n", Status);
+    }
+
+    return Status;
 }
+
 
 /* Function 46 */
 NTSTATUS
@@ -6100,9 +7896,13 @@ SamrQueryInformationDomain2(IN SAMPR_HANDLE DomainHandle,
                             IN DOMAIN_INFORMATION_CLASS DomainInformationClass,
                             OUT PSAMPR_DOMAIN_INFO_BUFFER *Buffer)
 {
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
+    TRACE("(%p %lu %p)\n", DomainHandle, DomainInformationClass, Buffer);
+
+    return SamrQueryInformationDomain(DomainHandle,
+                                      DomainInformationClass,
+                                      Buffer);
 }
+
 
 /* Function 47 */
 NTSTATUS
@@ -6111,9 +7911,13 @@ SamrQueryInformationUser2(IN SAMPR_HANDLE UserHandle,
                           IN USER_INFORMATION_CLASS UserInformationClass,
                           OUT PSAMPR_USER_INFO_BUFFER *Buffer)
 {
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
+    TRACE("(%p %lu %p)\n", UserHandle, UserInformationClass, Buffer);
+
+    return SamrQueryInformationUser(UserHandle,
+                                    UserInformationClass,
+                                    Buffer);
 }
+
 
 /* Function 48 */
 NTSTATUS
@@ -6127,9 +7931,21 @@ SamrQueryDisplayInformation2(IN SAMPR_HANDLE DomainHandle,
                              OUT unsigned long *TotalReturned,
                              OUT PSAMPR_DISPLAY_INFO_BUFFER Buffer)
 {
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
+    TRACE("%p %lu %lu %lu %lu %p %p %p\n",
+          DomainHandle, DisplayInformationClass, Index,
+          EntryCount, PreferredMaximumLength, TotalAvailable,
+          TotalReturned, Buffer);
+
+    return SamrQueryDisplayInformation(DomainHandle,
+                                       DisplayInformationClass,
+                                       Index,
+                                       EntryCount,
+                                       PreferredMaximumLength,
+                                       TotalAvailable,
+                                       TotalReturned,
+                                       Buffer);
 }
+
 
 /* Function 49 */
 NTSTATUS
@@ -6139,8 +7955,13 @@ SamrGetDisplayEnumerationIndex2(IN SAMPR_HANDLE DomainHandle,
                                 IN PRPC_UNICODE_STRING Prefix,
                                 OUT unsigned long *Index)
 {
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
+    TRACE("(%p %lu %p %p)\n",
+           DomainHandle, DisplayInformationClass, Prefix, Index);
+
+    return SamrGetDisplayEnumerationIndex(DomainHandle,
+                                          DisplayInformationClass,
+                                          Prefix,
+                                          Index);
 }
 
 
@@ -6160,6 +7981,8 @@ SamrCreateUser2InDomain(IN SAMPR_HANDLE DomainHandle,
     SAM_USER_FIXED_DATA FixedUserData;
     PSAM_DB_OBJECT DomainObject;
     PSAM_DB_OBJECT UserObject;
+    GROUP_MEMBERSHIP GroupMembership;
+    UCHAR LogonHours[23];
     ULONG ulSize;
     ULONG ulRid;
     WCHAR szRid[9];
@@ -6182,6 +8005,10 @@ SamrCreateUser2InDomain(IN SAMPR_HANDLE DomainHandle,
         AccountType != USER_SERVER_TRUST_ACCOUNT &&
         AccountType != USER_TEMP_DUPLICATE_ACCOUNT)
         return STATUS_INVALID_PARAMETER;
+
+    /* Map generic access rights */
+    RtlMapGenericMask(&DesiredAccess,
+                      &UserMapping);
 
     /* Validate the domain handle */
     Status = SampValidateDbObject(DomainHandle,
@@ -6223,10 +8050,10 @@ SamrCreateUser2InDomain(IN SAMPR_HANDLE DomainHandle,
 
     /* Store the fixed domain attributes */
     Status = SampSetObjectAttribute(DomainObject,
-                           L"F",
-                           REG_BINARY,
-                           &FixedDomainData,
-                           ulSize);
+                                    L"F",
+                                    REG_BINARY,
+                                    &FixedDomainData,
+                                    ulSize);
     if (!NT_SUCCESS(Status))
     {
         TRACE("failed with status 0x%08lx\n", Status);
@@ -6242,6 +8069,7 @@ SamrCreateUser2InDomain(IN SAMPR_HANDLE DomainHandle,
     Status = SampCreateDbObject(DomainObject,
                                 L"Users",
                                 szRid,
+                                ulRid,
                                 SamDbUserObject,
                                 DesiredAccess,
                                 &UserObject);
@@ -6263,8 +8091,8 @@ SamrCreateUser2InDomain(IN SAMPR_HANDLE DomainHandle,
     }
 
     /* Initialize fixed user data */
-    memset(&FixedUserData, 0, sizeof(SAM_USER_FIXED_DATA));
     FixedUserData.Version = 1;
+    FixedUserData.Reserved = 0;
     FixedUserData.LastLogon.QuadPart = 0;
     FixedUserData.LastLogoff.QuadPart = 0;
     FixedUserData.PasswordLastSet.QuadPart = 0;
@@ -6276,6 +8104,12 @@ SamrCreateUser2InDomain(IN SAMPR_HANDLE DomainHandle,
     FixedUserData.UserAccountControl = USER_ACCOUNT_DISABLED |
                                        USER_PASSWORD_NOT_REQUIRED |
                                        AccountType;
+    FixedUserData.CountryCode = 0;
+    FixedUserData.CodePage = 0;
+    FixedUserData.BadPasswordCount = 0;
+    FixedUserData.LogonCount = 0;
+    FixedUserData.AdminCount = 0;
+    FixedUserData.OperatorCount = 0;
 
     /* Set fixed user data attribute */
     Status = SampSetObjectAttribute(UserObject,
@@ -6397,7 +8231,99 @@ SamrCreateUser2InDomain(IN SAMPR_HANDLE DomainHandle,
         return Status;
     }
 
-    /* FIXME: Set default user attributes */
+    /* Set the Parameters attribute */
+    Status = SampSetObjectAttribute(UserObject,
+                                    L"Parameters",
+                                    REG_SZ,
+                                    EmptyString.Buffer,
+                                    EmptyString.MaximumLength);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("failed with status 0x%08lx\n", Status);
+        return Status;
+    }
+
+    /* Set LogonHours attribute*/
+    *((PUSHORT)LogonHours) = 168;
+    memset(&(LogonHours[2]), 0xff, 21);
+
+    Status = SampSetObjectAttribute(UserObject,
+                                    L"LogonHours",
+                                    REG_BINARY,
+                                    &LogonHours,
+                                    sizeof(LogonHours));
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("failed with status 0x%08lx\n", Status);
+        return Status;
+    }
+
+    /* Set Groups attribute*/
+    GroupMembership.RelativeId = DOMAIN_GROUP_RID_USERS;
+    GroupMembership.Attributes = SE_GROUP_MANDATORY |
+                                 SE_GROUP_ENABLED |
+                                 SE_GROUP_ENABLED_BY_DEFAULT;
+
+    Status = SampSetObjectAttribute(UserObject,
+                                    L"Groups",
+                                    REG_BINARY,
+                                    &GroupMembership,
+                                    sizeof(GROUP_MEMBERSHIP));
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("failed with status 0x%08lx\n", Status);
+        return Status;
+    }
+
+    /* Set LMPwd attribute*/
+    Status = SampSetObjectAttribute(UserObject,
+                                    L"LMPwd",
+                                    REG_BINARY,
+                                    NULL,
+                                    0);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("failed with status 0x%08lx\n", Status);
+        return Status;
+    }
+
+    /* Set NTPwd attribute*/
+    Status = SampSetObjectAttribute(UserObject,
+                                    L"NTPwd",
+                                    REG_BINARY,
+                                    NULL,
+                                    0);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("failed with status 0x%08lx\n", Status);
+        return Status;
+    }
+
+    /* Set LMPwdHistory attribute*/
+    Status = SampSetObjectAttribute(UserObject,
+                                    L"LMPwdHistory",
+                                    REG_BINARY,
+                                    NULL,
+                                    0);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("failed with status 0x%08lx\n", Status);
+        return Status;
+    }
+
+    /* Set NTPwdHistory attribute*/
+    Status = SampSetObjectAttribute(UserObject,
+                                    L"NTPwdHistory",
+                                    REG_BINARY,
+                                    NULL,
+                                    0);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("failed with status 0x%08lx\n", Status);
+        return Status;
+    }
+
+    /* FIXME: Set SecDesc attribute*/
 
     if (NT_SUCCESS(Status))
     {
@@ -6424,8 +8350,19 @@ SamrQueryDisplayInformation3(IN SAMPR_HANDLE DomainHandle,
                              OUT unsigned long *TotalReturned,
                              OUT PSAMPR_DISPLAY_INFO_BUFFER Buffer)
 {
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
+    TRACE("%p %lu %lu %lu %lu %p %p %p\n",
+          DomainHandle, DisplayInformationClass, Index,
+          EntryCount, PreferredMaximumLength, TotalAvailable,
+          TotalReturned, Buffer);
+
+    return SamrQueryDisplayInformation(DomainHandle,
+                                       DisplayInformationClass,
+                                       Index,
+                                       EntryCount,
+                                       PreferredMaximumLength,
+                                       TotalAvailable,
+                                       TotalReturned,
+                                       Buffer);
 }
 
 
@@ -6525,6 +8462,7 @@ SamrGetDomainPasswordInformation(IN handle_t BindingHandle,
     return STATUS_NOT_IMPLEMENTED;
 }
 
+
 /* Function 57 */
 NTSTATUS
 NTAPI
@@ -6532,9 +8470,13 @@ SamrConnect2(IN PSAMPR_SERVER_NAME ServerName,
              OUT SAMPR_HANDLE *ServerHandle,
              IN ACCESS_MASK DesiredAccess)
 {
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
+    TRACE("(%p %p %lx)\n", ServerName, ServerHandle, DesiredAccess);
+
+    return SamrConnect(ServerName,
+                       ServerHandle,
+                       DesiredAccess);
 }
+
 
 /* Function 58 */
 NTSTATUS
@@ -6543,9 +8485,13 @@ SamrSetInformationUser2(IN SAMPR_HANDLE UserHandle,
                         IN USER_INFORMATION_CLASS UserInformationClass,
                         IN PSAMPR_USER_INFO_BUFFER Buffer)
 {
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
+    TRACE("(%p %lu %p)\n", UserHandle, UserInformationClass, Buffer);
+
+    return SamrSetInformationUser(UserHandle,
+                                  UserInformationClass,
+                                  Buffer);
 }
+
 
 /* Function 59 */
 NTSTATUS

@@ -300,7 +300,7 @@ KeRosDumpTriageForBugZillaReport(VOID)
     extern ULONG KeI386MachineType, MxcsrFeatureMask;
     extern BOOLEAN Ke386Pae, Ke386NoExecute;
 
-    DbgPrint("ReactOS has crashed! Please go to http://www.reactos.org/bugzilla/enter_bug.cgi to file a bug!\n");
+    DbgPrint("ReactOS has crashed! Please go to http://jira.reactos.org/ to file a bug!\n");
     DbgPrint("\nHardware Information\n");
     DbgPrint("Processor Architecture: %d\n"
              "Feature Bits: %d\n"
@@ -1178,6 +1178,7 @@ KeBugCheckWithTf(IN ULONG BugCheckCode,
     KiBugCheckDebugBreak(DBG_STATUS_BUGCHECK_SECOND);
 
     /* Shouldn't get here */
+    ASSERT(FALSE);
     while (TRUE);
 }
 

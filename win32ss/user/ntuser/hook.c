@@ -94,7 +94,7 @@ IntHookModuleUnloaded(PDESKTOP pdesk, int iHookID, HHOOK hHook)
 
     ERR("IntHookModuleUnloaded: iHookID=%d\n", iHookID);
 
-    ppiCsr = PsGetProcessWin32Process(CsrProcess);
+    ppiCsr = PsGetProcessWin32Process(gpepCSRSS);
 
     ListEntry = pdesk->PtiList.Flink;
     while(ListEntry != &pdesk->PtiList)
@@ -147,7 +147,7 @@ UserRegisterUserApiHook(
     PPROCESSINFO ppiCsr;
 
     pti = PsGetCurrentThreadWin32Thread();
-    ppiCsr = PsGetProcessWin32Process(CsrProcess);
+    ppiCsr = PsGetProcessWin32Process(gpepCSRSS);
 
     /* Fail if the api hook is already registered */
     if(gpsi->dwSRVIFlags & SRVINFO_APIHOOK)
@@ -295,7 +295,7 @@ co_IntCallLowLevelHook(PHOOK Hook,
 
     /* FIXME: Should get timeout from
      * HKEY_CURRENT_USER\Control Panel\Desktop\LowLevelHooksTimeout */
-    Status = co_MsqSendMessage( pti->MessageQueue,
+    Status = co_MsqSendMessage( pti,
                                 IntToPtr(Code), // hWnd
                                 Hook->HookId,   // Msg
                                 wParam,
@@ -937,7 +937,7 @@ IntGetHookObject(HHOOK hHook)
        return NULL;
     }
 
-    Hook = (PHOOK)UserGetObject(gHandleTable, hHook, otHook);
+    Hook = (PHOOK)UserGetObject(gHandleTable, hHook, TYPE_HOOK);
     if (!Hook)
     {
        EngSetLastError(ERROR_INVALID_HOOK_HANDLE);
@@ -1020,7 +1020,7 @@ IntFreeHook(PHOOK Hook)
        Hook->ModuleName.Buffer = NULL;
     }
     /* Close handle */
-    UserDeleteObject(UserHMGetHandle(Hook), otHook);
+    UserDeleteObject(UserHMGetHandle(Hook), TYPE_HOOK);
 }
 
 /* Remove a hook, freeing it from the chain */
@@ -1270,7 +1270,7 @@ co_HOOK_CallHooks( INT HookId,
        */
        for(i = 0; pHookHandles[i]; ++i)
        {
-          Hook = (PHOOK)UserGetObject(gHandleTable, pHookHandles[i], otHook);
+          Hook = (PHOOK)UserGetObject(gHandleTable, pHookHandles[i], TYPE_HOOK);
           if(!Hook)
           {
               ERR("Invalid hook!\n");
@@ -1456,7 +1456,6 @@ NtUserSetWindowsHookEx( HINSTANCE Mod,
     UNICODE_STRING ModuleName;
     NTSTATUS Status;
     HHOOK Handle;
-    PETHREAD Thread = NULL;
     PTHREADINFO pti, ptiHook = NULL;
     DECLARE_RETURN(HHOOK);
 
@@ -1491,14 +1490,12 @@ NtUserSetWindowsHookEx( HINSTANCE Mod,
            RETURN( NULL);
        }
 
-       if (!NT_SUCCESS(PsLookupThreadByThreadId((HANDLE)(DWORD_PTR) ThreadId, &Thread)))
+       if ( !(ptiHook = IntTID2PTI( (HANDLE)ThreadId )))
        {
           ERR("Invalid thread id 0x%x\n", ThreadId);
           EngSetLastError(ERROR_INVALID_PARAMETER);
           RETURN( NULL);
        }
-
-       ptiHook = Thread->Tcb.Win32Thread;
 
        if ( ptiHook->rpdesk != pti->rpdesk) // gptiCurrent->rpdesk)
        {
@@ -1507,7 +1504,7 @@ NtUserSetWindowsHookEx( HINSTANCE Mod,
           RETURN( NULL);
        }
 
-       if (Thread->ThreadsProcess != PsGetCurrentProcess())
+       if (ptiHook->ppi != pti->ppi)
        {
           if ( !Mod &&
               (HookId == WH_GETMESSAGE ||
@@ -1571,7 +1568,7 @@ NtUserSetWindowsHookEx( HINSTANCE Mod,
     }
     ObDereferenceObject(WinStaObj);
 
-    Hook = UserCreateObject(gHandleTable, NULL, NULL, (PHANDLE)&Handle, otHook, sizeof(HOOK));
+    Hook = UserCreateObject(gHandleTable, NULL, NULL, (PHANDLE)&Handle, TYPE_HOOK, sizeof(HOOK));
 
     if (!Hook)
     {
@@ -1674,6 +1671,9 @@ NtUserSetWindowsHookEx( HINSTANCE Mod,
        }
 
        Hook->ModuleName.Length = ModuleName.Length;
+       //// FIXME: Need to load from user32 to verify hMod before calling hook with hMod set!!!!
+       //// Mod + offPfn == new HookProc Justin Case module is from another process.
+       FIXME("NtUserSetWindowsHookEx Setting process hMod instance addressing.\n");
        /* Make proc relative to the module base */
        Hook->offPfn = (ULONG_PTR)((char *)HookProc - (char *)Mod);
     }
@@ -1685,7 +1685,6 @@ NtUserSetWindowsHookEx( HINSTANCE Mod,
 
 CLEANUP:
     TRACE("Leave NtUserSetWindowsHookEx, ret=%i\n",_ret_);
-    if (Thread) ObDereferenceObject(Thread);
     UserLeave();
     END_CLEANUP;
 }

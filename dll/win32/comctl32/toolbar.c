@@ -71,18 +71,18 @@
 #include <stdarg.h>
 #include <string.h>
 
-#include "windef.h"
-#include "winbase.h"
-#include "winreg.h"
-#include "wingdi.h"
-#include "winuser.h"
-#include "wine/unicode.h"
-#include "winnls.h"
-#include "commctrl.h"
+#include <windef.h>
+#include <winbase.h>
+#include <winreg.h>
+#include <wingdi.h>
+#include <winuser.h>
+#include <wine/unicode.h>
+#include <winnls.h>
+#include <commctrl.h>
 #include "comctl32.h"
-#include "uxtheme.h"
-#include "vssym32.h"
-#include "wine/debug.h"
+#include <uxtheme.h>
+#include <vssym32.h>
+#include <wine/debug.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(toolbar);
 
@@ -5212,9 +5212,9 @@ TOOLBAR_Destroy (TOOLBAR_INFO *infoPtr)
     if (infoPtr->himlInt)
 	ImageList_Destroy (infoPtr->himlInt);
 
-	TOOLBAR_DeleteImageList(&infoPtr->himlDef, &infoPtr->cimlDef);
-	TOOLBAR_DeleteImageList(&infoPtr->himlDis, &infoPtr->cimlDis);
-	TOOLBAR_DeleteImageList(&infoPtr->himlHot, &infoPtr->cimlHot);
+    TOOLBAR_DeleteImageList(&infoPtr->himlDef, &infoPtr->cimlDef);
+    TOOLBAR_DeleteImageList(&infoPtr->himlDis, &infoPtr->cimlDis);
+    TOOLBAR_DeleteImageList(&infoPtr->himlHot, &infoPtr->cimlHot);
 
     /* delete default font */
     DeleteObject (infoPtr->hDefaultFont);

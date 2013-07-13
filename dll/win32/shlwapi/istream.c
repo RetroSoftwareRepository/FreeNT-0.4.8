@@ -17,21 +17,25 @@
  * License along with this library; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
+#define WIN32_NO_STATUS
+#define _INC_WINDOWS
+#define COM_NO_WINDOWS_H
+
 #include <stdarg.h>
-#include <string.h>
+//#include <string.h>
 
 #define COBJMACROS
 #define NONAMELESSUNION
 #define NONAMELESSSTRUCT
 
-#include "windef.h"
-#include "winbase.h"
-#include "winerror.h"
-#include "winnls.h"
+#include <windef.h>
+#include <winbase.h>
+//#include "winerror.h"
+#include <winnls.h>
 #define NO_SHLWAPI_REG
 #define NO_SHLWAPI_PATH
-#include "shlwapi.h"
-#include "wine/debug.h"
+#include <shlwapi.h>
+#include <wine/debug.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(shell);
 
@@ -527,7 +531,7 @@ HRESULT WINAPI SHCreateStreamOnFileA(LPCSTR lpszPath, DWORD dwMode,
   if (!lpszPath)
     return HRESULT_FROM_WIN32(ERROR_PATH_NOT_FOUND);
 
-  MultiByteToWideChar(0, 0, lpszPath, -1, szPath, MAX_PATH);
+  MultiByteToWideChar(CP_ACP, 0, lpszPath, -1, szPath, MAX_PATH);
   return SHCreateStreamOnFileW(szPath, dwMode, lppStream);
 }
 

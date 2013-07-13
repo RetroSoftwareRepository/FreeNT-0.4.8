@@ -348,6 +348,7 @@ AckPageDlgProc(HWND hwndDlg,
             if (HIWORD(wParam) == BN_CLICKED && IDC_VIEWGPL == LOWORD(wParam))
             {
                 DialogBox(hDllInstance, MAKEINTRESOURCE(IDD_GPL), NULL, GplDlgProc);
+                SetForegroundWindow(GetParent(hwndDlg));
             }
             break;
 
@@ -708,7 +709,8 @@ ComputerPageDlgProc(HWND hwndDlg,
                         Password++;
                     }
 
-                    /* FIXME: Set admin password */
+                    /* Set admin password */
+                    SetAdministratorPassword(Password1);
                     break;
 
                 case PSN_WIZBACK:
@@ -1373,57 +1375,13 @@ SetAutoDaylightInfo(HWND hwnd)
 static BOOL
 SetSystemLocalTime(HWND hwnd, PSETUPDATA SetupData)
 {
-    HANDLE hToken;
-    DWORD PrevSize;
-    TOKEN_PRIVILEGES priv, previouspriv;
     BOOL Ret = FALSE;
 
     /*
-     * enable the SeSystemtimePrivilege privilege
+     * Call SetLocalTime twice to ensure correct results
      */
-
-    if(OpenProcessToken(GetCurrentProcess(),
-                        TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY,
-                        &hToken))
-    {
-        priv.PrivilegeCount = 1;
-        priv.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
-
-        if(LookupPrivilegeValue(NULL,
-                                SE_SYSTEMTIME_NAME,
-                                &priv.Privileges[0].Luid))
-        {
-            if(AdjustTokenPrivileges(hToken,
-                                     FALSE,
-                                     &priv,
-                                     sizeof(previouspriv),
-                                     &previouspriv,
-                                     &PrevSize) &&
-                    GetLastError() == ERROR_SUCCESS)
-            {
-                /*
-                 * We successfully enabled it, we're permitted to change the system time
-                 * Call SetLocalTime twice to ensure correct results
-                 */
-                Ret = SetLocalTime(&SetupData->SystemTime) &&
-                      SetLocalTime(&SetupData->SystemTime);
-
-                /*
-                 * for the sake of security, restore the previous status again
-                 */
-                if(previouspriv.PrivilegeCount > 0)
-                {
-                    AdjustTokenPrivileges(hToken,
-                                          FALSE,
-                                          &previouspriv,
-                                          0,
-                                          NULL,
-                                          0);
-                }
-            }
-        }
-        CloseHandle(hToken);
-    }
+    Ret = SetLocalTime(&SetupData->SystemTime) &&
+          SetLocalTime(&SetupData->SystemTime);
 
     return Ret;
 }
@@ -1727,6 +1685,8 @@ RegistrationProc(LPVOID Parameter)
 
     SetupTermDefaultQueueCallback(RegistrationData->DefaultContext);
     HeapFree(GetProcessHeap(), 0, RegistrationData);
+
+    RegisterTypeLibraries(hSysSetupInf, L"TypeLibraries");
 
     // FIXME: Move this call to a separate cleanup page!
     RtlCreateBootStatusDataFile();

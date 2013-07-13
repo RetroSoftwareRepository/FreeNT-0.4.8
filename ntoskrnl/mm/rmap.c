@@ -27,6 +27,16 @@ FAST_MUTEX RmapListLock;
 
 /* FUNCTIONS ****************************************************************/
 
+_IRQL_requires_max_(DISPATCH_LEVEL)
+static
+VOID
+NTAPI
+RmapListFree(
+    _In_ __drv_freesMem(Mem) PVOID P)
+{
+    ExFreePoolWithTag(P, TAG_RMAP);
+}
+
 VOID
 INIT_FUNCTION
 NTAPI
@@ -35,7 +45,7 @@ MmInitializeRmapList(VOID)
    ExInitializeFastMutex(&RmapListLock);
    ExInitializeNPagedLookasideList (&RmapLookasideList,
                                     NULL,
-                                    NULL,
+                                    RmapListFree,
                                     0,
                                     sizeof(MM_RMAP_ENTRY),
                                     TAG_RMAP,
@@ -441,10 +451,10 @@ NTAPI
 MmGetSegmentRmap(PFN_NUMBER Page, PULONG RawOffset)
 {
    PCACHE_SECTION_PAGE_TABLE Result = NULL;
-   PMM_RMAP_ENTRY current_entry, previous_entry;
+   PMM_RMAP_ENTRY current_entry;//, previous_entry;
 
    ExAcquireFastMutex(&RmapListLock);
-   previous_entry = NULL;
+   //previous_entry = NULL;
    current_entry = MmGetRmapListHeadPage(Page);
    while (current_entry != NULL)
    {
@@ -456,7 +466,7 @@ MmGetSegmentRmap(PFN_NUMBER Page, PULONG RawOffset)
          ExReleaseFastMutex(&RmapListLock);
          return Result;
       }
-      previous_entry = current_entry;
+      //previous_entry = current_entry;
       current_entry = current_entry->Next;
    }
    ExReleaseFastMutex(&RmapListLock);

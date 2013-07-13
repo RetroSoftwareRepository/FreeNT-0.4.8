@@ -16,8 +16,7 @@
  *  with this program; if not, write to the Free Software Foundation, Inc.,
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
-/* $Id$
- *
+/*
  * COPYRIGHT:   See COPYING in the top level directory
  * PROJECT:     ReactOS welcome/autorun application
  * FILE:        subsys/system/welcome/welcome.c
@@ -30,15 +29,16 @@
  *   utility but change the resources!
  */
 
+#include <stdarg.h>
+#include <windef.h>
+#include <winbase.h>
+#include <wingdi.h>
+#include <winuser.h>
 #include <reactos/version.h>
-#include <windows.h>
-#include <string.h>
-#include <stdio.h>
 #include <tchar.h>
+#include <winnls.h>
 
 #include "resource.h"
-
-
 
 #define LIGHT_BLUE 0x00F7EFD6
 #define DARK_BLUE  0x008C7B6B
@@ -116,6 +116,16 @@ _tWinMain(HINSTANCE hInst,
 
   UNREFERENCED_PARAMETER(hPrevInstance);
   UNREFERENCED_PARAMETER(lpszCmdLine);
+
+  switch (GetUserDefaultUILanguage())
+  {
+    case MAKELANGID(LANG_HEBREW, SUBLANG_DEFAULT):
+      SetProcessDefaultLayout(LAYOUT_RTL);
+      break;
+
+    default:
+      break;
+  }
 
   hInstance = hInst;
 

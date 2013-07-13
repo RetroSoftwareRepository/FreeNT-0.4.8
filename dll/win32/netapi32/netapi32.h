@@ -4,28 +4,30 @@
 
 #include <stdarg.h>
 
-#include "ntstatus.h"
+//#include "ntstatus.h"
 #define WIN32_NO_STATUS
-#include "windef.h"
-#include "winbase.h"
-#include "winerror.h"
-#include "lmcons.h"
-#include "lmaccess.h"
-#include "lmapibuf.h"
-#include "lmbrowsr.h"
-#include "lmerr.h"
-#include "lmshare.h"
-#include "lmuse.h"
-#include "ntsecapi.h"
-#include "dsrole.h"
-#include "dsgetdc.h"
-#include "wine/debug.h"
-#include "wine/unicode.h"
-#include "wine/list.h"
+#include <windef.h>
+#include <winbase.h>
+//#include "winerror.h"
+//#include "lmcons.h"
+#include <lmaccess.h>
+#include <lmapibuf.h>
+#include <lmbrowsr.h>
+#include <lmerr.h>
+//#include "lmshare.h"
+//#include "lmuse.h"
+#include <ntsecapi.h>
+#include <dsrole.h>
+#include <dsgetdc.h>
+#include <wine/debug.h>
+//#include "wine/unicode.h"
+#include <wine/list.h>
 
 #define NTOS_MODE_USER
+#include <ndk/kefuncs.h>
+#include <ndk/obfuncs.h>
 #include <ndk/rtlfuncs.h>
-#include "ntsam.h"
+#include <ntsam.h>
 
 
 NET_API_STATUS
@@ -51,5 +53,15 @@ NTSTATUS
 OpenBuiltinDomain(IN SAM_HANDLE ServerHandle,
                   IN ULONG DesiredAccess,
                   OUT SAM_HANDLE *DomainHandle);
+
+NET_API_STATUS
+BuildSidFromSidAndRid(IN PSID SrcSid,
+                      IN ULONG RelativeId,
+                      OUT PSID *DestSid);
+
+/* wksta.c */
+
+BOOL
+NETAPI_IsLocalComputer(LMCSTR ServerName);
 
 #endif

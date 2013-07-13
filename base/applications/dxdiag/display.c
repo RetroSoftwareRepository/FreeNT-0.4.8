@@ -213,13 +213,15 @@ InitializeDialog(HWND hwndDlg, PDISPLAY_DEVICEW pDispDevice)
     HKEY hKey;
     HWND hDlgCtrls[5];
     DWORD dwMemory;
-    DEVMODE DevMode;
-    IDirect3D9 * ppObj;
+    DEVMODEW DevMode;
+    IDirect3D9 * ppObj = NULL;
     D3DADAPTER_IDENTIFIER9 Identifier;
     HRESULT hResult;
 
     szText[0] = L'\0';
-    ppObj = Direct3DCreate9(D3D_SDK_VERSION);
+
+    /* fix wine */
+    //ppObj = Direct3DCreate9(D3D_SDK_VERSION);
     if (ppObj)
     {
         hResult = IDirect3D9_GetAdapterIdentifier(ppObj, D3DADAPTER_DEFAULT , 2/*D3DENUM_WHQL_LEVEL*/, &Identifier);
@@ -276,7 +278,7 @@ InitializeDialog(HWND hwndDlg, PDISPLAY_DEVICEW pDispDevice)
     }
 
     /* retrieve current display mode */
-    DevMode.dmSize = sizeof(DEVMODE);
+    DevMode.dmSize = sizeof(DEVMODEW);
     if (EnumDisplaySettingsW(pDispDevice->DeviceName, ENUM_CURRENT_SETTINGS, &DevMode))
     {
         szFormat[0] = L'\0';

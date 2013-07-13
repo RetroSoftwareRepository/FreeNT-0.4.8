@@ -18,25 +18,28 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#define WIN32_NO_STATUS
+#define _INC_WINDOWS
+
 #define COBJMACROS
 
-#include "config.h"
+#include <config.h>
 
-#include <stdarg.h>
+//#include <stdarg.h>
 #ifdef HAVE_LIBXML2
 # include <libxml/parser.h>
-# include <libxml/xmlerror.h>
+//# include <libxml/xmlerror.h>
 #endif
 
-#include "windef.h"
-#include "winbase.h"
-#include "winuser.h"
-#include "ole2.h"
-#include "msxml6.h"
+#include <windef.h>
+#include <winbase.h>
+//#include "winuser.h"
+#include <ole2.h>
+#include <msxml6.h>
 
 #include "msxml_private.h"
 
-#include "wine/debug.h"
+#include <wine/debug.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(msxml);
 
@@ -290,10 +293,9 @@ static HRESULT WINAPI domcdata_insertBefore(
     IXMLDOMNode** outOldNode)
 {
     domcdata *This = impl_from_IXMLDOMCDATASection( iface );
-
-    FIXME("(%p)->(%p %s %p) needs test\n", This, newNode, debugstr_variant(&refChild), outOldNode);
-
-    return node_insert_before(&This->node, newNode, &refChild, outOldNode);
+    TRACE("(%p)->(%p %s %p)\n", This, newNode, debugstr_variant(&refChild), outOldNode);
+    if (outOldNode) *outOldNode = NULL;
+    return E_FAIL;
 }
 
 static HRESULT WINAPI domcdata_replaceChild(
@@ -303,10 +305,9 @@ static HRESULT WINAPI domcdata_replaceChild(
     IXMLDOMNode** outOldNode)
 {
     domcdata *This = impl_from_IXMLDOMCDATASection( iface );
-
-    FIXME("(%p)->(%p %p %p) needs tests\n", This, newNode, oldNode, outOldNode);
-
-    return node_replace_child(&This->node, newNode, oldNode, outOldNode);
+    TRACE("(%p)->(%p %p %p)\n", This, newNode, oldNode, outOldNode);
+    if (outOldNode) *outOldNode = NULL;
+    return E_FAIL;
 }
 
 static HRESULT WINAPI domcdata_removeChild(
@@ -315,7 +316,8 @@ static HRESULT WINAPI domcdata_removeChild(
 {
     domcdata *This = impl_from_IXMLDOMCDATASection( iface );
     TRACE("(%p)->(%p %p)\n", This, child, oldChild);
-    return node_remove_child(&This->node, child, oldChild);
+    if (oldChild) *oldChild = NULL;
+    return E_FAIL;
 }
 
 static HRESULT WINAPI domcdata_appendChild(
@@ -324,7 +326,8 @@ static HRESULT WINAPI domcdata_appendChild(
 {
     domcdata *This = impl_from_IXMLDOMCDATASection( iface );
     TRACE("(%p)->(%p %p)\n", This, child, outChild);
-    return node_append_child(&This->node, child, outChild);
+    if (outChild) *outChild = NULL;
+    return E_FAIL;
 }
 
 static HRESULT WINAPI domcdata_hasChildNodes(

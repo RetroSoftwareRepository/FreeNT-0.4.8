@@ -35,6 +35,10 @@ Author:
 #include <obtypes.h>
 #endif
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 //
 // GCC compatibility
 //
@@ -362,7 +366,7 @@ struct _SYSTEM_FIRMWARE_TABLE_INFORMATION;
 typedef
 NTSTATUS
 (__cdecl *PFNFTH)(
-    IN struct _SYSTEM_FIRMWARE_TABLE_INFORMATION *FirmwareTableInformation
+    _In_ struct _SYSTEM_FIRMWARE_TABLE_INFORMATION *FirmwareTableInformation
 );
 
 #else
@@ -373,9 +377,9 @@ NTSTATUS
 struct _HANDLE_TABLE_ENTRY;
 typedef BOOLEAN
 (NTAPI *PEX_ENUM_HANDLE_CALLBACK)(
-    IN struct _HANDLE_TABLE_ENTRY *HandleTableEntry,
-    IN HANDLE Handle,
-    IN PVOID Context
+    _In_ struct _HANDLE_TABLE_ENTRY *HandleTableEntry,
+    _In_ HANDLE Handle,
+    _In_ PVOID Context
 );
 
 //
@@ -1462,5 +1466,10 @@ typedef struct _SYSTEM_MEMORY_LIST_INFORMATION
    SIZE_T ModifiedPageCountPageFile;
 } SYSTEM_MEMORY_LIST_INFORMATION, *PSYSTEM_MEMORY_LIST_INFORMATION;
 
+#endif // !NTOS_MODE_USER
+
+#ifdef __cplusplus
+}; // extern "C"
 #endif
-#endif
+
+#endif // !_EXTYPES_H

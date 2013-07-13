@@ -19,25 +19,29 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#define WIN32_NO_STATUS
+#define _INC_WINDOWS
+
 #define COBJMACROS
 
-#include "config.h"
+#include <config.h>
 
-#include <stdarg.h>
+//#include <stdarg.h>
 #ifdef HAVE_LIBXML2
 # include <libxml/parser.h>
-# include <libxml/xmlerror.h>
+# include <libxml/parserInternals.h>
+//# include <libxml/xmlerror.h>
 #endif
 
-#include "windef.h"
-#include "winbase.h"
-#include "winuser.h"
-#include "ole2.h"
-#include "msxml6.h"
+#include <windef.h>
+#include <winbase.h>
+//#include "winuser.h"
+#include <ole2.h>
+#include <msxml6.h>
 
 #include "msxml_private.h"
 
-#include "wine/debug.h"
+#include <wine/debug.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(msxml);
 
@@ -53,6 +57,11 @@ typedef struct _domtext
 static inline domtext *impl_from_IXMLDOMText( IXMLDOMText *iface )
 {
     return CONTAINING_RECORD(iface, domtext, IXMLDOMText_iface);
+}
+
+static void domtext_reset_noenc(domtext *This)
+{
+    This->node.node->name = NULL;
 }
 
 static HRESULT WINAPI domtext_QueryInterface(
@@ -182,6 +191,7 @@ static HRESULT WINAPI domtext_put_nodeValue(
 
     TRACE("(%p)->(%s)\n", This, debugstr_variant(&value));
 
+    domtext_reset_noenc(This);
     return node_put_value(&This->node, &value);
 }
 
@@ -371,6 +381,7 @@ static HRESULT WINAPI domtext_put_text(
 {
     domtext *This = impl_from_IXMLDOMText( iface );
     TRACE("(%p)->(%s)\n", This, debugstr_w(p));
+    domtext_reset_noenc(This);
     return node_put_text( &This->node, p );
 }
 
@@ -608,7 +619,14 @@ static HRESULT WINAPI domtext_put_data(
     BSTR data)
 {
     domtext *This = impl_from_IXMLDOMText( iface );
+    static WCHAR rnW[] = {'\r','\n',0};
+
     TRACE("(%p)->(%s)\n", This, debugstr_w(data));
+
+    if (data && !strcmpW(rnW, data))
+        This->node.node->name = xmlStringTextNoenc;
+    else
+        domtext_reset_noenc(This);
     return node_set_content(&This->node, data);
 }
 

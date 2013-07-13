@@ -137,9 +137,8 @@ typedef union _KTRAP_EXIT_SKIP_BITS
                    IN ULONG Flags)                  \
     {                                               \
         /* Not yet handled */                       \
-        UNIMPLEMENTED;                              \
-        while (TRUE);                               \
-        return TRUE;                                \
+        UNIMPLEMENTED_DBGBREAK();                   \
+        return FALSE;                               \
     }
 
 C_ASSERT(NPX_FRAME_LENGTH == sizeof(FX_SAVE_AREA));
@@ -278,6 +277,23 @@ KiRundownThread(IN PKTHREAD Thread)
 #else
     /* Nothing to do */
 #endif
+}
+
+FORCEINLINE
+VOID
+Ke386SetGdtEntryBase(PKGDTENTRY GdtEntry, PVOID BaseAddress)
+{
+    GdtEntry->BaseLow = (USHORT)((ULONG_PTR)BaseAddress & 0xFFFF);
+    GdtEntry->HighWord.Bytes.BaseMid = (UCHAR)((ULONG_PTR)BaseAddress >> 16);
+    GdtEntry->HighWord.Bytes.BaseHi = (UCHAR)((ULONG_PTR)BaseAddress >> 24);
+}
+
+FORCEINLINE
+VOID
+KiSetTebBase(PKPCR Pcr, PVOID TebAddress)
+{
+    Pcr->NtTib.Self = TebAddress;
+    Ke386SetGdtEntryBase(&Pcr->GDT[KGDT_R3_TEB / sizeof(KGDTENTRY)], TebAddress);
 }
 
 VOID

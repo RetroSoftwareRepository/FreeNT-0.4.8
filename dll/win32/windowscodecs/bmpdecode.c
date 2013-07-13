@@ -16,23 +16,27 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "config.h"
+#define WIN32_NO_STATUS
+#define _INC_WINDOWS
+#define COM_NO_WINDOWS_H
+
+#include <config.h>
 
 #include <assert.h>
 #include <stdarg.h>
 
 #define COBJMACROS
 
-#include "windef.h"
-#include "winbase.h"
-#include "winreg.h"
-#include "wingdi.h"
-#include "objbase.h"
-#include "wincodec.h"
+#include <windef.h>
+#include <winbase.h>
+//#include "winreg.h"
+#include <wingdi.h>
+#include <objbase.h>
+#include <wincodec.h>
 
 #include "wincodecs_private.h"
 
-#include "wine/debug.h"
+#include <wine/debug.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(wincodecs);
 
@@ -163,22 +167,35 @@ static HRESULT WINAPI BmpFrameDecode_GetPixelFormat(IWICBitmapFrameDecode *iface
 
 static HRESULT BmpHeader_GetResolution(BITMAPV5HEADER *bih, double *pDpiX, double *pDpiY)
 {
+    LONG resx = 0, resy = 0;
+
     switch (bih->bV5Size)
     {
+    default:
     case sizeof(BITMAPCOREHEADER):
-        *pDpiX = 96.0;
-        *pDpiY = 96.0;
-        return S_OK;
+        break;
+
     case sizeof(BITMAPCOREHEADER2):
     case sizeof(BITMAPINFOHEADER):
     case sizeof(BITMAPV4HEADER):
     case sizeof(BITMAPV5HEADER):
-        *pDpiX = bih->bV5XPelsPerMeter * 0.0254;
-        *pDpiY = bih->bV5YPelsPerMeter * 0.0254;
-        return S_OK;
-    default:
-        return E_FAIL;
+        resx = bih->bV5XPelsPerMeter;
+        resy = bih->bV5YPelsPerMeter;
+        break;
     }
+
+    if (!resx || !resy)
+    {
+        *pDpiX = 96.0;
+        *pDpiY = 96.0;
+    }
+    else
+    {
+        *pDpiX = resx * 0.0254;
+        *pDpiY = resy * 0.0254;
+    }
+
+    return S_OK;
 }
 
 static HRESULT WINAPI BmpFrameDecode_GetResolution(IWICBitmapFrameDecode *iface,

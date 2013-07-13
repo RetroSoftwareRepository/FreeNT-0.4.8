@@ -16,20 +16,24 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "config.h"
+#define WIN32_NO_STATUS
+#define _INC_WINDOWS
+#define COM_NO_WINDOWS_H
+
+#include <config.h>
 
 #include <stdarg.h>
 
 #define COBJMACROS
 
-#include "windef.h"
-#include "winbase.h"
-#include "objbase.h"
-#include "wincodec.h"
+#include <windef.h>
+#include <winbase.h>
+#include <objbase.h>
+#include <wincodec.h>
 
 #include "wincodecs_private.h"
 
-#include "wine/debug.h"
+#include <wine/debug.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(wincodecs);
 
@@ -178,7 +182,7 @@ static void NearestNeighbor_CopyScanline(BitmapScaler *This,
     UINT dst_x, UINT dst_y, UINT dst_width,
     BYTE **src_data, UINT src_data_x, UINT src_data_y, BYTE *pbBuffer)
 {
-    int i;
+    UINT i;
     UINT bytesperpixel = This->bpp/8;
     UINT src_x, src_y;
 

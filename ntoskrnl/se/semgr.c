@@ -181,8 +181,7 @@ SeInitSRM(VOID)
     NTSTATUS Status;
 
     /* Create '\Security' directory */
-    RtlInitUnicodeString(&Name,
-                         L"\\Security");
+    RtlInitUnicodeString(&Name, L"\\Security");
     InitializeObjectAttributes(&ObjectAttributes,
                                &Name,
                                OBJ_PERMANENT,
@@ -197,9 +196,8 @@ SeInitSRM(VOID)
         return FALSE;
     }
 
-    /* Create 'LSA_AUTHENTICATION_INITALIZED' event */
-    RtlInitUnicodeString(&Name,
-                         L"\\LSA_AUTHENTICATION_INITALIZED");
+    /* Create 'LSA_AUTHENTICATION_INITIALIZED' event */
+    RtlInitUnicodeString(&Name, L"\\LSA_AUTHENTICATION_INITIALIZED");
     InitializeObjectAttributes(&ObjectAttributes,
                                &Name,
                                OBJ_PERMANENT,
@@ -212,7 +210,7 @@ SeInitSRM(VOID)
                            FALSE);
     if (!NT_SUCCESS(Status))
     {
-        DPRINT1("Failed to create 'LSA_AUTHENTICATION_INITALIZED' event!\n");
+        DPRINT1("Failed to create 'LSA_AUTHENTICATION_INITIALIZED' event!\n");
         NtClose(DirectoryHandle);
         return FALSE;
     }
@@ -818,6 +816,73 @@ SeAccessCheck(IN PSECURITY_DESCRIPTOR SecurityDescriptor,
         SeUnlockSubjectContext(SubjectSecurityContext);
 
     return ret;
+}
+
+/*
+ * @implemented
+ */
+BOOLEAN
+NTAPI
+SeFastTraverseCheck(IN PSECURITY_DESCRIPTOR SecurityDescriptor,
+                    IN PACCESS_STATE AccessState,
+                    IN ACCESS_MASK DesiredAccess,
+                    IN KPROCESSOR_MODE AccessMode)
+{
+    PACL Dacl;
+    ULONG AceIndex;
+    PKNOWN_ACE Ace;
+
+    PAGED_CODE();
+
+    NT_ASSERT(AccessMode != KernelMode);
+
+    if (SecurityDescriptor == NULL)
+        return FALSE;
+
+    /* Get DACL */
+    Dacl = SepGetDaclFromDescriptor(SecurityDescriptor);
+    /* If no DACL, grant access */
+    if (Dacl == NULL)
+        return TRUE;
+
+    /* No ACE -> Deny */
+    if (!Dacl->AceCount)
+        return FALSE;
+
+    /* Can't perform the check on restricted token */
+    if (AccessState->Flags & TOKEN_IS_RESTRICTED)
+        return FALSE;
+
+    /* Browse the ACEs */
+    for (AceIndex = 0, Ace = (PKNOWN_ACE)((ULONG_PTR)Dacl + sizeof(ACL));
+         AceIndex < Dacl->AceCount;
+         AceIndex++, Ace = (PKNOWN_ACE)((ULONG_PTR)Ace + Ace->Header.AceSize))
+    {
+        if (Ace->Header.AceFlags & INHERIT_ONLY_ACE)
+            continue;
+
+        /* If access-allowed ACE */
+        if (Ace->Header.AceType & ACCESS_ALLOWED_ACE_TYPE)
+        {
+            /* Check if all accesses are granted */
+            if (!(Ace->Mask & DesiredAccess))
+                continue;
+
+            /* Check SID and grant access if matching */
+            if (RtlEqualSid(SeWorldSid, &(Ace->SidStart)))
+                return TRUE;
+        }
+        /* If access-denied ACE */
+        else if (Ace->Header.AceType & ACCESS_DENIED_ACE_TYPE)
+        {
+            /* Here, only check if it denies all the access wanted and deny if so */
+            if (Ace->Mask & DesiredAccess)
+                return FALSE;
+        }
+    }
+
+    /* Faulty, deny */
+    return FALSE;
 }
 
 /* SYSTEM CALLS ***************************************************************/

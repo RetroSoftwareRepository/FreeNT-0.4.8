@@ -19,19 +19,22 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#define WIN32_NO_STATUS
+#define _INC_WINDOWS
+
 #include <stdarg.h>
 
 #define COBJMACROS
 #define NONAMELESSUNION
 #define NONAMELESSSTRUCT
 
-#include "windef.h"
-#include "winbase.h"
-#include "wingdi.h"
-#include "ole2.h"
-#include "olectl.h"
-#include "oledlg.h"
-#include "wine/debug.h"
+#include <windef.h>
+#include <winbase.h>
+#include <wingdi.h>
+#include <ole2.h>
+#include <olectl.h>
+#include <oledlg.h>
+#include <wine/debug.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(ole);
 
@@ -140,7 +143,7 @@ static HRESULT WINAPI PropertyPageSite_TranslateAccelerator(
     return E_NOTIMPL;
 }
 
-IPropertyPageSiteVtbl PropertyPageSiteVtbl = {
+static IPropertyPageSiteVtbl PropertyPageSiteVtbl = {
     PropertyPageSite_QueryInterface,
     PropertyPageSite_AddRef,
     PropertyPageSite_Release,
@@ -168,7 +171,7 @@ HRESULT WINAPI OleCreatePropertyFrameIndirect(LPOCPFIPARAMS lpParams)
     IPropertyPage **property_page;
     PropertyPageSite *property_page_site;
     HRESULT res;
-    int i;
+    ULONG i;
     HMODULE hcomctl;
     HRSRC property_sheet_dialog_find = NULL;
     HGLOBAL property_sheet_dialog_load = NULL;

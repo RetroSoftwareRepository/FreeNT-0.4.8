@@ -90,7 +90,7 @@ PWND FASTCALL VerifyWnd(PWND pWnd)
 
 PWND FASTCALL ValidateHwndNoErr(HWND hWnd)
 {
-   if (hWnd) return (PWND)UserGetObjectNoErr(gHandleTable, hWnd, otWindow);
+   if (hWnd) return (PWND)UserGetObjectNoErr(gHandleTable, hWnd, TYPE_WINDOW);
    return NULL;
 }
 
@@ -105,7 +105,7 @@ PWND FASTCALL UserGetWindowObject(HWND hWnd)
       return NULL;
    }
 
-   Window = (PWND)UserGetObject(gHandleTable, hWnd, otWindow);
+   Window = (PWND)UserGetObject(gHandleTable, hWnd, TYPE_WINDOW);
    if (!Window || 0 != (Window->state & WNDS_DESTROYED))
    {
       EngSetLastError(ERROR_INVALID_WINDOW_HANDLE);
@@ -555,7 +555,7 @@ static LRESULT co_UserFreeWindow(PWND Window,
    IntUnlinkWindow(Window);
 
    UserReferenceObject(Window);
-   UserDeleteObject(Window->head.h, otWindow);
+   UserDeleteObject(Window->head.h, TYPE_WINDOW);
 
    IntDestroyScrollBars(Window);
 
@@ -662,7 +662,7 @@ IntSetWindowProc(PWND pWnd,
 
    if (IsCallProcHandle(NewWndProc))
    {
-      CallProc = UserGetObject(gHandleTable, NewWndProc, otCallProc);
+      CallProc = UserGetObject(gHandleTable, NewWndProc, TYPE_CALLPROC);
       if (CallProc)
       {  // Reset new WndProc.
          NewWndProc = CallProc->pfnClientPrevious;
@@ -1214,6 +1214,8 @@ co_IntSetParent(PWND Wnd, PWND WndNewParent)
       pt.x = Wnd->rcWindow.left;
    pt.y = Wnd->rcWindow.top;
 
+   IntScreenToClient(WndOldParent, &pt);
+
    if (WndOldParent) UserReferenceObject(WndOldParent); /* Caller must deref */
 
    if (WndNewParent != WndOldParent)
@@ -1717,7 +1719,7 @@ PWND FASTCALL IntCreateWindow(CREATESTRUCTW* Cs,
                                    pdeskCreated ? pdeskCreated : pti->rpdesk,
                                    pti,
                                   (PHANDLE)&hWnd,
-                                   otWindow,
+                                   TYPE_WINDOW,
                                    sizeof(WND) + Class->cbwndExtra);
 
    if (!pWnd)
@@ -2020,12 +2022,12 @@ co_UserCreateWindowEx(CREATESTRUCTW* Cs,
    }
 
    /* Now find the parent and the owner window */
-   hWndParent = IntGetDesktopWindow();
+   hWndParent = pti->rpdesk->pDeskInfo->spwnd->head.h;
    hWndOwner = NULL;
 
     if (Cs->hwndParent == HWND_MESSAGE)
     {
-        Cs->hwndParent = hWndParent = IntGetMessageWindow();
+        Cs->hwndParent = hWndParent = pti->rpdesk->spwndMessage->head.h;
     }
     else if (Cs->hwndParent)
     {
@@ -3720,6 +3722,10 @@ CLEANUP:
 DWORD APIENTRY
 NtUserQueryWindow(HWND hWnd, DWORD Index)
 {
+/* Console Leader Process CID Window offsets */
+#define GWLP_CONSOLE_LEADER_PID 0
+#define GWLP_CONSOLE_LEADER_TID 4
+
    PWND pWnd;
    DWORD Result;
    DECLARE_RETURN(UINT);
@@ -3735,12 +3741,34 @@ NtUserQueryWindow(HWND hWnd, DWORD Index)
    switch(Index)
    {
       case QUERY_WINDOW_UNIQUE_PROCESS_ID:
-         Result = (DWORD)IntGetWndProcessId(pWnd);
+      {
+         if ( (pWnd->head.pti->TIF_flags & TIF_CSRSSTHREAD) &&
+              (pWnd->pcls->atomClassName == gaGuiConsoleWndClass) )
+         {
+            // IntGetWindowLong(offset == GWLP_CONSOLE_LEADER_PID)
+            Result = (DWORD)(*((LONG_PTR*)((PCHAR)(pWnd + 1) + GWLP_CONSOLE_LEADER_PID)));
+         }
+         else
+         {
+            Result = (DWORD)IntGetWndProcessId(pWnd);
+         }
          break;
+      }
 
       case QUERY_WINDOW_UNIQUE_THREAD_ID:
-         Result = (DWORD)IntGetWndThreadId(pWnd);
+      {
+         if ( (pWnd->head.pti->TIF_flags & TIF_CSRSSTHREAD) &&
+              (pWnd->pcls->atomClassName == gaGuiConsoleWndClass) )
+         {
+            // IntGetWindowLong(offset == GWLP_CONSOLE_LEADER_TID)
+            Result = (DWORD)(*((LONG_PTR*)((PCHAR)(pWnd + 1) + GWLP_CONSOLE_LEADER_TID)));
+         }
+         else
+         {
+            Result = (DWORD)IntGetWndThreadId(pWnd);
+         }
          break;
+      }
 
       case QUERY_WINDOW_ACTIVE:
          Result = (DWORD)(pWnd->head.pti->MessageQueue->spwndActive ? UserHMGetHandle(pWnd->head.pti->MessageQueue->spwndActive) : 0);
@@ -3751,7 +3779,7 @@ NtUserQueryWindow(HWND hWnd, DWORD Index)
          break;
 
       case QUERY_WINDOW_ISHUNG:
-         Result = (DWORD)MsqIsHung(pWnd->head.pti->MessageQueue);
+         Result = (DWORD)MsqIsHung(pWnd->head.pti);
          break;
 
       case QUERY_WINDOW_REAL_ID:

@@ -29,37 +29,37 @@ INT
 TuiPrintf(const char *Format,
           ...)
 {
-	int i;
-	int Length;
-	va_list ap;
-	CHAR Buffer[512];
+    int i;
+    int Length;
+    va_list ap;
+    CHAR Buffer[512];
 
-	va_start(ap, Format);
-	Length = _vsnprintf(Buffer, sizeof(Buffer), Format, ap);
-	va_end(ap);
+    va_start(ap, Format);
+    Length = _vsnprintf(Buffer, sizeof(Buffer), Format, ap);
+    va_end(ap);
 
-	if (Length == -1) Length = sizeof(Buffer);
+    if (Length == -1) Length = sizeof(Buffer);
 
-	for (i = 0; i < Length; i++)
-	{
-		MachConsPutChar(Buffer[i]);
-	}
+    for (i = 0; i < Length; i++)
+    {
+        MachConsPutChar(Buffer[i]);
+    }
 
-	return Length;
+    return Length;
 }
 
 BOOLEAN
 UiInitialize(IN BOOLEAN ShowGui)
 {
-	ULONG Depth;
+    ULONG Depth;
 
-	/* Nothing to do */
-	if (!ShowGui) return TRUE;
+    /* Nothing to do */
+    if (!ShowGui) return TRUE;
 
-	/* Set mode and query size */
-	MachVideoSetDisplayMode(NULL, TRUE);
-	MachVideoGetDisplaySize(&UiScreenWidth, &UiScreenHeight, &Depth);
-	return TRUE;
+    /* Set mode and query size */
+    MachVideoSetDisplayMode(NULL, TRUE);
+    MachVideoGetDisplaySize(&UiScreenWidth, &UiScreenHeight, &Depth);
+    return TRUE;
 }
 
 VOID
@@ -72,8 +72,8 @@ UiUnInitialize(IN PCSTR BootText)
 VOID
 UiDrawBackdrop(VOID)
 {
-	/* Clear the screen */
-	MachVideoClearScreen(ATTR(COLOR_WHITE, COLOR_BLACK));
+    /* Clear the screen */
+    MachVideoClearScreen(ATTR(COLOR_WHITE, COLOR_BLACK));
 }
 
 VOID
@@ -82,14 +82,31 @@ UiDrawText(IN ULONG X,
            IN PCSTR Text,
            IN UCHAR Attr)
 {
-	ULONG i, j;
+    ULONG i, j;
 
     /* Draw the text character by character, but don't exceed the width */
-	for (i = X, j = 0; Text[j] && i < UiScreenWidth; i++, j++)
-	{
-	    /* Write the character */
+    for (i = X, j = 0; Text[j] && i < UiScreenWidth; i++, j++)
+    {
+        /* Write the character */
         MachVideoPutChar(Text[j], Attr, i, Y);
-	}
+    }
+}
+
+VOID
+UiDrawText2(IN ULONG X,
+            IN ULONG Y,
+            IN ULONG MaxNumChars,
+            IN PCSTR Text,
+            IN UCHAR Attr)
+{
+    ULONG i, j;
+
+    /* Draw the text character by character, but don't exceed the width */
+    for (i = X, j = 0; Text[j] && i < UiScreenWidth && (MaxNumChars > 0 ? j < MaxNumChars : TRUE); i++, j++)
+    {
+        /* Write the character */
+        MachVideoPutChar(Text[j], Attr, i, Y);
+    }
 }
 
 VOID
@@ -100,66 +117,66 @@ UiDrawCenteredText(IN ULONG Left,
                    IN PCSTR TextString,
                    IN UCHAR Attr)
 {
-	ULONG TextLength, BoxWidth, BoxHeight, LineBreakCount, Index, LastIndex;
-	ULONG RealLeft, RealTop, X, Y;
-	CHAR Temp[2];
+    ULONG TextLength, BoxWidth, BoxHeight, LineBreakCount, Index, LastIndex;
+    ULONG RealLeft, RealTop, X, Y;
+    CHAR Temp[2];
 
     /* Query text length */
-	TextLength = strlen(TextString);
+    TextLength = strlen(TextString);
 
     /* Count the new lines and the box width */
-	LineBreakCount = 0;
-	BoxWidth = 0;
-	LastIndex = 0;
-	for (Index=0; Index < TextLength; Index++)
-	{
-	    /* Scan for new lines */
-		if (TextString[Index] == '\n')
-		{
-		    /* Remember the new line */
-			LastIndex = Index;
-			LineBreakCount++;
-		}
-		else
-		{
-		    /* Check for new larger box width */
-			if ((Index - LastIndex) > BoxWidth)
-			{
-			    /* Update it */
-				BoxWidth = (Index - LastIndex);
-			}
-		}
-	}
+    LineBreakCount = 0;
+    BoxWidth = 0;
+    LastIndex = 0;
+    for (Index=0; Index < TextLength; Index++)
+    {
+        /* Scan for new lines */
+        if (TextString[Index] == '\n')
+        {
+            /* Remember the new line */
+            LastIndex = Index;
+            LineBreakCount++;
+        }
+        else
+        {
+            /* Check for new larger box width */
+            if ((Index - LastIndex) > BoxWidth)
+            {
+                /* Update it */
+                BoxWidth = (Index - LastIndex);
+            }
+        }
+    }
 
     /* Base the box height on the number of lines */
-	BoxHeight = LineBreakCount + 1;
+    BoxHeight = LineBreakCount + 1;
 
     /* Create the centered coordinates */
-	RealLeft = (((Right - Left) - BoxWidth) / 2) + Left;
-	RealTop = (((Bottom - Top) - BoxHeight) / 2) + Top;
+    RealLeft = (((Right - Left) - BoxWidth) / 2) + Left;
+    RealTop = (((Bottom - Top) - BoxHeight) / 2) + Top;
 
     /* Now go for a second scan */
-	LastIndex = 0;
-	for (Index=0; Index < TextLength; Index++)
-	{
-	    /* Look for new lines again */
-		if (TextString[Index] == '\n')
-		{
-		    /* Update where the text should start */
-			RealTop++;
-			LastIndex = 0;
-		}
-		else
-		{
-		    /* We've got a line of text to print, do it */
-			X = RealLeft + LastIndex;
-			Y = RealTop;
-			LastIndex++;
-			Temp[0] = TextString[Index];
-			Temp[1] = 0;
-			UiDrawText(X, Y, Temp, Attr);
-		}
-	}
+    LastIndex = 0;
+    for (Index=0; Index < TextLength; Index++)
+    {
+        /* Look for new lines again */
+        if (TextString[Index] == '\n')
+        {
+            /* Update where the text should start */
+            RealTop++;
+            LastIndex = 0;
+        }
+        else
+        {
+            /* We've got a line of text to print, do it */
+            X = RealLeft + LastIndex;
+            Y = RealTop;
+            LastIndex++;
+            Temp[0] = TextString[Index];
+            Temp[1] = 0;
+            UiDrawText(X, Y, Temp, Attr);
+        }
+    }
 }
 
 VOID
@@ -193,16 +210,16 @@ UiDrawProgressBarCenter(IN ULONG Position,
 {
     ULONG Left, Top, Right, Bottom, Width, Height;
 
-	/* Build the coordinates and sizes */
-	Height = 2;
-	Width = UiScreenWidth;
-	Left = 0;
-	Right = (Left + Width) - 1;
-	Top = UiScreenHeight - Height - 4;
-	Bottom = Top + Height + 1;
+    /* Build the coordinates and sizes */
+    Height = 2;
+    Width = UiScreenWidth;
+    Left = 0;
+    Right = (Left + Width) - 1;
+    Top = UiScreenHeight - Height - 4;
+    Bottom = Top + Height + 1;
 
     /* Draw the progress bar */
-	UiDrawProgressBar(Left, Top, Right, Bottom, Position, Range, ProgressText);
+    UiDrawProgressBar(Left, Top, Right, Bottom, Position, Range, ProgressText);
 }
 
 VOID
@@ -215,23 +232,23 @@ UiDrawProgressBar(IN ULONG Left,
                   IN PCHAR ProgressText)
 {
     ULONG i, ProgressBarWidth;
-	
-	/* Calculate the width of the bar proper */
-	ProgressBarWidth = (Right - Left) - 3;
+    
+    /* Calculate the width of the bar proper */
+    ProgressBarWidth = (Right - Left) - 3;
 
-	/* First make sure the progress bar text fits */
-	UiTruncateStringEllipsis(ProgressText, ProgressBarWidth - 4);
-	if (Position > Range) Position = Range;
+    /* First make sure the progress bar text fits */
+    UiTruncateStringEllipsis(ProgressText, ProgressBarWidth - 4);
+    if (Position > Range) Position = Range;
 
-	/* Draw the "Loading..." text */
-	UiDrawCenteredText(Left + 2, Top + 1, Right - 2, Top + 1, ProgressText, ATTR(7, 0));
+    /* Draw the "Loading..." text */
+    UiDrawCenteredText(Left + 2, Top + 1, Right - 2, Top + 1, ProgressText, ATTR(7, 0));
 
-	/* Draw the percent complete */
-	for (i = 0; i < (Position * ProgressBarWidth) / Range; i++)
-	{
-	    /* Use the fill character */
-		UiDrawText(Left + 2 + i, Top + 2, "\xDB", ATTR(UiTextColor, UiMenuBgColor));
-	}
+    /* Draw the percent complete */
+    for (i = 0; i < (Position * ProgressBarWidth) / Range; i++)
+    {
+        /* Use the fill character */
+        UiDrawText(Left + 2 + i, Top + 2, "\xDB", ATTR(UiTextColor, UiMenuBgColor));
+    }
 }
 
 VOID
@@ -397,7 +414,8 @@ NTAPI
 UiProcessMenuKeyboardEvent(IN PUI_MENU_INFO MenuInfo,
                            IN UiMenuKeyPressFilterCallback KeyPressFilter)
 {
-    ULONG KeyEvent = 0, Selected, Count;
+    ULONG KeyEvent = 0;
+    ULONG Selected, Count;
 
     /* Check for a keypress */
     if (MachConsKbHit())
@@ -405,9 +423,7 @@ UiProcessMenuKeyboardEvent(IN PUI_MENU_INFO MenuInfo,
         /* Check if the timeout is not already complete */
         if (MenuInfo->MenuTimeRemaining != -1)
         {
-            //
-            // Cancel it and remove it
-            //
+            /* Cancel it and remove it */
             MenuInfo->MenuTimeRemaining = -1;
             UiDrawMenuBox(MenuInfo);
         }
@@ -418,7 +434,10 @@ UiProcessMenuKeyboardEvent(IN PUI_MENU_INFO MenuInfo,
         /* Is it extended? Then get the extended key */
         if (!KeyEvent) KeyEvent = MachConsGetCh();
 
-        /* Call the supplied key filter callback function to see if it is going to handle this keypress. */
+        /*
+         * Call the supplied key filter callback function to see
+         * if it is going to handle this keypress.
+         */
         if ((KeyPressFilter) && (KeyPressFilter(KeyEvent)))
         {
             /* It processed the key character, so redraw and exit */
@@ -427,40 +446,55 @@ UiProcessMenuKeyboardEvent(IN PUI_MENU_INFO MenuInfo,
         }
 
         /* Process the key */
-        if ((KeyEvent == KEY_UP) || (KeyEvent == KEY_DOWN))
+        if ((KeyEvent == KEY_UP  ) || (KeyEvent == KEY_DOWN) ||
+            (KeyEvent == KEY_HOME) || (KeyEvent == KEY_END ))
         {
             /* Get the current selected item and count */
             Selected = MenuInfo->SelectedMenuItem;
             Count = MenuInfo->MenuItemCount - 1;
 
-            /* Check if this was a key up and there's a selected menu item */
-            if ((KeyEvent == KEY_UP) && (Selected))
+            /* Check the key and change the selected menu item */
+            if ((KeyEvent == KEY_UP) && (Selected > 0))
             {
-                /* Update the menu (Deselect previous item) */
+                /* Deselect previous item and go up */
                 MenuInfo->SelectedMenuItem--;
                 UiDrawMenuItem(MenuInfo, Selected);
                 Selected--;
 
-                /* Skip past any separators */
-                if ((Selected) &&
+                // Skip past any separators
+                if ((Selected > 0) &&
                     (MenuInfo->MenuItemList[Selected] == NULL))
                 {
                     MenuInfo->SelectedMenuItem--;
                 }
             }
+            else if ( ((KeyEvent == KEY_UP) && (Selected == 0)) ||
+                       (KeyEvent == KEY_END) )
+            {
+                /* Go to the end */
+                MenuInfo->SelectedMenuItem = Count;
+                UiDrawMenuItem(MenuInfo, Selected);
+            }
             else if ((KeyEvent == KEY_DOWN) && (Selected < Count))
             {
-                /* Update the menu (deselect previous item) */
+                /* Deselect previous item and go down */
                 MenuInfo->SelectedMenuItem++;
                 UiDrawMenuItem(MenuInfo, Selected);
                 Selected++;
 
-                /* Skip past any separators */
+                // Skip past any separators
                 if ((Selected < Count) &&
                     (MenuInfo->MenuItemList[Selected] == NULL))
                 {
                     MenuInfo->SelectedMenuItem++;
                 }
+            }
+            else if ( ((KeyEvent == KEY_DOWN) && (Selected == Count)) ||
+                       (KeyEvent == KEY_HOME) )
+            {
+                /* Go to the beginning */
+                MenuInfo->SelectedMenuItem = 0;
+                UiDrawMenuItem(MenuInfo, Selected);
             }
 
             /* Select new item and update video buffer */

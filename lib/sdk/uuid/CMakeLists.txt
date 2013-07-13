@@ -46,7 +46,7 @@ list(APPEND IDL_SOURCES
     hlink.idl
 #    hnetbcon.idl
 #    hnetcfg.idl
-#    htiface.idl
+    htiface.idl
     htiframe.idl
 #    htmlfilter.idl
     httprequest.idl
@@ -126,7 +126,7 @@ list(APPEND IDL_SOURCES
 #    termmgr.idl
     textstor.idl
 #    tlog.idl
-#    tlogstg.idl
+    tlogstg.idl
 #    trkadm.idl
 #    trkcom.idl
     unknwn.idl
@@ -149,6 +149,7 @@ list(APPEND IDL_SOURCES
     bits.idl
     bits1_5.idl
     control.idl
+    docobjectservice.idl
     downloadmgr.idl
     fusion.idl
     iads.idl

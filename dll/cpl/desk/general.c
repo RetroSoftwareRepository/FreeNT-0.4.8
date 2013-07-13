@@ -30,12 +30,13 @@ InitFontSizeList(HWND hWnd)
                              0, KEY_READ, &hKey) == ERROR_SUCCESS)
             for (;;)
             {
+                TCHAR Buffer[LINE_LEN];
                 TCHAR Desc[LINE_LEN];
 
-                if (SetupGetStringField(&Context, 0, Desc, sizeof(Desc), NULL) &&
+                if (SetupGetStringField(&Context, 0, Buffer, sizeof(Buffer), NULL) &&
                     SetupGetIntField(&Context, 1, &ci))
                 {
-                    _stprintf(Desc, _T("%s (%d DPI)"), Desc, ci);
+                    _stprintf(Desc, _T("%s (%d DPI)"), Buffer, ci);
                     i = SendMessage(hFontSize, CB_ADDSTRING, 0, (LPARAM)Desc);
                     if (i != CB_ERR)
                         SendMessage(hFontSize, CB_SETITEMDATA, (WPARAM)i, (LPARAM)ci);
@@ -123,21 +124,21 @@ AdvGeneralPageProc(HWND hwndDlg,
             Ret = TRUE;
             break;
         case WM_COMMAND:
-			switch (LOWORD(wParam))
-			{
-				case IDC_FONTSIZE_COMBO:
-					if (HIWORD(wParam) == CBN_SELCHANGE)
-					{
-						PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
-					}
-					break;
-				case IDC_RESTART_RB:
-				case IDC_WITHOUTREBOOT_RB:
-				case IDC_ASKME_RB:
-					PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
-				break;
-			}
-			break;
+            switch (LOWORD(wParam))
+            {
+                case IDC_FONTSIZE_COMBO:
+                    if (HIWORD(wParam) == CBN_SELCHANGE)
+                    {
+                        PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
+                    }
+                    break;
+                case IDC_RESTART_RB:
+                case IDC_WITHOUTREBOOT_RB:
+                case IDC_ASKME_RB:
+                    PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
+                break;
+            }
+            break;
     }
 
     return Ret;

@@ -139,6 +139,34 @@ IntMapWindowPoints(PWND FromWnd, PWND ToWnd, LPPOINT lpPoints, UINT cPoints)
     return MAKELONG(LOWORD(Delta.x), LOWORD(Delta.y));
 }
 
+BOOL FASTCALL
+IntClientToScreen(PWND Wnd, LPPOINT lpPoint)
+{
+   if (Wnd && Wnd->fnid != FNID_DESKTOP )
+   {
+      if (Wnd->ExStyle & WS_EX_LAYOUTRTL)
+         lpPoint->x = Wnd->rcClient.right - lpPoint->x;
+      else
+         lpPoint->x += Wnd->rcClient.left;
+      lpPoint->y += Wnd->rcClient.top;
+   }
+   return TRUE;
+}
+
+BOOL FASTCALL
+IntScreenToClient(PWND Wnd, LPPOINT lpPoint)
+{
+    if (Wnd && Wnd->fnid != FNID_DESKTOP )
+    {
+       if (Wnd->ExStyle & WS_EX_LAYOUTRTL)
+          lpPoint->x = Wnd->rcClient.right - lpPoint->x;
+       else
+          lpPoint->x -= Wnd->rcClient.left;
+       lpPoint->y -= Wnd->rcClient.top;
+    }
+    return TRUE;
+}
+
 BOOL FASTCALL IsChildVisible(PWND pWnd)
 {
     do
@@ -2023,7 +2051,7 @@ co_WinPosShowWindow(PWND Wnd, INT Cmd)
 {
    BOOLEAN WasVisible;
    UINT Swp = 0, EventMsg = 0;
-   RECTL NewPos;
+   RECTL NewPos = {0, 0, 0, 0};
    BOOLEAN ShowFlag;
    LONG style;
    PWND Parent;
@@ -2218,11 +2246,15 @@ co_WinPosShowWindow(PWND Wnd, INT Cmd)
 
    if ((Cmd == SW_HIDE) || (Cmd == SW_MINIMIZE))
    {
-      if ( ( Wnd->spwndParent == UserGetDesktopWindow() && !ActivateOtherWindowMin(Wnd) ) ||
-           // and Rule #1.
-           ( Wnd == pti->MessageQueue->spwndActive && pti->MessageQueue == IntGetFocusMessageQueue() ) )
+      if ( Wnd == pti->MessageQueue->spwndActive && pti->MessageQueue == IntGetFocusMessageQueue()  )
       {
-         co_WinPosActivateOtherWindow(Wnd);
+          if ( Wnd->spwndParent == UserGetDesktopWindow())
+          {
+              if(!ActivateOtherWindowMin(Wnd))
+                co_WinPosActivateOtherWindow(Wnd);
+          }
+          else
+              co_WinPosActivateOtherWindow(Wnd);
       }
 
       /* Revert focus to parent */
@@ -2472,7 +2504,7 @@ IntDeferWindowPos( HDWP hdwp,
        return NULL;
     }
 
-    if (!(pDWP = (PSMWP)UserGetObject(gHandleTable, hdwp, otSMWP)))
+    if (!(pDWP = (PSMWP)UserGetObject(gHandleTable, hdwp, TYPE_SETWINDOWPOS)))
     {
        EngSetLastError(ERROR_INVALID_DWP_HANDLE);
        return NULL;
@@ -2543,7 +2575,7 @@ BOOL FASTCALL IntEndDeferWindowPosEx( HDWP hdwp, BOOL sAsync )
 
     TRACE("%p\n", hdwp);
 
-    if (!(pDWP = (PSMWP)UserGetObject(gHandleTable, hdwp, otSMWP)))
+    if (!(pDWP = (PSMWP)UserGetObject(gHandleTable, hdwp, TYPE_SETWINDOWPOS)))
     {
        EngSetLastError(ERROR_INVALID_DWP_HANDLE);
        return FALSE;
@@ -2597,7 +2629,7 @@ BOOL FASTCALL IntEndDeferWindowPosEx( HDWP hdwp, BOOL sAsync )
     }
     ExFreePoolWithTag(pDWP->acvr, USERTAG_SWP);
     UserDereferenceObject(pDWP);
-    UserDeleteObject(hdwp, otSMWP);
+    UserDeleteObject(hdwp, TYPE_SETWINDOWPOS);
     return res;
 }
 

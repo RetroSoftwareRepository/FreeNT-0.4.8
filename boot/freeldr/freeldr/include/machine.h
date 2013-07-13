@@ -1,4 +1,4 @@
-/* 
+/*
  *  FreeLoader
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -68,6 +68,7 @@ typedef struct tagMACHVTBL
   TIMEINFO* (*GetTime)(VOID);
   ULONG (*GetRelativeTime)(VOID);
 
+  BOOLEAN (*InitializeBootDevices)(VOID);
   PCONFIGURATION_COMPONENT_DATA (*HwDetect)(VOID);
   VOID (*HwIdle)(VOID);
 } MACHVTBL, *PMACHVTBL;
@@ -100,29 +101,30 @@ ULONG MachDiskGetCacheableBlockCount(UCHAR DriveNumber);
 VOID MachPrepareForReactOS(IN BOOLEAN Setup);
 VOID MachHwIdle(VOID);
 
-#define MachConsPutChar(Ch)			MachVtbl.ConsPutChar(Ch)
-#define MachConsKbHit()				MachVtbl.ConsKbHit()
-#define MachConsGetCh()				MachVtbl.ConsGetCh()
-#define MachVideoClearScreen(Attr)		MachVtbl.VideoClearScreen(Attr)
-#define MachVideoSetDisplayMode(Mode, Init)	MachVtbl.VideoSetDisplayMode((Mode), (Init))
-#define MachVideoGetDisplaySize(W, H, D)	MachVtbl.VideoGetDisplaySize((W), (H), (D))
-#define MachVideoGetBufferSize()		MachVtbl.VideoGetBufferSize()
-#define MachVideoSetTextCursorPosition(X, Y)	MachVtbl.VideoSetTextCursorPosition((X), (Y))
-#define MachVideoHideShowTextCursor(Show)	MachVtbl.VideoHideShowTextCursor(Show)
-#define MachVideoPutChar(Ch, Attr, X, Y)	MachVtbl.VideoPutChar((Ch), (Attr), (X), (Y))
-#define MachVideoCopyOffScreenBufferToVRAM(Buf)	MachVtbl.VideoCopyOffScreenBufferToVRAM(Buf)
-#define MachVideoIsPaletteFixed()		MachVtbl.VideoIsPaletteFixed()
-#define MachVideoSetPaletteColor(Col, R, G, B)	MachVtbl.VideoSetPaletteColor((Col), (R), (G), (B))
-#define MachVideoGetPaletteColor(Col, R, G, B)	MachVtbl.VideoGetPaletteColor((Col), (R), (G), (B))
-#define MachVideoSync()				MachVtbl.VideoSync()
+#define MachConsPutChar(Ch)            MachVtbl.ConsPutChar(Ch)
+#define MachConsKbHit()                MachVtbl.ConsKbHit()
+#define MachConsGetCh()                MachVtbl.ConsGetCh()
+#define MachVideoClearScreen(Attr)        MachVtbl.VideoClearScreen(Attr)
+#define MachVideoSetDisplayMode(Mode, Init)    MachVtbl.VideoSetDisplayMode((Mode), (Init))
+#define MachVideoGetDisplaySize(W, H, D)    MachVtbl.VideoGetDisplaySize((W), (H), (D))
+#define MachVideoGetBufferSize()        MachVtbl.VideoGetBufferSize()
+#define MachVideoSetTextCursorPosition(X, Y)    MachVtbl.VideoSetTextCursorPosition((X), (Y))
+#define MachVideoHideShowTextCursor(Show)    MachVtbl.VideoHideShowTextCursor(Show)
+#define MachVideoPutChar(Ch, Attr, X, Y)    MachVtbl.VideoPutChar((Ch), (Attr), (X), (Y))
+#define MachVideoCopyOffScreenBufferToVRAM(Buf)    MachVtbl.VideoCopyOffScreenBufferToVRAM(Buf)
+#define MachVideoIsPaletteFixed()        MachVtbl.VideoIsPaletteFixed()
+#define MachVideoSetPaletteColor(Col, R, G, B)    MachVtbl.VideoSetPaletteColor((Col), (R), (G), (B))
+#define MachVideoGetPaletteColor(Col, R, G, B)    MachVtbl.VideoGetPaletteColor((Col), (R), (G), (B))
+#define MachVideoSync()                MachVtbl.VideoSync()
 #define MachBeep()                   MachVtbl.Beep()
-#define MachPrepareForReactOS(a)		MachVtbl.PrepareForReactOS(a)
-#define MachDiskGetBootPath(Path, Size)		MachVtbl.DiskGetBootPath((Path), (Size))
-#define MachDiskNormalizeSystemPath(Path, Size)	MachVtbl.DiskNormalizeSystemPath((Path), (Size))
-#define MachDiskReadLogicalSectors(Drive, Start, Count, Buf)	MachVtbl.DiskReadLogicalSectors((Drive), (Start), (Count), (Buf))
-#define MachDiskGetDriveGeometry(Drive, Geom)	MachVtbl.DiskGetDriveGeometry((Drive), (Geom))
-#define MachDiskGetCacheableBlockCount(Drive)	MachVtbl.DiskGetCacheableBlockCount(Drive)
-#define MachHwDetect()				MachVtbl.HwDetect()
-#define MachHwIdle()				MachVtbl.HwIdle()
+#define MachPrepareForReactOS(a)        MachVtbl.PrepareForReactOS(a)
+#define MachDiskGetBootPath(Path, Size)        MachVtbl.DiskGetBootPath((Path), (Size))
+#define MachDiskNormalizeSystemPath(Path, Size)    MachVtbl.DiskNormalizeSystemPath((Path), (Size))
+#define MachDiskReadLogicalSectors(Drive, Start, Count, Buf)    MachVtbl.DiskReadLogicalSectors((Drive), (Start), (Count), (Buf))
+#define MachDiskGetDriveGeometry(Drive, Geom)    MachVtbl.DiskGetDriveGeometry((Drive), (Geom))
+#define MachDiskGetCacheableBlockCount(Drive)    MachVtbl.DiskGetCacheableBlockCount(Drive)
+#define MachInitializeBootDevices()    MachVtbl.InitializeBootDevices()
+#define MachHwDetect()                MachVtbl.HwDetect()
+#define MachHwIdle()                MachVtbl.HwIdle()
 
 /* EOF */

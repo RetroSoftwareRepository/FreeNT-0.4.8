@@ -19,9 +19,9 @@
 
 /*
  * Uncomment the line below to start services
- *  using the SERVICE_START_PENDING state
+ * using the SERVICE_START_PENDING state.
  */
-// #define USE_SERVICE_START_PENDING
+#define USE_SERVICE_START_PENDING
 
 /*
  * Uncomment the line below to use asynchronous IO operations
@@ -36,10 +36,11 @@ LIST_ENTRY ImageListHead;
 LIST_ENTRY ServiceListHead;
 
 static RTL_RESOURCE DatabaseLock;
-static DWORD dwResumeCount = 1;
+static DWORD ResumeCount = 1;
 
+/* The critical section synchronizes service control requests */
 static CRITICAL_SECTION ControlServiceCriticalSection;
-static DWORD dwPipeTimeout = 30000; /* 30 Seconds */
+static DWORD PipeTimeout = 30000; /* 30 Seconds */
 
 
 /* FUNCTIONS *****************************************************************/
@@ -110,7 +111,7 @@ ScmCreateNewControlPipe(PSERVICE_IMAGE pServiceImage)
                                                    100,
                                                    8000,
                                                    4,
-                                                   dwPipeTimeout,
+                                                   PipeTimeout,
                                                    NULL);
     DPRINT("CreateNamedPipeW(%S) done\n", szControlPipeName);
     if (pServiceImage->hControlPipe == INVALID_HANDLE_VALUE)
@@ -359,7 +360,7 @@ ScmGetServiceEntryByResumeCount(DWORD dwResumeCount)
 
 DWORD
 ScmCreateNewServiceRecord(LPCWSTR lpServiceName,
-                          PSERVICE *lpServiceRecord)
+                          PSERVICE* lpServiceRecord)
 {
     PSERVICE lpService = NULL;
 
@@ -380,7 +381,7 @@ ScmCreateNewServiceRecord(LPCWSTR lpServiceName,
     lpService->lpDisplayName = lpService->lpServiceName;
 
     /* Set the resume count */
-    lpService->dwResumeCount = dwResumeCount++;
+    lpService->dwResumeCount = ResumeCount++;
 
     /* Append service record */
     InsertTailList(&ServiceListHead,
@@ -772,13 +773,12 @@ ScmCheckDriver(PSERVICE Service)
 
     if (Service->Status.dwServiceType == SERVICE_KERNEL_DRIVER)
     {
-        RtlInitUnicodeString(&DirName,
-                             L"\\Driver");
+        RtlInitUnicodeString(&DirName, L"\\Driver");
     }
-    else
+    else // if (Service->Status.dwServiceType == SERVICE_FILE_SYSTEM_DRIVER)
     {
-        RtlInitUnicodeString(&DirName,
-                             L"\\FileSystem");
+        ASSERT(Service->Status.dwServiceType == SERVICE_FILE_SYSTEM_DRIVER);
+        RtlInitUnicodeString(&DirName, L"\\FileSystem");
     }
 
     InitializeObjectAttributes(&ObjectAttributes,
@@ -796,7 +796,7 @@ ScmCheckDriver(PSERVICE Service)
     }
 
     BufferLength = sizeof(OBJECT_DIRECTORY_INFORMATION) +
-                   2 * MAX_PATH * sizeof(WCHAR);
+                       2 * MAX_PATH * sizeof(WCHAR);
     DirInfo = HeapAlloc(GetProcessHeap(),
                         HEAP_ZERO_MEMORY,
                         BufferLength);
@@ -898,6 +898,7 @@ ScmControlService(PSERVICE Service,
 
     DPRINT("ScmControlService() called\n");
 
+    /* Acquire the service control critical section, to synchronize requests */
     EnterCriticalSection(&ControlServiceCriticalSection);
 
     /* Calculate the total length of the start command line */
@@ -941,7 +942,7 @@ ScmControlService(PSERVICE Service,
             DPRINT1("dwError: ERROR_IO_PENDING\n");
 
             dwError = WaitForSingleObject(Service->lpImage->hControlPipe,
-                                          dwPipeTimeout);
+                                          PipeTimeout);
             DPRINT1("WaitForSingleObject() returned %lu\n", dwError);
 
             if (dwError == WAIT_TIMEOUT)
@@ -995,7 +996,7 @@ ScmControlService(PSERVICE Service,
             DPRINT1("dwError: ERROR_IO_PENDING\n");
 
             dwError = WaitForSingleObject(Service->lpImage->hControlPipe,
-                                          dwPipeTimeout);
+                                          PipeTimeout);
             DPRINT1("WaitForSingleObject() returned %lu\n", dwError);
 
             if (dwError == WAIT_TIMEOUT)
@@ -1096,7 +1097,7 @@ Done:
 static DWORD
 ScmSendStartCommand(PSERVICE Service,
                     DWORD argc,
-                    LPWSTR *argv)
+                    LPWSTR* argv)
 {
     PSCM_CONTROL_PACKET ControlPacket;
     SCM_REPLY_PACKET ReplyPacket;
@@ -1192,7 +1193,7 @@ ScmSendStartCommand(PSERVICE Service,
             DPRINT1("dwError: ERROR_IO_PENDING\n");
 
             dwError = WaitForSingleObject(Service->lpImage->hControlPipe,
-                                          dwPipeTimeout);
+                                          PipeTimeout);
             DPRINT1("WaitForSingleObject() returned %lu\n", dwError);
 
             if (dwError == WAIT_TIMEOUT)
@@ -1246,7 +1247,7 @@ ScmSendStartCommand(PSERVICE Service,
             DPRINT1("dwError: ERROR_IO_PENDING\n");
 
             dwError = WaitForSingleObject(Service->lpImage->hControlPipe,
-                                          dwPipeTimeout);
+                                          PipeTimeout);
             DPRINT1("WaitForSingleObject() returned %lu\n", dwError);
 
             if (dwError == WAIT_TIMEOUT)
@@ -1354,7 +1355,7 @@ ScmWaitForServiceConnect(PSERVICE Service)
             DPRINT("dwError: ERROR_IO_PENDING\n");
 
             dwError = WaitForSingleObject(Service->lpImage->hControlPipe,
-                                          dwPipeTimeout);
+                                          PipeTimeout);
             DPRINT("WaitForSingleObject() returned %lu\n", dwError);
 
             if (dwError == WAIT_TIMEOUT)
@@ -1411,7 +1412,7 @@ ScmWaitForServiceConnect(PSERVICE Service)
             DPRINT("dwError: ERROR_IO_PENDING\n");
 
             dwError = WaitForSingleObject(Service->lpImage->hControlPipe,
-                                          dwPipeTimeout);
+                                          PipeTimeout);
             if (dwError == WAIT_TIMEOUT)
             {
                 DPRINT("WaitForSingleObject() returned WAIT_TIMEOUT\n");
@@ -1496,7 +1497,7 @@ ScmWaitForServiceConnect(PSERVICE Service)
 static DWORD
 ScmStartUserModeService(PSERVICE Service,
                         DWORD argc,
-                        LPWSTR *argv)
+                        LPWSTR* argv)
 {
     PROCESS_INFORMATION ProcessInformation;
     STARTUPINFOW StartupInfo;
@@ -1512,6 +1513,7 @@ ScmStartUserModeService(PSERVICE Service,
         return ScmSendStartCommand(Service, argc, argv);
     }
 
+    /* Otherwise start its process */
     ZeroMemory(&StartupInfo, sizeof(StartupInfo));
     StartupInfo.cb = sizeof(StartupInfo);
     ZeroMemory(&ProcessInformation, sizeof(ProcessInformation));
@@ -1551,9 +1553,7 @@ ScmStartUserModeService(PSERVICE Service,
     if (dwError == ERROR_SUCCESS)
     {
         /* Send start command */
-        dwError = ScmSendStartCommand(Service,
-                                      argc,
-                                      argv);
+        dwError = ScmSendStartCommand(Service, argc, argv);
     }
     else
     {
@@ -1569,24 +1569,22 @@ ScmStartUserModeService(PSERVICE Service,
 }
 
 
-DWORD
-ScmStartService(PSERVICE Service, DWORD argc, LPWSTR *argv)
+static DWORD
+ScmLoadService(PSERVICE Service,
+               DWORD argc,
+               LPWSTR* argv)
 {
     PSERVICE_GROUP Group = Service->lpGroup;
     DWORD dwError = ERROR_SUCCESS;
     LPCWSTR ErrorLogStrings[2];
     WCHAR szErrorBuffer[32];
 
-    DPRINT("ScmStartService() called\n");
-
+    DPRINT("ScmLoadService() called\n");
     DPRINT("Start Service %p (%S)\n", Service, Service->lpServiceName);
-
-    EnterCriticalSection(&ControlServiceCriticalSection);
 
     if (Service->Status.dwCurrentState != SERVICE_STOPPED)
     {
         DPRINT("Service %S is already running!\n", Service->lpServiceName);
-        LeaveCriticalSection(&ControlServiceCriticalSection);
         return ERROR_SERVICE_ALREADY_RUNNING;
     }
 
@@ -1602,7 +1600,7 @@ ScmStartService(PSERVICE Service, DWORD argc, LPWSTR *argv)
             Service->Status.dwCurrentState = SERVICE_RUNNING;
         }
     }
-    else
+    else // if (Service->Status.dwServiceType & (SERVICE_WIN32 | SERVICE_INTERACTIVE_PROCESS))
     {
         /* Start user-mode service */
         dwError = ScmCreateOrReferenceServiceImage(Service);
@@ -1625,9 +1623,7 @@ ScmStartService(PSERVICE Service, DWORD argc, LPWSTR *argv)
         }
     }
 
-    LeaveCriticalSection(&ControlServiceCriticalSection);
-
-    DPRINT("ScmStartService() done (Error %lu)\n", dwError);
+    DPRINT("ScmLoadService() done (Error %lu)\n", dwError);
 
     if (dwError == ERROR_SUCCESS)
     {
@@ -1677,17 +1673,66 @@ ScmStartService(PSERVICE Service, DWORD argc, LPWSTR *argv)
 }
 
 
+DWORD
+ScmStartService(PSERVICE Service,
+                DWORD argc,
+                LPWSTR* argv)
+{
+    DWORD dwError = ERROR_SUCCESS;
+    SC_RPC_LOCK Lock = NULL;
+
+    DPRINT("ScmStartService() called\n");
+    DPRINT("Start Service %p (%S)\n", Service, Service->lpServiceName);
+
+    /* Acquire the service control critical section, to synchronize starts */
+    EnterCriticalSection(&ControlServiceCriticalSection);
+
+    /*
+     * Acquire the user service start lock while the service is starting, if
+     * needed (i.e. if we are not starting it during the initialization phase).
+     * If we don't success, bail out.
+     */
+    if (!ScmInitialize)
+    {
+        dwError = ScmAcquireServiceStartLock(TRUE, &Lock);
+        if (dwError != ERROR_SUCCESS) goto done;
+    }
+
+    /* Really start the service */
+    dwError = ScmLoadService(Service, argc, argv);
+
+    /* Release the service start lock, if needed, and the critical section */
+    if (Lock) ScmReleaseServiceStartLock(&Lock);
+
+done:
+    LeaveCriticalSection(&ControlServiceCriticalSection);
+
+    DPRINT("ScmStartService() done (Error %lu)\n", dwError);
+
+    return dwError;
+}
+
+
 VOID
 ScmAutoStartServices(VOID)
 {
+    DWORD dwError = ERROR_SUCCESS;
     PLIST_ENTRY GroupEntry;
     PLIST_ENTRY ServiceEntry;
     PSERVICE_GROUP CurrentGroup;
     PSERVICE CurrentService;
     WCHAR szSafeBootServicePath[MAX_PATH];
-    DWORD dwError;
     HKEY hKey;
     ULONG i;
+
+    /*
+     * This function MUST be called ONLY at initialization time.
+     * Therefore, no need to acquire the user service start lock.
+     */
+    ASSERT(ScmInitialize);
+
+    /* Acquire the service control critical section, to synchronize starts */
+    EnterCriticalSection(&ControlServiceCriticalSection);
 
     /* Clear 'ServiceVisited' flag (or set if not to start in Safe Mode) */
     ServiceEntry = ServiceListHead.Flink;
@@ -1779,7 +1824,7 @@ ScmAutoStartServices(VOID)
                     (CurrentService->dwTag == CurrentGroup->TagArray[i]))
                 {
                     CurrentService->ServiceVisited = TRUE;
-                    ScmStartService(CurrentService, 0, NULL);
+                    ScmLoadService(CurrentService, 0, NULL);
                 }
 
                 ServiceEntry = ServiceEntry->Flink;
@@ -1797,7 +1842,7 @@ ScmAutoStartServices(VOID)
                 (CurrentService->ServiceVisited == FALSE))
             {
                 CurrentService->ServiceVisited = TRUE;
-                ScmStartService(CurrentService, 0, NULL);
+                ScmLoadService(CurrentService, 0, NULL);
             }
 
             ServiceEntry = ServiceEntry->Flink;
@@ -1817,7 +1862,7 @@ ScmAutoStartServices(VOID)
             (CurrentService->ServiceVisited == FALSE))
         {
             CurrentService->ServiceVisited = TRUE;
-            ScmStartService(CurrentService, 0, NULL);
+            ScmLoadService(CurrentService, 0, NULL);
         }
 
         ServiceEntry = ServiceEntry->Flink;
@@ -1834,7 +1879,7 @@ ScmAutoStartServices(VOID)
             (CurrentService->ServiceVisited == FALSE))
         {
             CurrentService->ServiceVisited = TRUE;
-            ScmStartService(CurrentService, 0, NULL);
+            ScmLoadService(CurrentService, 0, NULL);
         }
 
         ServiceEntry = ServiceEntry->Flink;
@@ -1848,6 +1893,9 @@ ScmAutoStartServices(VOID)
         CurrentService->ServiceVisited = FALSE;
         ServiceEntry = ServiceEntry->Flink;
     }
+
+    /* Release the critical section */
+    LeaveCriticalSection(&ControlServiceCriticalSection);
 }
 
 
@@ -1927,7 +1975,7 @@ ScmInitNamedPipeCriticalSection(VOID)
                          L"ServicesPipeTimeout",
                          0,
                          NULL,
-                         (LPBYTE)&dwPipeTimeout,
+                         (LPBYTE)&PipeTimeout,
                          &dwKeySize);
 
        RegCloseKey(hKey);

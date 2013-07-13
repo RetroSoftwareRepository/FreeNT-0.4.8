@@ -21,11 +21,11 @@
 #ifndef __WINE_LOCALSPL_PRIVATE__
 #define __WINE_LOCALSPL_PRIVATE__
 
-#include <windef.h>
+//#include <windef.h>
 
 /* ## DLL-wide Globals ## */
-extern HINSTANCE LOCALSPL_hInstance;
-void setup_provider(void);
+extern HINSTANCE LOCALSPL_hInstance DECLSPEC_HIDDEN;
+void setup_provider(void) DECLSPEC_HIDDEN;
 
 /* ## Resource-ID ## */
 #define IDS_LOCALPORT       500

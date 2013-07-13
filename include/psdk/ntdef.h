@@ -299,11 +299,31 @@
 #endif
 #endif /* DECLSPEC_ALIGN */
 
+#ifndef SYSTEM_CACHE_ALIGNMENT_SIZE
+#if defined(_AMD64_) || defined(_X86_)
+#define SYSTEM_CACHE_ALIGNMENT_SIZE 64
+#else
+#define SYSTEM_CACHE_ALIGNMENT_SIZE 128
+#endif
+#endif
+
+#ifndef DECLSPEC_CACHEALIGN
+#define DECLSPEC_CACHEALIGN DECLSPEC_ALIGN(SYSTEM_CACHE_ALIGNMENT_SIZE)
+#endif
+
+#ifndef DECLSPEC_SELECTANY
+#if (_MSC_VER >= 1100) || defined(__GNUC__)
+#define DECLSPEC_SELECTANY  __declspec(selectany)
+#else
+#define DECLSPEC_SELECTANY
+#endif
+#endif
+
 /* Use to silence unused variable warnings when it is intentional */
 #define UNREFERENCED_PARAMETER(P) {(P)=(P);}
 #define UNREFERENCED_LOCAL_VARIABLE(L) {(L)=(L);}
-#define DBG_UNREFERENCED_PARAMETER(P)
-#define DBG_UNREFERENCED_LOCAL_VARIABLE(L)
+#define DBG_UNREFERENCED_PARAMETER(P) {(P)=(P);}
+#define DBG_UNREFERENCED_LOCAL_VARIABLE(L) {(L)=(L);}
 
 /* min/max helper macros */
 #ifndef NOMINMAX
@@ -699,6 +719,15 @@ typedef struct _GROUP_AFFINITY {
 
 /* C_ASSERT Definition */
 #define C_ASSERT(expr) extern char (*c_assert(void)) [(expr) ? 1 : -1]
+
+/* Eliminate Microsoft C/C++ compiler warning 4715 */
+#if defined(_MSC_VER) && (_MSC_VER > 1200)
+# define DEFAULT_UNREACHABLE default: __assume(0)
+#elif defined(__clang__) || (defined(__GNUC__) && ((__GNUC__ > 4) || ((__GNUC__ == 4) && (__GNUC_MINOR__ >= 5))))
+# define DEFAULT_UNREACHABLE default: __builtin_unreachable()
+#else
+# define DEFAULT_UNREACHABLE default: break
+#endif
 
 #define VER_WORKSTATION_NT                  0x40000000
 #define VER_SERVER_NT                       0x80000000

@@ -19,15 +19,21 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_LEAN_AND_MEAN
-
-#include <windows.h>
+#define WIN32_NO_STATUS
+#define _INC_WINDOWS
+#define COM_NO_WINDOWS_H
+#include <stdarg.h>
+#include <windef.h>
+#include <winbase.h>
+#include <winreg.h>
+#include <winsvc.h>
+#include <winuser.h>
 #include <msi.h>
 #include <objbase.h>
 #include <stdio.h>
 
-#include "wine/debug.h"
-#include "wine/unicode.h"
+#include <wine/debug.h>
+#include <wine/unicode.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(msiexec);
 
@@ -108,10 +114,8 @@ static BOOL IsProductCode(LPWSTR str)
 static VOID StringListAppend(struct string_list **list, LPCWSTR str)
 {
 	struct string_list *entry;
-	DWORD size;
 
-	size = sizeof *entry + lstrlenW(str) * sizeof (WCHAR);
-	entry = HeapAlloc(GetProcessHeap(), 0, size);
+	entry = HeapAlloc(GetProcessHeap(), 0, FIELD_OFFSET(struct string_list, str[lstrlenW(str) + 1]));
 	if(!entry)
 	{
 		WINE_ERR("Out of memory!\n");
@@ -345,29 +349,57 @@ static DWORD DoDllUnregisterServer(LPCWSTR DllName)
 
 static DWORD DoRegServer(void)
 {
+    static const WCHAR msiserverW[] = {'M','S','I','S','e','r','v','e','r',0};
+    static const WCHAR msiexecW[] = {'\\','m','s','i','e','x','e','c',' ','/','V',0};
     SC_HANDLE scm, service;
-    CHAR path[MAX_PATH+12];
-    DWORD ret = 0;
+    WCHAR path[MAX_PATH+12];
+    DWORD len, ret = 0;
 
-    scm = OpenSCManagerA(NULL, SERVICES_ACTIVE_DATABASEA, SC_MANAGER_CREATE_SERVICE);
-    if (!scm)
+    if (!(scm = OpenSCManagerW(NULL, SERVICES_ACTIVE_DATABASEW, SC_MANAGER_CREATE_SERVICE)))
     {
         fprintf(stderr, "Failed to open the service control manager.\n");
         return 1;
     }
-
-    GetSystemDirectoryA(path, MAX_PATH);
-    lstrcatA(path, "\\msiexec.exe /V");
-
-    service = CreateServiceA(scm, "MSIServer", "MSIServer", GENERIC_ALL,
-                             SERVICE_WIN32_SHARE_PROCESS, SERVICE_DEMAND_START,
-                             SERVICE_ERROR_NORMAL, path, NULL, NULL,
-                             NULL, NULL, NULL);
-
-    if (service) CloseServiceHandle(service);
+    len = GetSystemDirectoryW(path, MAX_PATH);
+    lstrcpyW(path + len, msiexecW);
+    if ((service = CreateServiceW(scm, msiserverW, msiserverW, GENERIC_ALL,
+                                  SERVICE_WIN32_SHARE_PROCESS, SERVICE_DEMAND_START,
+                                  SERVICE_ERROR_NORMAL, path, NULL, NULL, NULL, NULL, NULL)))
+    {
+        CloseServiceHandle(service);
+    }
     else if (GetLastError() != ERROR_SERVICE_EXISTS)
     {
         fprintf(stderr, "Failed to create MSI service\n");
+        ret = 1;
+    }
+    CloseServiceHandle(scm);
+    return ret;
+}
+
+static DWORD DoUnregServer(void)
+{
+    static const WCHAR msiserverW[] = {'M','S','I','S','e','r','v','e','r',0};
+    SC_HANDLE scm, service;
+    DWORD ret = 0;
+
+    if (!(scm = OpenSCManagerW(NULL, SERVICES_ACTIVE_DATABASEW, SC_MANAGER_CONNECT)))
+    {
+        fprintf(stderr, "Failed to open service control manager\n");
+        return 1;
+    }
+    if ((service = OpenServiceW(scm, msiserverW, DELETE)))
+    {
+        if (!DeleteService(service))
+        {
+            fprintf(stderr, "Failed to delete MSI service\n");
+            ret = 1;
+        }
+        CloseServiceHandle(service);
+    }
+    else if (GetLastError() != ERROR_SERVICE_DOES_NOT_EXIST)
+    {
+        fprintf(stderr, "Failed to open MSI service\n");
         ret = 1;
     }
     CloseServiceHandle(scm);
@@ -471,12 +503,12 @@ static void process_args( WCHAR *cmdline, int *pargc, WCHAR ***pargv )
 	*pargv = argv;
 }
 
-static BOOL process_args_from_reg( LPWSTR ident, int *pargc, WCHAR ***pargv )
+static BOOL process_args_from_reg( const WCHAR *ident, int *pargc, WCHAR ***pargv )
 {
 	LONG r;
-	HKEY hkey = 0, hkeyArgs = 0;
+	HKEY hkey;
 	DWORD sz = 0, type = 0;
-	LPWSTR buf = NULL;
+	WCHAR *buf;
 	BOOL ret = FALSE;
 
 	r = RegOpenKeyW(HKEY_LOCAL_MACHINE, InstallRunOnce, &hkey);
@@ -485,8 +517,15 @@ static BOOL process_args_from_reg( LPWSTR ident, int *pargc, WCHAR ***pargv )
 	r = RegQueryValueExW(hkey, ident, 0, &type, 0, &sz);
 	if(r == ERROR_SUCCESS && type == REG_SZ)
 	{
-		buf = HeapAlloc(GetProcessHeap(), 0, sz);
-		r = RegQueryValueExW(hkey, ident, 0, &type, (LPBYTE)buf, &sz);
+		int len = lstrlenW( *pargv[0] );
+		if (!(buf = HeapAlloc( GetProcessHeap(), 0, sz + (len + 1) * sizeof(WCHAR) )))
+		{
+			RegCloseKey( hkey );
+			return FALSE;
+		}
+		memcpy( buf, *pargv[0], len * sizeof(WCHAR) );
+		buf[len++] = ' ';
+		r = RegQueryValueExW(hkey, ident, 0, &type, (LPBYTE)(buf + len), &sz);
 		if( r == ERROR_SUCCESS )
 		{
 			process_args(buf, pargc, pargv);
@@ -494,7 +533,7 @@ static BOOL process_args_from_reg( LPWSTR ident, int *pargc, WCHAR ***pargv )
 		}
 		HeapFree(GetProcessHeap(), 0, buf);
 	}
-	RegCloseKey(hkeyArgs);
+	RegCloseKey(hkey);
 	return ret;
 }
 
@@ -563,7 +602,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 		{
 			FunctionRegServer = TRUE;
 		}
-		else if (msi_option_equal(argvW[i], "unregserver") || msi_option_equal(argvW[i], "unregister"))
+		else if (msi_option_equal(argvW[i], "unregserver") || msi_option_equal(argvW[i], "unregister")
+			||  msi_option_equal(argvW[i], "unreg"))
 		{
 			FunctionUnregServer = TRUE;
 		}
@@ -878,6 +918,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 				InstallUILevel = INSTALLUILEVEL_BASIC|INSTALLUILEVEL_ENDDIALOG;
 				WINE_FIXME("Unknown modifier: !\n");
 			}
+			else if(msi_strequal(argvW[i]+2, "b!"))
+			{
+				InstallUILevel = INSTALLUILEVEL_BASIC;
+				WINE_FIXME("Unknown modifier: !\n");
+			}
 			else
 			{
 				fprintf(stderr, "Unknown option \"%s\" for UI level\n",
@@ -970,7 +1015,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 	}
 	else if (FunctionUnregServer)
 	{
-		WINE_FIXME( "/unregserver not implemented yet, ignoring\n" );
+		ReturnCode = DoUnregServer();
 	}
 	else if (FunctionServer)
 	{

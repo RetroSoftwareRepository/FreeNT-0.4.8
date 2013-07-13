@@ -1,5 +1,4 @@
-/* $Id: main.c 12852 2005-01-06 13:58:04Z mf $
- *
+/*
  * PROJECT:         ReactOS Multimedia Control Panel
  * FILE:            dll/cpl/mmsys/mmsys.c
  * PURPOSE:         ReactOS Multimedia Control Panel
@@ -905,6 +904,11 @@ SoundsDlgProc(HWND hwndDlg,
               WPARAM wParam,
               LPARAM lParam)
 {
+    OPENFILENAMEW ofn;
+    WCHAR filename[MAX_PATH];
+    LPWSTR pFileName;
+    LRESULT lResult;
+
     switch (uMsg)
     {
         case WM_INITDIALOG:
@@ -937,6 +941,41 @@ SoundsDlgProc(HWND hwndDlg,
         {
             switch (LOWORD(wParam))
             {
+                case IDC_BROWSE_SOUND:
+                {
+                    ZeroMemory(&ofn, sizeof(OPENFILENAMEW));
+                    ofn.lStructSize = sizeof(OPENFILENAMEW);
+                    ofn.hwndOwner = hwndDlg;
+                    ofn.lpstrFile = filename;
+                    ofn.lpstrFile[0] = L'\0';
+                    ofn.nMaxFile = MAX_PATH;
+                    ofn.lpstrFilter = L"Wave Files (*.wav)\0*.wav\0"; //FIXME non-nls
+                    ofn.nFilterIndex = 0;
+                    ofn.lpstrFileTitle = L"Search for new sounds"; //FIXME non-nls
+                    ofn.nMaxFileTitle = wcslen(ofn.lpstrFileTitle);
+                    ofn.lpstrInitialDir = NULL;
+                    ofn.Flags = OFN_FILEMUSTEXIST;
+
+                    if (GetOpenFileNameW(&ofn) == TRUE)
+                    {
+                         // FIXME search if list already contains that sound
+
+                        // extract file name
+                        pFileName = wcsrchr(filename, L'\\');
+                        ASSERT(pFileName != NULL);
+                        pFileName++;
+
+                        // add to list
+                        lResult = SendDlgItemMessageW(hwndDlg, IDC_SOUND_LIST, CB_ADDSTRING, (WPARAM)0, (LPARAM)pFileName);
+                        if (lResult != CB_ERR)
+                        {
+                            // add path and select item
+                            SendDlgItemMessageW(hwndDlg, IDC_SOUND_LIST, CB_SETITEMDATA, (WPARAM)lResult, (LPARAM)_wcsdup(filename));
+                            SendDlgItemMessageW(hwndDlg, IDC_SOUND_LIST, CB_SETCURSEL, (WPARAM)lResult, (LPARAM)0);
+                        }
+                    }
+                    break;
+                }
                 case IDC_PLAY_SOUND:
                 {
                     LRESULT lIndex;

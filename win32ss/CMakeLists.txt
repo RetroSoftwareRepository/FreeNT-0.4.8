@@ -18,7 +18,7 @@ endif()
 add_subdirectory(gdi/gdi32)
 add_subdirectory(reactx)
 add_subdirectory(user/user32)
-add_subdirectory(user/win32csr)
+add_subdirectory(user/winsrv)
 
 spec2def(win32k.sys win32k.spec ADD_IMPORTLIB)
 
@@ -105,7 +105,6 @@ list(APPEND SOURCE
     user/ntuser/caret.c
     user/ntuser/class.c
     user/ntuser/clipboard.c
-    user/ntuser/csr.c
     user/ntuser/defwnd.c
     user/ntuser/desktop.c
     user/ntuser/display.c
@@ -180,7 +179,8 @@ list(APPEND SOURCE
     gdi/ntgdi/xformobj.c
     gdi/eng/stubs.c
     gdi/eng/umpdstubs.c
-    win32k.rc)
+    win32k.rc
+    ${CMAKE_CURRENT_BINARY_DIR}/win32k.def)
 
 if(USE_DIBLIB)
     add_definitions(-D_USE_DIBLIB_)
@@ -201,7 +201,7 @@ else()
 endif()
 
 if(ARCH STREQUAL "i386")
-list(APPEND SOURCE
+list(APPEND ASM_SOURCE
     gdi/dib/i386/dib24bpp_hline.s
     gdi/dib/i386/dib32bpp_hline.s
     gdi/dib/i386/dib32bpp_colorfill.s
@@ -217,9 +217,8 @@ if(KDBG)
         gdi/ntgdi/gdikdbgext.c)
 endif()
 
-add_library(win32k SHARED
-    ${CMAKE_CURRENT_BINARY_DIR}/win32k.def
-    ${SOURCE})
+add_asm_files(win32k_asm ${ASM_SOURCE})
+add_library(win32k SHARED ${SOURCE} ${win32k_asm})
 
 set_module_type(win32k kernelmodedriver)
 
@@ -236,5 +235,7 @@ add_importlibs(win32k ntoskrnl hal ftfd)
 add_pch(win32k pch.h)
 add_cd_file(TARGET win32k DESTINATION reactos/system32 FOR all)
 
-add_library(win32ksys sys-stubs.S)
 set_source_files_properties(sys-stubs.S PROPERTIES OBJECT_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/w32ksvc.h)
+add_asm_files(win32ksys_asm sys-stubs.S)
+add_library(win32ksys ${win32ksys_asm})
+set_target_properties(win32ksys PROPERTIES LINKER_LANGUAGE "C")

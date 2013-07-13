@@ -18,8 +18,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
-#include <precomp.h>
-#include <docobj.h>
+#include "precomp.h"
+//#include <docobj.h>
 
 /*
  * SysPagerWnd
@@ -51,11 +51,12 @@ SysPagerWnd_CreateNotifyItemData(IN OUT PSYS_PAGER_WND_DATA This)
     PNOTIFY_ITEM *findNotifyPointer = &This->NotifyItems;
     PNOTIFY_ITEM notifyItem;
 
-    notifyItem = malloc(sizeof(*notifyItem));
+    notifyItem = HeapAlloc(hProcessHeap,
+                           HEAP_ZERO_MEMORY,
+                           sizeof(*notifyItem));
     if (notifyItem == NULL)
         return NULL;
 
-    ZeroMemory(notifyItem, sizeof(*notifyItem));
     notifyItem->next = NULL;
 
     while (*findNotifyPointer != NULL)
@@ -239,7 +240,6 @@ SysPagerWnd_RemoveButton(IN OUT PSYS_PAGER_WND_DATA This,
         PNOTIFY_ITEM updateItem;
         deleteItem = *NotifyPointer;
 
-
         SendMessage(This->hWndToolbar,
                     TB_DELETEBUTTON,
                     deleteItem->Index,
@@ -249,7 +249,9 @@ SysPagerWnd_RemoveButton(IN OUT PSYS_PAGER_WND_DATA This,
 
         if (!(deleteItem->iconData.dwState & NIS_HIDDEN))
             This->VisibleButtonCount--;
-        free(deleteItem);
+        HeapFree(hProcessHeap,
+                 0,
+                 deleteItem);
         This->ButtonCount--;
 
         while (updateItem != NULL)
@@ -378,7 +380,7 @@ SysPagerWnd_Create(IN OUT PSYS_PAGER_WND_DATA This)
                     sizeof(TBBUTTON),
                     0);
 
-        This->SysIcons = ImageList_Create(16, 16, ILC_COLOR32, 0, 1000);
+        This->SysIcons = ImageList_Create(16, 16, ILC_COLOR32 | ILC_MASK, 0, 1000);
         SendMessage(This->hWndToolbar, TB_SETIMAGELIST, 0, (LPARAM)This->SysIcons);
 
         BtnSize.cx = BtnSize.cy = 18;
@@ -611,17 +613,15 @@ static HWND
 CreateSysPagerWnd(IN HWND hWndParent,
                   IN BOOL bVisible)
 {
-    PSYS_PAGER_WND_DATA TcData;
+    PSYS_PAGER_WND_DATA SpData;
     DWORD dwStyle;
     HWND hWnd = NULL;
 
-    TcData = HeapAlloc(hProcessHeap,
-                       0,
-                       sizeof(*TcData));
-    if (TcData != NULL)
+    SpData = HeapAlloc(hProcessHeap,
+                       HEAP_ZERO_MEMORY,
+                       sizeof(*SpData));
+    if (SpData != NULL)
     {
-        ZeroMemory(TcData, sizeof(*TcData));
-
         /* Create the window. The tray window is going to move it to the correct
            position and resize it as needed. */
         dwStyle = WS_CHILD | WS_CLIPSIBLINGS;
@@ -639,17 +639,19 @@ CreateSysPagerWnd(IN HWND hWndParent,
                               hWndParent,
                               NULL,
                               hExplorerInstance,
-                              TcData);
+                              SpData);
 
-        if (hWnd == NULL)
+        if (hWnd != NULL)
+        {
+            SetWindowTheme(hWnd, L"TrayNotify", NULL);
+        }
+        else
         {
             HeapFree(hProcessHeap,
                      0,
-                     TcData);
+                     SpData);
         }
     }
-
-    SetWindowTheme(hWnd, L"TrayNotify", NULL);
 
     return hWnd;
 
@@ -700,25 +702,6 @@ static const struct
     { FALSE, 0, TEXT("dddd") },
     { FALSE, DATE_SHORTDATE, NULL }
 };
-
-HRESULT RegGetDWord(HKEY hKey, LPCTSTR szValueName, DWORD * lpdwResult)
-{
-    LONG lResult;
-    DWORD dwDataSize = sizeof(DWORD);
-    DWORD dwType = 0;
-
-    // Check input parameters...
-    if (hKey == NULL || lpdwResult == NULL) return E_INVALIDARG;
-
-    // Get dword value from the registry...
-    lResult = RegQueryValueEx(hKey, szValueName, 0, &dwType, (LPBYTE) lpdwResult, &dwDataSize );
-
-    // Check result and make sure the registry value is a DWORD(REG_DWORD)...
-    if (lResult != ERROR_SUCCESS) return HRESULT_FROM_WIN32(lResult);
-    else if (dwType != REG_DWORD) return DISP_E_TYPEMISMATCH;
-
-    return NOERROR;
-}
 
 #define CLOCKWND_FORMAT_COUNT (sizeof(ClockWndFormats) / sizeof(ClockWndFormats[0]))
 
@@ -775,7 +758,7 @@ TrayClockWnd_UpdateTheme(IN OUT PTRAY_CLOCK_WND_DATA This)
                      TMT_FONT,
                      &clockFont);
 
-        hFont = CreateFontIndirect(&clockFont);
+        hFont = CreateFontIndirectW(&clockFont);
 
         TrayClockWnd_SetFont(This,
                              hFont,
@@ -1375,13 +1358,10 @@ CreateTrayClockWnd(IN HWND hWndParent,
     HWND hWnd = NULL;
 
     TcData = HeapAlloc(hProcessHeap,
-                       0,
+                       HEAP_ZERO_MEMORY,
                        sizeof(*TcData));
     if (TcData != NULL)
     {
-        ZeroMemory(TcData,
-                   sizeof(*TcData));
-
         TcData->IsHorizontal = TRUE;
         /* Create the window. The tray window is going to move it to the correct
            position and resize it as needed. */
@@ -1400,16 +1380,19 @@ CreateTrayClockWnd(IN HWND hWndParent,
                               hWndParent,
                               NULL,
                               hExplorerInstance,
-                              (LPVOID)TcData);
+                              TcData);
 
-        if (hWnd == NULL)
+        if (hWnd != NULL)
+        {
+            SetWindowTheme(hWnd, L"TrayNotify", NULL);
+        }
+        else
         {
             HeapFree(hProcessHeap,
                      0,
                      TcData);
         }
     }
-    SetWindowTheme(hWnd, L"TrayNotify", NULL);
 
     return hWnd;
 
@@ -1700,6 +1683,17 @@ TrayNotify_NotifyMsg(IN HWND hwnd,
     }
 }
 
+BOOL
+TrayNotify_GetClockRect(IN HWND hwnd,
+                        OUT PRECT rcClock)
+{
+    PTRAY_NOTIFY_WND_DATA This = (PTRAY_NOTIFY_WND_DATA)GetWindowLongPtr(hwnd, 0);
+    if (!IsWindowVisible(This->hWndTrayClock))
+        return FALSE;
+
+    return GetWindowRect(This->hWndTrayClock, rcClock);
+}
+
 static LRESULT CALLBACK
 TrayNotifyWndProc(IN HWND hwnd,
                   IN UINT uMsg,
@@ -1856,13 +1850,10 @@ CreateTrayNotifyWnd(IN OUT ITrayWindow *TrayWindow,
         return NULL;
 
     TnData = HeapAlloc(hProcessHeap,
-                       0,
+                       HEAP_ZERO_MEMORY,
                        sizeof(*TnData));
     if (TnData != NULL)
     {
-        ZeroMemory(TnData,
-                   sizeof(*TnData));
-
         TnData->TrayWindow = TrayWindow;
         TnData->HideClock = bHideClock;
 
@@ -1879,7 +1870,7 @@ CreateTrayNotifyWnd(IN OUT ITrayWindow *TrayWindow,
                               hWndTrayWindow,
                               NULL,
                               hExplorerInstance,
-                              (LPVOID)TnData);
+                              TnData);
 
         if (hWnd == NULL)
         {

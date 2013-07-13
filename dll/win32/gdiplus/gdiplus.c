@@ -16,21 +16,21 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <stdarg.h>
-#include <math.h>
+//#include <stdarg.h>
+//#include <math.h>
 
-#include "windef.h"
-#include "winbase.h"
-#include "winerror.h"
-#include "wine/debug.h"
-#include "wingdi.h"
+//#include "windef.h"
+//#include "winbase.h"
+//#include "winerror.h"
+#include <wine/debug.h>
+//#include "wingdi.h"
 
-#include "objbase.h"
+//#include "objbase.h"
 
-#include "winreg.h"
-#include "shlwapi.h"
+//#include "winreg.h"
+//#include "shlwapi.h"
 
-#include "gdiplus.h"
+//#include "gdiplus.h"
 #include "gdiplus_private.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(gdiplus);
@@ -442,9 +442,9 @@ void convert_32bppARGB_to_32bppPARGB(UINT width, UINT height,
         for (x=0; x<width; x++)
         {
             BYTE alpha=src[3];
-            *dst++ = *src++ * alpha / 255;
-            *dst++ = *src++ * alpha / 255;
-            *dst++ = *src++ * alpha / 255;
+            *dst++ = (*src++ * alpha + 127) / 255;
+            *dst++ = (*src++ * alpha + 127) / 255;
+            *dst++ = (*src++ * alpha + 127) / 255;
             *dst++ = *src++;
         }
     }

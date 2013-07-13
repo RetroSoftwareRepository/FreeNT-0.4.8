@@ -236,8 +236,7 @@ BasepComputeProcessPath(IN PBASE_SEARCH_PATH_TYPE PathOrder,
                 if (NtCurrentTeb()->NtTib.SubSystemTib)
                 {
                     /* This means someone added RTL_PERTHREAD_CURDIR */
-                    UNIMPLEMENTED;
-                    while (TRUE);
+                    UNIMPLEMENTED_DBGBREAK();
                 }
 
                 /* We do not. Do we have the LDR_ENTRY for the executable? */
@@ -987,11 +986,11 @@ DWORD
 WINAPI
 GetFullPathNameA(IN LPCSTR lpFileName,
                  IN DWORD nBufferLength,
-                 IN LPSTR lpBuffer,
-                 IN LPSTR *lpFilePart)
+                 OUT LPSTR lpBuffer,
+                 OUT LPSTR *lpFilePart)
 {
     NTSTATUS Status;
-    PWCHAR Buffer;
+    PWCHAR Buffer = NULL;
     ULONG PathSize, FilePartSize;
     ANSI_STRING AnsiString;
     UNICODE_STRING FileNameString, UniString;
@@ -1100,11 +1099,11 @@ DWORD
 WINAPI
 GetFullPathNameW(IN LPCWSTR lpFileName,
                  IN DWORD nBufferLength,
-                 IN LPWSTR lpBuffer,
+                 OUT LPWSTR lpBuffer,
                  OUT LPWSTR *lpFilePart)
 {
     /* Call Rtl to do the work */
-    return RtlGetFullPathName_U((LPWSTR)lpFileName,
+    return RtlGetFullPathName_U(lpFileName,
                                 nBufferLength * sizeof(WCHAR),
                                 lpBuffer,
                                 lpFilePart) / sizeof(WCHAR);
@@ -1431,14 +1430,14 @@ SearchPathW(IN LPCWSTR lpPath,
     }
 
 Quickie:
-    /* Check if there was a dynamic path stirng to free */
+    /* Check if there was a dynamic path string to free */
     if ((PathString.Buffer != lpPath) && (PathString.Buffer))
     {
         /* And free it */
         RtlFreeHeap(RtlGetProcessHeap(), 0, PathString.Buffer);
     }
 
-    /* Return the final result lenght */
+    /* Return the final result length */
     return Result;
 }
 
@@ -2080,6 +2079,7 @@ GetTempPathW(IN DWORD count,
     static const WCHAR temp[] = { 'T', 'E', 'M', 'P', 0 };
     static const WCHAR userprofile[] = { 'U','S','E','R','P','R','O','F','I','L','E',0 };
     WCHAR tmp_path[MAX_PATH];
+    WCHAR full_tmp_path[MAX_PATH];
     UINT ret;
 
     DPRINT("%u,%p\n", count, path);
@@ -2088,42 +2088,44 @@ GetTempPathW(IN DWORD count,
         !(ret = GetEnvironmentVariableW( temp, tmp_path, MAX_PATH )) &&
         !(ret = GetEnvironmentVariableW( userprofile, tmp_path, MAX_PATH )) &&
         !(ret = GetWindowsDirectoryW( tmp_path, MAX_PATH )))
+    {
         return 0;
+    }
 
-   if (ret > MAX_PATH)
-   {
-     SetLastError(ERROR_FILENAME_EXCED_RANGE);
-     return 0;
-   }
+    if (ret > MAX_PATH)
+    {
+        SetLastError(ERROR_FILENAME_EXCED_RANGE);
+        return 0;
+    }
 
-   ret = GetFullPathNameW(tmp_path, MAX_PATH, tmp_path, NULL);
-   if (!ret) return 0;
+    ret = GetFullPathNameW(tmp_path, MAX_PATH, full_tmp_path, NULL);
+    if (!ret) return 0;
 
-   if (ret > MAX_PATH - 2)
-   {
-     SetLastError(ERROR_FILENAME_EXCED_RANGE);
-     return 0;
-   }
+    if (ret > MAX_PATH - 2)
+    {
+        SetLastError(ERROR_FILENAME_EXCED_RANGE);
+        return 0;
+    }
 
-   if (tmp_path[ret-1] != '\\')
-   {
-     tmp_path[ret++] = '\\';
-     tmp_path[ret]   = '\0';
-   }
+    if (full_tmp_path[ret-1] != '\\')
+    {
+        full_tmp_path[ret++] = '\\';
+        full_tmp_path[ret]   = '\0';
+    }
 
-   ret++; /* add space for terminating 0 */
+    ret++; /* add space for terminating 0 */
 
-   if (count)
-   {
-     lstrcpynW(path, tmp_path, count);
-     if (count >= ret)
-         ret--; /* return length without 0 */
-     else if (count < 4)
-         path[0] = 0; /* avoid returning ambiguous "X:" */
-   }
+    if (count)
+    {
+        lstrcpynW(path, full_tmp_path, count);
+        if (count >= ret)
+            ret--; /* return length without 0 */
+        else if (count < 4)
+            path[0] = 0; /* avoid returning ambiguous "X:" */
+    }
 
-   DPRINT("GetTempPathW returning %u, %S\n", ret, path);
-   return ret;
+    DPRINT("GetTempPathW returning %u, %S\n", ret, path);
+    return ret;
 }
 
 /*

@@ -6,6 +6,8 @@
 #include <hidpddi.h>
 #include <hidpi.h>
 #define NDEBUG
-#include <debug.h>
+//#include <debug.h>
 #include "hidparser.h"
 #include <stdio.h>
+
+#define HIDPARSE_TAG 'PdiH'

@@ -113,10 +113,10 @@
 @ stdcall CredGetSessionTypes(long ptr)
 @ stub CredGetTargetInfoA
 @ stub CredGetTargetInfoW
-@ stub CredIsMarshaledCredentialA
-@ stub CredIsMarshaledCredentialW
-@ stub CredMarshalCredentialA
-@ stub CredMarshalCredentialW
+@ stdcall CredIsMarshaledCredentialA(str)
+@ stdcall CredIsMarshaledCredentialW(wstr)
+@ stdcall CredMarshalCredentialA(long ptr str)
+@ stdcall CredMarshalCredentialW(long ptr wstr)
 @ stub CredProfileLoaded
 @ stdcall CredReadA(str long long ptr)
 @ stdcall CredReadDomainCredentialsA(ptr long ptr ptr)
@@ -391,7 +391,6 @@
 @ stdcall LsaQuerySecurityObject(ptr long ptr)
 @ stdcall LsaQueryTrustedDomainInfo(ptr ptr long ptr)
 @ stdcall LsaQueryTrustedDomainInfoByName(ptr ptr long ptr)
-@ stdcall LsaRegisterPolicyChangeNotification(long long)
 @ stdcall LsaRemoveAccountRights(ptr ptr long ptr long)
 @ stdcall LsaRemovePrivilegesFromAccount(ptr long ptr)
 @ stdcall LsaRetrievePrivateData(ptr ptr ptr)
@@ -406,7 +405,6 @@
 @ stdcall LsaSetTrustedDomainInfoByName(ptr ptr long ptr)
 @ stdcall LsaSetTrustedDomainInformation(ptr ptr long ptr)
 @ stdcall LsaStorePrivateData(ptr ptr ptr)
-@ stdcall LsaUnregisterPolicyChangeNotification(long long)
 @ stdcall MD4Final(ptr)
 @ stdcall MD4Init(ptr)
 @ stdcall MD4Update(ptr ptr long)
@@ -555,13 +553,13 @@
 @ stdcall ReportEventA(long long long long ptr long long str ptr)
 @ stdcall ReportEventW(long long long long ptr long long wstr ptr)
 @ stdcall RevertToSelf()
-@ stub SaferCloseLevel
-@ stub SaferComputeTokenFromLevel
+@ stdcall SaferCloseLevel(ptr)
+@ stdcall SaferComputeTokenFromLevel(ptr ptr ptr long ptr)
 @ stdcall SaferCreateLevel(long long long ptr ptr)
 @ stub SaferGetLevelInformation
 @ stdcall SaferGetPolicyInformation(long long long ptr ptr ptr)
-@ stub SaferIdentifyLevel
-@ stub SaferRecordEventLogEntry
+@ stdcall SaferIdentifyLevel(long ptr ptr ptr)
+@ stdcall SaferRecordEventLogEntry(ptr wstr ptr)
 @ stub SaferSetLevelInformation
 @ stub SaferSetPolicyInformation
 @ stub SaferiChangeRegistryScope

@@ -16,17 +16,21 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#define WIN32_NO_STATUS
+#define _INC_WINDOWS
+#define COM_NO_WINDOWS_H
+
 #include <stdarg.h>
 
-#include "windef.h"
-#include "winbase.h"
-#include "wingdi.h"
-#include "winuser.h"
-#include "vfw.h"
+#include <windef.h>
+#include <winbase.h>
+#include <wingdi.h>
+//#include "winuser.h"
+#include <vfw.h>
 
 #include "avifile_private.h"
 
-#include "wine/debug.h"
+#include <wine/debug.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(avifile);
 
@@ -307,8 +311,7 @@ static HRESULT WINAPI IGetFrame_fnSetFormat(IGetFrame *iface,
   if (sInfo.fccType != streamtypeVIDEO)
     return AVIERR_UNSUPPORTED;
 
-  This->bFormatChanges =
-    (sInfo.dwFlags & AVISTREAMINFO_FORMATCHANGES ? TRUE : FALSE );
+  This->bFormatChanges = (sInfo.dwFlags & AVISTREAMINFO_FORMATCHANGES) != 0;
   This->dwFormatChangeCount = sInfo.dwFormatChangeCount;
   This->dwEditCount         = sInfo.dwEditCount;
   This->lCurrentFrame       = -1;
@@ -430,7 +433,7 @@ static HRESULT WINAPI IGetFrame_fnSetFormat(IGetFrame *iface,
     }
 
     if (lpBits == NULL) {
-      register DWORD size = This->lpOutFormat->biClrUsed * sizeof(RGBQUAD);
+      DWORD size = This->lpOutFormat->biClrUsed * sizeof(RGBQUAD);
 
       size += This->lpOutFormat->biSize + This->lpOutFormat->biSizeImage;
       This->lpOutFormat = HeapReAlloc(GetProcessHeap(), 0, This->lpOutFormat, size);

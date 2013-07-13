@@ -17,24 +17,28 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "config.h"
+#define WIN32_NO_STATUS
+#define _INC_WINDOWS
+#define COM_NO_WINDOWS_H
 
-#include <stdarg.h>
+#include <config.h>
+
+//#include <stdarg.h>
 #include <stdio.h>
 
 #define COBJMACROS
 #define NONAMELESSUNION
 
-#include "windef.h"
-#include "winbase.h"
-#include "winternl.h"
-#include "objbase.h"
-#include "wincodec.h"
-#include "wincodecsdk.h"
+#include <windef.h>
+#include <winbase.h>
+#include <winternl.h>
+#include <objbase.h>
+//#include "wincodec.h"
+#include <wincodecsdk.h>
 
 #include "wincodecs_private.h"
 
-#include "wine/debug.h"
+#include <wine/debug.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(wincodecs);
 
@@ -60,7 +64,7 @@ static inline MetadataHandler *impl_from_IWICPersistStream(IWICPersistStream *if
 
 static void MetadataHandler_FreeItems(MetadataHandler *This)
 {
-    int i;
+    DWORD i;
 
     for (i=0; i<This->item_count; i++)
     {
@@ -555,7 +559,7 @@ static HRESULT WINAPI MetadataHandlerEnum_Next(IWICEnumMetadataItem *iface,
     MetadataHandlerEnum *This = impl_from_IWICEnumMetadataItem(iface);
     ULONG new_index;
     HRESULT hr=S_FALSE;
-    int i;
+    ULONG i;
 
     TRACE("(%p,%i)\n", iface, celt);
 

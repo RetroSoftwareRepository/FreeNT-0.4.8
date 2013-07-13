@@ -632,10 +632,16 @@ typedef enum _FSINFOCLASS {
     FileFsMaximumInformation
 } FS_INFORMATION_CLASS, *PFS_INFORMATION_CLASS;
 
-typedef enum _KEY_INFORMATION_CLASS {
-    KeyBasicInformation,
-    KeyNodeInformation,
-    KeyFullInformation
+typedef enum _KEY_INFORMATION_CLASS { 
+  KeyBasicInformation           = 0,
+  KeyNodeInformation            = 1,
+  KeyFullInformation            = 2,
+  KeyNameInformation            = 3,
+  KeyCachedInformation          = 4,
+  KeyFlagsInformation           = 5,
+  KeyVirtualizationInformation  = 6,
+  KeyHandleTagsInformation      = 7,
+  MaxKeyInfoClass               = 8
 } KEY_INFORMATION_CLASS;
 
 typedef enum _KEY_VALUE_INFORMATION_CLASS {
@@ -855,18 +861,18 @@ typedef struct _TIMER_BASIC_INFORMATION
 } TIMER_BASIC_INFORMATION, *PTIMER_BASIC_INFORMATION;
 
 
-/* return type of RtlDetermineDosPathNameType_U (FIXME: not the correct names) */
-typedef enum
+/* Return type of RtlDetermineDosPathNameType_U */
+typedef enum _RTL_PATH_TYPE
 {
-    INVALID_PATH = 0,
-    UNC_PATH,              /* "//foo" */
-    ABSOLUTE_DRIVE_PATH,   /* "c:/foo" */
-    RELATIVE_DRIVE_PATH,   /* "c:foo" */
-    ABSOLUTE_PATH,         /* "/foo" */
-    RELATIVE_PATH,         /* "foo" */
-    DEVICE_PATH,           /* "//./foo" */
-    UNC_DOT_PATH           /* "//." */
-} DOS_PATHNAME_TYPE;
+    RtlPathTypeUnknown,
+    RtlPathTypeUncAbsolute,
+    RtlPathTypeDriveAbsolute,
+    RtlPathTypeDriveRelative,
+    RtlPathTypeRooted,
+    RtlPathTypeRelative,
+    RtlPathTypeLocalDevice,
+    RtlPathTypeRootLocalDevice,
+} RTL_PATH_TYPE;
 
 /***********************************************************************
  * IA64 specific types and data structures
@@ -1078,19 +1084,17 @@ typedef struct _RTL_RWLOCK {
 
 typedef struct _SYSTEM_BASIC_INFORMATION {
 #ifdef __WINESRC__
-    DWORD dwUnknown1;
-    ULONG uKeMaximumIncrement;
-    ULONG uPageSize;
-    ULONG uMmNumberOfPhysicalPages;
-    ULONG uMmLowestPhysicalPage;
-    ULONG uMmHighestPhysicalPage;
-    ULONG uAllocationGranularity;
-    PVOID pLowestUserAddress;
-    PVOID pMmHighestUserAddress;
-    ULONG uKeActiveProcessors;
-    BYTE bKeNumberProcessors;
-    BYTE bUnknown2;
-    WORD wUnknown3;
+    DWORD     unknown;
+    ULONG     KeMaximumIncrement;
+    ULONG     PageSize;
+    ULONG     MmNumberOfPhysicalPages;
+    ULONG     MmLowestPhysicalPage;
+    ULONG     MmHighestPhysicalPage;
+    ULONG_PTR AllocationGranularity;
+    PVOID     LowestUserAddress;
+    PVOID     HighestUserAddress;
+    ULONG_PTR ActiveProcessorsAffinityMask;
+    BYTE      NumberOfProcessors;
 #else
     BYTE Reserved1[24];
     PVOID Reserved2[4];
@@ -2124,7 +2128,7 @@ NTSTATUS  WINAPI RtlDestroyHandleTable(RTL_HANDLE_TABLE *);
 HANDLE    WINAPI RtlDestroyHeap(HANDLE);
 void      WINAPI RtlDestroyProcessParameters(RTL_USER_PROCESS_PARAMETERS*);
 NTSTATUS  WINAPI RtlDestroyQueryDebugBuffer(PDEBUG_BUFFER);
-DOS_PATHNAME_TYPE WINAPI RtlDetermineDosPathNameType_U(PCWSTR);
+RTL_PATH_TYPE WINAPI RtlDetermineDosPathNameType_U(PCWSTR);
 BOOLEAN   WINAPI RtlDoesFileExists_U(LPCWSTR);
 BOOLEAN   WINAPI RtlDosPathNameToNtPathName_U(PCWSTR,PUNICODE_STRING,PCWSTR*,CURDIR*);
 ULONG     WINAPI RtlDosSearchPath_U(LPCWSTR, LPCWSTR, LPCWSTR, ULONG, LPWSTR, LPWSTR*);

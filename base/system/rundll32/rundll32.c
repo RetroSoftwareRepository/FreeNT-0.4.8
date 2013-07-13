@@ -9,8 +9,6 @@
  * PROGRAMMER:      ShadowFlare (blakflare@hotmail.com)
  */
 
-#define WIN32_LEAN_AND_MEAN
-
 // Both UNICODE and _UNICODE must be either defined or undefined
 // because some headers use UNICODE and others use _UNICODE
 #ifdef UNICODE
@@ -23,11 +21,15 @@
 #endif
 #endif
 
-#include <windows.h>
-#include <stdio.h>
-#include <string.h>
-#include <malloc.h>
+#define WIN32_NO_STATUS
+#include <stdarg.h>
+#include <stdlib.h>
+#include <windef.h>
+#include <winbase.h>
+#include <winnls.h>
+#include <winuser.h>
 #include <tchar.h>
+
 #include "resource.h"
 
 typedef int (WINAPI *DllWinMainW)(
@@ -341,7 +343,7 @@ int WINAPI _tWinMain(
     DllWinMainW fnDllWinMainW;
     DllWinMainA fnDllWinMainA;
     HWND hWindow;
-    int nRetVal,i;
+    int i;
     size_t nStrLen;
 
     // Get command-line in argc-argv format
@@ -378,8 +380,6 @@ int WINAPI _tWinMain(
         lptCmdLine = argv[i];
     else
         lptCmdLine = _T("");
-
-    nRetVal = 0;
 
     // Everything is all setup, so load the dll now
     hDll = LoadLibrary(lptDllName);
@@ -437,13 +437,13 @@ int WINAPI _tWinMain(
         if (fnDllWinMainW) {
             // Convert the command-line string to unicode and call the dll function
             lpwCmdLine = ConvertToWideChar(lptCmdLine);
-            nRetVal = fnDllWinMainW(hWindow,hInstance,lpwCmdLine,nCmdShow);
+            fnDllWinMainW(hWindow,hInstance,lpwCmdLine,nCmdShow);
             FreeConvertedWideChar(lpwCmdLine);
         }
         else if (fnDllWinMainA) {
             // Convert the command-line string to ansi and call the dll function
             lpaCmdLine = ConvertToMultiByte(lptCmdLine);
-            nRetVal = fnDllWinMainA(hWindow,hInstance,lpaCmdLine,nCmdShow);
+            fnDllWinMainA(hWindow,hInstance,lpaCmdLine,nCmdShow);
             FreeConvertedMultiByte(lpaCmdLine);
         }
         else {
@@ -476,6 +476,6 @@ int WINAPI _tWinMain(
     }
 
     if (argv) free(argv);
-    return nRetVal;
+    return 0; /* rundll32 always returns 0! */
 }
 

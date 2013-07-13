@@ -26,13 +26,14 @@ HANDLE KdpLogFileHandle;
 ANSI_STRING KdpLogFileName = RTL_CONSTANT_STRING("\\SystemRoot\\debug.log");
 
 KSPIN_LOCK KdpSerialSpinLock;
-KD_PORT_INFORMATION SerialPortInfo = { DEFAULT_DEBUG_PORT, DEFAULT_DEBUG_BAUD_RATE, 0 };
+ULONG  SerialPortNumber = DEFAULT_DEBUG_PORT;
+CPPORT SerialPortInfo   = {0, DEFAULT_DEBUG_BAUD_RATE, 0};
 
 /* Current Port in use. FIXME: Do we support more then one? */
 ULONG KdpPort;
 
-#define KdpScreenLineLenght 80
-CHAR KdpScreenLineBuffer[KdpScreenLineLenght + 1] = "";
+#define KdpScreenLineLengthDefault 80
+CHAR KdpScreenLineBuffer[KdpScreenLineLengthDefault + 1] = "";
 ULONG KdpScreenLineBufferPos = 0, KdpScreenLineLength = 0;
 
 const ULONG KdpDmesgBufferSize = 128 * 1024; // 512*1024; // 5*1024*1024;
@@ -358,12 +359,12 @@ KdpSerialInit(PKD_DISPATCH_TABLE DispatchTable,
         DispatchTable->KdpPrintRoutine = KdpSerialDebugPrint;
 
         /* Initialize the Port */
-        if (!KdPortInitializeEx(&SerialPortInfo, 0, 0))
+        if (!KdPortInitializeEx(&SerialPortInfo, SerialPortNumber))
         {
             KdpDebugMode.Serial = FALSE;
             return;
         }
-        KdComPortInUse = (PUCHAR)(ULONG_PTR)SerialPortInfo.BaseAddress;
+        KdComPortInUse = SerialPortInfo.Address;
 
         /* Initialize spinlock */
         KeInitializeSpinLock(&KdpSerialSpinLock);
@@ -427,7 +428,7 @@ KdpScreenPrint(LPSTR Message,
             KdpScreenLineBuffer[KdpScreenLineLength] = '\0';
         }
 
-        if(*pch == '\n' || KdpScreenLineLength == KdpScreenLineLenght)
+        if(*pch == '\n' || KdpScreenLineLength == KdpScreenLineLengthDefault)
         {
             /* Print buffered characters */
             if(KdpScreenLineBufferPos != KdpScreenLineLength)

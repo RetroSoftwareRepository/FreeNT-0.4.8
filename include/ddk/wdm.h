@@ -41,6 +41,7 @@
 #include <excpt.h>
 #include <ntdef.h>
 #include <ntstatus.h>
+#include <kernelspecs.h>
 #include <ntiologc.h>
 
 #ifndef GUID_DEFINED
@@ -116,7 +117,7 @@ extern "C" {
 #pragma warning(disable:4115) /* Named type definition in parentheses */
 #pragma warning(disable:4201) /* Nameless unions and structs */
 #pragma warning(disable:4214) /* Bit fields of other types than int */
-#pragma warning(disable:4820) /* Padding added, due to alignemnet requirement */
+#pragma warning(disable:4820) /* Padding added, due to alignment requirement */
 
 /* Indicate if #pragma alloc_text() is supported */
 #if defined(_M_IX86) || defined(_M_AMD64) || defined(_M_IA64)
@@ -621,6 +622,68 @@ typedef BOOLEAN
 typedef BOOLEAN
 (*PFN_RTL_IS_SERVICE_PACK_VERSION_INSTALLED)(
   _In_ ULONG Version);
+
+typedef struct _OSVERSIONINFOA {
+  ULONG dwOSVersionInfoSize;
+  ULONG dwMajorVersion;
+  ULONG dwMinorVersion;
+  ULONG dwBuildNumber;
+  ULONG dwPlatformId;
+  CHAR szCSDVersion[128];
+} OSVERSIONINFOA, *POSVERSIONINFOA, *LPOSVERSIONINFOA;
+
+typedef struct _OSVERSIONINFOW {
+  ULONG dwOSVersionInfoSize;
+  ULONG dwMajorVersion;
+  ULONG dwMinorVersion;
+  ULONG dwBuildNumber;
+  ULONG dwPlatformId;
+  WCHAR szCSDVersion[128];
+} OSVERSIONINFOW, *POSVERSIONINFOW, *LPOSVERSIONINFOW, RTL_OSVERSIONINFOW, *PRTL_OSVERSIONINFOW;
+
+typedef struct _OSVERSIONINFOEXA {
+  ULONG dwOSVersionInfoSize;
+  ULONG dwMajorVersion;
+  ULONG dwMinorVersion;
+  ULONG dwBuildNumber;
+  ULONG dwPlatformId;
+  CHAR szCSDVersion[128];
+  USHORT wServicePackMajor;
+  USHORT wServicePackMinor;
+  USHORT wSuiteMask;
+  UCHAR wProductType;
+  UCHAR wReserved;
+} OSVERSIONINFOEXA, *POSVERSIONINFOEXA, *LPOSVERSIONINFOEXA;
+
+typedef struct _OSVERSIONINFOEXW {
+  ULONG dwOSVersionInfoSize;
+  ULONG dwMajorVersion;
+  ULONG dwMinorVersion;
+  ULONG dwBuildNumber;
+  ULONG dwPlatformId;
+  WCHAR szCSDVersion[128];
+  USHORT wServicePackMajor;
+  USHORT wServicePackMinor;
+  USHORT wSuiteMask;
+  UCHAR wProductType;
+  UCHAR wReserved;
+} OSVERSIONINFOEXW, *POSVERSIONINFOEXW, *LPOSVERSIONINFOEXW, RTL_OSVERSIONINFOEXW, *PRTL_OSVERSIONINFOEXW;
+
+#ifdef UNICODE
+typedef OSVERSIONINFOEXW OSVERSIONINFOEX;
+typedef POSVERSIONINFOEXW POSVERSIONINFOEX;
+typedef LPOSVERSIONINFOEXW LPOSVERSIONINFOEX;
+typedef OSVERSIONINFOW OSVERSIONINFO;
+typedef POSVERSIONINFOW POSVERSIONINFO;
+typedef LPOSVERSIONINFOW LPOSVERSIONINFO;
+#else
+typedef OSVERSIONINFOEXA OSVERSIONINFOEX;
+typedef POSVERSIONINFOEXA POSVERSIONINFOEX;
+typedef LPOSVERSIONINFOEXA LPOSVERSIONINFOEX;
+typedef OSVERSIONINFOA OSVERSIONINFO;
+typedef POSVERSIONINFOA POSVERSIONINFO;
+typedef LPOSVERSIONINFOA LPOSVERSIONINFO;
+#endif /* UNICODE */
 
 /******************************************************************************
  *                              Kernel Types                                  *
@@ -1815,7 +1878,7 @@ typedef enum _EX_POOL_PRIORITY {
 #if !defined(_WIN64) && (defined(_NTDDK_) || defined(_NTIFS_) || defined(_NDIS_))
 #define LOOKASIDE_ALIGN
 #else
-#define LOOKASIDE_ALIGN /* FIXME: DECLSPEC_CACHEALIGN */
+#define LOOKASIDE_ALIGN DECLSPEC_CACHEALIGN
 #endif
 
 typedef struct _LOOKASIDE_LIST_EX *PLOOKASIDE_LIST_EX;
@@ -7902,1622 +7965,6 @@ typedef VOID
 
 
 /******************************************************************************
- *                         Runtime Library Functions                          *
- ******************************************************************************/
-
-
-#if !defined(MIDL_PASS) && !defined(SORTPP_PASS)
-
-#define RTL_STATIC_LIST_HEAD(x) LIST_ENTRY x = { &x, &x }
-
-FORCEINLINE
-VOID
-InitializeListHead(
-  _Out_ PLIST_ENTRY ListHead)
-{
-  ListHead->Flink = ListHead->Blink = ListHead;
-}
-
-_Must_inspect_result_
-FORCEINLINE
-BOOLEAN
-IsListEmpty(
-  _In_ const LIST_ENTRY * ListHead)
-{
-  return (BOOLEAN)(ListHead->Flink == ListHead);
-}
-
-FORCEINLINE
-BOOLEAN
-RemoveEntryList(
-  _In_ PLIST_ENTRY Entry)
-{
-  PLIST_ENTRY OldFlink;
-  PLIST_ENTRY OldBlink;
-
-  OldFlink = Entry->Flink;
-  OldBlink = Entry->Blink;
-  OldFlink->Blink = OldBlink;
-  OldBlink->Flink = OldFlink;
-  return (BOOLEAN)(OldFlink == OldBlink);
-}
-
-FORCEINLINE
-PLIST_ENTRY
-RemoveHeadList(
-  _Inout_ PLIST_ENTRY ListHead)
-{
-  PLIST_ENTRY Flink;
-  PLIST_ENTRY Entry;
-
-  Entry = ListHead->Flink;
-  Flink = Entry->Flink;
-  ListHead->Flink = Flink;
-  Flink->Blink = ListHead;
-  return Entry;
-}
-
-FORCEINLINE
-PLIST_ENTRY
-RemoveTailList(
-  _Inout_ PLIST_ENTRY ListHead)
-{
-  PLIST_ENTRY Blink;
-  PLIST_ENTRY Entry;
-
-  Entry = ListHead->Blink;
-  Blink = Entry->Blink;
-  ListHead->Blink = Blink;
-  Blink->Flink = ListHead;
-  return Entry;
-}
-
-FORCEINLINE
-VOID
-InsertTailList(
-  _Inout_ PLIST_ENTRY ListHead,
-  _Inout_ __drv_aliasesMem PLIST_ENTRY Entry)
-{
-  PLIST_ENTRY OldBlink;
-  OldBlink = ListHead->Blink;
-  Entry->Flink = ListHead;
-  Entry->Blink = OldBlink;
-  OldBlink->Flink = Entry;
-  ListHead->Blink = Entry;
-}
-
-FORCEINLINE
-VOID
-InsertHeadList(
-  _Inout_ PLIST_ENTRY ListHead,
-  _Inout_ __drv_aliasesMem PLIST_ENTRY Entry)
-{
-  PLIST_ENTRY OldFlink;
-  OldFlink = ListHead->Flink;
-  Entry->Flink = OldFlink;
-  Entry->Blink = ListHead;
-  OldFlink->Blink = Entry;
-  ListHead->Flink = Entry;
-}
-
-FORCEINLINE
-VOID
-AppendTailList(
-  _Inout_ PLIST_ENTRY ListHead,
-  _Inout_ PLIST_ENTRY ListToAppend)
-{
-  PLIST_ENTRY ListEnd = ListHead->Blink;
-
-  ListHead->Blink->Flink = ListToAppend;
-  ListHead->Blink = ListToAppend->Blink;
-  ListToAppend->Blink->Flink = ListHead;
-  ListToAppend->Blink = ListEnd;
-}
-
-FORCEINLINE
-PSINGLE_LIST_ENTRY
-PopEntryList(
-  _Inout_ PSINGLE_LIST_ENTRY ListHead)
-{
-  PSINGLE_LIST_ENTRY FirstEntry;
-  FirstEntry = ListHead->Next;
-  if (FirstEntry != NULL) {
-    ListHead->Next = FirstEntry->Next;
-  }
-  return FirstEntry;
-}
-
-FORCEINLINE
-VOID
-PushEntryList(
-  _Inout_ PSINGLE_LIST_ENTRY ListHead,
-  _Inout_ __drv_aliasesMem PSINGLE_LIST_ENTRY Entry)
-{
-  Entry->Next = ListHead->Next;
-  ListHead->Next = Entry;
-}
-
-#endif /* !defined(MIDL_PASS) && !defined(SORTPP_PASS) */
-
-__analysis_noreturn
-NTSYSAPI
-VOID
-NTAPI
-RtlAssert(
-  _In_ PVOID FailedAssertion,
-  _In_ PVOID FileName,
-  _In_ ULONG LineNumber,
-  _In_opt_ PSTR Message);
-
-/* VOID
- * RtlCopyMemory(
- *     IN VOID UNALIGNED *Destination,
- *     IN CONST VOID UNALIGNED *Source,
- *     IN SIZE_T Length)
- */
-#define RtlCopyMemory(Destination, Source, Length) \
-    memcpy(Destination, Source, Length)
-
-#define RtlCopyBytes RtlCopyMemory
-
-#if defined(_M_AMD64)
-NTSYSAPI
-VOID
-NTAPI
-RtlCopyMemoryNonTemporal(
-  _Out_writes_bytes_all_(Length) VOID UNALIGNED *Destination,
-  _In_reads_bytes_(Length) const VOID UNALIGNED *Source,
-  _In_ SIZE_T Length);
-#else
-#define RtlCopyMemoryNonTemporal RtlCopyMemory
-#endif
-
-/* BOOLEAN
- * RtlEqualLuid(
- *     IN PLUID Luid1,
- *     IN PLUID Luid2)
- */
-#define RtlEqualLuid(Luid1, Luid2) \
-    (((Luid1)->LowPart == (Luid2)->LowPart) && ((Luid1)->HighPart == (Luid2)->HighPart))
-
-/* LOGICAL
- * RtlEqualMemory(
- *     IN VOID UNALIGNED *Destination,
- *     IN CONST VOID UNALIGNED *Source,
- *     IN SIZE_T Length)
- */
-#define RtlEqualMemory(Destination, Source, Length) \
-    (!memcmp(Destination, Source, Length))
-
-/* VOID
- * RtlFillMemory(
- *     IN VOID UNALIGNED *Destination,
- *     IN SIZE_T Length,
- *     IN UCHAR Fill)
- */
-#define RtlFillMemory(Destination, Length, Fill) \
-    memset(Destination, Fill, Length)
-
-#define RtlFillBytes RtlFillMemory
-
-_IRQL_requires_max_(PASSIVE_LEVEL)
-NTSYSAPI
-VOID
-NTAPI
-RtlFreeUnicodeString(
-  _Inout_ _At_(UnicodeString->Buffer, __drv_freesMem(Mem))
-    PUNICODE_STRING UnicodeString);
-
-_IRQL_requires_max_(PASSIVE_LEVEL)
-_Must_inspect_result_
-NTSYSAPI
-NTSTATUS
-NTAPI
-RtlGUIDFromString(
-  _In_ PUNICODE_STRING GuidString,
-  _Out_ GUID *Guid);
-
-_IRQL_requires_max_(DISPATCH_LEVEL)
-_At_(DestinationString->Buffer, _Post_equal_to_(SourceString))
-_At_(DestinationString->Length, _Post_equal_to_(_String_length_(SourceString) * sizeof(WCHAR)))
-_At_(DestinationString->MaximumLength, _Post_equal_to_(DestinationString->Length + sizeof(WCHAR)))
-NTSYSAPI
-VOID
-NTAPI
-RtlInitUnicodeString(
-  _Out_ PUNICODE_STRING DestinationString,
-  _In_opt_z_ __drv_aliasesMem PCWSTR SourceString);
-
-/* VOID
- * RtlMoveMemory(
- *    IN VOID UNALIGNED *Destination,
- *    IN CONST VOID UNALIGNED *Source,
- *    IN SIZE_T Length)
- */
-#define RtlMoveMemory(Destination, Source, Length) \
-    memmove(Destination, Source, Length)
-
-_IRQL_requires_max_(PASSIVE_LEVEL)
-_Must_inspect_result_
-NTSYSAPI
-NTSTATUS
-NTAPI
-RtlStringFromGUID(
-  _In_ REFGUID Guid,
-  _Out_ _At_(GuidString->Buffer, __drv_allocatesMem(Mem))
-    PUNICODE_STRING GuidString);
-
-/* VOID
- * RtlZeroMemory(
- *     IN VOID UNALIGNED *Destination,
- *     IN SIZE_T Length)
- */
-#define RtlZeroMemory(Destination, Length) \
-    memset(Destination, 0, Length)
-
-#define RtlZeroBytes RtlZeroMemory
-
-#if (NTDDI_VERSION >= NTDDI_WIN2K)
-
-_Must_inspect_result_
-NTSYSAPI
-BOOLEAN
-NTAPI
-RtlAreBitsClear(
-  _In_ PRTL_BITMAP BitMapHeader,
-  _In_ ULONG StartingIndex,
-  _In_ ULONG Length);
-
-_Must_inspect_result_
-NTSYSAPI
-BOOLEAN
-NTAPI
-RtlAreBitsSet(
-  _In_ PRTL_BITMAP BitMapHeader,
-  _In_ ULONG StartingIndex,
-  _In_ ULONG Length);
-
-_IRQL_requires_max_(PASSIVE_LEVEL)
-_Must_inspect_result_
-NTSYSAPI
-NTSTATUS
-NTAPI
-RtlAnsiStringToUnicodeString(
-  _When_(AllocateDestinationString, _Out_ _At_(DestinationString->Buffer, __drv_allocatesMem(Mem)))
-  _When_(!AllocateDestinationString, _Inout_)
-    PUNICODE_STRING DestinationString,
-  _In_ PANSI_STRING SourceString,
-  _In_ BOOLEAN AllocateDestinationString);
-
-_IRQL_requires_max_(PASSIVE_LEVEL)
-NTSYSAPI
-ULONG
-NTAPI
-RtlxAnsiStringToUnicodeSize(
-  _In_ PCANSI_STRING AnsiString);
-
-#define RtlAnsiStringToUnicodeSize(String) (               \
-  NLS_MB_CODE_PAGE_TAG ?                                   \
-  RtlxAnsiStringToUnicodeSize(String) :                    \
-  ((String)->Length + sizeof(ANSI_NULL)) * sizeof(WCHAR)   \
-)
-
-_Success_(1)
-_Unchanged_(Destination->MaximumLength)
-_Unchanged_(Destination->Buffer)
-_When_(_Old_(Destination->Length) + Source->Length <= Destination->MaximumLength,
-  _At_(Destination->Length, _Post_equal_to_(_Old_(Destination->Length) + Source->Length))
-  _At_(return, _Out_range_(==, 0)))
-_When_(_Old_(Destination->Length) + Source->Length > Destination->MaximumLength,
-  _Unchanged_(Destination->Length)
-  _At_(return, _Out_range_(<, 0)))
-NTSYSAPI
-NTSTATUS
-NTAPI
-RtlAppendUnicodeStringToString(
-  _Inout_ PUNICODE_STRING Destination,
-  _In_ PCUNICODE_STRING Source);
-
-_Success_(1)
-_Unchanged_(Destination->MaximumLength)
-_Unchanged_(Destination->Buffer)
-/* _When_(_Old_(Destination->Length) + _String_length_(Source) * sizeof(WCHAR) <= Destination->MaximumLength,
-  _At_(Destination->Length, _Post_equal_to_(_Old_(Destination->Length) + _String_length_(Source) * sizeof(WCHAR)))
-  _At_(return, _Out_range_(==, 0)))
-_When_(_Old_(Destination->Length) + _String_length_(Source) * sizeof(WCHAR) > Destination->MaximumLength,
-  _Unchanged_(Destination->Length)
-  _At_(return, _Out_range_(<, 0))) */
-NTSYSAPI
-NTSTATUS
-NTAPI
-RtlAppendUnicodeToString(
-  _Inout_ PUNICODE_STRING Destination,
-  _In_opt_z_ PCWSTR Source);
-
-_IRQL_requires_max_(PASSIVE_LEVEL)
-_Must_inspect_result_
-NTSYSAPI
-NTSTATUS
-NTAPI
-RtlCheckRegistryKey(
-  _In_ ULONG RelativeTo,
-  _In_ PWSTR Path);
-
-NTSYSAPI
-VOID
-NTAPI
-RtlClearAllBits(
-  _In_ PRTL_BITMAP BitMapHeader);
-
-NTSYSAPI
-VOID
-NTAPI
-RtlClearBits(
-  _In_ PRTL_BITMAP BitMapHeader,
-  _In_range_(0, BitMapHeader->SizeOfBitMap - NumberToClear) ULONG StartingIndex,
-  _In_range_(0, BitMapHeader->SizeOfBitMap - StartingIndex) ULONG NumberToClear);
-
-_Must_inspect_result_
-NTSYSAPI
-SIZE_T
-NTAPI
-RtlCompareMemory(
-  _In_ const VOID *Source1,
-  _In_ const VOID *Source2,
-  _In_ SIZE_T Length);
-
-_IRQL_requires_max_(PASSIVE_LEVEL)
-_Must_inspect_result_
-NTSYSAPI
-LONG
-NTAPI
-RtlCompareUnicodeString(
-  _In_ PCUNICODE_STRING String1,
-  _In_ PCUNICODE_STRING String2,
-  _In_ BOOLEAN CaseInSensitive);
-
-_IRQL_requires_max_(PASSIVE_LEVEL)
-_Must_inspect_result_
-NTSYSAPI
-LONG
-NTAPI
-RtlCompareUnicodeStrings(
-  _In_reads_(String1Length) PCWCH String1,
-  _In_ SIZE_T String1Length,
-  _In_reads_(String2Length) PCWCH String2,
-  _In_ SIZE_T String2Length,
-  _In_ BOOLEAN CaseInSensitive);
-
-_Unchanged_(DestinationString->Buffer)
-_Unchanged_(DestinationString->MaximumLength)
-_At_(DestinationString->Length,
-  _When_(SourceString->Length > DestinationString->MaximumLength,
-    _Post_equal_to_(DestinationString->MaximumLength))
-  _When_(SourceString->Length <= DestinationString->MaximumLength,
-    _Post_equal_to_(SourceString->Length)))
-NTSYSAPI
-VOID
-NTAPI
-RtlCopyUnicodeString(
-  _Inout_ PUNICODE_STRING DestinationString,
-  _In_opt_ PCUNICODE_STRING SourceString);
-
-_IRQL_requires_max_(PASSIVE_LEVEL)
-NTSYSAPI
-NTSTATUS
-NTAPI
-RtlCreateRegistryKey(
-  _In_ ULONG RelativeTo,
-  _In_ PWSTR Path);
-
-_IRQL_requires_max_(APC_LEVEL)
-NTSYSAPI
-NTSTATUS
-NTAPI
-RtlCreateSecurityDescriptor(
-  _Out_ PSECURITY_DESCRIPTOR SecurityDescriptor,
-  _In_ ULONG Revision);
-
-_IRQL_requires_max_(PASSIVE_LEVEL)
-NTSYSAPI
-NTSTATUS
-NTAPI
-RtlDeleteRegistryValue(
-  _In_ ULONG RelativeTo,
-  _In_ PCWSTR Path,
-  _In_z_ PCWSTR ValueName);
-
-_IRQL_requires_max_(PASSIVE_LEVEL)
-_Must_inspect_result_
-NTSYSAPI
-BOOLEAN
-NTAPI
-RtlEqualUnicodeString(
-  _In_ CONST UNICODE_STRING *String1,
-  _In_ CONST UNICODE_STRING *String2,
-  _In_ BOOLEAN CaseInSensitive);
-
-#if !defined(_AMD64_) && !defined(_IA64_)
-NTSYSAPI
-LARGE_INTEGER
-NTAPI
-RtlExtendedIntegerMultiply(
-  _In_ LARGE_INTEGER Multiplicand,
-  _In_ LONG Multiplier);
-
-NTSYSAPI
-LARGE_INTEGER
-NTAPI
-RtlExtendedLargeIntegerDivide(
-  _In_ LARGE_INTEGER Dividend,
-  _In_ ULONG Divisor,
-  _Out_opt_ PULONG Remainder);
-#endif
-
-#if defined(_X86_) || defined(_IA64_)
-NTSYSAPI
-LARGE_INTEGER
-NTAPI
-RtlExtendedMagicDivide(
-    _In_ LARGE_INTEGER Dividend,
-    _In_ LARGE_INTEGER MagicDivisor,
-    _In_ CCHAR  ShiftCount);
-#endif
-
-_IRQL_requires_max_(PASSIVE_LEVEL)
-NTSYSAPI
-VOID
-NTAPI
-RtlFreeAnsiString(
-  _Inout_ _At_(AnsiString->Buffer, __drv_freesMem(Mem))
-    PANSI_STRING AnsiString);
-
-_Success_(return != -1)
-_Must_inspect_result_
-NTSYSAPI
-ULONG
-NTAPI
-RtlFindClearBits(
-  _In_ PRTL_BITMAP BitMapHeader,
-  _In_ ULONG NumberToFind,
-  _In_ ULONG HintIndex);
-
-_Success_(return != -1)
-NTSYSAPI
-ULONG
-NTAPI
-RtlFindClearBitsAndSet(
-  _In_ PRTL_BITMAP BitMapHeader,
-  _In_ ULONG NumberToFind,
-  _In_ ULONG HintIndex);
-
-NTSYSAPI
-ULONG
-NTAPI
-RtlFindFirstRunClear(
-  _In_ PRTL_BITMAP BitMapHeader,
-  _Out_ PULONG StartingIndex);
-
-NTSYSAPI
-ULONG
-NTAPI
-RtlFindClearRuns(
-  _In_ PRTL_BITMAP BitMapHeader,
-  _Out_writes_to_(SizeOfRunArray, return) PRTL_BITMAP_RUN RunArray,
-  _In_range_(>, 0) ULONG SizeOfRunArray,
-  _In_ BOOLEAN LocateLongestRuns);
-
-NTSYSAPI
-ULONG
-NTAPI
-RtlFindLastBackwardRunClear(
-  _In_ PRTL_BITMAP BitMapHeader,
-  _In_ ULONG FromIndex,
-  _Out_ PULONG StartingRunIndex);
-
-_Success_(return != -1)
-_Must_inspect_result_
-NTSYSAPI
-CCHAR
-NTAPI
-RtlFindLeastSignificantBit(
-  _In_ ULONGLONG Set);
-
-NTSYSAPI
-ULONG
-NTAPI
-RtlFindLongestRunClear(
-  _In_ PRTL_BITMAP BitMapHeader,
-  _Out_ PULONG StartingIndex);
-
-_Success_(return != -1)
-_Must_inspect_result_
-NTSYSAPI
-CCHAR
-NTAPI
-RtlFindMostSignificantBit(
-  _In_ ULONGLONG Set);
-
-NTSYSAPI
-ULONG
-NTAPI
-RtlFindNextForwardRunClear(
-  _In_ PRTL_BITMAP BitMapHeader,
-  _In_ ULONG FromIndex,
-  _Out_ PULONG StartingRunIndex);
-
-_Success_(return != -1)
-_Must_inspect_result_
-NTSYSAPI
-ULONG
-NTAPI
-RtlFindSetBits(
-  _In_ PRTL_BITMAP BitMapHeader,
-  _In_ ULONG NumberToFind,
-  _In_ ULONG HintIndex);
-
-_Success_(return != -1)
-NTSYSAPI
-ULONG
-NTAPI
-RtlFindSetBitsAndClear(
-  _In_ PRTL_BITMAP BitMapHeader,
-  _In_ ULONG NumberToFind,
-  _In_ ULONG HintIndex);
-
-_IRQL_requires_max_(DISPATCH_LEVEL)
-NTSYSAPI
-VOID
-NTAPI
-RtlInitAnsiString(
-  _Out_ PANSI_STRING DestinationString,
-  _In_opt_z_ __drv_aliasesMem PCSZ SourceString);
-
-NTSYSAPI
-VOID
-NTAPI
-RtlInitializeBitMap(
-  _Out_ PRTL_BITMAP BitMapHeader,
-  _In_ __drv_aliasesMem PULONG BitMapBuffer,
-  _In_ ULONG SizeOfBitMap);
-
-_IRQL_requires_max_(DISPATCH_LEVEL)
-NTSYSAPI
-VOID
-NTAPI
-RtlInitString(
-  _Out_ PSTRING DestinationString,
-  _In_opt_z_ __drv_aliasesMem PCSZ SourceString);
-
-_IRQL_requires_max_(PASSIVE_LEVEL)
-_At_(String->MaximumLength, _Const_)
-NTSYSAPI
-NTSTATUS
-NTAPI
-RtlIntegerToUnicodeString(
-  _In_ ULONG Value,
-  _In_opt_ ULONG Base,
-  _Inout_ PUNICODE_STRING String);
-
-_IRQL_requires_max_(PASSIVE_LEVEL)
-_At_(String->MaximumLength, _Const_)
-NTSYSAPI
-NTSTATUS
-NTAPI
-RtlInt64ToUnicodeString(
-  _In_ ULONGLONG Value,
-  _In_opt_ ULONG Base,
-  _Inout_ PUNICODE_STRING String);
-
-#ifdef _WIN64
-#define RtlIntPtrToUnicodeString(Value, Base, String) \
-    RtlInt64ToUnicodeString(Value, Base, String)
-#else
-#define RtlIntPtrToUnicodeString(Value, Base, String) \
-    RtlIntegerToUnicodeString(Value, Base, String)
-#endif
-
-/* BOOLEAN
- * RtlIsZeroLuid(
- *     IN PLUID L1);
- */
-#define RtlIsZeroLuid(_L1) \
-    ((BOOLEAN) ((!(_L1)->LowPart) && (!(_L1)->HighPart)))
-
-_IRQL_requires_max_(APC_LEVEL)
-NTSYSAPI
-ULONG
-NTAPI
-RtlLengthSecurityDescriptor(
-  _In_ PSECURITY_DESCRIPTOR SecurityDescriptor);
-
-NTSYSAPI
-ULONG
-NTAPI
-RtlNumberOfClearBits(
-  _In_ PRTL_BITMAP BitMapHeader);
-
-NTSYSAPI
-ULONG
-NTAPI
-RtlNumberOfSetBits(
-  _In_ PRTL_BITMAP BitMapHeader);
-
-_IRQL_requires_max_(PASSIVE_LEVEL)
-NTSYSAPI
-NTSTATUS
-NTAPI
-RtlQueryRegistryValues(
-  _In_ ULONG RelativeTo,
-  _In_ PCWSTR Path,
-  _Inout_ _At_(*(*QueryTable).EntryContext, _Post_valid_)
-    PRTL_QUERY_REGISTRY_TABLE QueryTable,
-  _In_opt_ PVOID Context,
-  _In_opt_ PVOID Environment);
-
-#define SHORT_SIZE  (sizeof(USHORT))
-#define SHORT_MASK  (SHORT_SIZE - 1)
-#define LONG_SIZE (sizeof(LONG))
-#define LONGLONG_SIZE   (sizeof(LONGLONG))
-#define LONG_MASK (LONG_SIZE - 1)
-#define LONGLONG_MASK   (LONGLONG_SIZE - 1)
-#define LOWBYTE_MASK 0x00FF
-
-#define FIRSTBYTE(VALUE)  ((VALUE) & LOWBYTE_MASK)
-#define SECONDBYTE(VALUE) (((VALUE) >> 8) & LOWBYTE_MASK)
-#define THIRDBYTE(VALUE)  (((VALUE) >> 16) & LOWBYTE_MASK)
-#define FOURTHBYTE(VALUE) (((VALUE) >> 24) & LOWBYTE_MASK)
-
-NTSYSAPI
-VOID
-NTAPI
-RtlSetAllBits(
-  _In_ PRTL_BITMAP BitMapHeader);
-
-NTSYSAPI
-VOID
-NTAPI
-RtlSetBits(
-  _In_ PRTL_BITMAP BitMapHeader,
-  _In_range_(0, BitMapHeader->SizeOfBitMap - NumberToSet) ULONG StartingIndex,
-  _In_range_(0, BitMapHeader->SizeOfBitMap - StartingIndex) ULONG NumberToSet);
-
-_IRQL_requires_max_(APC_LEVEL)
-NTSYSAPI
-NTSTATUS
-NTAPI
-RtlSetDaclSecurityDescriptor(
-  _Inout_ PSECURITY_DESCRIPTOR SecurityDescriptor,
-  _In_ BOOLEAN DaclPresent,
-  _In_opt_ PACL Dacl,
-  _In_opt_ BOOLEAN DaclDefaulted);
-
-#if defined(_AMD64_)
-
-/* VOID
- * RtlStoreUlong(
- *     IN PULONG Address,
- *     IN ULONG Value);
- */
-#define RtlStoreUlong(Address,Value) \
-    *(ULONG UNALIGNED *)(Address) = (Value)
-
-/* VOID
- * RtlStoreUlonglong(
- *     IN OUT PULONGLONG Address,
- *     ULONGLONG Value);
- */
-#define RtlStoreUlonglong(Address,Value) \
-    *(ULONGLONG UNALIGNED *)(Address) = (Value)
-
-/* VOID
- * RtlStoreUshort(
- *     IN PUSHORT Address,
- *     IN USHORT Value);
- */
-#define RtlStoreUshort(Address,Value) \
-    *(USHORT UNALIGNED *)(Address) = (Value)
-
-/* VOID
- * RtlRetrieveUshort(
- *     PUSHORT DestinationAddress,
- *    PUSHORT SourceAddress);
- */
-#define RtlRetrieveUshort(DestAddress,SrcAddress) \
-    *(USHORT UNALIGNED *)(DestAddress) = *(USHORT)(SrcAddress)
-
-/* VOID
- * RtlRetrieveUlong(
- *    PULONG DestinationAddress,
- *    PULONG SourceAddress);
- */
-#define RtlRetrieveUlong(DestAddress,SrcAddress) \
-    *(ULONG UNALIGNED *)(DestAddress) = *(PULONG)(SrcAddress)
-
-#else
-
-#define RtlStoreUlong(Address,Value)                      \
-    if ((ULONG_PTR)(Address) & LONG_MASK) { \
-        ((PUCHAR) (Address))[LONG_LEAST_SIGNIFICANT_BIT]    = (UCHAR)(FIRSTBYTE(Value)); \
-        ((PUCHAR) (Address))[LONG_3RD_MOST_SIGNIFICANT_BIT] = (UCHAR)(SECONDBYTE(Value)); \
-        ((PUCHAR) (Address))[LONG_2ND_MOST_SIGNIFICANT_BIT] = (UCHAR)(THIRDBYTE(Value)); \
-        ((PUCHAR) (Address))[LONG_MOST_SIGNIFICANT_BIT]     = (UCHAR)(FOURTHBYTE(Value)); \
-    } \
-    else { \
-        *((PULONG)(Address)) = (ULONG) (Value); \
-    }
-
-#define RtlStoreUlonglong(Address,Value) \
-    if ((ULONG_PTR)(Address) & LONGLONG_MASK) { \
-        RtlStoreUlong((ULONG_PTR)(Address), \
-                      (ULONGLONG)(Value) & 0xFFFFFFFF); \
-        RtlStoreUlong((ULONG_PTR)(Address)+sizeof(ULONG), \
-                      (ULONGLONG)(Value) >> 32); \
-    } else { \
-        *((PULONGLONG)(Address)) = (ULONGLONG)(Value); \
-    }
-
-#define RtlStoreUshort(Address,Value) \
-    if ((ULONG_PTR)(Address) & SHORT_MASK) { \
-        ((PUCHAR) (Address))[SHORT_LEAST_SIGNIFICANT_BIT] = (UCHAR)(FIRSTBYTE(Value)); \
-        ((PUCHAR) (Address))[SHORT_MOST_SIGNIFICANT_BIT ] = (UCHAR)(SECONDBYTE(Value)); \
-    } \
-    else { \
-        *((PUSHORT) (Address)) = (USHORT)Value; \
-    }
-
-#define RtlRetrieveUshort(DestAddress,SrcAddress) \
-    if ((ULONG_PTR)(SrcAddress) & LONG_MASK) \
-    { \
-        ((PUCHAR)(DestAddress))[0]=((PUCHAR)(SrcAddress))[0]; \
-        ((PUCHAR)(DestAddress))[1]=((PUCHAR)(SrcAddress))[1]; \
-    } \
-    else \
-    { \
-        *((PUSHORT)(DestAddress))=*((PUSHORT)(SrcAddress)); \
-    }
-
-#define RtlRetrieveUlong(DestAddress,SrcAddress) \
-    if ((ULONG_PTR)(SrcAddress) & LONG_MASK) \
-    { \
-        ((PUCHAR)(DestAddress))[0]=((PUCHAR)(SrcAddress))[0]; \
-        ((PUCHAR)(DestAddress))[1]=((PUCHAR)(SrcAddress))[1]; \
-        ((PUCHAR)(DestAddress))[2]=((PUCHAR)(SrcAddress))[2]; \
-        ((PUCHAR)(DestAddress))[3]=((PUCHAR)(SrcAddress))[3]; \
-    } \
-    else \
-    { \
-        *((PULONG)(DestAddress))=*((PULONG)(SrcAddress)); \
-    }
-
-#endif /* defined(_AMD64_) */
-
-#ifdef _WIN64
-/* VOID
- * RtlStoreUlongPtr(
- *     IN OUT PULONG_PTR Address,
- *     IN ULONG_PTR Value);
- */
-#define RtlStoreUlongPtr(Address,Value) RtlStoreUlonglong(Address,Value)
-#else
-#define RtlStoreUlongPtr(Address,Value) RtlStoreUlong(Address,Value)
-#endif /* _WIN64 */
-
-_Success_(return != 0)
-NTSYSAPI
-BOOLEAN
-NTAPI
-RtlTimeFieldsToTime(
-  _In_ PTIME_FIELDS TimeFields,
-  _Out_ PLARGE_INTEGER Time);
-
-NTSYSAPI
-VOID
-NTAPI
-RtlTimeToTimeFields(
-  _In_ PLARGE_INTEGER Time,
-  _Out_ PTIME_FIELDS TimeFields);
-
-NTSYSAPI
-ULONG
-FASTCALL
-RtlUlongByteSwap(
-  _In_ ULONG Source);
-
-NTSYSAPI
-ULONGLONG
-FASTCALL
-RtlUlonglongByteSwap(
-  _In_ ULONGLONG Source);
-
-_When_(AllocateDestinationString,
-  _At_(DestinationString->MaximumLength,
-    _Out_range_(<=, (SourceString->MaximumLength / sizeof(WCHAR)))))
-_When_(!AllocateDestinationString,
-  _At_(DestinationString->Buffer, _Const_)
-  _At_(DestinationString->MaximumLength, _Const_))
-_IRQL_requires_max_(PASSIVE_LEVEL)
-_When_(AllocateDestinationString, _Must_inspect_result_)
-NTSYSAPI
-NTSTATUS
-NTAPI
-RtlUnicodeStringToAnsiString(
-  _When_(AllocateDestinationString, _Out_ _At_(DestinationString->Buffer, __drv_allocatesMem(Mem)))
-  _When_(!AllocateDestinationString, _Inout_)
-    PANSI_STRING DestinationString,
-  _In_ PCUNICODE_STRING SourceString,
-  _In_ BOOLEAN AllocateDestinationString);
-
-_IRQL_requires_max_(PASSIVE_LEVEL)
-NTSYSAPI
-ULONG
-NTAPI
-RtlxUnicodeStringToAnsiSize(
-  _In_ PCUNICODE_STRING UnicodeString);
-
-#define RtlUnicodeStringToAnsiSize(String) (                  \
-    NLS_MB_CODE_PAGE_TAG ?                                    \
-    RtlxUnicodeStringToAnsiSize(String) :                     \
-    ((String)->Length + sizeof(UNICODE_NULL)) / sizeof(WCHAR) \
-)
-
-_IRQL_requires_max_(PASSIVE_LEVEL)
-NTSYSAPI
-NTSTATUS
-NTAPI
-RtlUnicodeStringToInteger(
-  _In_ PCUNICODE_STRING String,
-  _In_opt_ ULONG Base,
-  _Out_ PULONG Value);
-
-_IRQL_requires_max_(PASSIVE_LEVEL)
-NTSYSAPI
-WCHAR
-NTAPI
-RtlUpcaseUnicodeChar(
-  _In_ WCHAR SourceCharacter);
-
-NTSYSAPI
-USHORT
-FASTCALL
-RtlUshortByteSwap(
-  _In_ USHORT Source);
-
-_IRQL_requires_max_(APC_LEVEL)
-_Must_inspect_result_
-NTSYSAPI
-BOOLEAN
-NTAPI
-RtlValidRelativeSecurityDescriptor(
-  _In_reads_bytes_(SecurityDescriptorLength) PSECURITY_DESCRIPTOR SecurityDescriptorInput,
-  _In_ ULONG SecurityDescriptorLength,
-  _In_ SECURITY_INFORMATION RequiredInformation);
-
-_IRQL_requires_max_(APC_LEVEL)
-_Must_inspect_result_
-NTSYSAPI
-BOOLEAN
-NTAPI
-RtlValidSecurityDescriptor(
-  _In_ PSECURITY_DESCRIPTOR SecurityDescriptor);
-
-_IRQL_requires_max_(PASSIVE_LEVEL)
-NTSYSAPI
-NTSTATUS
-NTAPI
-RtlWriteRegistryValue(
-  _In_ ULONG RelativeTo,
-  _In_ PCWSTR Path,
-  _In_z_ PCWSTR ValueName,
-  _In_ ULONG ValueType,
-  _In_reads_bytes_opt_(ValueLength) PVOID ValueData,
-  _In_ ULONG ValueLength);
-
-
-#endif /* (NTDDI_VERSION >= NTDDI_WIN2K) */
-
-
-#if (NTDDI_VERSION >= NTDDI_WIN2KSP3)
-NTSYSAPI
-VOID
-FASTCALL
-RtlPrefetchMemoryNonTemporal(
-  _In_ PVOID Source,
-  _In_ SIZE_T Length);
-#endif
-
-
-#if (NTDDI_VERSION >= NTDDI_WINXP)
-
-
-NTSYSAPI
-VOID
-NTAPI
-RtlClearBit(
-  _In_ PRTL_BITMAP BitMapHeader,
-  _In_range_(<, BitMapHeader->SizeOfBitMap) ULONG BitNumber);
-
-_IRQL_requires_max_(PASSIVE_LEVEL)
-NTSYSAPI
-WCHAR
-NTAPI
-RtlDowncaseUnicodeChar(
-  _In_ WCHAR SourceCharacter);
-
-NTSYSAPI
-VOID
-NTAPI
-RtlSetBit(
-  _In_ PRTL_BITMAP BitMapHeader,
-  _In_range_(<, BitMapHeader->SizeOfBitMap) ULONG BitNumber);
-
-_Must_inspect_result_
-NTSYSAPI
-BOOLEAN
-NTAPI
-RtlTestBit(
-  _In_ PRTL_BITMAP BitMapHeader,
-  _In_range_(<, BitMapHeader->SizeOfBitMap) ULONG BitNumber);
-
-_IRQL_requires_max_(PASSIVE_LEVEL)
-NTSYSAPI
-NTSTATUS
-NTAPI
-RtlHashUnicodeString(
-  _In_ CONST UNICODE_STRING *String,
-  _In_ BOOLEAN CaseInSensitive,
-  _In_ ULONG HashAlgorithm,
-  _Out_ PULONG HashValue);
-
-
-
-#endif /* (NTDDI_VERSION >= NTDDI_WINXP) */
-
-
-#if (NTDDI_VERSION >= NTDDI_VISTA)
-
-NTSYSAPI
-ULONG
-NTAPI
-RtlNumberOfSetBitsUlongPtr(
-  _In_ ULONG_PTR Target);
-
-NTSYSAPI
-ULONGLONG
-NTAPI
-RtlIoDecodeMemIoResource(
-  _In_ struct _IO_RESOURCE_DESCRIPTOR *Descriptor,
-  _Out_opt_ PULONGLONG Alignment,
-  _Out_opt_ PULONGLONG MinimumAddress,
-  _Out_opt_ PULONGLONG MaximumAddress);
-
-NTSYSAPI
-NTSTATUS
-NTAPI
-RtlIoEncodeMemIoResource(
-  _In_ struct _IO_RESOURCE_DESCRIPTOR *Descriptor,
-  _In_ UCHAR Type,
-  _In_ ULONGLONG Length,
-  _In_ ULONGLONG Alignment,
-  _In_ ULONGLONG MinimumAddress,
-  _In_ ULONGLONG MaximumAddress);
-
-NTSYSAPI
-ULONGLONG
-NTAPI
-RtlCmDecodeMemIoResource(
-  _In_ struct _CM_PARTIAL_RESOURCE_DESCRIPTOR *Descriptor,
-  _Out_opt_ PULONGLONG Start);
-
-NTSYSAPI
-NTSTATUS
-NTAPI
-RtlFindClosestEncodableLength(
-  _In_ ULONGLONG SourceLength,
-  _Out_ PULONGLONG TargetLength);
-
-NTSYSAPI
-NTSTATUS
-NTAPI
-RtlCmEncodeMemIoResource(
-  _In_ PCM_PARTIAL_RESOURCE_DESCRIPTOR Descriptor,
-  _In_ UCHAR Type,
-  _In_ ULONGLONG Length,
-  _In_ ULONGLONG Start);
-
-
-#endif /* (NTDDI_VERSION >= NTDDI_VISTA) */
-
-#if (NTDDI_VERSION >= NTDDI_WIN7)
-
-_IRQL_requires_max_(PASSIVE_LEVEL)
-_Must_inspect_result_
-NTSYSAPI
-NTSTATUS
-NTAPI
-RtlUnicodeToUTF8N(
-  _Out_writes_bytes_to_(UTF8StringMaxByteCount, *UTF8StringActualByteCount)
-    PCHAR UTF8StringDestination,
-  _In_ ULONG UTF8StringMaxByteCount,
-  _Out_ PULONG UTF8StringActualByteCount,
-  _In_reads_bytes_(UnicodeStringByteCount) PCWCH UnicodeStringSource,
-  _In_ ULONG UnicodeStringByteCount);
-
-_IRQL_requires_max_(PASSIVE_LEVEL)
-_Must_inspect_result_
-NTSYSAPI
-NTSTATUS
-NTAPI
-RtlUTF8ToUnicodeN(
-  _Out_writes_bytes_to_(UnicodeStringMaxByteCount, *UnicodeStringActualByteCount)
-    PWSTR UnicodeStringDestination,
-  _In_ ULONG UnicodeStringMaxByteCount,
-  _Out_ PULONG UnicodeStringActualByteCount,
-  _In_reads_bytes_(UTF8StringByteCount) PCCH UTF8StringSource,
-  _In_ ULONG UTF8StringByteCount);
-
-NTSYSAPI
-ULONG64
-NTAPI
-RtlGetEnabledExtendedFeatures(
-  IN ULONG64 FeatureMask);
-
-
-#endif /* (NTDDI_VERSION >= NTDDI_WIN7) */
-
-
-#if !defined(MIDL_PASS)
-/* inline funftions */
-//DECLSPEC_DEPRECATED_DDK_WINXP
-static __inline
-LARGE_INTEGER
-NTAPI_INLINE
-RtlConvertLongToLargeInteger(
-  _In_ LONG SignedInteger)
-{
-  LARGE_INTEGER ret;
-  ret.QuadPart = SignedInteger;
-  return ret;
-}
-
-//DECLSPEC_DEPRECATED_DDK_WINXP
-static __inline
-LARGE_INTEGER
-NTAPI_INLINE
-RtlConvertUlongToLargeInteger(
-  _In_ ULONG UnsignedInteger)
-{
-  LARGE_INTEGER ret;
-  ret.QuadPart = UnsignedInteger;
-  return ret;
-}
-
-//DECLSPEC_DEPRECATED_DDK_WINXP
-static __inline
-LARGE_INTEGER
-NTAPI_INLINE
-RtlLargeIntegerShiftLeft(
-  _In_ LARGE_INTEGER LargeInteger,
-  _In_ CCHAR ShiftCount)
-{
-  LARGE_INTEGER Result;
-
-  Result.QuadPart = LargeInteger.QuadPart << ShiftCount;
-  return Result;
-}
-
-//DECLSPEC_DEPRECATED_DDK_WINXP
-static __inline
-LARGE_INTEGER
-NTAPI_INLINE
-RtlLargeIntegerShiftRight(
-  _In_ LARGE_INTEGER LargeInteger,
-  _In_ CCHAR ShiftCount)
-{
-  LARGE_INTEGER Result;
-
-  Result.QuadPart = (ULONG64)LargeInteger.QuadPart >> ShiftCount;
-  return Result;
-}
-
-//DECLSPEC_DEPRECATED_DDK
-static __inline
-ULONG
-NTAPI_INLINE
-RtlEnlargedUnsignedDivide(
-  _In_ ULARGE_INTEGER Dividend,
-  _In_ ULONG Divisor,
-  _Out_opt_ PULONG Remainder)
-{
-  if (Remainder)
-    *Remainder = (ULONG)(Dividend.QuadPart % Divisor);
-  return (ULONG)(Dividend.QuadPart / Divisor);
-}
-
-//DECLSPEC_DEPRECATED_DDK
-static __inline
-LARGE_INTEGER
-NTAPI_INLINE
-RtlLargeIntegerNegate(
-  _In_ LARGE_INTEGER Subtrahend)
-{
-  LARGE_INTEGER Difference;
-
-  Difference.QuadPart = -Subtrahend.QuadPart;
-  return Difference;
-}
-
-//DECLSPEC_DEPRECATED_DDK
-static __inline
-LARGE_INTEGER
-NTAPI_INLINE
-RtlLargeIntegerSubtract(
-  _In_ LARGE_INTEGER Minuend,
-  _In_ LARGE_INTEGER Subtrahend)
-{
-  LARGE_INTEGER Difference;
-
-  Difference.QuadPart = Minuend.QuadPart - Subtrahend.QuadPart;
-  return Difference;
-}
-
-//DECLSPEC_DEPRECATED_DDK
-static __inline
-LARGE_INTEGER
-NTAPI_INLINE
-RtlEnlargedUnsignedMultiply(
-  _In_ ULONG Multiplicand,
-  _In_ ULONG Multiplier)
-{
-  LARGE_INTEGER ret;
-  ret.QuadPart = (ULONGLONG)Multiplicand * (ULONGLONG)Multiplier;
-  return ret;
-}
-
-//DECLSPEC_DEPRECATED_DDK
-static __inline
-LARGE_INTEGER
-NTAPI_INLINE
-RtlEnlargedIntegerMultiply(
-  _In_ LONG Multiplicand,
-  _In_ LONG Multiplier)
-{
-  LARGE_INTEGER ret;
-  ret.QuadPart = (LONGLONG)Multiplicand * (ULONGLONG)Multiplier;
-  return ret;
-}
-
-_At_(AnsiString->Buffer, _Post_equal_to_(Buffer))
-_At_(AnsiString->Length, _Post_equal_to_(0))
-_At_(AnsiString->MaximumLength, _Post_equal_to_(BufferSize))
-FORCEINLINE
-VOID
-RtlInitEmptyAnsiString(
-  _Out_ PANSI_STRING AnsiString,
-  _Pre_maybenull_ _Pre_readable_size_(BufferSize) __drv_aliasesMem PCHAR Buffer,
-  _In_ USHORT BufferSize)
-{
-  AnsiString->Length = 0;
-  AnsiString->MaximumLength = BufferSize;
-  AnsiString->Buffer = Buffer;
-}
-
-_At_(UnicodeString->Buffer, _Post_equal_to_(Buffer))
-_At_(UnicodeString->Length, _Post_equal_to_(0))
-_At_(UnicodeString->MaximumLength, _Post_equal_to_(BufferSize))
-FORCEINLINE
-VOID
-RtlInitEmptyUnicodeString(
-    _Out_ PUNICODE_STRING UnicodeString,
-    _Writable_bytes_(BufferSize)
-    _When_(BufferSize != 0, _Notnull_)
-    __drv_aliasesMem PWSTR Buffer,
-    _In_ USHORT BufferSize)
-{
-    UnicodeString->Length = 0;
-    UnicodeString->MaximumLength = BufferSize;
-    UnicodeString->Buffer = Buffer;
-}
-
-#if defined(_AMD64_) || defined(_IA64_)
-
-
-static __inline
-LARGE_INTEGER
-NTAPI_INLINE
-RtlExtendedIntegerMultiply(
-  _In_ LARGE_INTEGER Multiplicand,
-  _In_ LONG Multiplier)
-{
-  LARGE_INTEGER ret;
-  ret.QuadPart = Multiplicand.QuadPart * Multiplier;
-  return ret;
-}
-
-static __inline
-LARGE_INTEGER
-NTAPI_INLINE
-RtlExtendedLargeIntegerDivide(
-  _In_ LARGE_INTEGER Dividend,
-  _In_ ULONG Divisor,
-  _Out_opt_ PULONG Remainder)
-{
-  LARGE_INTEGER ret;
-  ret.QuadPart = (ULONG64)Dividend.QuadPart / Divisor;
-  if (Remainder)
-    *Remainder = (ULONG)(Dividend.QuadPart % Divisor);
-  return ret;
-}
-
-
-
-#endif /* defined(_AMD64_) || defined(_IA64_) */
-
-
-#if defined(_AMD64_)
-
-#define MultiplyHigh __mulh
-#define UnsignedMultiplyHigh __umulh
-
-//DECLSPEC_DEPRECATED_DDK
-static __inline
-LARGE_INTEGER
-NTAPI_INLINE
-RtlExtendedMagicDivide(
-  _In_ LARGE_INTEGER Dividend,
-  _In_ LARGE_INTEGER MagicDivisor,
-  _In_ CCHAR ShiftCount)
-{
-  LARGE_INTEGER ret;
-  ULONG64 ret64;
-  BOOLEAN Pos;
-  Pos = (Dividend.QuadPart >= 0);
-  ret64 = UnsignedMultiplyHigh(Pos ? Dividend.QuadPart : -Dividend.QuadPart,
-                               MagicDivisor.QuadPart);
-  ret64 >>= ShiftCount;
-  ret.QuadPart = Pos ? ret64 : -(LONG64)ret64;
-  return ret;
-}
-#endif
-
-//DECLSPEC_DEPRECATED_DDK
-static __inline
-LARGE_INTEGER
-NTAPI_INLINE
-RtlLargeIntegerAdd(
-  _In_ LARGE_INTEGER Addend1,
-  _In_ LARGE_INTEGER Addend2)
-{
-  LARGE_INTEGER ret;
-  ret.QuadPart = Addend1.QuadPart + Addend2.QuadPart;
-  return ret;
-}
-
-/* VOID
- * RtlLargeIntegerAnd(
- *     IN OUT LARGE_INTEGER Result,
- *     IN LARGE_INTEGER Source,
- *     IN LARGE_INTEGER Mask);
- */
-#define RtlLargeIntegerAnd(Result, Source, Mask) \
-    Result.QuadPart = Source.QuadPart & Mask.QuadPart
-
-//DECLSPEC_DEPRECATED_DDK
-static __inline
-LARGE_INTEGER
-NTAPI_INLINE
-RtlLargeIntegerArithmeticShift(
-  _In_ LARGE_INTEGER LargeInteger,
-  _In_ CCHAR ShiftCount)
-{
-  LARGE_INTEGER ret;
-  ret.QuadPart = LargeInteger.QuadPart >> ShiftCount;
-  return ret;
-}
-
-/* BOOLEAN
- * RtlLargeIntegerEqualTo(
- *     IN LARGE_INTEGER  Operand1,
- *     IN LARGE_INTEGER  Operand2);
- */
-#define RtlLargeIntegerEqualTo(X,Y) \
-    (!(((X).LowPart ^ (Y).LowPart) | ((X).HighPart ^ (Y).HighPart)))
-
-FORCEINLINE
-PVOID
-RtlSecureZeroMemory(
-  _Out_writes_bytes_all_(Size) PVOID Pointer,
-  _In_ SIZE_T Size)
-{
-  volatile char* vptr = (volatile char*)Pointer;
-#if defined(_M_AMD64)
-  __stosb((PUCHAR)vptr, 0, Size);
-#else
-  char * endptr = (char *)vptr + Size;
-  while (vptr < endptr) {
-    *vptr = 0; vptr++;
-  }
-#endif
-   return Pointer;
-}
-
-#if defined(_M_AMD64)
-_Must_inspect_result_
-FORCEINLINE
-BOOLEAN
-RtlCheckBit(
-  _In_ PRTL_BITMAP BitMapHeader,
-  _In_range_(<, BitMapHeader->SizeOfBitMap) ULONG BitPosition)
-{
-  return BitTest64((LONG64 CONST*)BitMapHeader->Buffer, (LONG64)BitPosition);
-}
-#else
-#define RtlCheckBit(BMH,BP) (((((PLONG)(BMH)->Buffer)[(BP)/32]) >> ((BP)%32)) & 0x1)
-#endif /* defined(_M_AMD64) */
-
-#define RtlLargeIntegerGreaterThan(X,Y) (                              \
-    (((X).HighPart == (Y).HighPart) && ((X).LowPart > (Y).LowPart)) || \
-    ((X).HighPart > (Y).HighPart)                                      \
-)
-
-#define RtlLargeIntegerGreaterThanOrEqualTo(X,Y) (                      \
-    (((X).HighPart == (Y).HighPart) && ((X).LowPart >= (Y).LowPart)) || \
-    ((X).HighPart > (Y).HighPart)                                       \
-)
-
-#define RtlLargeIntegerNotEqualTo(X,Y) (                          \
-    (((X).LowPart ^ (Y).LowPart) | ((X).HighPart ^ (Y).HighPart)) \
-)
-
-#define RtlLargeIntegerLessThan(X,Y) (                                 \
-    (((X).HighPart == (Y).HighPart) && ((X).LowPart < (Y).LowPart)) || \
-    ((X).HighPart < (Y).HighPart)                                      \
-)
-
-#define RtlLargeIntegerLessThanOrEqualTo(X,Y) (                         \
-    (((X).HighPart == (Y).HighPart) && ((X).LowPart <= (Y).LowPart)) || \
-    ((X).HighPart < (Y).HighPart)                                       \
-)
-
-#define RtlLargeIntegerGreaterThanZero(X) (       \
-    (((X).HighPart == 0) && ((X).LowPart > 0)) || \
-    ((X).HighPart > 0 )                           \
-)
-
-#define RtlLargeIntegerGreaterOrEqualToZero(X) ( (X).HighPart >= 0 )
-
-#define RtlLargeIntegerEqualToZero(X) ( !((X).LowPart | (X).HighPart) )
-
-#define RtlLargeIntegerNotEqualToZero(X) ( ((X).LowPart | (X).HighPart) )
-
-#define RtlLargeIntegerLessThanZero(X) ( ((X).HighPart < 0) )
-
-#define RtlLargeIntegerLessOrEqualToZero(X) ( ((X).HighPart < 0) || !((X).LowPart | (X).HighPart) )
-
-#endif /* !defined(MIDL_PASS) */
-
-/* Byte Swap Functions */
-#if (defined(_M_IX86) && (_MSC_FULL_VER > 13009037 || defined(__GNUC__))) || \
-    ((defined(_M_AMD64) || defined(_M_IA64)) \
-        && (_MSC_FULL_VER > 13009175 || defined(__GNUC__)))
-
-#define RtlUshortByteSwap(_x) _byteswap_ushort((USHORT)(_x))
-#define RtlUlongByteSwap(_x) _byteswap_ulong((_x))
-#define RtlUlonglongByteSwap(_x) _byteswap_uint64((_x))
-
-#endif
-
-#if DBG
-
-#define ASSERT(exp) \
-  (VOID)((!(exp)) ? \
-    RtlAssert( (PVOID)#exp, (PVOID)__FILE__, __LINE__, NULL ), FALSE : TRUE)
-
-#define ASSERTMSG(msg, exp) \
-  (VOID)((!(exp)) ? \
-    RtlAssert( (PVOID)#exp, (PVOID)__FILE__, __LINE__, (PCHAR)msg ), FALSE : TRUE)
-
-#define RTL_SOFT_ASSERT(exp) \
-  (VOID)((!(exp)) ? \
-    DbgPrint("%s(%d): Soft assertion failed\n   Expression: %s\n", __FILE__, __LINE__, #exp), FALSE : TRUE)
-
-#define RTL_SOFT_ASSERTMSG(msg, exp) \
-  (VOID)((!(exp)) ? \
-    DbgPrint("%s(%d): Soft assertion failed\n   Expression: %s\n   Message: %s\n", __FILE__, __LINE__, #exp, (msg)), FALSE : TRUE)
-
-#define RTL_VERIFY(exp) ASSERT(exp)
-#define RTL_VERIFYMSG(msg, exp) ASSERTMSG(msg, exp)
-
-#define RTL_SOFT_VERIFY(exp) RTL_SOFT_ASSERT(exp)
-#define RTL_SOFT_VERIFYMSG(msg, exp) RTL_SOFT_ASSERTMSG(msg, exp)
-
-#if defined(_MSC_VER)
-
-#define NT_ASSERT(exp) \
-   ((!(exp)) ? \
-      (__annotation(L"Debug", L"AssertFail", L#exp), \
-       DbgRaiseAssertionFailure(), FALSE) : TRUE)
-
-#define NT_ASSERTMSG(msg, exp) \
-   ((!(exp)) ? \
-      (__annotation(L"Debug", L"AssertFail", L##msg), \
-      DbgRaiseAssertionFailure(), FALSE) : TRUE)
-
-#define NT_ASSERTMSGW(msg, exp) \
-    ((!(exp)) ? \
-        (__annotation(L"Debug", L"AssertFail", msg), \
-         DbgRaiseAssertionFailure(), FALSE) : TRUE)
-
-#define NT_VERIFY     NT_ASSERT
-#define NT_VERIFYMSG  NT_ASSERTMSG
-#define NT_VERIFYMSGW NT_ASSERTMSGW
-
-#else
-
-/* GCC doesn't support __annotation (nor PDB) */
-#define NT_ASSERT(exp) \
-   (VOID)((!(exp)) ? (DbgRaiseAssertionFailure(), FALSE) : TRUE)
-
-#define NT_ASSERTMSG NT_ASSERT
-#define NT_ASSERTMSGW NT_ASSERT
-
-#endif
-
-#else /* !DBG */
-
-#define ASSERT(exp) ((VOID) 0)
-#define ASSERTMSG(msg, exp) ((VOID) 0)
-
-#define RTL_SOFT_ASSERT(exp) ((VOID) 0)
-#define RTL_SOFT_ASSERTMSG(msg, exp) ((VOID) 0)
-
-#define RTL_VERIFY(exp) ((exp) ? TRUE : FALSE)
-#define RTL_VERIFYMSG(msg, exp) ((exp) ? TRUE : FALSE)
-
-#define RTL_SOFT_VERIFY(exp) ((exp) ? TRUE : FALSE)
-#define RTL_SOFT_VERIFYMSG(msg, exp) ((exp) ? TRUE : FALSE)
-
-#define NT_ASSERT(exp)          ((VOID)0)
-#define NT_ASSERTMSG(msg, exp)  ((VOID)0)
-#define NT_ASSERTMSGW(msg, exp) ((VOID)0)
-
-#define NT_VERIFY(_exp)           ((_exp) ? TRUE : FALSE)
-#define NT_VERIFYMSG(_msg, _exp ) ((_exp) ? TRUE : FALSE)
-#define NT_VERIFYMSGW(_msg, _exp) ((_exp) ? TRUE : FALSE)
-
-#endif /* DBG */
-
-#define InitializeListHead32(ListHead) (\
-    (ListHead)->Flink = (ListHead)->Blink = PtrToUlong((ListHead)))
-
-#if !defined(_WINBASE_)
-
-#if defined(_WIN64) && (defined(_NTDRIVER_) || defined(_NTDDK_) || defined(_NTIFS_) || defined(_NTHAL_) || defined(_NTOSP_))
-
-NTKERNELAPI
-VOID
-InitializeSListHead(
-  _Out_ PSLIST_HEADER SListHead);
-
-#else
-
-FORCEINLINE
-VOID
-InitializeSListHead(
-  _Out_ PSLIST_HEADER SListHead)
-{
-#if defined(_IA64_)
-  ULONG64 FeatureBits;
-#endif
-
-#if defined(_WIN64)
-  if (((ULONG_PTR)SListHead & 0xf) != 0) {
-    RtlRaiseStatus(STATUS_DATATYPE_MISALIGNMENT);
-  }
-#endif
-  RtlZeroMemory(SListHead, sizeof(SLIST_HEADER));
-#if defined(_IA64_)
-  FeatureBits = __getReg(CV_IA64_CPUID4);
-  if ((FeatureBits & KF_16BYTE_INSTR) != 0) {
-    SListHead->Header16.HeaderType = 1;
-    SListHead->Header16.Init = 1;
-  }
-#endif
-}
-
-#endif
-
-#if defined(_WIN64)
-
-#define InterlockedPopEntrySList(Head) \
-    ExpInterlockedPopEntrySList(Head)
-
-#define InterlockedPushEntrySList(Head, Entry) \
-    ExpInterlockedPushEntrySList(Head, Entry)
-
-#define InterlockedFlushSList(Head) \
-    ExpInterlockedFlushSList(Head)
-
-#define QueryDepthSList(Head) \
-    ExQueryDepthSList(Head)
-
-#else /* !defined(_WIN64) */
-
-NTKERNELAPI
-PSLIST_ENTRY
-FASTCALL
-InterlockedPopEntrySList(
-  _Inout_ PSLIST_HEADER ListHead);
-
-NTKERNELAPI
-PSLIST_ENTRY
-FASTCALL
-InterlockedPushEntrySList(
-  _Inout_ PSLIST_HEADER ListHead,
-  _Inout_ __drv_aliasesMem PSLIST_ENTRY ListEntry);
-
-#define InterlockedFlushSList(ListHead) \
-    ExInterlockedFlushSList(ListHead)
-
-#define QueryDepthSList(Head) \
-    ExQueryDepthSList(Head)
-
-#endif /* !defined(_WIN64) */
-
-#endif /* !defined(_WINBASE_) */
-
-#define RTL_CONTEXT_EX_OFFSET(ContextEx, Chunk) ((ContextEx)->Chunk.Offset)
-#define RTL_CONTEXT_EX_LENGTH(ContextEx, Chunk) ((ContextEx)->Chunk.Length)
-#define RTL_CONTEXT_EX_CHUNK(Base, Layout, Chunk)       \
-    ((PVOID)((PCHAR)(Base) + RTL_CONTEXT_EX_OFFSET(Layout, Chunk)))
-#define RTL_CONTEXT_OFFSET(Context, Chunk)              \
-    RTL_CONTEXT_EX_OFFSET((PCONTEXT_EX)(Context + 1), Chunk)
-#define RTL_CONTEXT_LENGTH(Context, Chunk)              \
-    RTL_CONTEXT_EX_LENGTH((PCONTEXT_EX)(Context + 1), Chunk)
-#define RTL_CONTEXT_CHUNK(Context, Chunk)               \
-    RTL_CONTEXT_EX_CHUNK((PCONTEXT_EX)(Context + 1),    \
-                         (PCONTEXT_EX)(Context + 1),    \
-                         Chunk)
-
-BOOLEAN
-RTLVERLIB_DDI(RtlIsNtDdiVersionAvailable)(
-  _In_ ULONG Version);
-
-BOOLEAN
-RTLVERLIB_DDI(RtlIsServicePackVersionInstalled)(
-  _In_ ULONG Version);
-
-#ifndef RtlIsNtDdiVersionAvailable
-#define RtlIsNtDdiVersionAvailable WdmlibRtlIsNtDdiVersionAvailable
-#endif
-
-#ifndef RtlIsServicePackVersionInstalled
-#define RtlIsServicePackVersionInstalled WdmlibRtlIsServicePackVersionInstalled
-#endif
-
-#define RtlInterlockedSetBits(Flags, Flag) \
-    InterlockedOr((PLONG)(Flags), Flag)
-
-#define RtlInterlockedAndBits(Flags, Flag) \
-    InterlockedAnd((PLONG)(Flags), Flag)
-
-#define RtlInterlockedClearBits(Flags, Flag) \
-    RtlInterlockedAndBits(Flags, ~(Flag))
-
-#define RtlInterlockedXorBits(Flags, Flag) \
-    InterlockedXor(Flags, Flag)
-
-#define RtlInterlockedSetBitsDiscardReturn(Flags, Flag) \
-    (VOID) RtlInterlockedSetBits(Flags, Flag)
-
-#define RtlInterlockedAndBitsDiscardReturn(Flags, Flag) \
-    (VOID) RtlInterlockedAndBits(Flags, Flag)
-
-#define RtlInterlockedClearBitsDiscardReturn(Flags, Flag) \
-    RtlInterlockedAndBitsDiscardReturn(Flags, ~(Flag))
-
-
-/******************************************************************************
  *                              Kernel Functions                              *
  ******************************************************************************/
 #if defined(_M_IX86)
@@ -9802,7 +8249,7 @@ FORCEINLINE
 VOID
 KeLowerIrql(IN KIRQL NewIrql)
 {
-  ASSERT((KIRQL)__readcr8() >= NewIrql);
+  //ASSERT((KIRQL)__readcr8() >= NewIrql);
   __writecr8(NewIrql);
 }
 
@@ -9813,7 +8260,7 @@ KfRaiseIrql(IN KIRQL NewIrql)
   KIRQL OldIrql;
 
   OldIrql = (KIRQL)__readcr8();
-  ASSERT(OldIrql <= NewIrql);
+  //ASSERT(OldIrql <= NewIrql);
   __writecr8(NewIrql);
   return OldIrql;
 }
@@ -9886,7 +8333,7 @@ KeRestoreFloatingPointState(PVOID FloatingState)
 #define HIGH_LEVEL              15
 
 #define KI_USER_SHARED_DATA ((ULONG_PTR)(KADDRESS_BASE + 0xFFFE0000))
-extern volatile LARGE_INTEGER KeTickCount;
+extern DECLSPEC_CACHEALIGN volatile LARGE_INTEGER KeTickCount;
 
 #define PAUSE_PROCESSOR __yield();
 
@@ -11115,6 +9562,1647 @@ void __PREfastPagedCodeLocked(void);
 #endif /* DBG */
 
 /******************************************************************************
+ *                         Runtime Library Functions                          *
+ ******************************************************************************/
+
+
+#if !defined(MIDL_PASS) && !defined(SORTPP_PASS)
+
+#define RTL_STATIC_LIST_HEAD(x) LIST_ENTRY x = { &x, &x }
+
+FORCEINLINE
+VOID
+InitializeListHead(
+  _Out_ PLIST_ENTRY ListHead)
+{
+  ListHead->Flink = ListHead->Blink = ListHead;
+}
+
+_Must_inspect_result_
+FORCEINLINE
+BOOLEAN
+IsListEmpty(
+  _In_ const LIST_ENTRY * ListHead)
+{
+  return (BOOLEAN)(ListHead->Flink == ListHead);
+}
+
+FORCEINLINE
+BOOLEAN
+RemoveEntryList(
+  _In_ PLIST_ENTRY Entry)
+{
+  PLIST_ENTRY OldFlink;
+  PLIST_ENTRY OldBlink;
+
+  OldFlink = Entry->Flink;
+  OldBlink = Entry->Blink;
+  OldFlink->Blink = OldBlink;
+  OldBlink->Flink = OldFlink;
+  return (BOOLEAN)(OldFlink == OldBlink);
+}
+
+FORCEINLINE
+PLIST_ENTRY
+RemoveHeadList(
+  _Inout_ PLIST_ENTRY ListHead)
+{
+  PLIST_ENTRY Flink;
+  PLIST_ENTRY Entry;
+
+  Entry = ListHead->Flink;
+  Flink = Entry->Flink;
+  ListHead->Flink = Flink;
+  Flink->Blink = ListHead;
+  return Entry;
+}
+
+FORCEINLINE
+PLIST_ENTRY
+RemoveTailList(
+  _Inout_ PLIST_ENTRY ListHead)
+{
+  PLIST_ENTRY Blink;
+  PLIST_ENTRY Entry;
+
+  Entry = ListHead->Blink;
+  Blink = Entry->Blink;
+  ListHead->Blink = Blink;
+  Blink->Flink = ListHead;
+  return Entry;
+}
+
+FORCEINLINE
+VOID
+InsertTailList(
+  _Inout_ PLIST_ENTRY ListHead,
+  _Inout_ __drv_aliasesMem PLIST_ENTRY Entry)
+{
+  PLIST_ENTRY OldBlink;
+  OldBlink = ListHead->Blink;
+  Entry->Flink = ListHead;
+  Entry->Blink = OldBlink;
+  OldBlink->Flink = Entry;
+  ListHead->Blink = Entry;
+}
+
+FORCEINLINE
+VOID
+InsertHeadList(
+  _Inout_ PLIST_ENTRY ListHead,
+  _Inout_ __drv_aliasesMem PLIST_ENTRY Entry)
+{
+  PLIST_ENTRY OldFlink;
+  OldFlink = ListHead->Flink;
+  Entry->Flink = OldFlink;
+  Entry->Blink = ListHead;
+  OldFlink->Blink = Entry;
+  ListHead->Flink = Entry;
+}
+
+FORCEINLINE
+VOID
+AppendTailList(
+  _Inout_ PLIST_ENTRY ListHead,
+  _Inout_ PLIST_ENTRY ListToAppend)
+{
+  PLIST_ENTRY ListEnd = ListHead->Blink;
+
+  ListHead->Blink->Flink = ListToAppend;
+  ListHead->Blink = ListToAppend->Blink;
+  ListToAppend->Blink->Flink = ListHead;
+  ListToAppend->Blink = ListEnd;
+}
+
+FORCEINLINE
+PSINGLE_LIST_ENTRY
+PopEntryList(
+  _Inout_ PSINGLE_LIST_ENTRY ListHead)
+{
+  PSINGLE_LIST_ENTRY FirstEntry;
+  FirstEntry = ListHead->Next;
+  if (FirstEntry != NULL) {
+    ListHead->Next = FirstEntry->Next;
+  }
+  return FirstEntry;
+}
+
+FORCEINLINE
+VOID
+PushEntryList(
+  _Inout_ PSINGLE_LIST_ENTRY ListHead,
+  _Inout_ __drv_aliasesMem PSINGLE_LIST_ENTRY Entry)
+{
+  Entry->Next = ListHead->Next;
+  ListHead->Next = Entry;
+}
+
+#endif /* !defined(MIDL_PASS) && !defined(SORTPP_PASS) */
+
+__analysis_noreturn
+NTSYSAPI
+VOID
+NTAPI
+RtlAssert(
+  _In_ PVOID FailedAssertion,
+  _In_ PVOID FileName,
+  _In_ ULONG LineNumber,
+  _In_opt_z_ PSTR Message);
+
+/* VOID
+ * RtlCopyMemory(
+ *     IN VOID UNALIGNED *Destination,
+ *     IN CONST VOID UNALIGNED *Source,
+ *     IN SIZE_T Length)
+ */
+#define RtlCopyMemory(Destination, Source, Length) \
+    memcpy(Destination, Source, Length)
+
+#define RtlCopyBytes RtlCopyMemory
+
+#if defined(_M_AMD64)
+NTSYSAPI
+VOID
+NTAPI
+RtlCopyMemoryNonTemporal(
+  _Out_writes_bytes_all_(Length) VOID UNALIGNED *Destination,
+  _In_reads_bytes_(Length) const VOID UNALIGNED *Source,
+  _In_ SIZE_T Length);
+#else
+#define RtlCopyMemoryNonTemporal RtlCopyMemory
+#endif
+
+/* BOOLEAN
+ * RtlEqualLuid(
+ *     IN PLUID Luid1,
+ *     IN PLUID Luid2)
+ */
+#define RtlEqualLuid(Luid1, Luid2) \
+    (((Luid1)->LowPart == (Luid2)->LowPart) && ((Luid1)->HighPart == (Luid2)->HighPart))
+
+/* LOGICAL
+ * RtlEqualMemory(
+ *     IN VOID UNALIGNED *Destination,
+ *     IN CONST VOID UNALIGNED *Source,
+ *     IN SIZE_T Length)
+ */
+#define RtlEqualMemory(Destination, Source, Length) \
+    (!memcmp(Destination, Source, Length))
+
+/* VOID
+ * RtlFillMemory(
+ *     IN VOID UNALIGNED *Destination,
+ *     IN SIZE_T Length,
+ *     IN UCHAR Fill)
+ */
+#define RtlFillMemory(Destination, Length, Fill) \
+    memset(Destination, Fill, Length)
+
+#define RtlFillBytes RtlFillMemory
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+NTSYSAPI
+VOID
+NTAPI
+RtlFreeUnicodeString(
+  _Inout_ _At_(UnicodeString->Buffer, __drv_freesMem(Mem))
+    PUNICODE_STRING UnicodeString);
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+_Must_inspect_result_
+NTSYSAPI
+NTSTATUS
+NTAPI
+RtlGUIDFromString(
+  _In_ PUNICODE_STRING GuidString,
+  _Out_ GUID *Guid);
+
+_IRQL_requires_max_(DISPATCH_LEVEL)
+_At_(DestinationString->Buffer, _Post_equal_to_(SourceString))
+_When_(SourceString != NULL,
+_At_(DestinationString->Length, _Post_equal_to_(_String_length_(SourceString) * sizeof(WCHAR)))
+_At_(DestinationString->MaximumLength, _Post_equal_to_(DestinationString->Length + sizeof(WCHAR))))
+_When_(SourceString == NULL,
+_At_(DestinationString->Length, _Post_equal_to_(0))
+_At_(DestinationString->MaximumLength, _Post_equal_to_(0)))
+NTSYSAPI
+VOID
+NTAPI
+RtlInitUnicodeString(
+    _Out_ PUNICODE_STRING DestinationString,
+    _In_opt_z_ __drv_aliasesMem PCWSTR SourceString);
+
+/* VOID
+ * RtlMoveMemory(
+ *    IN VOID UNALIGNED *Destination,
+ *    IN CONST VOID UNALIGNED *Source,
+ *    IN SIZE_T Length)
+ */
+#define RtlMoveMemory(Destination, Source, Length) \
+    memmove(Destination, Source, Length)
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+_Must_inspect_result_
+NTSYSAPI
+NTSTATUS
+NTAPI
+RtlStringFromGUID(
+  _In_ REFGUID Guid,
+  _Out_ _At_(GuidString->Buffer, __drv_allocatesMem(Mem))
+    PUNICODE_STRING GuidString);
+
+/* VOID
+ * RtlZeroMemory(
+ *     IN VOID UNALIGNED *Destination,
+ *     IN SIZE_T Length)
+ */
+#define RtlZeroMemory(Destination, Length) \
+    memset(Destination, 0, Length)
+
+#define RtlZeroBytes RtlZeroMemory
+
+#if (NTDDI_VERSION >= NTDDI_WIN2K)
+
+_Must_inspect_result_
+NTSYSAPI
+BOOLEAN
+NTAPI
+RtlAreBitsClear(
+  _In_ PRTL_BITMAP BitMapHeader,
+  _In_ ULONG StartingIndex,
+  _In_ ULONG Length);
+
+_Must_inspect_result_
+NTSYSAPI
+BOOLEAN
+NTAPI
+RtlAreBitsSet(
+  _In_ PRTL_BITMAP BitMapHeader,
+  _In_ ULONG StartingIndex,
+  _In_ ULONG Length);
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+_Must_inspect_result_
+NTSYSAPI
+NTSTATUS
+NTAPI
+RtlAnsiStringToUnicodeString(
+  _When_(AllocateDestinationString, _Out_ _At_(DestinationString->Buffer, __drv_allocatesMem(Mem)))
+  _When_(!AllocateDestinationString, _Inout_)
+    PUNICODE_STRING DestinationString,
+  _In_ PANSI_STRING SourceString,
+  _In_ BOOLEAN AllocateDestinationString);
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+NTSYSAPI
+ULONG
+NTAPI
+RtlxAnsiStringToUnicodeSize(
+  _In_ PCANSI_STRING AnsiString);
+
+#define RtlAnsiStringToUnicodeSize(String) (               \
+  NLS_MB_CODE_PAGE_TAG ?                                   \
+  RtlxAnsiStringToUnicodeSize(String) :                    \
+  ((String)->Length + sizeof(ANSI_NULL)) * sizeof(WCHAR)   \
+)
+
+_Success_(1)
+_Unchanged_(Destination->MaximumLength)
+_Unchanged_(Destination->Buffer)
+_When_(_Old_(Destination->Length) + Source->Length <= Destination->MaximumLength,
+  _At_(Destination->Length, _Post_equal_to_(_Old_(Destination->Length) + Source->Length))
+  _At_(return, _Out_range_(==, 0)))
+_When_(_Old_(Destination->Length) + Source->Length > Destination->MaximumLength,
+  _Unchanged_(Destination->Length)
+  _At_(return, _Out_range_(<, 0)))
+NTSYSAPI
+NTSTATUS
+NTAPI
+RtlAppendUnicodeStringToString(
+  _Inout_ PUNICODE_STRING Destination,
+  _In_ PCUNICODE_STRING Source);
+
+_Success_(1)
+_Unchanged_(Destination->MaximumLength)
+_Unchanged_(Destination->Buffer)
+/* _When_(_Old_(Destination->Length) + _String_length_(Source) * sizeof(WCHAR) <= Destination->MaximumLength,
+  _At_(Destination->Length, _Post_equal_to_(_Old_(Destination->Length) + _String_length_(Source) * sizeof(WCHAR)))
+  _At_(return, _Out_range_(==, 0)))
+_When_(_Old_(Destination->Length) + _String_length_(Source) * sizeof(WCHAR) > Destination->MaximumLength,
+  _Unchanged_(Destination->Length)
+  _At_(return, _Out_range_(<, 0))) */
+NTSYSAPI
+NTSTATUS
+NTAPI
+RtlAppendUnicodeToString(
+  _Inout_ PUNICODE_STRING Destination,
+  _In_opt_z_ PCWSTR Source);
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+_Must_inspect_result_
+NTSYSAPI
+NTSTATUS
+NTAPI
+RtlCheckRegistryKey(
+  _In_ ULONG RelativeTo,
+  _In_ PWSTR Path);
+
+NTSYSAPI
+VOID
+NTAPI
+RtlClearAllBits(
+  _In_ PRTL_BITMAP BitMapHeader);
+
+NTSYSAPI
+VOID
+NTAPI
+RtlClearBits(
+  _In_ PRTL_BITMAP BitMapHeader,
+  _In_range_(0, BitMapHeader->SizeOfBitMap - NumberToClear) ULONG StartingIndex,
+  _In_range_(0, BitMapHeader->SizeOfBitMap - StartingIndex) ULONG NumberToClear);
+
+_Must_inspect_result_
+NTSYSAPI
+SIZE_T
+NTAPI
+RtlCompareMemory(
+  _In_ const VOID *Source1,
+  _In_ const VOID *Source2,
+  _In_ SIZE_T Length);
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+_Must_inspect_result_
+NTSYSAPI
+LONG
+NTAPI
+RtlCompareUnicodeString(
+  _In_ PCUNICODE_STRING String1,
+  _In_ PCUNICODE_STRING String2,
+  _In_ BOOLEAN CaseInSensitive);
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+_Must_inspect_result_
+NTSYSAPI
+LONG
+NTAPI
+RtlCompareUnicodeStrings(
+  _In_reads_(String1Length) PCWCH String1,
+  _In_ SIZE_T String1Length,
+  _In_reads_(String2Length) PCWCH String2,
+  _In_ SIZE_T String2Length,
+  _In_ BOOLEAN CaseInSensitive);
+
+_Unchanged_(DestinationString->Buffer)
+_Unchanged_(DestinationString->MaximumLength)
+_At_(DestinationString->Length,
+  _When_(SourceString->Length > DestinationString->MaximumLength,
+    _Post_equal_to_(DestinationString->MaximumLength))
+  _When_(SourceString->Length <= DestinationString->MaximumLength,
+    _Post_equal_to_(SourceString->Length)))
+NTSYSAPI
+VOID
+NTAPI
+RtlCopyUnicodeString(
+  _Inout_ PUNICODE_STRING DestinationString,
+  _In_opt_ PCUNICODE_STRING SourceString);
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+NTSYSAPI
+NTSTATUS
+NTAPI
+RtlCreateRegistryKey(
+  _In_ ULONG RelativeTo,
+  _In_ PWSTR Path);
+
+_IRQL_requires_max_(APC_LEVEL)
+NTSYSAPI
+NTSTATUS
+NTAPI
+RtlCreateSecurityDescriptor(
+  _Out_ PSECURITY_DESCRIPTOR SecurityDescriptor,
+  _In_ ULONG Revision);
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+NTSYSAPI
+NTSTATUS
+NTAPI
+RtlDeleteRegistryValue(
+  _In_ ULONG RelativeTo,
+  _In_ PCWSTR Path,
+  _In_z_ PCWSTR ValueName);
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+_Must_inspect_result_
+NTSYSAPI
+BOOLEAN
+NTAPI
+RtlEqualUnicodeString(
+  _In_ CONST UNICODE_STRING *String1,
+  _In_ CONST UNICODE_STRING *String2,
+  _In_ BOOLEAN CaseInSensitive);
+
+#if !defined(_AMD64_) && !defined(_IA64_)
+NTSYSAPI
+LARGE_INTEGER
+NTAPI
+RtlExtendedIntegerMultiply(
+  _In_ LARGE_INTEGER Multiplicand,
+  _In_ LONG Multiplier);
+
+NTSYSAPI
+LARGE_INTEGER
+NTAPI
+RtlExtendedLargeIntegerDivide(
+  _In_ LARGE_INTEGER Dividend,
+  _In_ ULONG Divisor,
+  _Out_opt_ PULONG Remainder);
+#endif
+
+#if defined(_X86_) || defined(_IA64_)
+NTSYSAPI
+LARGE_INTEGER
+NTAPI
+RtlExtendedMagicDivide(
+    _In_ LARGE_INTEGER Dividend,
+    _In_ LARGE_INTEGER MagicDivisor,
+    _In_ CCHAR  ShiftCount);
+#endif
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+NTSYSAPI
+VOID
+NTAPI
+RtlFreeAnsiString(
+  _Inout_ _At_(AnsiString->Buffer, __drv_freesMem(Mem))
+    PANSI_STRING AnsiString);
+
+_Success_(return != -1)
+_Must_inspect_result_
+NTSYSAPI
+ULONG
+NTAPI
+RtlFindClearBits(
+  _In_ PRTL_BITMAP BitMapHeader,
+  _In_ ULONG NumberToFind,
+  _In_ ULONG HintIndex);
+
+_Success_(return != -1)
+NTSYSAPI
+ULONG
+NTAPI
+RtlFindClearBitsAndSet(
+  _In_ PRTL_BITMAP BitMapHeader,
+  _In_ ULONG NumberToFind,
+  _In_ ULONG HintIndex);
+
+NTSYSAPI
+ULONG
+NTAPI
+RtlFindFirstRunClear(
+  _In_ PRTL_BITMAP BitMapHeader,
+  _Out_ PULONG StartingIndex);
+
+NTSYSAPI
+ULONG
+NTAPI
+RtlFindClearRuns(
+  _In_ PRTL_BITMAP BitMapHeader,
+  _Out_writes_to_(SizeOfRunArray, return) PRTL_BITMAP_RUN RunArray,
+  _In_range_(>, 0) ULONG SizeOfRunArray,
+  _In_ BOOLEAN LocateLongestRuns);
+
+NTSYSAPI
+ULONG
+NTAPI
+RtlFindLastBackwardRunClear(
+  _In_ PRTL_BITMAP BitMapHeader,
+  _In_ ULONG FromIndex,
+  _Out_ PULONG StartingRunIndex);
+
+_Success_(return != -1)
+_Must_inspect_result_
+NTSYSAPI
+CCHAR
+NTAPI
+RtlFindLeastSignificantBit(
+  _In_ ULONGLONG Set);
+
+NTSYSAPI
+ULONG
+NTAPI
+RtlFindLongestRunClear(
+  _In_ PRTL_BITMAP BitMapHeader,
+  _Out_ PULONG StartingIndex);
+
+_Success_(return != -1)
+_Must_inspect_result_
+NTSYSAPI
+CCHAR
+NTAPI
+RtlFindMostSignificantBit(
+  _In_ ULONGLONG Set);
+
+NTSYSAPI
+ULONG
+NTAPI
+RtlFindNextForwardRunClear(
+  _In_ PRTL_BITMAP BitMapHeader,
+  _In_ ULONG FromIndex,
+  _Out_ PULONG StartingRunIndex);
+
+_Success_(return != -1)
+_Must_inspect_result_
+NTSYSAPI
+ULONG
+NTAPI
+RtlFindSetBits(
+  _In_ PRTL_BITMAP BitMapHeader,
+  _In_ ULONG NumberToFind,
+  _In_ ULONG HintIndex);
+
+_Success_(return != -1)
+NTSYSAPI
+ULONG
+NTAPI
+RtlFindSetBitsAndClear(
+  _In_ PRTL_BITMAP BitMapHeader,
+  _In_ ULONG NumberToFind,
+  _In_ ULONG HintIndex);
+
+_IRQL_requires_max_(DISPATCH_LEVEL)
+NTSYSAPI
+VOID
+NTAPI
+RtlInitAnsiString(
+  _Out_ PANSI_STRING DestinationString,
+  _In_opt_z_ __drv_aliasesMem PCSZ SourceString);
+
+_At_(BitMapHeader->SizeOfBitMap, _Post_equal_to_(SizeOfBitMap))
+_At_(BitMapHeader->Buffer, _Post_equal_to_(BitMapBuffer))
+NTSYSAPI
+VOID
+NTAPI
+RtlInitializeBitMap(
+  _Out_ PRTL_BITMAP BitMapHeader,
+  _In_opt_ __drv_aliasesMem PULONG BitMapBuffer,
+  _In_opt_ ULONG SizeOfBitMap);
+
+_IRQL_requires_max_(DISPATCH_LEVEL)
+NTSYSAPI
+VOID
+NTAPI
+RtlInitString(
+  _Out_ PSTRING DestinationString,
+  _In_opt_z_ __drv_aliasesMem PCSZ SourceString);
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+_At_(String->MaximumLength, _Const_)
+NTSYSAPI
+NTSTATUS
+NTAPI
+RtlIntegerToUnicodeString(
+  _In_ ULONG Value,
+  _In_opt_ ULONG Base,
+  _Inout_ PUNICODE_STRING String);
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+_At_(String->MaximumLength, _Const_)
+NTSYSAPI
+NTSTATUS
+NTAPI
+RtlInt64ToUnicodeString(
+  _In_ ULONGLONG Value,
+  _In_opt_ ULONG Base,
+  _Inout_ PUNICODE_STRING String);
+
+#ifdef _WIN64
+#define RtlIntPtrToUnicodeString(Value, Base, String) \
+    RtlInt64ToUnicodeString(Value, Base, String)
+#else
+#define RtlIntPtrToUnicodeString(Value, Base, String) \
+    RtlIntegerToUnicodeString(Value, Base, String)
+#endif
+
+/* BOOLEAN
+ * RtlIsZeroLuid(
+ *     IN PLUID L1);
+ */
+#define RtlIsZeroLuid(_L1) \
+    ((BOOLEAN) ((!(_L1)->LowPart) && (!(_L1)->HighPart)))
+
+_IRQL_requires_max_(APC_LEVEL)
+NTSYSAPI
+ULONG
+NTAPI
+RtlLengthSecurityDescriptor(
+  _In_ PSECURITY_DESCRIPTOR SecurityDescriptor);
+
+NTSYSAPI
+ULONG
+NTAPI
+RtlNumberOfClearBits(
+  _In_ PRTL_BITMAP BitMapHeader);
+
+NTSYSAPI
+ULONG
+NTAPI
+RtlNumberOfSetBits(
+  _In_ PRTL_BITMAP BitMapHeader);
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+NTSYSAPI
+NTSTATUS
+NTAPI
+RtlQueryRegistryValues(
+    _In_ ULONG RelativeTo,
+    _In_ PCWSTR Path,
+    _Inout_ _At_(*(*QueryTable).EntryContext, _Pre_unknown_)
+        PRTL_QUERY_REGISTRY_TABLE QueryTable,
+    _In_opt_ PVOID Context,
+    _In_opt_ PVOID Environment);
+
+#define SHORT_SIZE  (sizeof(USHORT))
+#define SHORT_MASK  (SHORT_SIZE - 1)
+#define LONG_SIZE (sizeof(LONG))
+#define LONGLONG_SIZE   (sizeof(LONGLONG))
+#define LONG_MASK (LONG_SIZE - 1)
+#define LONGLONG_MASK   (LONGLONG_SIZE - 1)
+#define LOWBYTE_MASK 0x00FF
+
+#define FIRSTBYTE(VALUE)  ((VALUE) & LOWBYTE_MASK)
+#define SECONDBYTE(VALUE) (((VALUE) >> 8) & LOWBYTE_MASK)
+#define THIRDBYTE(VALUE)  (((VALUE) >> 16) & LOWBYTE_MASK)
+#define FOURTHBYTE(VALUE) (((VALUE) >> 24) & LOWBYTE_MASK)
+
+NTSYSAPI
+VOID
+NTAPI
+RtlSetAllBits(
+  _In_ PRTL_BITMAP BitMapHeader);
+
+NTSYSAPI
+VOID
+NTAPI
+RtlSetBits(
+  _In_ PRTL_BITMAP BitMapHeader,
+  _In_range_(0, BitMapHeader->SizeOfBitMap - NumberToSet) ULONG StartingIndex,
+  _In_range_(0, BitMapHeader->SizeOfBitMap - StartingIndex) ULONG NumberToSet);
+
+_IRQL_requires_max_(APC_LEVEL)
+NTSYSAPI
+NTSTATUS
+NTAPI
+RtlSetDaclSecurityDescriptor(
+  _Inout_ PSECURITY_DESCRIPTOR SecurityDescriptor,
+  _In_ BOOLEAN DaclPresent,
+  _In_opt_ PACL Dacl,
+  _In_opt_ BOOLEAN DaclDefaulted);
+
+#if defined(_AMD64_)
+
+/* VOID
+ * RtlStoreUlong(
+ *     IN PULONG Address,
+ *     IN ULONG Value);
+ */
+#define RtlStoreUlong(Address,Value) \
+    *(ULONG UNALIGNED *)(Address) = (Value)
+
+/* VOID
+ * RtlStoreUlonglong(
+ *     IN OUT PULONGLONG Address,
+ *     ULONGLONG Value);
+ */
+#define RtlStoreUlonglong(Address,Value) \
+    *(ULONGLONG UNALIGNED *)(Address) = (Value)
+
+/* VOID
+ * RtlStoreUshort(
+ *     IN PUSHORT Address,
+ *     IN USHORT Value);
+ */
+#define RtlStoreUshort(Address,Value) \
+    *(USHORT UNALIGNED *)(Address) = (Value)
+
+/* VOID
+ * RtlRetrieveUshort(
+ *     PUSHORT DestinationAddress,
+ *    PUSHORT SourceAddress);
+ */
+#define RtlRetrieveUshort(DestAddress,SrcAddress) \
+    *(USHORT UNALIGNED *)(DestAddress) = *(USHORT)(SrcAddress)
+
+/* VOID
+ * RtlRetrieveUlong(
+ *    PULONG DestinationAddress,
+ *    PULONG SourceAddress);
+ */
+#define RtlRetrieveUlong(DestAddress,SrcAddress) \
+    *(ULONG UNALIGNED *)(DestAddress) = *(PULONG)(SrcAddress)
+
+#else
+
+#define RtlStoreUlong(Address,Value)                      \
+    if ((ULONG_PTR)(Address) & LONG_MASK) { \
+        ((PUCHAR) (Address))[LONG_LEAST_SIGNIFICANT_BIT]    = (UCHAR)(FIRSTBYTE(Value)); \
+        ((PUCHAR) (Address))[LONG_3RD_MOST_SIGNIFICANT_BIT] = (UCHAR)(SECONDBYTE(Value)); \
+        ((PUCHAR) (Address))[LONG_2ND_MOST_SIGNIFICANT_BIT] = (UCHAR)(THIRDBYTE(Value)); \
+        ((PUCHAR) (Address))[LONG_MOST_SIGNIFICANT_BIT]     = (UCHAR)(FOURTHBYTE(Value)); \
+    } \
+    else { \
+        *((PULONG)(Address)) = (ULONG) (Value); \
+    }
+
+#define RtlStoreUlonglong(Address,Value) \
+    if ((ULONG_PTR)(Address) & LONGLONG_MASK) { \
+        RtlStoreUlong((ULONG_PTR)(Address), \
+                      (ULONGLONG)(Value) & 0xFFFFFFFF); \
+        RtlStoreUlong((ULONG_PTR)(Address)+sizeof(ULONG), \
+                      (ULONGLONG)(Value) >> 32); \
+    } else { \
+        *((PULONGLONG)(Address)) = (ULONGLONG)(Value); \
+    }
+
+#define RtlStoreUshort(Address,Value) \
+    if ((ULONG_PTR)(Address) & SHORT_MASK) { \
+        ((PUCHAR) (Address))[SHORT_LEAST_SIGNIFICANT_BIT] = (UCHAR)(FIRSTBYTE(Value)); \
+        ((PUCHAR) (Address))[SHORT_MOST_SIGNIFICANT_BIT ] = (UCHAR)(SECONDBYTE(Value)); \
+    } \
+    else { \
+        *((PUSHORT) (Address)) = (USHORT)Value; \
+    }
+
+#define RtlRetrieveUshort(DestAddress,SrcAddress) \
+    if ((ULONG_PTR)(SrcAddress) & LONG_MASK) \
+    { \
+        ((PUCHAR)(DestAddress))[0]=((PUCHAR)(SrcAddress))[0]; \
+        ((PUCHAR)(DestAddress))[1]=((PUCHAR)(SrcAddress))[1]; \
+    } \
+    else \
+    { \
+        *((PUSHORT)(DestAddress))=*((PUSHORT)(SrcAddress)); \
+    }
+
+#define RtlRetrieveUlong(DestAddress,SrcAddress) \
+    if ((ULONG_PTR)(SrcAddress) & LONG_MASK) \
+    { \
+        ((PUCHAR)(DestAddress))[0]=((PUCHAR)(SrcAddress))[0]; \
+        ((PUCHAR)(DestAddress))[1]=((PUCHAR)(SrcAddress))[1]; \
+        ((PUCHAR)(DestAddress))[2]=((PUCHAR)(SrcAddress))[2]; \
+        ((PUCHAR)(DestAddress))[3]=((PUCHAR)(SrcAddress))[3]; \
+    } \
+    else \
+    { \
+        *((PULONG)(DestAddress))=*((PULONG)(SrcAddress)); \
+    }
+
+#endif /* defined(_AMD64_) */
+
+#ifdef _WIN64
+/* VOID
+ * RtlStoreUlongPtr(
+ *     IN OUT PULONG_PTR Address,
+ *     IN ULONG_PTR Value);
+ */
+#define RtlStoreUlongPtr(Address,Value) RtlStoreUlonglong(Address,Value)
+#else
+#define RtlStoreUlongPtr(Address,Value) RtlStoreUlong(Address,Value)
+#endif /* _WIN64 */
+
+_Success_(return!=FALSE)
+_Must_inspect_result_
+NTSYSAPI
+BOOLEAN
+NTAPI
+RtlTimeFieldsToTime(
+    _In_ PTIME_FIELDS TimeFields,
+    _Out_ PLARGE_INTEGER Time);
+
+NTSYSAPI
+VOID
+NTAPI
+RtlTimeToTimeFields(
+  _In_ PLARGE_INTEGER Time,
+  _Out_ PTIME_FIELDS TimeFields);
+
+NTSYSAPI
+ULONG
+FASTCALL
+RtlUlongByteSwap(
+  _In_ ULONG Source);
+
+NTSYSAPI
+ULONGLONG
+FASTCALL
+RtlUlonglongByteSwap(
+  _In_ ULONGLONG Source);
+
+_When_(AllocateDestinationString,
+  _At_(DestinationString->MaximumLength,
+    _Out_range_(<=, (SourceString->MaximumLength / sizeof(WCHAR)))))
+_When_(!AllocateDestinationString,
+  _At_(DestinationString->Buffer, _Const_)
+  _At_(DestinationString->MaximumLength, _Const_))
+_IRQL_requires_max_(PASSIVE_LEVEL)
+_When_(AllocateDestinationString, _Must_inspect_result_)
+NTSYSAPI
+NTSTATUS
+NTAPI
+RtlUnicodeStringToAnsiString(
+  _When_(AllocateDestinationString, _Out_ _At_(DestinationString->Buffer, __drv_allocatesMem(Mem)))
+  _When_(!AllocateDestinationString, _Inout_)
+    PANSI_STRING DestinationString,
+  _In_ PCUNICODE_STRING SourceString,
+  _In_ BOOLEAN AllocateDestinationString);
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+NTSYSAPI
+ULONG
+NTAPI
+RtlxUnicodeStringToAnsiSize(
+  _In_ PCUNICODE_STRING UnicodeString);
+
+#define RtlUnicodeStringToAnsiSize(String) (                  \
+    NLS_MB_CODE_PAGE_TAG ?                                    \
+    RtlxUnicodeStringToAnsiSize(String) :                     \
+    ((String)->Length + sizeof(UNICODE_NULL)) / sizeof(WCHAR) \
+)
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+NTSYSAPI
+NTSTATUS
+NTAPI
+RtlUnicodeStringToInteger(
+  _In_ PCUNICODE_STRING String,
+  _In_opt_ ULONG Base,
+  _Out_ PULONG Value);
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+NTSYSAPI
+WCHAR
+NTAPI
+RtlUpcaseUnicodeChar(
+  _In_ WCHAR SourceCharacter);
+
+NTSYSAPI
+USHORT
+FASTCALL
+RtlUshortByteSwap(
+  _In_ USHORT Source);
+
+_IRQL_requires_max_(APC_LEVEL)
+_Must_inspect_result_
+NTSYSAPI
+BOOLEAN
+NTAPI
+RtlValidRelativeSecurityDescriptor(
+  _In_reads_bytes_(SecurityDescriptorLength) PSECURITY_DESCRIPTOR SecurityDescriptorInput,
+  _In_ ULONG SecurityDescriptorLength,
+  _In_ SECURITY_INFORMATION RequiredInformation);
+
+_IRQL_requires_max_(APC_LEVEL)
+_Must_inspect_result_
+NTSYSAPI
+BOOLEAN
+NTAPI
+RtlValidSecurityDescriptor(
+  _In_ PSECURITY_DESCRIPTOR SecurityDescriptor);
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+NTSYSAPI
+NTSTATUS
+NTAPI
+RtlGetVersion(
+    _Out_
+    _At_(lpVersionInformation->dwOSVersionInfoSize, _Pre_ _Valid_)
+    _When_(lpVersionInformation->dwOSVersionInfoSize == sizeof(RTL_OSVERSIONINFOEXW),
+        _At_((PRTL_OSVERSIONINFOEXW)lpVersionInformation, _Out_))
+        PRTL_OSVERSIONINFOW lpVersionInformation);
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+_Must_inspect_result_
+NTSYSAPI
+NTSTATUS
+NTAPI
+RtlVerifyVersionInfo(
+    _In_ PRTL_OSVERSIONINFOEXW VersionInfo,
+    _In_ ULONG TypeMask,
+    _In_ ULONGLONG ConditionMask);
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+NTSYSAPI
+NTSTATUS
+NTAPI
+RtlWriteRegistryValue(
+  _In_ ULONG RelativeTo,
+  _In_ PCWSTR Path,
+  _In_z_ PCWSTR ValueName,
+  _In_ ULONG ValueType,
+  _In_reads_bytes_opt_(ValueLength) PVOID ValueData,
+  _In_ ULONG ValueLength);
+
+
+#endif /* (NTDDI_VERSION >= NTDDI_WIN2K) */
+
+
+#if (NTDDI_VERSION >= NTDDI_WIN2KSP3)
+NTSYSAPI
+VOID
+FASTCALL
+RtlPrefetchMemoryNonTemporal(
+  _In_ PVOID Source,
+  _In_ SIZE_T Length);
+#endif
+
+
+#if (NTDDI_VERSION >= NTDDI_WINXP)
+
+
+NTSYSAPI
+VOID
+NTAPI
+RtlClearBit(
+  _In_ PRTL_BITMAP BitMapHeader,
+  _In_range_(<, BitMapHeader->SizeOfBitMap) ULONG BitNumber);
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+NTSYSAPI
+WCHAR
+NTAPI
+RtlDowncaseUnicodeChar(
+  _In_ WCHAR SourceCharacter);
+
+NTSYSAPI
+VOID
+NTAPI
+RtlSetBit(
+  _In_ PRTL_BITMAP BitMapHeader,
+  _In_range_(<, BitMapHeader->SizeOfBitMap) ULONG BitNumber);
+
+_Must_inspect_result_
+NTSYSAPI
+BOOLEAN
+NTAPI
+RtlTestBit(
+  _In_ PRTL_BITMAP BitMapHeader,
+  _In_range_(<, BitMapHeader->SizeOfBitMap) ULONG BitNumber);
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+NTSYSAPI
+NTSTATUS
+NTAPI
+RtlHashUnicodeString(
+  _In_ CONST UNICODE_STRING *String,
+  _In_ BOOLEAN CaseInSensitive,
+  _In_ ULONG HashAlgorithm,
+  _Out_ PULONG HashValue);
+
+
+
+#endif /* (NTDDI_VERSION >= NTDDI_WINXP) */
+
+
+#if (NTDDI_VERSION >= NTDDI_VISTA)
+
+NTSYSAPI
+ULONG
+NTAPI
+RtlNumberOfSetBitsUlongPtr(
+  _In_ ULONG_PTR Target);
+
+NTSYSAPI
+ULONGLONG
+NTAPI
+RtlIoDecodeMemIoResource(
+  _In_ struct _IO_RESOURCE_DESCRIPTOR *Descriptor,
+  _Out_opt_ PULONGLONG Alignment,
+  _Out_opt_ PULONGLONG MinimumAddress,
+  _Out_opt_ PULONGLONG MaximumAddress);
+
+NTSYSAPI
+NTSTATUS
+NTAPI
+RtlIoEncodeMemIoResource(
+  _In_ struct _IO_RESOURCE_DESCRIPTOR *Descriptor,
+  _In_ UCHAR Type,
+  _In_ ULONGLONG Length,
+  _In_ ULONGLONG Alignment,
+  _In_ ULONGLONG MinimumAddress,
+  _In_ ULONGLONG MaximumAddress);
+
+NTSYSAPI
+ULONGLONG
+NTAPI
+RtlCmDecodeMemIoResource(
+  _In_ struct _CM_PARTIAL_RESOURCE_DESCRIPTOR *Descriptor,
+  _Out_opt_ PULONGLONG Start);
+
+NTSYSAPI
+NTSTATUS
+NTAPI
+RtlFindClosestEncodableLength(
+  _In_ ULONGLONG SourceLength,
+  _Out_ PULONGLONG TargetLength);
+
+NTSYSAPI
+NTSTATUS
+NTAPI
+RtlCmEncodeMemIoResource(
+  _In_ PCM_PARTIAL_RESOURCE_DESCRIPTOR Descriptor,
+  _In_ UCHAR Type,
+  _In_ ULONGLONG Length,
+  _In_ ULONGLONG Start);
+
+
+#endif /* (NTDDI_VERSION >= NTDDI_VISTA) */
+
+#if (NTDDI_VERSION >= NTDDI_WIN7)
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+_Must_inspect_result_
+NTSYSAPI
+NTSTATUS
+NTAPI
+RtlUnicodeToUTF8N(
+  _Out_writes_bytes_to_(UTF8StringMaxByteCount, *UTF8StringActualByteCount)
+    PCHAR UTF8StringDestination,
+  _In_ ULONG UTF8StringMaxByteCount,
+  _Out_ PULONG UTF8StringActualByteCount,
+  _In_reads_bytes_(UnicodeStringByteCount) PCWCH UnicodeStringSource,
+  _In_ ULONG UnicodeStringByteCount);
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+_Must_inspect_result_
+NTSYSAPI
+NTSTATUS
+NTAPI
+RtlUTF8ToUnicodeN(
+  _Out_writes_bytes_to_(UnicodeStringMaxByteCount, *UnicodeStringActualByteCount)
+    PWSTR UnicodeStringDestination,
+  _In_ ULONG UnicodeStringMaxByteCount,
+  _Out_ PULONG UnicodeStringActualByteCount,
+  _In_reads_bytes_(UTF8StringByteCount) PCCH UTF8StringSource,
+  _In_ ULONG UTF8StringByteCount);
+
+NTSYSAPI
+ULONG64
+NTAPI
+RtlGetEnabledExtendedFeatures(
+  IN ULONG64 FeatureMask);
+
+
+#endif /* (NTDDI_VERSION >= NTDDI_WIN7) */
+
+
+#if !defined(MIDL_PASS)
+/* inline funftions */
+//DECLSPEC_DEPRECATED_DDK_WINXP
+static __inline
+LARGE_INTEGER
+NTAPI_INLINE
+RtlConvertLongToLargeInteger(
+  _In_ LONG SignedInteger)
+{
+  LARGE_INTEGER ret;
+  ret.QuadPart = SignedInteger;
+  return ret;
+}
+
+//DECLSPEC_DEPRECATED_DDK_WINXP
+static __inline
+LARGE_INTEGER
+NTAPI_INLINE
+RtlConvertUlongToLargeInteger(
+  _In_ ULONG UnsignedInteger)
+{
+  LARGE_INTEGER ret;
+  ret.QuadPart = UnsignedInteger;
+  return ret;
+}
+
+//DECLSPEC_DEPRECATED_DDK_WINXP
+static __inline
+LARGE_INTEGER
+NTAPI_INLINE
+RtlLargeIntegerShiftLeft(
+  _In_ LARGE_INTEGER LargeInteger,
+  _In_ CCHAR ShiftCount)
+{
+  LARGE_INTEGER Result;
+
+  Result.QuadPart = LargeInteger.QuadPart << ShiftCount;
+  return Result;
+}
+
+//DECLSPEC_DEPRECATED_DDK_WINXP
+static __inline
+LARGE_INTEGER
+NTAPI_INLINE
+RtlLargeIntegerShiftRight(
+  _In_ LARGE_INTEGER LargeInteger,
+  _In_ CCHAR ShiftCount)
+{
+  LARGE_INTEGER Result;
+
+  Result.QuadPart = (ULONG64)LargeInteger.QuadPart >> ShiftCount;
+  return Result;
+}
+
+//DECLSPEC_DEPRECATED_DDK
+static __inline
+ULONG
+NTAPI_INLINE
+RtlEnlargedUnsignedDivide(
+  _In_ ULARGE_INTEGER Dividend,
+  _In_ ULONG Divisor,
+  _Out_opt_ PULONG Remainder)
+{
+  if (Remainder)
+    *Remainder = (ULONG)(Dividend.QuadPart % Divisor);
+  return (ULONG)(Dividend.QuadPart / Divisor);
+}
+
+//DECLSPEC_DEPRECATED_DDK
+static __inline
+LARGE_INTEGER
+NTAPI_INLINE
+RtlLargeIntegerNegate(
+  _In_ LARGE_INTEGER Subtrahend)
+{
+  LARGE_INTEGER Difference;
+
+  Difference.QuadPart = -Subtrahend.QuadPart;
+  return Difference;
+}
+
+//DECLSPEC_DEPRECATED_DDK
+static __inline
+LARGE_INTEGER
+NTAPI_INLINE
+RtlLargeIntegerSubtract(
+  _In_ LARGE_INTEGER Minuend,
+  _In_ LARGE_INTEGER Subtrahend)
+{
+  LARGE_INTEGER Difference;
+
+  Difference.QuadPart = Minuend.QuadPart - Subtrahend.QuadPart;
+  return Difference;
+}
+
+//DECLSPEC_DEPRECATED_DDK
+static __inline
+LARGE_INTEGER
+NTAPI_INLINE
+RtlEnlargedUnsignedMultiply(
+  _In_ ULONG Multiplicand,
+  _In_ ULONG Multiplier)
+{
+  LARGE_INTEGER ret;
+  ret.QuadPart = (ULONGLONG)Multiplicand * (ULONGLONG)Multiplier;
+  return ret;
+}
+
+//DECLSPEC_DEPRECATED_DDK
+static __inline
+LARGE_INTEGER
+NTAPI_INLINE
+RtlEnlargedIntegerMultiply(
+  _In_ LONG Multiplicand,
+  _In_ LONG Multiplier)
+{
+  LARGE_INTEGER ret;
+  ret.QuadPart = (LONGLONG)Multiplicand * (ULONGLONG)Multiplier;
+  return ret;
+}
+
+_At_(AnsiString->Buffer, _Post_equal_to_(Buffer))
+_At_(AnsiString->Length, _Post_equal_to_(0))
+_At_(AnsiString->MaximumLength, _Post_equal_to_(BufferSize))
+FORCEINLINE
+VOID
+RtlInitEmptyAnsiString(
+  _Out_ PANSI_STRING AnsiString,
+  _Pre_maybenull_ _Pre_readable_size_(BufferSize) __drv_aliasesMem PCHAR Buffer,
+  _In_ USHORT BufferSize)
+{
+  AnsiString->Length = 0;
+  AnsiString->MaximumLength = BufferSize;
+  AnsiString->Buffer = Buffer;
+}
+
+_At_(UnicodeString->Buffer, _Post_equal_to_(Buffer))
+_At_(UnicodeString->Length, _Post_equal_to_(0))
+_At_(UnicodeString->MaximumLength, _Post_equal_to_(BufferSize))
+FORCEINLINE
+VOID
+RtlInitEmptyUnicodeString(
+    _Out_ PUNICODE_STRING UnicodeString,
+    _Writable_bytes_(BufferSize)
+    _When_(BufferSize != 0, _Notnull_)
+    __drv_aliasesMem PWSTR Buffer,
+    _In_ USHORT BufferSize)
+{
+    UnicodeString->Length = 0;
+    UnicodeString->MaximumLength = BufferSize;
+    UnicodeString->Buffer = Buffer;
+}
+
+#if defined(_AMD64_) || defined(_IA64_)
+
+
+static __inline
+LARGE_INTEGER
+NTAPI_INLINE
+RtlExtendedIntegerMultiply(
+  _In_ LARGE_INTEGER Multiplicand,
+  _In_ LONG Multiplier)
+{
+  LARGE_INTEGER ret;
+  ret.QuadPart = Multiplicand.QuadPart * Multiplier;
+  return ret;
+}
+
+static __inline
+LARGE_INTEGER
+NTAPI_INLINE
+RtlExtendedLargeIntegerDivide(
+  _In_ LARGE_INTEGER Dividend,
+  _In_ ULONG Divisor,
+  _Out_opt_ PULONG Remainder)
+{
+  LARGE_INTEGER ret;
+  ret.QuadPart = (ULONG64)Dividend.QuadPart / Divisor;
+  if (Remainder)
+    *Remainder = (ULONG)(Dividend.QuadPart % Divisor);
+  return ret;
+}
+
+
+
+#endif /* defined(_AMD64_) || defined(_IA64_) */
+
+
+#if defined(_AMD64_)
+
+#define MultiplyHigh __mulh
+#define UnsignedMultiplyHigh __umulh
+
+//DECLSPEC_DEPRECATED_DDK
+static __inline
+LARGE_INTEGER
+NTAPI_INLINE
+RtlExtendedMagicDivide(
+  _In_ LARGE_INTEGER Dividend,
+  _In_ LARGE_INTEGER MagicDivisor,
+  _In_ CCHAR ShiftCount)
+{
+  LARGE_INTEGER ret;
+  ULONG64 ret64;
+  BOOLEAN Pos;
+  Pos = (Dividend.QuadPart >= 0);
+  ret64 = UnsignedMultiplyHigh(Pos ? Dividend.QuadPart : -Dividend.QuadPart,
+                               MagicDivisor.QuadPart);
+  ret64 >>= ShiftCount;
+  ret.QuadPart = Pos ? ret64 : -(LONG64)ret64;
+  return ret;
+}
+#endif
+
+//DECLSPEC_DEPRECATED_DDK
+static __inline
+LARGE_INTEGER
+NTAPI_INLINE
+RtlLargeIntegerAdd(
+  _In_ LARGE_INTEGER Addend1,
+  _In_ LARGE_INTEGER Addend2)
+{
+  LARGE_INTEGER ret;
+  ret.QuadPart = Addend1.QuadPart + Addend2.QuadPart;
+  return ret;
+}
+
+/* VOID
+ * RtlLargeIntegerAnd(
+ *     IN OUT LARGE_INTEGER Result,
+ *     IN LARGE_INTEGER Source,
+ *     IN LARGE_INTEGER Mask);
+ */
+#define RtlLargeIntegerAnd(Result, Source, Mask) \
+    Result.QuadPart = Source.QuadPart & Mask.QuadPart
+
+//DECLSPEC_DEPRECATED_DDK
+static __inline
+LARGE_INTEGER
+NTAPI_INLINE
+RtlLargeIntegerArithmeticShift(
+  _In_ LARGE_INTEGER LargeInteger,
+  _In_ CCHAR ShiftCount)
+{
+  LARGE_INTEGER ret;
+  ret.QuadPart = LargeInteger.QuadPart >> ShiftCount;
+  return ret;
+}
+
+/* BOOLEAN
+ * RtlLargeIntegerEqualTo(
+ *     IN LARGE_INTEGER  Operand1,
+ *     IN LARGE_INTEGER  Operand2);
+ */
+#define RtlLargeIntegerEqualTo(X,Y) \
+    (!(((X).LowPart ^ (Y).LowPart) | ((X).HighPart ^ (Y).HighPart)))
+
+FORCEINLINE
+PVOID
+RtlSecureZeroMemory(
+  _Out_writes_bytes_all_(Size) PVOID Pointer,
+  _In_ SIZE_T Size)
+{
+  volatile char* vptr = (volatile char*)Pointer;
+#if defined(_M_AMD64)
+  __stosb((PUCHAR)vptr, 0, Size);
+#else
+  char * endptr = (char *)vptr + Size;
+  while (vptr < endptr) {
+    *vptr = 0; vptr++;
+  }
+#endif
+   return Pointer;
+}
+
+#if defined(_M_AMD64)
+_Must_inspect_result_
+FORCEINLINE
+BOOLEAN
+RtlCheckBit(
+  _In_ PRTL_BITMAP BitMapHeader,
+  _In_range_(<, BitMapHeader->SizeOfBitMap) ULONG BitPosition)
+{
+  return BitTest64((LONG64 CONST*)BitMapHeader->Buffer, (LONG64)BitPosition);
+}
+#else
+#define RtlCheckBit(BMH,BP) (((((PLONG)(BMH)->Buffer)[(BP)/32]) >> ((BP)%32)) & 0x1)
+#endif /* defined(_M_AMD64) */
+
+#define RtlLargeIntegerGreaterThan(X,Y) (                              \
+    (((X).HighPart == (Y).HighPart) && ((X).LowPart > (Y).LowPart)) || \
+    ((X).HighPart > (Y).HighPart)                                      \
+)
+
+#define RtlLargeIntegerGreaterThanOrEqualTo(X,Y) (                      \
+    (((X).HighPart == (Y).HighPart) && ((X).LowPart >= (Y).LowPart)) || \
+    ((X).HighPart > (Y).HighPart)                                       \
+)
+
+#define RtlLargeIntegerNotEqualTo(X,Y) (                          \
+    (((X).LowPart ^ (Y).LowPart) | ((X).HighPart ^ (Y).HighPart)) \
+)
+
+#define RtlLargeIntegerLessThan(X,Y) (                                 \
+    (((X).HighPart == (Y).HighPart) && ((X).LowPart < (Y).LowPart)) || \
+    ((X).HighPart < (Y).HighPart)                                      \
+)
+
+#define RtlLargeIntegerLessThanOrEqualTo(X,Y) (                         \
+    (((X).HighPart == (Y).HighPart) && ((X).LowPart <= (Y).LowPart)) || \
+    ((X).HighPart < (Y).HighPart)                                       \
+)
+
+#define RtlLargeIntegerGreaterThanZero(X) (       \
+    (((X).HighPart == 0) && ((X).LowPart > 0)) || \
+    ((X).HighPart > 0 )                           \
+)
+
+#define RtlLargeIntegerGreaterOrEqualToZero(X) ( (X).HighPart >= 0 )
+
+#define RtlLargeIntegerEqualToZero(X) ( !((X).LowPart | (X).HighPart) )
+
+#define RtlLargeIntegerNotEqualToZero(X) ( ((X).LowPart | (X).HighPart) )
+
+#define RtlLargeIntegerLessThanZero(X) ( ((X).HighPart < 0) )
+
+#define RtlLargeIntegerLessOrEqualToZero(X) ( ((X).HighPart < 0) || !((X).LowPart | (X).HighPart) )
+
+#endif /* !defined(MIDL_PASS) */
+
+/* Byte Swap Functions */
+#if (defined(_M_IX86) && (_MSC_FULL_VER > 13009037 || defined(__GNUC__))) || \
+    ((defined(_M_AMD64) || defined(_M_IA64)) \
+        && (_MSC_FULL_VER > 13009175 || defined(__GNUC__)))
+
+#define RtlUshortByteSwap(_x) _byteswap_ushort((USHORT)(_x))
+#define RtlUlongByteSwap(_x) _byteswap_ulong((_x))
+#define RtlUlonglongByteSwap(_x) _byteswap_uint64((_x))
+
+#endif
+
+#if DBG
+
+#define RTL_VERIFY(exp) \
+  ((!(exp)) ? \
+    RtlAssert( (PVOID)#exp, (PVOID)__FILE__, __LINE__, NULL ), FALSE : TRUE)
+
+#define RTL_VERIFYMSG(msg, exp) \
+  ((!(exp)) ? \
+    RtlAssert( (PVOID)#exp, (PVOID)__FILE__, __LINE__, (PCHAR)msg ), FALSE : TRUE)
+
+#define RTL_SOFT_VERIFY(exp) \
+  ((!(exp)) ? \
+    DbgPrint("%s(%d): Soft assertion failed\n   Expression: %s\n", __FILE__, __LINE__, #exp), FALSE : TRUE)
+
+#define RTL_SOFT_VERIFYMSG(msg, exp) \
+  (VOID)((!(exp)) ? \
+    DbgPrint("%s(%d): Soft assertion failed\n   Expression: %s\n   Message: %s\n", __FILE__, __LINE__, #exp, (msg)), FALSE : TRUE)
+
+#define ASSERT(exp) ((void)RTL_VERIFY(exp))
+#define ASSERTMSG(msg, exp) ((void)RTL_VERIFYMSG(msg, exp))
+
+#define RTL_SOFT_ASSERT(exp) ((void)RTL_SOFT_VERIFY(exp))
+#define RTL_SOFT_ASSERTMSG(msg, exp) ((void)RTL_SOFT_VERIFYMSG(msg, exp))
+
+#if defined(_MSC_VER)
+# define __assert_annotationA(msg) __annotation(L"Debug", L"AssertFail", L ## msg)
+# define __assert_annotationW(msg) __annotation(L"Debug", L"AssertFail", msg)
+#else
+# define __assert_annotationA(msg) \
+    DbgPrint("Assertion %s(%d): %s", __FILE__, __LINE__, msg)
+# define __assert_annotationW(msg) \
+    DbgPrint("Assertion %s(%d): %S", __FILE__, __LINE__, msg)
+#endif
+
+#define NT_VERIFY(exp) \
+   ((!(exp)) ? \
+      (__assert_annotationA(#exp), \
+       DbgRaiseAssertionFailure(), FALSE) : TRUE)
+
+#define NT_VERIFYMSG(msg, exp) \
+   ((!(exp)) ? \
+      (__assert_annotationA(msg), \
+      DbgRaiseAssertionFailure(), FALSE) : TRUE)
+
+#define NT_VERIFYMSGW(msg, exp) \
+    ((!(exp)) ? \
+        (__assert_annotationW(msg), \
+         DbgRaiseAssertionFailure(), FALSE) : TRUE)
+
+#define NT_ASSERT(exp) ((void)NT_VERIFY(exp))
+#define NT_ASSERTMSG(msg, exp) ((void)NT_VERIFYMSG(msg, exp))
+#define NT_ASSERTMSGW(msg, exp) ((void)NT_VERIFYMSGW(msg, exp))
+
+#else /* !DBG */
+
+#define ASSERT(exp) ((VOID) 0)
+#define ASSERTMSG(msg, exp) ((VOID) 0)
+
+#define RTL_SOFT_ASSERT(exp) ((VOID) 0)
+#define RTL_SOFT_ASSERTMSG(msg, exp) ((VOID) 0)
+
+#define RTL_VERIFY(exp) ((exp) ? TRUE : FALSE)
+#define RTL_VERIFYMSG(msg, exp) ((exp) ? TRUE : FALSE)
+
+#define RTL_SOFT_VERIFY(exp) ((exp) ? TRUE : FALSE)
+#define RTL_SOFT_VERIFYMSG(msg, exp) ((exp) ? TRUE : FALSE)
+
+#define NT_ASSERT(exp)          ((VOID)0)
+#define NT_ASSERTMSG(msg, exp)  ((VOID)0)
+#define NT_ASSERTMSGW(msg, exp) ((VOID)0)
+
+#define NT_VERIFY(_exp)           ((_exp) ? TRUE : FALSE)
+#define NT_VERIFYMSG(_msg, _exp ) ((_exp) ? TRUE : FALSE)
+#define NT_VERIFYMSGW(_msg, _exp) ((_exp) ? TRUE : FALSE)
+
+#endif /* DBG */
+
+#define InitializeListHead32(ListHead) (\
+    (ListHead)->Flink = (ListHead)->Blink = PtrToUlong((ListHead)))
+
+#if !defined(_WINBASE_)
+
+#if defined(_WIN64) && (defined(_NTDRIVER_) || defined(_NTDDK_) || defined(_NTIFS_) || defined(_NTHAL_) || defined(_NTOSP_))
+
+NTKERNELAPI
+VOID
+InitializeSListHead(
+  _Out_ PSLIST_HEADER SListHead);
+
+#else
+
+FORCEINLINE
+VOID
+InitializeSListHead(
+  _Out_ PSLIST_HEADER SListHead)
+{
+#if defined(_IA64_)
+  ULONG64 FeatureBits;
+#endif
+
+#if defined(_WIN64)
+  if (((ULONG_PTR)SListHead & 0xf) != 0) {
+    RtlRaiseStatus(STATUS_DATATYPE_MISALIGNMENT);
+  }
+#endif
+  RtlZeroMemory(SListHead, sizeof(SLIST_HEADER));
+#if defined(_IA64_)
+  FeatureBits = __getReg(CV_IA64_CPUID4);
+  if ((FeatureBits & KF_16BYTE_INSTR) != 0) {
+    SListHead->Header16.HeaderType = 1;
+    SListHead->Header16.Init = 1;
+  }
+#endif
+}
+
+#endif
+
+#if defined(_WIN64)
+
+#define InterlockedPopEntrySList(Head) \
+    ExpInterlockedPopEntrySList(Head)
+
+#define InterlockedPushEntrySList(Head, Entry) \
+    ExpInterlockedPushEntrySList(Head, Entry)
+
+#define InterlockedFlushSList(Head) \
+    ExpInterlockedFlushSList(Head)
+
+#define QueryDepthSList(Head) \
+    ExQueryDepthSList(Head)
+
+#else /* !defined(_WIN64) */
+
+NTKERNELAPI
+PSLIST_ENTRY
+FASTCALL
+InterlockedPopEntrySList(
+  _Inout_ PSLIST_HEADER ListHead);
+
+NTKERNELAPI
+PSLIST_ENTRY
+FASTCALL
+InterlockedPushEntrySList(
+  _Inout_ PSLIST_HEADER ListHead,
+  _Inout_ __drv_aliasesMem PSLIST_ENTRY ListEntry);
+
+#define InterlockedFlushSList(ListHead) \
+    ExInterlockedFlushSList(ListHead)
+
+#define QueryDepthSList(Head) \
+    ExQueryDepthSList(Head)
+
+#endif /* !defined(_WIN64) */
+
+#endif /* !defined(_WINBASE_) */
+
+#define RTL_CONTEXT_EX_OFFSET(ContextEx, Chunk) ((ContextEx)->Chunk.Offset)
+#define RTL_CONTEXT_EX_LENGTH(ContextEx, Chunk) ((ContextEx)->Chunk.Length)
+#define RTL_CONTEXT_EX_CHUNK(Base, Layout, Chunk)       \
+    ((PVOID)((PCHAR)(Base) + RTL_CONTEXT_EX_OFFSET(Layout, Chunk)))
+#define RTL_CONTEXT_OFFSET(Context, Chunk)              \
+    RTL_CONTEXT_EX_OFFSET((PCONTEXT_EX)(Context + 1), Chunk)
+#define RTL_CONTEXT_LENGTH(Context, Chunk)              \
+    RTL_CONTEXT_EX_LENGTH((PCONTEXT_EX)(Context + 1), Chunk)
+#define RTL_CONTEXT_CHUNK(Context, Chunk)               \
+    RTL_CONTEXT_EX_CHUNK((PCONTEXT_EX)(Context + 1),    \
+                         (PCONTEXT_EX)(Context + 1),    \
+                         Chunk)
+
+BOOLEAN
+RTLVERLIB_DDI(RtlIsNtDdiVersionAvailable)(
+  _In_ ULONG Version);
+
+BOOLEAN
+RTLVERLIB_DDI(RtlIsServicePackVersionInstalled)(
+  _In_ ULONG Version);
+
+#ifndef RtlIsNtDdiVersionAvailable
+#define RtlIsNtDdiVersionAvailable WdmlibRtlIsNtDdiVersionAvailable
+#endif
+
+#ifndef RtlIsServicePackVersionInstalled
+#define RtlIsServicePackVersionInstalled WdmlibRtlIsServicePackVersionInstalled
+#endif
+
+#define RtlInterlockedSetBits(Flags, Flag) \
+    InterlockedOr((PLONG)(Flags), Flag)
+
+#define RtlInterlockedAndBits(Flags, Flag) \
+    InterlockedAnd((PLONG)(Flags), Flag)
+
+#define RtlInterlockedClearBits(Flags, Flag) \
+    RtlInterlockedAndBits(Flags, ~(Flag))
+
+#define RtlInterlockedXorBits(Flags, Flag) \
+    InterlockedXor(Flags, Flag)
+
+#define RtlInterlockedSetBitsDiscardReturn(Flags, Flag) \
+    (VOID) RtlInterlockedSetBits(Flags, Flag)
+
+#define RtlInterlockedAndBitsDiscardReturn(Flags, Flag) \
+    (VOID) RtlInterlockedAndBits(Flags, Flag)
+
+#define RtlInterlockedClearBitsDiscardReturn(Flags, Flag) \
+    RtlInterlockedAndBitsDiscardReturn(Flags, ~(Flag))
+
+
+/******************************************************************************
  *                       Memory manager Functions                             *
  ******************************************************************************/
 /* Alignment Macros */
@@ -11160,36 +11248,38 @@ void __PREfastPagedCodeLocked(void);
 
 /* ULONG
  * BYTE_OFFSET(
- *   IN PVOID Va)
+ *     _In_ PVOID Va)
  */
 #define BYTE_OFFSET(Va) \
   ((ULONG) ((ULONG_PTR) (Va) & (PAGE_SIZE - 1)))
 
 /* ULONG
  * BYTES_TO_PAGES(
- *   IN ULONG Size)
+ *     _In_ ULONG Size)
+ *
+ * Note: This needs to be like this to avoid overflows!
  */
 #define BYTES_TO_PAGES(Size) \
-  (((Size) + PAGE_SIZE - 1) >> PAGE_SHIFT)
+  (((Size) >> PAGE_SHIFT) + (((Size) & (PAGE_SIZE - 1)) != 0))
 
 /* PVOID
  * PAGE_ALIGN(
- *   IN PVOID Va)
+ *     _In_ PVOID Va)
  */
 #define PAGE_ALIGN(Va) \
   ((PVOID) ((ULONG_PTR)(Va) & ~(PAGE_SIZE - 1)))
 
 /* ULONG_PTR
  * ROUND_TO_PAGES(
- *   IN ULONG_PTR Size)
+ *     _In_ ULONG_PTR Size)
  */
 #define ROUND_TO_PAGES(Size) \
   (((ULONG_PTR) (Size) + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1))
 
 /* ULONG
  * ADDRESS_AND_SIZE_TO_SPAN_PAGES(
- *   IN PVOID Va,
- *   IN ULONG Size)
+ *     _In_ PVOID Va,
+ *     _In_ ULONG Size)
  */
 #define ADDRESS_AND_SIZE_TO_SPAN_PAGES(_Va, _Size) \
   ((ULONG) ((((ULONG_PTR) (_Va) & (PAGE_SIZE - 1)) \
@@ -11201,7 +11291,7 @@ void __PREfastPagedCodeLocked(void);
 /*
  * ULONG
  * MmGetMdlByteCount(
- *   IN PMDL  Mdl)
+ *     _In_ PMDL  Mdl)
  */
 #define MmGetMdlByteCount(_Mdl) \
   ((_Mdl)->ByteCount)
@@ -11219,7 +11309,7 @@ void __PREfastPagedCodeLocked(void);
 /*
  * PPFN_NUMBER
  * MmGetMdlPfnArray(
- *   IN PMDL  Mdl)
+ *     _In_ PMDL  Mdl)
  */
 #define MmGetMdlPfnArray(_Mdl) \
   ((PPFN_NUMBER) ((_Mdl) + 1))
@@ -11227,7 +11317,7 @@ void __PREfastPagedCodeLocked(void);
 /*
  * PVOID
  * MmGetMdlVirtualAddress(
- *   IN PMDL  Mdl)
+ *     _In_ PMDL  Mdl)
  */
 #define MmGetMdlVirtualAddress(_Mdl) \
   ((PVOID) ((PCHAR) ((_Mdl)->StartVa) + (_Mdl)->ByteOffset))
@@ -11236,7 +11326,7 @@ void __PREfastPagedCodeLocked(void);
 #define MmLockPagableCodeSection(Address) MmLockPagableDataSection(Address)
 
 /* PVOID MmGetSystemAddressForMdl(
- *     IN PMDL Mdl);
+ *     _In_ PMDL Mdl);
  */
 #define MmGetSystemAddressForMdl(Mdl) \
   (((Mdl)->MdlFlags & (MDL_MAPPED_TO_SYSTEM_VA | \
@@ -11246,8 +11336,8 @@ void __PREfastPagedCodeLocked(void);
 
 /* PVOID
  * MmGetSystemAddressForMdlSafe(
- *     IN PMDL Mdl,
- *     IN MM_PAGE_PRIORITY Priority)
+ *     _In_ PMDL Mdl,
+ *     _In_ MM_PAGE_PRIORITY Priority)
  */
 #define MmGetSystemAddressForMdlSafe(_Mdl, _Priority) \
   (((_Mdl)->MdlFlags & (MDL_MAPPED_TO_SYSTEM_VA \
@@ -11259,9 +11349,9 @@ void __PREfastPagedCodeLocked(void);
 /*
  * VOID
  * MmInitializeMdl(
- *   IN PMDL  MemoryDescriptorList,
- *   IN PVOID  BaseVa,
- *   IN SIZE_T  Length)
+ *     _In_ PMDL MemoryDescriptorList,
+ *     _In_ PVOID BaseVa,
+ *     _In_ SIZE_T Length)
  */
 #define MmInitializeMdl(_MemoryDescriptorList, \
                         _BaseVa, \
@@ -11279,7 +11369,7 @@ void __PREfastPagedCodeLocked(void);
 /*
  * VOID
  * MmPrepareMdlForReuse(
- *   IN PMDL  Mdl)
+ *     _In_ PMDL Mdl)
  */
 #define MmPrepareMdlForReuse(_Mdl) \
 { \
@@ -12513,7 +12603,7 @@ IoBuildDeviceIoControlRequest(
   _Out_opt_ PVOID OutputBuffer,
   _In_ ULONG OutputBufferLength,
   _In_ BOOLEAN InternalDeviceIoControl,
-  _In_ PKEVENT Event,
+  _In_opt_ PKEVENT Event,
   _Out_ PIO_STATUS_BLOCK IoStatusBlock);
 
 _IRQL_requires_max_(DISPATCH_LEVEL)
@@ -15698,7 +15788,7 @@ NTSYSAPI
 VOID
 NTAPI
 DbgBreakPointWithStatus(
-  IN ULONG Status);
+    _In_ ULONG Status);
 
 #endif /* (NTDDI_VERSION >= NTDDI_WIN2K) */
 
@@ -16586,17 +16676,18 @@ NTSYSAPI
 NTSTATUS
 NTAPI
 ZwCreateFile(
-  _Out_ PHANDLE FileHandle,
-  _In_ ACCESS_MASK DesiredAccess,
-  _In_ POBJECT_ATTRIBUTES ObjectAttributes,
-  _Out_ PIO_STATUS_BLOCK IoStatusBlock,
-  _In_opt_ PLARGE_INTEGER AllocationSize,
-  _In_ ULONG FileAttributes,
-  _In_ ULONG ShareAccess,
-  _In_ ULONG CreateDisposition,
-  _In_ ULONG CreateOptions,
-  _In_reads_bytes_opt_(EaLength) PVOID EaBuffer,
-  _In_ ULONG EaLength);
+    _Out_ PHANDLE FileHandle,
+    _In_ ACCESS_MASK DesiredAccess,
+    _In_ POBJECT_ATTRIBUTES ObjectAttributes,
+    _Out_ PIO_STATUS_BLOCK IoStatusBlock,
+    _In_opt_ PLARGE_INTEGER AllocationSize,
+    _In_ ULONG FileAttributes,
+    _In_ ULONG ShareAccess,
+    _In_ ULONG CreateDisposition,
+    _In_ ULONG CreateOptions,
+    _In_reads_bytes_opt_(EaLength) PVOID EaBuffer,
+    _In_ ULONG EaLength
+);
 
 _IRQL_requires_max_(PASSIVE_LEVEL)
 NTSYSAPI
@@ -17227,8 +17318,8 @@ NTSYSCALLAPI
 NTSTATUS
 NTAPI
 ZwRollbackComplete(
-  IN HANDLE EnlistmentHandle,
-  IN PLARGE_INTEGER TmVirtualClock OPTIONAL);
+  _In_ HANDLE EnlistmentHandle,
+  _In_opt_ PLARGE_INTEGER TmVirtualClock);
 
 NTSYSCALLAPI
 NTSTATUS
@@ -17264,29 +17355,29 @@ NTSYSAPI
 NTSTATUS
 NTAPI
 ZwNotifyChangeMultipleKeys(
-  IN HANDLE MasterKeyHandle,
-  IN ULONG Count OPTIONAL,
-  IN OBJECT_ATTRIBUTES SubordinateObjects[] OPTIONAL,
-  IN HANDLE Event OPTIONAL,
-  IN PIO_APC_ROUTINE ApcRoutine OPTIONAL,
-  IN PVOID ApcContext OPTIONAL,
-  OUT PIO_STATUS_BLOCK IoStatusBlock,
-  IN ULONG CompletionFilter,
-  IN BOOLEAN WatchTree,
-  OUT PVOID Buffer OPTIONAL,
-  IN ULONG BufferSize,
-  IN BOOLEAN Asynchronous);
+  _In_ HANDLE MasterKeyHandle,
+  _In_opt_ ULONG Count,
+  _In_opt_ OBJECT_ATTRIBUTES SubordinateObjects[],
+  _In_opt_ HANDLE Event,
+  _In_opt_ PIO_APC_ROUTINE ApcRoutine,
+  _In_opt_ PVOID ApcContext,
+  _Out_ PIO_STATUS_BLOCK IoStatusBlock,
+  _In_ ULONG CompletionFilter,
+  _In_ BOOLEAN WatchTree,
+  _Out_opt_ PVOID Buffer,
+  _In_ ULONG BufferSize,
+  _In_ BOOLEAN Asynchronous);
 
 NTSYSAPI
 NTSTATUS
 NTAPI
 ZwQueryMultipleValueKey(
-  IN HANDLE KeyHandle,
-  IN OUT PKEY_VALUE_ENTRY ValueEntries,
-  IN ULONG EntryCount,
-  OUT PVOID ValueBuffer,
-  IN OUT PULONG BufferLength,
-  OUT PULONG RequiredBufferLength OPTIONAL);
+  _In_ HANDLE KeyHandle,
+  _Inout_ PKEY_VALUE_ENTRY ValueEntries,
+  _In_ ULONG EntryCount,
+  _Out_ PVOID ValueBuffer,
+  _Inout_ PULONG BufferLength,
+  _Out_opt_ PULONG RequiredBufferLength);
 
 _IRQL_requires_max_(PASSIVE_LEVEL)
 NTSYSAPI

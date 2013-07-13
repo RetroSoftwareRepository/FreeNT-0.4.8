@@ -16,8 +16,7 @@
  *  with this program; if not, write to the Free Software Foundation, Inc.,
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
-/* $Id$
- *
+/*
  * COPYRIGHT:         See COPYING in the top level directory
  * PROJECT:           ReactOS system libraries
  * PURPOSE:           SAM interface library
@@ -30,6 +29,16 @@
 #include "precomp.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(samlib);
+
+NTSTATUS
+WINAPI
+SystemFunction006(LPCSTR password,
+                  LPSTR hash);
+
+NTSTATUS
+WINAPI
+SystemFunction007(PUNICODE_STRING string,
+                  LPBYTE hash);
 
 /* GLOBALS *******************************************************************/
 
@@ -136,7 +145,7 @@ SamAddMemberToGroup(IN SAM_HANDLE GroupHandle,
 {
     NTSTATUS Status;
 
-    TRACE("SamAddMemberToGroup(%p %lu %lx)",
+    TRACE("SamAddMemberToGroup(%p %lu %lx)\n",
           GroupHandle, MemberId, Attributes);
 
     RpcTryExcept
@@ -190,6 +199,130 @@ SamAddMultipleMembersToAlias(IN SAM_HANDLE AliasHandle,
 
 NTSTATUS
 NTAPI
+SamChangePasswordUser(IN SAM_HANDLE UserHandle,
+                      IN PUNICODE_STRING OldPassword,
+                      IN PUNICODE_STRING NewPassword)
+{
+    ENCRYPTED_NT_OWF_PASSWORD OldNtPassword;
+    ENCRYPTED_NT_OWF_PASSWORD NewNtPassword;
+    ENCRYPTED_LM_OWF_PASSWORD OldLmPassword;
+    ENCRYPTED_LM_OWF_PASSWORD NewLmPassword;
+    OEM_STRING LmPwdString;
+    CHAR LmPwdBuffer[15];
+    BOOLEAN OldLmPasswordPresent = FALSE;
+    BOOLEAN NewLmPasswordPresent = FALSE;
+    NTSTATUS Status;
+
+    /* Calculate the NT hash for the old password */
+    Status = SystemFunction007(OldPassword,
+                               (LPBYTE)&OldNtPassword);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SystemFunction007 failed (Status 0x%08lx)\n", Status);
+        return Status;
+    }
+
+    /* Calculate the NT hash for the new password */
+    Status = SystemFunction007(NewPassword,
+                               (LPBYTE)&NewNtPassword);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SystemFunction007 failed (Status 0x%08lx)\n", Status);
+        return Status;
+    }
+
+    /* Calculate the LM password and hash for the old password */
+    LmPwdString.Length = 15;
+    LmPwdString.MaximumLength = 15;
+    LmPwdString.Buffer = LmPwdBuffer;
+    ZeroMemory(LmPwdString.Buffer, LmPwdString.MaximumLength);
+
+    Status = RtlUpcaseUnicodeStringToOemString(&LmPwdString,
+                                               OldPassword,
+                                               FALSE);
+    if (NT_SUCCESS(Status))
+    {
+        /* Calculate the LM hash value of the password */
+        Status = SystemFunction006(LmPwdString.Buffer,
+                                   (LPSTR)&OldLmPassword);
+        if (NT_SUCCESS(Status))
+        {
+            OldLmPasswordPresent = TRUE;
+        }
+    }
+
+    /* Calculate the LM password and hash for the new password */
+    LmPwdString.Length = 15;
+    LmPwdString.MaximumLength = 15;
+    LmPwdString.Buffer = LmPwdBuffer;
+    ZeroMemory(LmPwdString.Buffer, LmPwdString.MaximumLength);
+
+    Status = RtlUpcaseUnicodeStringToOemString(&LmPwdString,
+                                               NewPassword,
+                                               FALSE);
+    if (NT_SUCCESS(Status))
+    {
+        /* Calculate the LM hash value of the password */
+        Status = SystemFunction006(LmPwdString.Buffer,
+                                   (LPSTR)&NewLmPassword);
+        if (NT_SUCCESS(Status))
+        {
+            NewLmPasswordPresent = TRUE;
+        }
+    }
+
+    RpcTryExcept
+    {
+        Status = SamrChangePasswordUser((SAMPR_HANDLE)UserHandle,
+                                        OldLmPasswordPresent && NewLmPasswordPresent,
+                                        &OldLmPassword,
+                                        &NewLmPassword,
+                                        TRUE,
+                                        &OldNtPassword,
+                                        &NewNtPassword,
+                                        FALSE,
+                                        NULL,
+                                        FALSE,
+                                        NULL);
+    }
+    RpcExcept(EXCEPTION_EXECUTE_HANDLER)
+    {
+        Status = I_RpcMapWin32Status(RpcExceptionCode());
+    }
+    RpcEndExcept;
+
+    return Status;
+}
+
+
+NTSTATUS
+NTAPI
+SamChangePasswordUser2(IN PUNICODE_STRING ServerName,
+                       IN PUNICODE_STRING UserName,
+                       IN PUNICODE_STRING OldPassword,
+                       IN PUNICODE_STRING NewPassword)
+{
+    UNIMPLEMENTED;
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+
+NTSTATUS
+NTAPI
+SamChangePasswordUser3(IN PUNICODE_STRING ServerName,
+                       IN PUNICODE_STRING UserName,
+                       IN PUNICODE_STRING OldPassword,
+                       IN PUNICODE_STRING NewPassword,
+                       OUT PDOMAIN_PASSWORD_INFORMATION *EffectivePasswordPolicy,
+                       OUT PUSER_PWD_CHANGE_FAILURE_INFORMATION *PasswordChangeFailureInfo)
+{
+    UNIMPLEMENTED;
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+
+NTSTATUS
+NTAPI
 SamCloseHandle(IN SAM_HANDLE SamHandle)
 {
     NTSTATUS Status;
@@ -212,7 +345,7 @@ SamCloseHandle(IN SAM_HANDLE SamHandle)
 
 NTSTATUS
 NTAPI
-SamConnect(IN OUT PUNICODE_STRING ServerName,
+SamConnect(IN OUT PUNICODE_STRING ServerName OPTIONAL,
            OUT PSAM_HANDLE ServerHandle,
            IN ACCESS_MASK DesiredAccess,
            IN POBJECT_ATTRIBUTES ObjectAttributes)
@@ -490,7 +623,7 @@ SamEnumerateAliasesInDomain(IN SAM_HANDLE DomainHandle,
     {
         Status = SamrEnumerateAliasesInDomain((SAMPR_HANDLE)DomainHandle,
                                               EnumerationContext,
-                                              (PSAMPR_ENUMERATION_BUFFER *)&EnumBuffer,
+                                              &EnumBuffer,
                                               PreferedMaximumLength,
                                               CountReturned);
 
@@ -540,7 +673,7 @@ SamEnumerateDomainsInSamServer(IN SAM_HANDLE ServerHandle,
     {
         Status = SamrEnumerateDomainsInSamServer((SAMPR_HANDLE)ServerHandle,
                                                  EnumerationContext,
-                                                 (PSAMPR_ENUMERATION_BUFFER *)&EnumBuffer,
+                                                 &EnumBuffer,
                                                  PreferedMaximumLength,
                                                  CountReturned);
 
@@ -588,7 +721,7 @@ SamEnumerateGroupsInDomain(IN SAM_HANDLE DomainHandle,
     {
         Status = SamrEnumerateGroupsInDomain((SAMPR_HANDLE)DomainHandle,
                                              EnumerationContext,
-                                             (PSAMPR_ENUMERATION_BUFFER *)&EnumBuffer,
+                                             &EnumBuffer,
                                              PreferedMaximumLength,
                                              CountReturned);
         if (EnumBuffer != NULL)
@@ -635,7 +768,7 @@ SamEnumerateUsersInDomain(IN SAM_HANDLE DomainHandle,
         Status = SamrEnumerateUsersInDomain((SAMPR_HANDLE)DomainHandle,
                                             EnumerationContext,
                                             UserAccountControl,
-                                            (PSAMPR_ENUMERATION_BUFFER *)&EnumBuffer,
+                                            &EnumBuffer,
                                             PreferedMaximumLength,
                                             CountReturned);
         if (EnumBuffer != NULL)
@@ -682,7 +815,7 @@ SamGetAliasMembership(IN SAM_HANDLE DomainHandle,
     SAMPR_ULONG_ARRAY Membership;
     NTSTATUS Status;
 
-    TRACE("SamAliasMembership(%p %ul %p %p %p)\n",
+    TRACE("SamAliasMembership(%p %lu %p %p %p)\n",
           DomainHandle, PassedCount, Sids, MembershipCount, Aliases);
 
     if (Sids == NULL ||
@@ -905,7 +1038,7 @@ SamLookupIdsInDomain(IN SAM_HANDLE DomainHandle,
                      IN ULONG Count,
                      IN PULONG RelativeIds,
                      OUT PUNICODE_STRING *Names,
-                     OUT PSID_NAME_USE *Use)
+                     OUT PSID_NAME_USE *Use OPTIONAL)
 {
     SAMPR_RETURNED_USTRING_ARRAY NamesBuffer = {0, NULL};
     SAMPR_ULONG_ARRAY UseBuffer = {0, NULL};
@@ -916,7 +1049,9 @@ SamLookupIdsInDomain(IN SAM_HANDLE DomainHandle,
           DomainHandle, Count, RelativeIds, Names, Use);
 
     *Names = NULL;
-    *Use = NULL;
+
+    if (Use != NULL)
+        *Use = NULL;
 
     RpcTryExcept
     {
@@ -951,13 +1086,6 @@ SamLookupIdsInDomain(IN SAM_HANDLE DomainHandle,
             }
         }
 
-        *Use = midl_user_allocate(Count * sizeof(SID_NAME_USE));
-        if (*Use == NULL)
-        {
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            goto done;
-        }
-
         for (i = 0; i < Count; i++)
         {
             (*Names)[i].Length = NamesBuffer.Element[i].Length;
@@ -968,9 +1096,19 @@ SamLookupIdsInDomain(IN SAM_HANDLE DomainHandle,
                           NamesBuffer.Element[i].Length);
         }
 
-        RtlCopyMemory(*Use,
-                      UseBuffer.Element,
-                      Count * sizeof(SID_NAME_USE));
+        if (Use != NULL)
+        {
+            *Use = midl_user_allocate(Count * sizeof(SID_NAME_USE));
+            if (*Use == NULL)
+            {
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto done;
+            }
+
+            RtlCopyMemory(*Use,
+                          UseBuffer.Element,
+                          Count * sizeof(SID_NAME_USE));
+        }
     }
 
 done:
@@ -987,7 +1125,7 @@ done:
             midl_user_free(*Names);
         }
 
-        if (*Use != NULL)
+        if (Use != NULL && *Use != NULL)
             midl_user_free(*Use);
     }
 
@@ -1552,10 +1690,69 @@ SamSetInformationUser(IN SAM_HANDLE UserHandle,
                       IN USER_INFORMATION_CLASS UserInformationClass,
                       IN PVOID Buffer)
 {
+    PSAMPR_USER_SET_PASSWORD_INFORMATION PasswordBuffer;
+    SAMPR_USER_INTERNAL1_INFORMATION Internal1Buffer;
+    OEM_STRING LmPwdString;
+    CHAR LmPwdBuffer[15];
     NTSTATUS Status;
 
     TRACE("SamSetInformationUser(%p %lu %p)\n",
           UserHandle, UserInformationClass, Buffer);
+
+    if (UserInformationClass == UserSetPasswordInformation)
+    {
+        PasswordBuffer = (PSAMPR_USER_SET_PASSWORD_INFORMATION)Buffer;
+
+        /* Calculate the NT hash value of the passord */
+        Status = SystemFunction007((PUNICODE_STRING)&PasswordBuffer->Password,
+                                   (LPBYTE)&Internal1Buffer.EncryptedNtOwfPassword);
+        if (!NT_SUCCESS(Status))
+        {
+            TRACE("SystemFunction007 failed (Status 0x%08lx)\n", Status);
+            return Status;
+        }
+
+        Internal1Buffer.NtPasswordPresent = TRUE;
+        Internal1Buffer.LmPasswordPresent = FALSE;
+
+        /* Build the LM password */
+        LmPwdString.Length = 15;
+        LmPwdString.MaximumLength = 15;
+        LmPwdString.Buffer = LmPwdBuffer;
+        ZeroMemory(LmPwdString.Buffer, LmPwdString.MaximumLength);
+
+        Status = RtlUpcaseUnicodeStringToOemString(&LmPwdString,
+                                                   (PUNICODE_STRING)&PasswordBuffer->Password,
+                                                   FALSE);
+        if (NT_SUCCESS(Status))
+        {
+            /* Calculate the LM hash value of the password */
+            Status = SystemFunction006(LmPwdString.Buffer,
+                                       (LPSTR)&Internal1Buffer.EncryptedLmOwfPassword);
+            if (NT_SUCCESS(Status))
+                Internal1Buffer.LmPasswordPresent = TRUE;
+        }
+
+        Internal1Buffer.PasswordExpired = PasswordBuffer->PasswordExpired;
+
+        RpcTryExcept
+        {
+            Status = SamrSetInformationUser((SAMPR_HANDLE)UserHandle,
+                                            UserInternal1Information,
+                                            (PVOID)&Internal1Buffer);
+        }
+        RpcExcept(EXCEPTION_EXECUTE_HANDLER)
+        {
+            Status = I_RpcMapWin32Status(RpcExceptionCode());
+        }
+        RpcEndExcept;
+
+        if (!NT_SUCCESS(Status))
+        {
+            TRACE("SamrSetInformation() failed (Status 0x%08lx)\n", Status);
+            return Status;
+        }
+    }
 
     RpcTryExcept
     {
@@ -1659,8 +1856,21 @@ NTSTATUS
 NTAPI
 SamShutdownSamServer(IN SAM_HANDLE ServerHandle)
 {
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
+    NTSTATUS Status;
+
+    TRACE("(%p)\n", ServerHandle);
+
+    RpcTryExcept
+    {
+        Status = SamrShutdownSamServer((SAMPR_HANDLE)ServerHandle);
+    }
+    RpcExcept(EXCEPTION_EXECUTE_HANDLER)
+    {
+        Status = I_RpcMapWin32Status(RpcExceptionCode());
+    }
+    RpcEndExcept;
+
+    return Status;
 }
 
 /* EOF */

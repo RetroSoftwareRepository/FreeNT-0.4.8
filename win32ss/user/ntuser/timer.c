@@ -56,7 +56,7 @@ CreateTimer(VOID)
   HANDLE Handle;
   PTIMER Ret = NULL;
 
-  Ret = UserCreateObject(gHandleTable, NULL, NULL, &Handle, otTimer, sizeof(TIMER));
+  Ret = UserCreateObject(gHandleTable, NULL, NULL, &Handle, TYPE_TIMER, sizeof(TIMER));
   if (Ret)
   {
      Ret->head.h = Handle;
@@ -86,7 +86,7 @@ RemoveTimer(PTIMER pTmr)
         IntUnlockWindowlessTimerBitmap();
      }
      UserDereferenceObject(pTmr);
-     Ret = UserDeleteObject( UserHMGetHandle(pTmr), otTimer);
+     Ret = UserDeleteObject( UserHMGetHandle(pTmr), TYPE_TIMER);
   }
   if (!Ret) ERR("Warning: Unable to delete timer\n");
 
@@ -386,14 +386,12 @@ FASTCALL
 PostTimerMessages(PWND Window)
 {
   PLIST_ENTRY pLE;
-  PUSER_MESSAGE_QUEUE ThreadQueue;
   MSG Msg;
   PTHREADINFO pti;
   BOOL Hit = FALSE;
   PTIMER pTmr;
 
   pti = PsGetCurrentThreadWin32Thread();
-  ThreadQueue = pti->MessageQueue;
 
   TimerEnterExclusive();
   pLE = TimersListHead.Flink;
@@ -409,7 +407,7 @@ PostTimerMessages(PWND Window)
            Msg.wParam  = (WPARAM) pTmr->nID;
            Msg.lParam  = (LPARAM) pTmr->pfn;
 
-           MsqPostMessage(ThreadQueue, &Msg, FALSE, QS_TIMER, 0);
+           MsqPostMessage(pti, &Msg, FALSE, QS_TIMER, 0);
            pTmr->flags &= ~TMRF_READY;
            pti->cTimersReady++;
            Hit = TRUE;
@@ -484,8 +482,8 @@ ProcessTimers(VOID)
                 // Set thread message queue for this timer.
                 if (pTmr->pti->MessageQueue)
                 {  // Wakeup thread
-                   ASSERT(pTmr->pti->MessageQueue->NewMessages != NULL);
-                   KeSetEvent(pTmr->pti->MessageQueue->NewMessages, IO_NO_INCREMENT, FALSE);
+                   ASSERT(pTmr->pti->pEventQueueServer != NULL);
+                   KeSetEvent(pTmr->pti->pEventQueueServer, IO_NO_INCREMENT, FALSE);
                 }
              }
           }

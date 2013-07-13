@@ -17,10 +17,10 @@
  */
 
 #define WIN32_NO_STATUS
-#include "config.h"
+#include <config.h>
 
-#include "wine/debug.h"
-#include "lm.h"
+#include <wine/debug.h>
+//#include "lm.h"
 #include "netbios.h"
 
 #define NTOS_MODE_USER
@@ -30,8 +30,6 @@
 WINE_DEFAULT_DEBUG_CHANNEL(netbios);
 
 static HMODULE NETAPI32_hModule;
-
-BOOL NETAPI_IsLocalComputer(LMCSTR ServerName);
 
 BOOL WINAPI DllMain (HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
 {

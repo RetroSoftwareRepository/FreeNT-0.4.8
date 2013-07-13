@@ -18,21 +18,24 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <assert.h>
+#define WIN32_NO_STATUS
+#define _INC_WINDOWS
+
+//#include <assert.h>
 #include <stdarg.h>
-#include <string.h>
+//#include <string.h>
 
 #define COBJMACROS
 #define NONAMELESSUNION
 #define NONAMELESSSTRUCT
 
-#include "windef.h"
-#include "winbase.h"
-#include "winuser.h"
-#include "winerror.h"
-#include "wine/debug.h"
-#include "wine/unicode.h"
-#include "ole2.h"
+#include <windef.h>
+#include <winbase.h>
+//#include "winuser.h"
+//#include "winerror.h"
+#include <wine/debug.h>
+#include <wine/unicode.h>
+#include <ole2.h>
 #include "moniker.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(ole);
@@ -1638,10 +1641,10 @@ static const IEnumMonikerVtbl VT_EnumMonikerImpl =
  ******************************************************************************/
 static HRESULT
 EnumMonikerImpl_CreateEnumMoniker(IMoniker** tabMoniker, ULONG tabSize,
-               ULONG currentPos, BOOL leftToRigth, IEnumMoniker ** ppmk)
+               ULONG currentPos, BOOL leftToRight, IEnumMoniker ** ppmk)
 {
     EnumMonikerImpl* newEnumMoniker;
-    int i;
+    ULONG i;
 
     if (currentPos > tabSize)
         return E_INVALIDARG;
@@ -1665,17 +1668,17 @@ EnumMonikerImpl_CreateEnumMoniker(IMoniker** tabMoniker, ULONG tabSize,
         return E_OUTOFMEMORY;
     }
 
-    if (leftToRigth)
+    if (leftToRight)
         for (i=0;i<tabSize;i++){
 
             newEnumMoniker->tabMoniker[i]=tabMoniker[i];
             IMoniker_AddRef(tabMoniker[i]);
         }
     else
-        for (i=tabSize-1;i>=0;i--){
+        for (i = tabSize; i > 0; i--){
 
-            newEnumMoniker->tabMoniker[tabSize-i-1]=tabMoniker[i];
-            IMoniker_AddRef(tabMoniker[i]);
+            newEnumMoniker->tabMoniker[tabSize-i]=tabMoniker[i - 1];
+            IMoniker_AddRef(tabMoniker[i - 1]);
         }
 
     *ppmk=&newEnumMoniker->IEnumMoniker_iface;

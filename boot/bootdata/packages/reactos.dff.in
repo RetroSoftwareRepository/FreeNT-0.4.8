@@ -28,6 +28,9 @@ Signature = "$ReactOS$"
 12 = Microsoft.NET\Framework\v1.0.3705
 13 = Microsoft.NET\Framework\v1.1.4322
 14 = Microsoft.NET\Framework\v2.0.50727
+15 = Resources
+16 = Resources\Themes
+17 = system32\wbem
 
 .InfEnd
 
@@ -57,7 +60,7 @@ modules\optional\vmx_fb.dll                         1  optional
 modules\optional\vmx_mode.dll                       1  optional
 modules\optional\vmx_svga.inf                       6  optional
 modules\optional\vmx_svga.sys                       2  optional
-modules\optional\wine_gecko-1.0.0-x86.cab           4  optional
+modules\optional\wine_gecko-1.9-x86.msi             4  optional
 modules\optional\cirrus.inf                         6  optional
 modules\optional\cirrus.dll                         1  optional
 modules\optional\cirrus.sys                         2  optional
@@ -66,5 +69,3 @@ modules\optional\explorer.exe                       4  optional
 modules\optional\notifyhook.dll                     4  optional
 
 boot\bootdata\bootcdregtest\AHKAppTests.cmd         7  optional
-
-modules\wallpaper\Angelus_02_ROSWP.bmp              4   optional

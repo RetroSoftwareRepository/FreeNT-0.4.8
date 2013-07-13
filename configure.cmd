@@ -1,5 +1,12 @@
 @echo off
 
+:: This is needed so as to avoid static expansion of environment variables
+:: inside if (...) conditionals.
+:: See http://stackoverflow.com/questions/305605/weird-scope-issue-in-bat-file
+:: for more explanation.
+:: Precisely needed for configuring Visual Studio Environment.
+setlocal enabledelayedexpansion
+
 :: Special case %1 = arm_hosttools %2 = vcvarsall.bat %3 = %CMAKE_GENERATOR%
 if /I "%1" == "arm_hosttools" (
     echo Configuring x86 host tools for ARM cross build
@@ -14,7 +21,7 @@ if /I "%1" == "arm_hosttools" (
 
 :: Get the source root directory
 set REACTOS_SOURCE_DIR=%~dp0
-set USE_NMAKE=0
+set USE_VSCMD=0
 
 :: Detect presence of cmake
 cmd /c cmake --version 2>&1 | find "cmake version" > NUL || goto cmake_notfound
@@ -28,10 +35,10 @@ if defined ROS_ARCH (
         set CMAKE_GENERATOR="CodeBlocks - MinGW Makefiles"
     ) else if /I "%1" == "Eclipse" (
         set CMAKE_GENERATOR="Eclipse CDT4 - MinGW Makefiles"
-    ) else if /I "%1" == "Ninja" (
-        set CMAKE_GENERATOR="Ninja"
-    ) else (
+    ) else if /I "%1" == "Makefiles" (
         set CMAKE_GENERATOR="MinGW Makefiles"
+    ) else (
+        set CMAKE_GENERATOR="Ninja"
     )
 
 ) else if defined DDK_TARGET_OS (
@@ -42,55 +49,56 @@ if defined ROS_ARCH (
     ) else if "%_BUILDARCH%" == "AMD64" (
         set ARCH=amd64
     )
-    set USE_NMAKE=1
+    set USE_VSCMD=1
     set USE_WDK_HEADERS=0
 
 ) else if defined VCINSTALLDIR (
-    :: VS command prompt does not put this in enviroment vars
+    :: VS command prompt does not put this in environment vars
     cl 2>&1 | find "x86" > NUL && set ARCH=i386
     cl 2>&1 | find "x64" > NUL && set ARCH=amd64
     cl 2>&1 | find "ARM" > NUL && set ARCH=arm
-    cl 2>&1 | find "14." > NUL && set BUILD_ENVIRONMENT=VS8
-    cl 2>&1 | find "15." > NUL && set BUILD_ENVIRONMENT=VS9
-    cl 2>&1 | find "16." > NUL && set BUILD_ENVIRONMENT=VS10
-    cl 2>&1 | find "17." > NUL && set BUILD_ENVIRONMENT=VS11
+    cl 2>&1 | find "14.00." > NUL && set BUILD_ENVIRONMENT=VS8
+    cl 2>&1 | find "15.00." > NUL && set BUILD_ENVIRONMENT=VS9
+    cl 2>&1 | find "16.00." > NUL && set BUILD_ENVIRONMENT=VS10
+    cl 2>&1 | find "17.00." > NUL && set BUILD_ENVIRONMENT=VS11
+    ::cl 2>&1 | find "18.00." > NUL && set BUILD_ENVIRONMENT=VS12
     if not defined BUILD_ENVIRONMENT (
         echo Error: Visual Studio version too old or version detection failed.
         exit /b
     )
 
-    echo Detected Visual Studio Environment %BUILD_ENVIRONMENT%-%ARCH%
+    echo Detected Visual Studio Environment !BUILD_ENVIRONMENT!-!ARCH!
     if /I "%1" == "VSSolution" (
-        if "%BUILD_ENVIRONMENT%" == "VS8" (
-            if "%ARCH%" == "amd64" (
+        if "!BUILD_ENVIRONMENT!" == "VS8" (
+            if "!ARCH!" == "amd64" (
                 set CMAKE_GENERATOR="Visual Studio 8 2005 Win64"
             ) else (
                 set CMAKE_GENERATOR="Visual Studio 8 2005"
             )
-        ) else if "%BUILD_ENVIRONMENT%" == "VS9" (
-            if "%ARCH%" == "amd64" (
+        ) else if "!BUILD_ENVIRONMENT!" == "VS9" (
+            if "!ARCH!" == "amd64" (
                 set CMAKE_GENERATOR="Visual Studio 9 2008 Win64"
             ) else (
                 set CMAKE_GENERATOR="Visual Studio 9 2008"
             )
-        ) else if "%BUILD_ENVIRONMENT%" == "VS10" (
-            if "%ARCH%" == "amd64" (
+        ) else if "!BUILD_ENVIRONMENT!" == "VS10" (
+            if "!ARCH!" == "amd64" (
                 set CMAKE_GENERATOR="Visual Studio 10 Win64"
             ) else (
                 set CMAKE_GENERATOR="Visual Studio 10"
             )
-        ) else if "%BUILD_ENVIRONMENT%" == "VS11" (
-            if "%ARCH%" == "amd64" (
+        ) else if "!BUILD_ENVIRONMENT!" == "VS11" (
+            if "!ARCH!" == "amd64" (
                 set CMAKE_GENERATOR="Visual Studio 11 Win64"
-            ) else if "%ARCH%" == "arm" (
+            ) else if "!ARCH!" == "arm" (
                 set CMAKE_GENERATOR="Visual Studio 11 ARM"
             ) else (
                 set CMAKE_GENERATOR="Visual Studio 11"
             )
         )
     ) else (
-        set USE_NMAKE=1
-        echo This script defaults to nmake. To use Visual Studio GUI specify "VSSolution" as a parameter.
+        set USE_VSCMD=1
+        echo This script defaults to Ninja. To use Visual Studio GUI specify "VSSolution" as a parameter.
     )
 
 ) else if defined sdkdir (
@@ -102,7 +110,7 @@ if defined ROS_ARCH (
     )
 
     set BUILD_ENVIRONMENT=SDK
-    set USE_NMAKE=1
+    set USE_VSCMD=1
 
 ) else (
     echo Error: Unable to detect build environment. Configure script failure.
@@ -111,22 +119,20 @@ if defined ROS_ARCH (
 
 :: Checkpoint
 if not defined ARCH (
-    echo unknown build architecture
+    echo Unknown build architecture
     exit /b
 )
 
-:: Detect nmake generator
-if %USE_NMAKE% == 1 (
+:: Detect VS command line generator
+if %USE_VSCMD% == 1 (
     if /I "%1" == "CodeBlocks" (
         set CMAKE_GENERATOR="CodeBlocks - NMake Makefiles"
     ) else if /I "%1" == "Eclipse" (
         set CMAKE_GENERATOR="Eclipse CDT4 - NMake Makefiles"
-    ) else if /I "%1" == "JOM" (
-        set CMAKE_GENERATOR="NMake Makefiles JOM"
-    ) else if /I "%1" == "Ninja" (
-        set CMAKE_GENERATOR="Ninja"
-    ) else (
+    ) else if /I "%1" == "Makefiles" (
         set CMAKE_GENERATOR="NMake Makefiles"
+    ) else (
+        set CMAKE_GENERATOR="Ninja"
     )
 )
 
@@ -181,9 +187,9 @@ if "%BUILD_ENVIRONMENT%" == "MinGW" (
 
 cd..
 
-echo Configure script complete! Enter directories and execute appropriate build commands(ex: make, nmake, jom, etc...).
+echo Configure script complete^^! Enter directories and execute appropriate build commands (ex: ninja, make, nmake, etc...).
 exit /b
 
 :cmake_notfound
- echo Unable to find cmake, if it is installed, check your PATH variable.
- exit /b
+echo Unable to find cmake, if it is installed, check your PATH variable.
+exit /b

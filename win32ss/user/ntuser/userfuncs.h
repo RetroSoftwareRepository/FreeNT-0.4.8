@@ -37,6 +37,10 @@ PMENU_OBJECT FASTCALL UserGetMenuObject(HMENU hMenu);
 
 PWND FASTCALL IntGetWindowObject(HWND hWnd);
 
+/*************** MAIN.C ***************/
+
+NTSTATUS NTAPI UserCreateThreadInfo(struct _ETHREAD *Thread);
+
 /*************** WINSTA.C ***************/
 
 HWINSTA FASTCALL UserGetProcessWindowStation(VOID);
@@ -83,6 +87,7 @@ UserSystemParametersInfo(
 
 VOID FASTCALL IntSetWindowState(PWND, UINT);
 VOID FASTCALL IntClearWindowState(PWND, UINT);
+PTHREADINFO FASTCALL IntTID2PTI(HANDLE);
 
 /*************** MESSAGE.C ***************/
 

@@ -33,32 +33,33 @@ typedef struct _USER_HANDLE_TABLE
    int allocated_handles;
 } USER_HANDLE_TABLE, * PUSER_HANDLE_TABLE;
 
-typedef enum _USER_OBJECT_TYPE
+typedef enum _HANDLE_TYPE
 {
-  otFree = 0,
-  otWindow,
-  otMenu,
-  otCursorIcon,
-  otSMWP,
-  otHook,
-  otClipBoardData,
-  otCallProc,
-  otAccel,
-  otDDEaccess,
-  otDDEconv,
-  otDDExact,
-  otMonitor,
-  otKBDlayout,
-  otKBDfile,
-  otEvent,
-  otTimer,
-  otInputContext,
-  otHidData,
-  otDeviceInfo,
-  otTouchInput,
-  otGestureInfo,
-  USER_HANDLE_TYPE_COUNT
-} USER_OBJECT_TYPE;
+    TYPE_FREE = 0,
+    TYPE_WINDOW = 1,
+    TYPE_MENU = 2,
+    TYPE_CURSOR = 3,
+    TYPE_SETWINDOWPOS = 4,
+    TYPE_HOOK = 5,
+    TYPE_CLIPDATA = 6,
+    TYPE_CALLPROC = 7,
+    TYPE_ACCELTABLE = 8,
+    TYPE_DDEACCESS = 9,
+    TYPE_DDECONV = 10,
+    TYPE_DDEXACT = 11,
+    TYPE_MONITOR = 12,
+    TYPE_KBDLAYOUT = 13,
+    TYPE_KBDFILE = 14,
+    TYPE_WINEVENTHOOK = 15,
+    TYPE_TIMER = 16,
+    TYPE_INPUTCONTEXT = 17,
+    TYPE_HIDDATA = 18,
+    TYPE_DEVICEINFO = 19,
+    TYPE_TOUCHINPUTINFO = 20,
+    TYPE_GESTUREINFOOBJ = 21,
+    TYPE_CTYPES,
+    TYPE_GENERIC = 255
+} HANDLE_TYPE, *PHANDLE_TYPE;
 
 typedef enum _USERTHREADINFOCLASS
 {
@@ -513,8 +514,8 @@ typedef struct _SBINFOEX
 #define WNDS_HASPALETTE              0x00200000
 #define WNDS_PAINTNOTPROCESSED       0x00400000
 #define WNDS_SYNCPAINTPENDING        0x00800000
-#define WNDS_RECIEVEDQUERYSUSPENDMSG 0x01000000
-#define WNDS_RECIEVEDSUSPENDMSG      0x02000000
+#define WNDS_RECEIVEDQUERYSUSPENDMSG 0x01000000
+#define WNDS_RECEIVEDSUSPENDMSG      0x02000000
 #define WNDS_TOGGLETOPMOST           0x04000000
 #define WNDS_REDRAWIFHUNG            0x08000000
 #define WNDS_REDRAWFRAMEIFHUNG       0x10000000
@@ -1561,12 +1562,19 @@ NTAPI
 NtUserCloseWindowStation(
   HWINSTA hWinSta);
 
-DWORD
-NTAPI
+/* Console commands for NtUserConsoleControl */
+typedef enum _CONSOLECONTROL
+{
+    GuiConsoleWndClassAtom,
+    ConsoleAcquireDisplayOwnership,
+} CONSOLECONTROL, *PCONSOLECONTROL;
+
+NTSTATUS
+APIENTRY
 NtUserConsoleControl(
-  DWORD dwUnknown1,
-  DWORD dwUnknown2,
-  DWORD dwUnknown3);
+    IN CONSOLECONTROL ConsoleCtrl,
+    IN PVOID ConsoleCtrlInfo,
+    IN DWORD ConsoleCtrlInfoLength);
 
 HANDLE
 NTAPI
@@ -3300,13 +3308,16 @@ typedef struct tagKMDDELPARAM
  * ReactOS-specific NtUser calls and their related structures, both which shouldn't exist.
  */
 
+#define NOPARAM_ROUTINE_ISCONSOLEMODE         0xffff0001
 #define NOPARAM_ROUTINE_GETMESSAGEEXTRAINFO   0xffff0005
 #define ONEPARAM_ROUTINE_CSRSS_GUICHECK       0xffff0008
 #define ONEPARAM_ROUTINE_SWITCHCARETSHOWING   0xfffe0008
 #define ONEPARAM_ROUTINE_ENABLEPROCWNDGHSTING 0xfffe000d
 #define ONEPARAM_ROUTINE_GETDESKTOPMAPPING    0xfffe000e
 #define TWOPARAM_ROUTINE_SETMENUBARHEIGHT   0xfffd0050
+#define TWOPARAM_ROUTINE_EXITREACTOS        0xfffd0051
 #define TWOPARAM_ROUTINE_SETGUITHRDHANDLE   0xfffd0052
+#define HWNDLOCK_ROUTINE_SETFOREGROUNDWINDOWMOUSE 0xfffd0053
   #define MSQ_STATE_CAPTURE	0x1
   #define MSQ_STATE_ACTIVE	0x2
   #define MSQ_STATE_FOCUS	0x3

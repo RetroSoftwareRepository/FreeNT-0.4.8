@@ -165,6 +165,8 @@ ChangeServiceConfig2A(SC_HANDLE hService,
 
     TRACE("ChangeServiceConfig2A() called\n");
 
+    if (lpInfo == NULL) return TRUE;
+
     /* Fill relevent field of the Info structure */
     Info.dwInfoLevel = dwInfoLevel;
     switch (dwInfoLevel)
@@ -183,9 +185,6 @@ ChangeServiceConfig2A(SC_HANDLE hService,
             SetLastError(ERROR_INVALID_PARAMETER);
             return FALSE;
     }
-
-    if (lpInfo == NULL)
-        return TRUE;
 
     RpcTryExcept
     {
@@ -224,6 +223,8 @@ ChangeServiceConfig2W(SC_HANDLE hService,
 
     TRACE("ChangeServiceConfig2W() called\n");
 
+    if (lpInfo == NULL) return TRUE;
+
     /* Fill relevent field of the Info structure */
     Info.dwInfoLevel = dwInfoLevel;
     switch (dwInfoLevel)
@@ -241,9 +242,6 @@ ChangeServiceConfig2W(SC_HANDLE hService,
             SetLastError(ERROR_INVALID_PARAMETER);
             return FALSE;
     }
-
-    if (lpInfo == NULL)
-        return TRUE;
 
     RpcTryExcept
     {
@@ -926,6 +924,12 @@ EnumServiceGroupW(SC_HANDLE hSCManager,
         return FALSE;
     }
 
+    if (pcbBytesNeeded == NULL || lpServicesReturned == NULL)
+    {
+        SetLastError(ERROR_INVALID_ADDRESS);
+        return FALSE;
+    }
+
     if (lpServices == NULL || cbBufSize < sizeof(ENUM_SERVICE_STATUSW))
     {
         lpStatusPtr = &ServiceStatus;
@@ -1027,6 +1031,12 @@ EnumServicesStatusA(SC_HANDLE hSCManager,
         return FALSE;
     }
 
+    if (pcbBytesNeeded == NULL || lpServicesReturned == NULL)
+    {
+        SetLastError(ERROR_INVALID_ADDRESS);
+        return FALSE;
+    }
+
     if (lpServices == NULL || cbBufSize < sizeof(ENUM_SERVICE_STATUSA))
     {
         lpStatusPtr = &ServiceStatus;
@@ -1110,6 +1120,12 @@ EnumServicesStatusW(SC_HANDLE hSCManager,
     if (!hSCManager)
     {
         SetLastError(ERROR_INVALID_HANDLE);
+        return FALSE;
+    }
+
+    if (pcbBytesNeeded == NULL || lpServicesReturned == NULL)
+    {
+        SetLastError(ERROR_INVALID_ADDRESS);
         return FALSE;
     }
 
@@ -1207,8 +1223,13 @@ EnumServicesStatusExA(SC_HANDLE hSCManager,
         return FALSE;
     }
 
-    if (lpServices == NULL ||
-        cbBufSize < sizeof(ENUM_SERVICE_STATUS_PROCESSA))
+    if (pcbBytesNeeded == NULL || lpServicesReturned == NULL)
+    {
+        SetLastError(ERROR_INVALID_ADDRESS);
+        return FALSE;
+    }
+
+    if (lpServices == NULL || cbBufSize < sizeof(ENUM_SERVICE_STATUS_PROCESSA))
     {
         lpStatusPtr = &ServiceStatus;
         dwBufferSize = sizeof(ENUM_SERVICE_STATUS_PROCESSA);
@@ -1307,8 +1328,13 @@ EnumServicesStatusExW(SC_HANDLE hSCManager,
         return FALSE;
     }
 
-    if (lpServices == NULL ||
-        cbBufSize < sizeof(ENUM_SERVICE_STATUS_PROCESSW))
+    if (pcbBytesNeeded == NULL || lpServicesReturned == NULL)
+    {
+        SetLastError(ERROR_INVALID_ADDRESS);
+        return FALSE;
+    }
+
+    if (lpServices == NULL || cbBufSize < sizeof(ENUM_SERVICE_STATUS_PROCESSW))
     {
         lpStatusPtr = &ServiceStatus;
         dwBufferSize = sizeof(ENUM_SERVICE_STATUS_PROCESSW);
@@ -1647,28 +1673,14 @@ WaitForSCManager(VOID)
     TRACE("WaitForSCManager() called\n");
 
     /* Try to open the existing event */
-    hEvent = OpenEventW(SYNCHRONIZE,
-                        FALSE,
-                        L"SvcctrlStartEvent_A3752DX");
+    hEvent = OpenEventW(SYNCHRONIZE, FALSE, SCM_START_EVENT);
     if (hEvent == NULL)
     {
-        if (GetLastError() != ERROR_FILE_NOT_FOUND)
-            return;
+        if (GetLastError() != ERROR_FILE_NOT_FOUND) return;
 
         /* Try to create a new event */
-        hEvent = CreateEventW(NULL,
-                              TRUE,
-                              FALSE,
-                              L"SvcctrlStartEvent_A3752DX");
-        if (hEvent == NULL)
-        {
-            /* Try to open the existing event again */
-            hEvent = OpenEventW(SYNCHRONIZE,
-                                FALSE,
-                                L"SvcctrlStartEvent_A3752DX");
-            if (hEvent == NULL)
-                return;
-        }
+        hEvent = CreateEventW(NULL, TRUE, FALSE, SCM_START_EVENT);
+        if (hEvent == NULL) return;
     }
 
     /* Wait for 3 minutes */
@@ -2111,6 +2123,7 @@ QueryServiceConfig2A(SC_HANDLE hService,
     if (bUseTempBuffer == TRUE)
     {
         TRACE("RQueryServiceConfig2A() returns ERROR_INSUFFICIENT_BUFFER\n");
+        *pcbBytesNeeded = dwBufferSize;
         SetLastError(ERROR_INSUFFICIENT_BUFFER);
         return FALSE;
     }
@@ -2228,6 +2241,7 @@ QueryServiceConfig2W(SC_HANDLE hService,
     if (bUseTempBuffer == TRUE)
     {
         TRACE("RQueryServiceConfig2W() returns ERROR_INSUFFICIENT_BUFFER\n");
+        *pcbBytesNeeded = dwBufferSize;
         SetLastError(ERROR_INSUFFICIENT_BUFFER);
         return FALSE;
     }

@@ -19,8 +19,8 @@
 #ifndef __AVIFILE_PRIVATE_H
 #define __AVIFILE_PRIVATE_H
 
-#include <windef.h>
-#include <winuser.h>
+//#include "windef.h"
+//#include "winuser.h"
 
 #ifndef MAX_AVISTREAMS
 #define MAX_AVISTREAMS 8
@@ -58,7 +58,7 @@ DEFINE_AVIGUID(CLSID_ACMStream, 0x0002000F, 0, 0);
 
 extern HMODULE AVIFILE_hModule DECLSPEC_HIDDEN;
 
-extern HRESULT AVIFILE_CreateAVIFile(REFIID riid, LPVOID *ppobj) DECLSPEC_HIDDEN;
+extern HRESULT AVIFILE_CreateAVIFile(IUnknown *pUnkOuter, REFIID riid, LPVOID *ppobj) DECLSPEC_HIDDEN;
 extern HRESULT AVIFILE_CreateWAVFile(REFIID riid, LPVOID *ppobj) DECLSPEC_HIDDEN;
 extern HRESULT AVIFILE_CreateACMStream(REFIID riid, LPVOID *ppobj) DECLSPEC_HIDDEN;
 extern HRESULT AVIFILE_CreateICMStream(REFIID riid, LPVOID *ppobj) DECLSPEC_HIDDEN;

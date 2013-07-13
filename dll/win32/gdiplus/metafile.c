@@ -16,27 +16,27 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <stdarg.h>
-#include <math.h>
+//#include <stdarg.h>
+//#include <math.h>
 
-#include "windef.h"
-#include "winbase.h"
-#include "wingdi.h"
-#include "wine/unicode.h"
+//#include "windef.h"
+//#include "winbase.h"
+//#include "wingdi.h"
+//#include "wine/unicode.h"
 
 #define COBJMACROS
-#include "objbase.h"
-#include "ocidl.h"
-#include "olectl.h"
-#include "ole2.h"
+//#include "objbase.h"
+//#include "ocidl.h"
+//#include "olectl.h"
+//#include "ole2.h"
 
-#include "winreg.h"
-#include "shlwapi.h"
+//#include "winreg.h"
+//#include "shlwapi.h"
 
-#include "gdiplus.h"
+//#include "gdiplus.h"
 #include "gdiplus_private.h"
-#include "wine/debug.h"
-#include "wine/list.h"
+#include <wine/debug.h>
+//#include "wine/list.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(gdiplus);
 
@@ -410,7 +410,7 @@ GpStatus WINGDIPAPI GdipPlayMetafileRecord(GDIPCONST GpMetafile *metafile,
             if (record)
             {
                 record->iType = recordType;
-                record->nSize = dataSize;
+                record->nSize = dataSize + 8;
                 memcpy(record->dParm, data, dataSize);
 
                 PlayEnhMetaFileRecord(metafile->playback_dc, metafile->handle_table,
@@ -536,7 +536,9 @@ GpStatus WINGDIPAPI GdipEnumerateMetafileSrcRectDestPoints(GpGraphics *graphics,
     memcpy(real_metafile->playback_points, destPoints, sizeof(PointF) * 3);
     stat = GdipTransformPoints(graphics, CoordinateSpaceDevice, CoordinateSpaceWorld, real_metafile->playback_points, 3);
 
-    if (stat == Ok && metafile->metafile_type == MetafileTypeEmf)
+    if (stat == Ok && (metafile->metafile_type == MetafileTypeEmf ||
+        metafile->metafile_type == MetafileTypeWmfPlaceable ||
+        metafile->metafile_type == MetafileTypeWmf))
         stat = METAFILE_PlaybackGetDC((GpMetafile*)metafile);
 
     if (stat == Ok)

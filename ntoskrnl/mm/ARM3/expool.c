@@ -283,6 +283,86 @@ ExpCheckPoolHeader(IN PPOOL_HEADER Entry)
 
 VOID
 NTAPI
+ExpCheckPoolAllocation(
+    PVOID P,
+    POOL_TYPE PoolType,
+    ULONG Tag)
+{
+    PPOOL_HEADER Entry;
+    ULONG i;
+    KIRQL OldIrql;
+    POOL_TYPE RealPoolType;
+
+    /* Get the pool header */
+    Entry = ((PPOOL_HEADER)P) - 1;
+
+    /* Check if this is a large allocation */
+    if (PAGE_ALIGN(P) == P)
+    {
+        /* Lock the pool table */
+        KeAcquireSpinLock(&ExpLargePoolTableLock, &OldIrql);
+
+        /* Find the pool tag */
+        for (i = 0; i < PoolBigPageTableSize; i++)
+        {
+            /* Check if this is our allocation */
+            if (PoolBigPageTable[i].Va == P)
+            {
+                /* Make sure the tag is ok */
+                if (PoolBigPageTable[i].Key != Tag)
+                {
+                    KeBugCheckEx(BAD_POOL_CALLER, 0x0A, (ULONG_PTR)P, PoolBigPageTable[i].Key, Tag);
+                }
+
+                break;
+            }
+        }
+
+        /* Release the lock */
+        KeReleaseSpinLock(&ExpLargePoolTableLock, OldIrql);
+
+        if (i == PoolBigPageTableSize)
+        {
+            /* Did not find the allocation */
+            //ASSERT(FALSE);
+        }
+
+        /* Get Pool type by address */
+        RealPoolType = MmDeterminePoolType(P);
+    }
+    else
+    {
+        /* Verify the tag */
+        if (Entry->PoolTag != Tag)
+        {
+            DPRINT1("Allocation has wrong pool tag! Expected '%.4s', got '%.4s' (0x%08lx)\n",
+                    &Tag, &Entry->PoolTag, Entry->PoolTag);
+            KeBugCheckEx(BAD_POOL_CALLER, 0x0A, (ULONG_PTR)P, Entry->PoolTag, Tag);
+        }
+
+        /* Check the rest of the header */
+        ExpCheckPoolHeader(Entry);
+
+        /* Get Pool type from entry */
+        RealPoolType = (Entry->PoolType - 1);
+    }
+
+    /* Should we check the pool type? */
+    if (PoolType != -1)
+    {
+        /* Verify the pool type */
+        if (RealPoolType != PoolType)
+        {
+            DPRINT1("Wrong pool type! Expected %s, got %s\n",
+                    PoolType & BASE_POOL_TYPE_MASK ? "PagedPool" : "NonPagedPool",
+                    (Entry->PoolType - 1) & BASE_POOL_TYPE_MASK ? "PagedPool" : "NonPagedPool");
+            KeBugCheckEx(BAD_POOL_CALLER, 0xCC, (ULONG_PTR)P, Entry->PoolTag, Tag);
+        }
+    }
+}
+
+VOID
+NTAPI
 ExpCheckPoolBlocks(IN PVOID Block)
 {
     BOOLEAN FoundBlock = FALSE;
@@ -535,6 +615,7 @@ ExpRemovePoolTracker(IN ULONG Key,
     Table = PoolTrackTable;
     TableMask = PoolTrackTableMask;
     TableSize = PoolTrackTableSize;
+    DBG_UNREFERENCED_LOCAL_VARIABLE(TableSize);
 
     //
     // Compute the hash for this key, and loop all the possible buckets
@@ -570,7 +651,12 @@ ExpRemovePoolTracker(IN ULONG Key,
         // We should have only ended up with an empty entry if we've reached
         // the last bucket
         //
-        if (!TableEntry->Key) ASSERT(Hash == TableMask);
+        if (!TableEntry->Key)
+        {
+            DPRINT1("Empty item reached in tracker table. Hash=0x%lx, TableMask=0x%lx, Tag=0x%08lx, NumberOfBytes=%lu, PoolType=%d\n",
+                    Hash, TableMask, Key, (ULONG)NumberOfBytes, PoolType);
+            ASSERT(Hash == TableMask);
+        }
 
         //
         // This path is hit when we don't have an entry, and the current bucket
@@ -632,6 +718,7 @@ ExpInsertPoolTracker(IN ULONG Key,
     Table = PoolTrackTable;
     TableMask = PoolTrackTableMask;
     TableSize = PoolTrackTableSize;
+    DBG_UNREFERENCED_LOCAL_VARIABLE(TableSize);
 
     //
     // Compute the hash for this key, and loop all the possible buckets
@@ -1588,7 +1675,7 @@ ExAllocatePoolWithTag(IN POOL_TYPE PoolType,
     //
     // Handle lookaside list optimization for both paged and nonpaged pool
     //
-    if (i <= MAXIMUM_PROCESSORS)
+    if (i <= NUMBER_POOL_LOOKASIDE_LISTS)
     {
         //
         // Try popping it from the per-CPU lookaside list
@@ -2072,6 +2159,15 @@ ExFreePoolWithTag(IN PVOID P,
         }
 
         //
+        // Check block tag
+        //
+        if (TagToFree && TagToFree != Tag)
+        {
+            DPRINT1("Freeing pool - invalid tag specified: %.4s != %.4s\n", (char*)&TagToFree, (char*)&Tag);
+            KeBugCheckEx(BAD_POOL_CALLER, 0x0A, (ULONG_PTR)P, Tag, TagToFree);
+        }
+
+        //
         // We have our tag and our page count, so we can go ahead and remove this
         // tracker now
         //
@@ -2144,13 +2240,6 @@ ExFreePoolWithTag(IN PVOID P,
     if (Tag & PROTECTED_POOL) Tag &= ~PROTECTED_POOL;
 
     //
-    // Stop tracking this allocation
-    //
-    ExpRemovePoolTracker(Tag,
-                         BlockSize * POOL_BLOCK_SIZE,
-                         Entry->PoolType - 1);
-
-    //
     // Check block tag
     //
     if (TagToFree && TagToFree != Tag)
@@ -2160,9 +2249,16 @@ ExFreePoolWithTag(IN PVOID P,
     }
 
     //
+    // Track the removal of this allocation
+    //
+    ExpRemovePoolTracker(Tag,
+                         BlockSize * POOL_BLOCK_SIZE,
+                         Entry->PoolType - 1);
+
+    //
     // Is this allocation small enough to have come from a lookaside list?
     //
-    if (BlockSize <= MAXIMUM_PROCESSORS)
+    if (BlockSize <= NUMBER_POOL_LOOKASIDE_LISTS)
     {
         //
         // Try pushing it into the per-CPU lookaside list
@@ -2421,5 +2517,104 @@ ExAllocatePoolWithQuotaTag(IN POOL_TYPE PoolType,
     UNIMPLEMENTED;
     return ExAllocatePoolWithTag(PoolType, NumberOfBytes, Tag);
 }
+
+#if DBG && KDBG
+
+BOOLEAN
+ExpKdbgExtPool(
+    ULONG Argc,
+    PCHAR Argv[])
+{
+    ULONG_PTR Address = 0, Flags = 0;
+    PVOID PoolPage;
+    PPOOL_HEADER Entry;
+    BOOLEAN ThisOne;
+    PULONG Data;
+
+    if (Argc > 1)
+    {
+        /* Get address */
+        if (!KdbpGetHexNumber(Argv[1], &Address))
+        {
+            KdbpPrint("Invalid parameter: %s\n", Argv[0]);
+            return TRUE;
+        }
+    }
+
+    if (Argc > 2)
+    {
+        /* Get address */
+        if (!KdbpGetHexNumber(Argv[1], &Flags))
+        {
+            KdbpPrint("Invalid parameter: %s\n", Argv[0]);
+            return TRUE;
+        }
+    }
+
+    /* Check if we got an address */
+    if (Address != 0)
+    {
+        /* Get the base page */
+        PoolPage = PAGE_ALIGN(Address);
+    }
+    else
+    {
+        KdbpPrint("Heap is unimplemented\n");
+        return TRUE;
+    }
+
+    /* No paging support! */
+    if (!MmIsAddressValid(PoolPage))
+    {
+        KdbpPrint("Address not accessible!\n");
+        return TRUE;
+    }
+
+    /* Get pool type */
+    if ((Address >= (ULONG_PTR)MmPagedPoolStart) && (Address <= (ULONG_PTR)MmPagedPoolEnd))
+        KdbpPrint("Allocation is from PagedPool region\n");
+    else if ((Address >= (ULONG_PTR)MmNonPagedPoolStart) && (Address <= (ULONG_PTR)MmNonPagedPoolEnd))
+        KdbpPrint("Allocation is from NonPagedPool region\n");
+    else
+    {
+        KdbpPrint("Address 0x%p is not within any pool!\n", (PVOID)Address);
+        return TRUE;
+    }
+
+    /* Loop all entries of that page */
+    Entry = PoolPage;
+    do
+    {
+        /* Check if the address is within that entry */
+        ThisOne = ((Address >= (ULONG_PTR)Entry) &&
+                   (Address < (ULONG_PTR)(Entry + Entry->BlockSize)));
+
+        if (!(Flags & 1) || ThisOne)
+        {
+            /* Print the line */
+            KdbpPrint("%c%p size: %4d previous size: %4d  %s  %.4s\n",
+                     ThisOne ? '*' : ' ', Entry, Entry->BlockSize, Entry->PreviousSize,
+                     (Flags & 0x80000000) ? "" : (Entry->PoolType ? "(Allocated)" : "(Free)     "),
+                     (Flags & 0x80000000) ? "" : (PCHAR)&Entry->PoolTag);
+        }
+
+        if (Flags & 1)
+        {
+            Data = (PULONG)(Entry + 1);
+            KdbpPrint("    %p  %08lx %08lx %08lx %08lx\n"
+                     "    %p  %08lx %08lx %08lx %08lx\n",
+                     &Data[0], Data[0], Data[1], Data[2], Data[3],
+                     &Data[4], Data[4], Data[5], Data[6], Data[7]);
+        }
+
+        /* Go to next entry */
+        Entry = POOL_BLOCK(Entry, Entry->BlockSize);
+    }
+    while ((Entry->BlockSize != 0) && ((ULONG_PTR)Entry < (ULONG_PTR)PoolPage + PAGE_SIZE));
+
+    return TRUE;
+}
+
+#endif // DBG && KDBG
 
 /* EOF */

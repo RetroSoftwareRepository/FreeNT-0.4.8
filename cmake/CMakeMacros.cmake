@@ -1,9 +1,81 @@
 
+# set_cpp
+#  Marks the current folder as containing C++ modules, additionally enabling
+#  specific C++ language features as specified (all of these default to off):
+#
+#  WITH_RUNTIME
+#   Links with the C++ runtime. Enable this for modules which use new/delete or
+#   RTTI, but do not require STL. This is the right choice if you see undefined
+#   references to operator new/delete, vector constructor/destructor iterator,
+#   type_info::vtable, ...
+#   Note: this only affects linking, so cannot be used for static libraries.
+#  WITH_RTTI
+#   Enables run-time type information. Enable this if the module uses typeid or
+#   dynamic_cast. You will probably need to enable WITH_RUNTIME as well, if
+#   you're not already using STL.
+#  WITH_EXCEPTIONS
+#   Enables C++ exception handling. Enable this if the module uses try/catch or
+#   throw. You might also need this if you use a standard operator new (the one
+#   without nothrow).
+#  WITH_STL
+#   Enables standard C++ headers and links to the Standard Template Library.
+#   Use this for modules using anything from the std:: namespace, e.g. maps,
+#   strings, vectors, etc.
+#   Note: this affects both compiling (via include directories) and
+#         linking (by adding STL). Implies WITH_RUNTIME.
+#   FIXME: WITH_STL is currently also required for runtime headers such as
+#          <new> and <exception>. This is not a big issue because in stl-less
+#          environments you usually don't want those anyway; but we might want
+#          to have modules like this in the future.
+#
+# Examples:
+#  set_cpp()
+#   Enables the C++ language, but will cause errors if any runtime or standard
+#   library features are used. This should be the default for C++ in kernel
+#   mode or otherwise restricted environments.
+#   Note: this is required to get libgcc (for multiplication/division) linked
+#         in for C++ modules, and to set the correct language for precompiled
+#         header files, so it IS required even with no features specified.
+#  set_cpp(WITH_RUNTIME)
+#   Links with the C++ runtime, so that e.g. custom operator new implementations
+#   can be used in a restricted environment. This is also required for linking
+#   with libraries (such as ATL) which have RTTI enabled, even if the module in
+#   question does not use WITH_RTTI.
+#  set_cpp(WITH_RTTI WITH_EXCEPTIONS WITH_STL)
+#   The full package. This will adjust compiler and linker so that all C++
+#   features can be used.
 macro(set_cpp)
-    set(IS_CPP 1)
-    if(MSVC)
-        include_directories(${REACTOS_SOURCE_DIR}/include/c++)
+    cmake_parse_arguments(__cppopts "WITH_RUNTIME;WITH_RTTI;WITH_EXCEPTIONS;WITH_STL" "" "" ${ARGN})
+    if(__cppopts_UNPARSED_ARGUMENTS)
+        message(FATAL_ERROR "set_cpp: unparsed arguments ${__cppopts_UNPARSED_ARGUMENTS}")
     endif()
+
+    if(__cppopts_WITH_RUNTIME)
+        set(CPP_USE_RT 1)
+    endif()
+    if(__cppopts_WITH_RTTI)
+        if(MSVC)
+            replace_compile_flags("/GR-" "/GR")
+        else()
+            replace_compile_flags_language("-fno-rtti" "-frtti" "CXX")
+        endif()
+    endif()
+    if(__cppopts_WITH_EXCEPTIONS)
+        if(MSVC)
+            replace_compile_flags("/EHs-c-" "/EHsc")
+        else()
+            replace_compile_flags_language("-fno-exceptions" "-fexceptions" "CXX")
+        endif()
+    endif()
+    if(__cppopts_WITH_STL)
+        set(CPP_USE_STL 1)
+        if(MSVC)
+            add_definitions(-DNATIVE_CPP_INCLUDE=${REACTOS_SOURCE_DIR}/include/c++)
+            include_directories(${REACTOS_SOURCE_DIR}/include/c++/stlport)
+        endif()
+    endif()
+
+    set(IS_CPP 1)
 endmacro()
 
 function(add_dependency_node _node)
@@ -54,26 +126,26 @@ function(add_message_headers _type)
 endfunction()
 
 function(add_link)
-	cmake_parse_arguments(_LINK "MINIMIZE" "NAME;PATH;CMD_LINE_ARGS;ICON;GUID" "" ${ARGN})
+    cmake_parse_arguments(_LINK "MINIMIZE" "NAME;PATH;CMD_LINE_ARGS;ICON;GUID" "" ${ARGN})
     if(NOT _LINK_NAME OR NOT _LINK_PATH)
         message(FATAL_ERROR "You must provide name and path")
     endif()
 
-	if(_LINK_CMD_LINE_ARGS)
-		set(_LINK_CMD_LINE_ARGS -c ${_LINK_CMD_LINE_ARGS})
-	endif()
+    if(_LINK_CMD_LINE_ARGS)
+        set(_LINK_CMD_LINE_ARGS -c ${_LINK_CMD_LINE_ARGS})
+    endif()
 
-	if(_LINK_ICON)
-		set(_LINK_ICON -i ${_LINK_ICON})
-	endif()
+    if(_LINK_ICON)
+        set(_LINK_ICON -i ${_LINK_ICON})
+    endif()
 
-	if(_LINK_GUID)
-		set(_LINK_GUID -g ${_LINK_GUID})
-	endif()
+    if(_LINK_GUID)
+        set(_LINK_GUID -g ${_LINK_GUID})
+    endif()
 
-	if(_LINK_MINIMIZE)
-		set(_LINK_MINIMIZE "-m")
-	endif()
+    if(_LINK_MINIMIZE)
+        set(_LINK_MINIMIZE "-m")
+    endif()
 
     add_custom_command(
         OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${_LINK_NAME}.lnk
@@ -111,8 +183,14 @@ macro(dir_to_num dir var)
         set(${var} 13)
     elseif(${dir} STREQUAL reactos/Microsoft.NET/Framework/v2.0.50727)
         set(${var} 14)
-    else()
-        message(ERROR "Wrong destination: ${dir}")
+    elseif(${dir} STREQUAL reactos/Resources)
+        set(${var} 15)
+    elseif(${dir} STREQUAL reactos/Resources/Themes)
+        set(${var} 16)
+    elseif(${dir} STREQUAL reactos/system32/wbem)
+        set(${var} 17)
+	else()
+        message(FATAL_ERROR "Wrong destination: ${dir}")
     endif()
 endmacro()
 
@@ -134,7 +212,7 @@ function(add_cd_file)
 
     #get file if we need to
     if(NOT _CD_FILE)
-        get_target_property(_CD_FILE ${_CD_TARGET} LOCATION)
+        get_target_property(_CD_FILE ${_CD_TARGET} LOCATION_${CMAKE_BUILD_TYPE})
     endif()
 
     #do we add it to all CDs?
@@ -299,7 +377,7 @@ function(set_module_type MODULE TYPE)
 
     # Set subsystem. Also take this as an occasion
     # to error out if someone gave a non existing type
-    if((${TYPE} STREQUAL nativecui) OR (${TYPE} STREQUAL nativedll) OR (${TYPE} STREQUAL kernelmodedriver))
+    if((${TYPE} STREQUAL nativecui) OR (${TYPE} STREQUAL nativedll) OR (${TYPE} STREQUAL kernelmodedriver) OR (${TYPE} STREQUAL wdmdriver))
         set(__subsystem native)
     elseif(${TYPE} STREQUAL win32cui)
         set(__subsystem console)
@@ -342,7 +420,7 @@ function(set_module_type MODULE TYPE)
             OR (${TYPE} STREQUAL cpl))
         set(__entrypoint DllMainCRTStartup)
         set(__entrystack 12)
-    elseif(${TYPE} STREQUAL kernelmodedriver)
+    elseif((${TYPE} STREQUAL kernelmodedriver) OR (${TYPE} STREQUAL wdmdriver))
         set(__entrypoint DriverEntry)
         set(__entrystack 8)
     elseif(${TYPE} STREQUAL nativedll)
@@ -369,12 +447,12 @@ function(set_module_type MODULE TYPE)
         else()
             message(STATUS "${MODULE} has no base address")
         endif()
-    elseif(${TYPE} STREQUAL kernelmodedriver)
+    elseif((${TYPE} STREQUAL kernelmodedriver) OR (${TYPE} STREQUAL wdmdriver))
         set_image_base(${MODULE} 0x00010000)
     endif()
 
     # Now do some stuff which is specific to each type
-    if(${TYPE} STREQUAL kernelmodedriver)
+    if((${TYPE} STREQUAL kernelmodedriver) OR (${TYPE} STREQUAL wdmdriver))
         add_dependencies(${MODULE} bugcodes)
         set_target_properties(${MODULE} PROPERTIES SUFFIX ".sys")
     endif()
@@ -422,3 +500,13 @@ function(get_defines OUTPUT_VAR)
     endforeach()
     set(${OUTPUT_VAR} ${__tmp_var} PARENT_SCOPE)
 endfunction()
+
+if(NOT MSVC AND (CMAKE_VERSION VERSION_GREATER 2.8.7))
+    function(add_object_library _target)
+        add_library(${_target} OBJECT ${ARGN})
+    endfunction()
+else()
+    function(add_object_library _target)
+        add_library(${_target} ${ARGN})
+    endfunction()
+endif()

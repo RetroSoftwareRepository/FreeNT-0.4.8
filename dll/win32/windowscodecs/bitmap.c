@@ -16,20 +16,24 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "config.h"
+#define WIN32_NO_STATUS
+#define _INC_WINDOWS
+#define COM_NO_WINDOWS_H
+
+#include <config.h>
 
 #include <stdarg.h>
 
 #define COBJMACROS
 
-#include "windef.h"
-#include "winbase.h"
-#include "objbase.h"
-#include "wincodec.h"
+#include <windef.h>
+#include <winbase.h>
+#include <objbase.h>
+#include <wincodec.h>
 
 #include "wincodecs_private.h"
 
-#include "wine/debug.h"
+#include <wine/debug.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(wincodecs);
 
@@ -447,19 +451,23 @@ static const IWICBitmapVtbl BitmapImpl_Vtbl = {
 };
 
 HRESULT BitmapImpl_Create(UINT uiWidth, UINT uiHeight,
+    UINT stride, UINT datasize, BYTE *bits,
     REFWICPixelFormatGUID pixelFormat, WICBitmapCreateCacheOption option,
     IWICBitmap **ppIBitmap)
 {
     HRESULT hr;
     BitmapImpl *This;
-    UINT bpp, stride, datasize;
     BYTE *data;
+    UINT bpp;
 
     hr = get_pixelformat_bpp(pixelFormat, &bpp);
     if (FAILED(hr)) return hr;
 
-    stride = (((bpp*uiWidth)+31)/32)*4;
-    datasize = stride * uiHeight;
+    if (!stride) stride = (((bpp*uiWidth)+31)/32)*4;
+    if (!datasize) datasize = stride * uiHeight;
+
+    if (datasize < stride * uiHeight) return WINCODEC_ERR_INSUFFICIENTBUFFER;
+    if (stride < ((bpp*uiWidth)+7)/8) return E_INVALIDARG;
 
     This = HeapAlloc(GetProcessHeap(), 0, sizeof(BitmapImpl));
     data = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, datasize);
@@ -469,6 +477,7 @@ HRESULT BitmapImpl_Create(UINT uiWidth, UINT uiHeight,
         HeapFree(GetProcessHeap(), 0, data);
         return E_OUTOFMEMORY;
     }
+    if (bits) memcpy(data, bits, datasize);
 
     This->IWICBitmap_iface.lpVtbl = &BitmapImpl_Vtbl;
     This->ref = 1;

@@ -16,21 +16,25 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#define WIN32_NO_STATUS
+#define _INC_WINDOWS
+#define COM_NO_WINDOWS_H
+
 #include <assert.h>
 #include <stdarg.h>
 
-#include "windef.h"
-#include "winbase.h"
-#include "wingdi.h"
-#include "winuser.h"
-#include "winerror.h"
-#include "mmsystem.h"
-#include "vfw.h"
-#include "msacm.h"
+#include <windef.h>
+#include <winbase.h>
+#include <wingdi.h>
+//#include "winuser.h"
+//#include "winerror.h"
+//#include "mmsystem.h"
+#include <vfw.h>
+//#include "msacm.h"
 
-#include "avifile_private.h"
+//#include "avifile_private.h"
 
-#include "wine/debug.h"
+#include <wine/debug.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(avifile);
 
@@ -224,7 +228,7 @@ static HRESULT WINAPI ACMStream_fnCreate(IAVIStream *iface, LPARAM lParam1,
   /* check for swapped parameters */
   if ((LPVOID)lParam1 != NULL &&
       ((LPAVICOMPRESSOPTIONS)lParam1)->fccType == streamtypeAUDIO) {
-    register LPARAM tmp = lParam1;
+    LPARAM tmp = lParam1;
 
     lParam1 = lParam2;
     lParam2 = tmp;

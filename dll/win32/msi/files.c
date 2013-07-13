@@ -30,20 +30,24 @@
  * RemoveFiles
  */
 
-#include <stdarg.h>
+#define WIN32_NO_STATUS
+#define _INC_WINDOWS
+#define COM_NO_WINDOWS_H
 
-#include "windef.h"
-#include "winbase.h"
-#include "winerror.h"
-#include "wine/debug.h"
-#include "fdi.h"
-#include "msi.h"
-#include "msidefs.h"
+//#include <stdarg.h>
+
+//#include "windef.h"
+//#include "winbase.h"
+//#include "winerror.h"
+#include <wine/debug.h>
+//#include "fdi.h"
+//#include "msi.h"
+//#include "msidefs.h"
 #include "msipriv.h"
-#include "winuser.h"
-#include "winreg.h"
-#include "shlwapi.h"
-#include "wine/unicode.h"
+//#include "winuser.h"
+#include <winreg.h>
+#include <shlwapi.h>
+#include <wine/unicode.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(msi);
 
@@ -443,6 +447,17 @@ static void unload_mspatch(void)
     FreeLibrary(hmspatcha);
 }
 
+static MSIFILEPATCH *get_next_filepatch( MSIPACKAGE *package, const WCHAR *key )
+{
+    MSIFILEPATCH *patch;
+
+    LIST_FOR_EACH_ENTRY( patch, &package->filepatches, MSIFILEPATCH, entry )
+    {
+        if (!patch->IsApplied && !strcmpW( key, patch->File->File )) return patch;
+    }
+    return NULL;
+}
+
 static BOOL patchfiles_cb(MSIPACKAGE *package, LPCWSTR file, DWORD action,
                           LPWSTR *path, DWORD *attrs, PVOID user)
 {
@@ -455,12 +470,9 @@ static BOOL patchfiles_cb(MSIPACKAGE *package, LPCWSTR file, DWORD action,
         if (temp_folder[0] == '\0')
             GetTempPathW(MAX_PATH, temp_folder);
 
-        p = msi_get_loaded_filepatch(package, file);
-        if (!p)
-        {
-            TRACE("unknown file in cabinet (%s)\n", debugstr_w(file));
+        if (!(p = get_next_filepatch(package, file)) || !p->File->Component->Enabled)
             return FALSE;
-        }
+
         GetTempFileNameW(temp_folder, NULL, 0, patch_path);
 
         *path = strdupW(patch_path);

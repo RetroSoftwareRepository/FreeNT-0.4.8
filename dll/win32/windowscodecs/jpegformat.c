@@ -16,15 +16,19 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "config.h"
-#include "wine/port.h"
+#define WIN32_NO_STATUS
+#define _INC_WINDOWS
+#define COM_NO_WINDOWS_H
+
+#include <config.h>
+#include <wine/port.h>
 
 #ifdef HAVE_UNISTD_H
 # include <unistd.h>
 #endif
-#include <stdarg.h>
+//#include <stdarg.h>
 #include <stdio.h>
-#include <string.h>
+//#include <string.h>
 #include <setjmp.h>
 
 #ifdef SONAME_LIBJPEG
@@ -44,15 +48,15 @@
 
 #define COBJMACROS
 
-#include "windef.h"
-#include "winbase.h"
-#include "objbase.h"
-#include "wincodec.h"
+#include <windef.h>
+#include <winbase.h>
+#include <objbase.h>
+#include <wincodec.h>
 
 #include "wincodecs_private.h"
 
-#include "wine/debug.h"
-#include "wine/library.h"
+#include <wine/debug.h>
+#include <wine/library.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(wincodecs);
 
@@ -998,7 +1002,8 @@ static HRESULT WINAPI JpegEncoder_Frame_WritePixels(IWICBitmapFrameEncode *iface
     JpegEncoder *This = impl_from_IWICBitmapFrameEncode(iface);
     jmp_buf jmpbuf;
     BYTE *swapped_data = NULL, *current_row;
-    int line, row_size;
+    UINT line;
+    int row_size;
     TRACE("(%p,%u,%u,%u,%p)\n", iface, lineCount, cbStride, cbBufferSize, pbPixels);
 
     EnterCriticalSection(&This->lock);
@@ -1061,7 +1066,7 @@ static HRESULT WINAPI JpegEncoder_Frame_WritePixels(IWICBitmapFrameEncode *iface
     {
         if (This->format->swap_rgb)
         {
-            int x;
+            UINT x;
 
             memcpy(swapped_data, pbPixels + (cbStride * line), row_size);
 
@@ -1389,7 +1394,7 @@ static HRESULT WINAPI JpegEncoder_CreateNewFrame(IWICBitmapEncoder *iface,
         return WINCODEC_ERR_NOTINITIALIZED;
     }
 
-    hr = CreatePropertyBag2(ppIEncoderOptions);
+    hr = CreatePropertyBag2(NULL, 0, ppIEncoderOptions);
     if (FAILED(hr))
     {
         LeaveCriticalSection(&This->lock);

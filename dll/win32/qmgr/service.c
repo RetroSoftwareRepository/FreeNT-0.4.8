@@ -18,13 +18,13 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "windef.h"
-#include "objbase.h"
-#include "winsvc.h"
-#include "bits.h"
+#include <windef.h>
+//#include "objbase.h"
+#include <winsvc.h>
+//#include "bits.h"
 
 #include "qmgr.h"
-#include "wine/debug.h"
+#include <wine/debug.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(qmgr);
 
@@ -95,9 +95,8 @@ StartCount(void)
         return FALSE;
 
     hr = CoRegisterClassObject(&CLSID_BackgroundCopyManager,
-                               (IUnknown *) &BITS_ClassFactory,
-                               CLSCTX_LOCAL_SERVER, REGCLS_MULTIPLEUSE,
-                               &dwReg);
+                               (IUnknown *) &BITS_ClassFactory.IClassFactory_iface,
+                               CLSCTX_LOCAL_SERVER, REGCLS_MULTIPLEUSE, &dwReg);
     if (FAILED(hr))
         return FALSE;
 

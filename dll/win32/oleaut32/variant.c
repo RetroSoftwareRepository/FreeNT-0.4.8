@@ -25,23 +25,26 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "config.h"
+#define WIN32_NO_STATUS
+#define _INC_WINDOWS
 
-#include <string.h>
-#include <stdlib.h>
-#include <stdarg.h>
+#include <config.h>
+
+//#include <string.h>
+//#include <stdlib.h>
+//#include <stdarg.h>
 
 #define COBJMACROS
 #define NONAMELESSUNION
 #define NONAMELESSSTRUCT
 
-#include "windef.h"
-#include "winbase.h"
-#include "wine/unicode.h"
-#include "winerror.h"
+//#include "windef.h"
+//#include "winbase.h"
+#include <wine/unicode.h>
+//#include "winerror.h"
 #include "variant.h"
 #include "resource.h"
-#include "wine/debug.h"
+#include <wine/debug.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(variant);
 
@@ -3131,9 +3134,9 @@ HRESULT WINAPI VarAnd(LPVARIANT left, LPVARIANT right, LPVARIANT result)
             LOCALE_USER_DEFAULT, 0, &d)))
             hres = VariantChangeType(&varLeft,&varLeft,
             VARIANT_LOCALBOOL, VT_BOOL);
-            if (SUCCEEDED(hres) && V_VT(&varLeft) != resvt)
-                hres = VariantChangeType(&varLeft,&varLeft,0,resvt);
-            if (FAILED(hres)) goto VarAnd_Exit;
+        if (SUCCEEDED(hres) && V_VT(&varLeft) != resvt)
+            hres = VariantChangeType(&varLeft,&varLeft,0,resvt);
+        if (FAILED(hres)) goto VarAnd_Exit;
     }
 
     if (resvt == VT_I4 && V_VT(&varRight) == VT_UI4)

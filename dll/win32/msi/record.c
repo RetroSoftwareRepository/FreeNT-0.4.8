@@ -18,27 +18,31 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <stdarg.h>
+#define WIN32_NO_STATUS
+#define _INC_WINDOWS
+#define COM_NO_WINDOWS_H
+
+//#include <stdarg.h>
 
 #define COBJMACROS
 
-#include "windef.h"
-#include "winbase.h"
-#include "winuser.h"
-#include "winerror.h"
-#include "wine/debug.h"
-#include "wine/unicode.h"
-#include "msi.h"
-#include "msiquery.h"
+//#include "windef.h"
+//#include "winbase.h"
+//#include "winuser.h"
+//#include "winerror.h"
+#include <wine/debug.h>
+#include <wine/unicode.h>
+//#include "msi.h"
+//#include "msiquery.h"
 #include "msipriv.h"
-#include "objidl.h"
-#include "winnls.h"
-#include "ole2.h"
+//#include "objidl.h"
+//#include "winnls.h"
+#include <ole2.h>
 
-#include "winreg.h"
-#include "shlwapi.h"
+#include <winreg.h>
+#include <shlwapi.h>
 
-#include "query.h"
+//#include "query.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(msidb);
 
@@ -79,15 +83,14 @@ void MSI_CloseRecord( MSIOBJECTHDR *arg )
 MSIRECORD *MSI_CreateRecord( UINT cParams )
 {
     MSIRECORD *rec;
-    UINT len;
 
     TRACE("%d\n", cParams);
 
     if( cParams>65535 )
         return NULL;
 
-    len = sizeof (MSIRECORD) + sizeof (MSIFIELD)*cParams;
-    rec = alloc_msiobject( MSIHANDLETYPE_RECORD, len, MSI_CloseRecord );
+    rec = alloc_msiobject( MSIHANDLETYPE_RECORD, FIELD_OFFSET(MSIRECORD, fields[cParams + 1]),
+            MSI_CloseRecord );
     if( rec )
         rec->count = cParams;
     return rec;

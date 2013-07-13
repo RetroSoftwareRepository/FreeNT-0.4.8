@@ -299,8 +299,7 @@ PopFlushVolumes(IN BOOLEAN ShuttingDown)
     if (!(FlushPolicy & 2))
     {
         /* ReactOS only implements this routine for shutdown, which requires it */
-        UNIMPLEMENTED;
-        while (TRUE);
+        UNIMPLEMENTED_DBGBREAK();
     }
 
     /* Check if there were no volumes at all */

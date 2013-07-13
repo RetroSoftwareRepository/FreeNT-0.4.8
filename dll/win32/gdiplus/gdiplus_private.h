@@ -19,20 +19,24 @@
 #ifndef __WINE_GP_PRIVATE_H_
 #define __WINE_GP_PRIVATE_H_
 
+#define WIN32_NO_STATUS
+#define _INC_WINDOWS
+#define COM_NO_WINDOWS_H
+
 #include <math.h>
 #include <stdarg.h>
 
-#include "windef.h"
-#include "wingdi.h"
-#include "winbase.h"
-#include "winuser.h"
+#include <windef.h>
+#include <wingdi.h>
+#include <winbase.h>
+//#include "winuser.h"
 
-#include "objbase.h"
-#include "ocidl.h"
-#include "wincodecsdk.h"
-#include "wine/list.h"
+#include <objbase.h>
+//#include "ocidl.h"
+#include <wincodecsdk.h>
+#include <wine/list.h>
 
-#include "gdiplus.h"
+#include <gdiplus.h>
 
 #define GP_DEFAULT_PENSTYLE (PS_GEOMETRIC | PS_SOLID | PS_ENDCAP_FLAT | PS_JOIN_MITER)
 #define MAX_ARC_PTS (13)
@@ -154,6 +158,7 @@ struct GpGraphics{
     BOOL owndc;
     BOOL alpha_hdc;
     GpImage *image;
+    ImageType image_type;
     SmoothingMode smoothing;
     CompositingQuality compqual;
     InterpolationMode interpolation;
@@ -441,7 +446,7 @@ typedef GpStatus (*gdip_format_string_callback)(HDC hdc,
 
 GpStatus gdip_format_string(HDC hdc,
     GDIPCONST WCHAR *string, INT length, GDIPCONST GpFont *font,
-    GDIPCONST RectF *rect, GDIPCONST GpStringFormat *format,
+    GDIPCONST RectF *rect, GDIPCONST GpStringFormat *format, int ignore_empty_clip,
     gdip_format_string_callback callback, void *user_data) DECLSPEC_HIDDEN;
 
 void get_log_fontW(const GpFont *, GpGraphics *, LOGFONTW *) DECLSPEC_HIDDEN;

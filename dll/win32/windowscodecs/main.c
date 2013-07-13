@@ -16,20 +16,23 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#define WIN32_NO_STATUS
+#define _INC_WINDOWS
+#define COM_NO_WINDOWS_H
 
 #define COBJMACROS
-#include "config.h"
+#include <config.h>
 
 #include <stdarg.h>
 
-#include "windef.h"
-#include "winbase.h"
-#include "objbase.h"
-#include "wincodec.h"
+#include <windef.h>
+#include <winbase.h>
+#include <objbase.h>
+#include <wincodec.h>
 
 #include "wincodecs_private.h"
 
-#include "wine/debug.h"
+#include <wine/debug.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(wincodecs);
 
@@ -86,7 +89,8 @@ HRESULT copy_pixels(UINT bpp, const BYTE *srcbuffer,
         return E_INVALIDARG;
 
     /* if the whole bitmap is copied and the buffer format matches then it's a matter of a single memcpy */
-    if (rc->X == 0 && rc->Y == 0 && rc->Width == srcwidth && rc->Height == srcheight && srcstride == dststride)
+    if (rc->X == 0 && rc->Y == 0 && rc->Width == srcwidth && rc->Height == srcheight &&
+        srcstride == dststride && srcstride == bytesperrow)
     {
         memcpy(dstbuffer, srcbuffer, srcstride * srcheight);
         return S_OK;
@@ -97,7 +101,7 @@ HRESULT copy_pixels(UINT bpp, const BYTE *srcbuffer,
     if (row_offset % 8 == 0)
     {
         /* everything lines up on a byte boundary */
-        UINT row;
+        INT row;
         const BYTE *src;
         BYTE *dst;
 

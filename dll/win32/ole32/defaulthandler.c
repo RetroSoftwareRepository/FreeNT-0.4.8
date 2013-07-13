@@ -45,23 +45,26 @@
  * - All the methods related to notification and advise sinks are
  *   in place but no notifications are sent to the sinks yet.
  */
-#include <assert.h>
+#define WIN32_NO_STATUS
+#define _INC_WINDOWS
+
+//#include <assert.h>
 #include <stdarg.h>
-#include <string.h>
+//#include <string.h>
 
 #define COBJMACROS
 
-#include "windef.h"
-#include "winbase.h"
-#include "winuser.h"
-#include "winerror.h"
-#include "ole2.h"
+#include <windef.h>
+#include <winbase.h>
+//#include "winuser.h"
+//#include "winerror.h"
+#include <ole2.h>
 
 #include "compobj_private.h"
 #include "storage32.h"
 
-#include "wine/unicode.h"
-#include "wine/debug.h"
+#include <wine/unicode.h>
+#include <wine/debug.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(ole);
 
@@ -1322,7 +1325,7 @@ static HRESULT WINAPI DefaultHandler_Run(
 
   release_delegates(This);
 
-  hr = CoCreateInstance(&This->clsid, NULL, CLSCTX_ALL,
+  hr = CoCreateInstance(&This->clsid, NULL, CLSCTX_LOCAL_SERVER | CLSCTX_REMOTE_SERVER,
                         &IID_IOleObject, (void **)&This->pOleDelegate);
   if (FAILED(hr))
     return hr;

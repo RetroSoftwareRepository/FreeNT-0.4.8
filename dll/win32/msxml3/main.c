@@ -19,15 +19,18 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "config.h"
-#include "wine/port.h"
+#define WIN32_NO_STATUS
+#define _INC_WINDOWS
+
+#include <config.h>
+#include <wine/port.h>
 
 #define COBJMACROS
 
-#include <stdarg.h>
+//#include <stdarg.h>
 #ifdef HAVE_LIBXML2
-# include <libxml/parser.h>
-# include <libxml/xmlerror.h>
+//# include <libxml/parser.h>
+//# include <libxml/xmlerror.h>
 # ifdef SONAME_LIBXSLT
 #  ifdef HAVE_LIBXSLT_PATTERN_H
 #   include <libxslt/pattern.h>
@@ -40,17 +43,17 @@
 # endif
 #endif
 
-#include "windef.h"
-#include "winbase.h"
-#include "winuser.h"
-#include "ole2.h"
-#include "rpcproxy.h"
-#include "msxml.h"
-#include "msxml6.h"
+#include <windef.h>
+#include <winbase.h>
+//#include "winuser.h"
+#include <ole2.h>
+#include <rpcproxy.h>
+//#include "msxml.h"
+#include <msxml6.h>
 
-#include "wine/unicode.h"
-#include "wine/debug.h"
-#include "wine/library.h"
+//#include "wine/unicode.h"
+#include <wine/debug.h>
+#include <wine/library.h>
 
 #include "msxml_private.h"
 
@@ -273,6 +276,8 @@ const char *debugstr_variant(const VARIANT *v)
         return wine_dbg_sprintf("{VT_I2: %d}", V_I2(v));
     case VT_I4:
         return wine_dbg_sprintf("{VT_I4: %d}", V_I4(v));
+    case VT_INT:
+        return wine_dbg_sprintf("{VT_INT: %d}", V_INT(v));
     case VT_R8:
         return wine_dbg_sprintf("{VT_R8: %lf}", V_R8(v));
     case VT_BSTR:

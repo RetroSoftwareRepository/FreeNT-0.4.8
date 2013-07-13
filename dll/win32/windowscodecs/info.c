@@ -17,24 +17,28 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "config.h"
+#define WIN32_NO_STATUS
+#define _INC_WINDOWS
+#define COM_NO_WINDOWS_H
+
+#include <config.h>
 
 #include <stdarg.h>
 
 #define COBJMACROS
 
-#include "windef.h"
-#include "winbase.h"
-#include "winreg.h"
-#include "objbase.h"
-#include "wincodec.h"
-#include "wincodecsdk.h"
+#include <windef.h>
+#include <winbase.h>
+#include <winreg.h>
+#include <objbase.h>
+//#include "wincodec.h"
+#include <wincodecsdk.h>
 
-#include "wincodecs_private.h"
+//#include "wincodecs_private.h"
 
-#include "wine/debug.h"
-#include "wine/unicode.h"
-#include "wine/list.h"
+#include <wine/debug.h>
+#include <wine/unicode.h>
+#include <wine/list.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(wincodecs);
 
@@ -539,7 +543,8 @@ static HRESULT WINAPI BitmapDecoderInfo_MatchesPattern(IWICBitmapDecoderInfo *if
     WICBitmapPattern *patterns;
     UINT pattern_count=0, patterns_size=0;
     HRESULT hr;
-    int i, pos;
+    UINT i;
+    ULONG pos;
     BYTE *data=NULL;
     ULONG datasize=0;
     ULONG bytesread;
@@ -1900,7 +1905,7 @@ static HRESULT WINAPI ComponentEnum_Next(IEnumUnknown *iface, ULONG celt,
     IUnknown **rgelt, ULONG *pceltFetched)
 {
     ComponentEnum *This = impl_from_IEnumUnknown(iface);
-    int num_fetched=0;
+    ULONG num_fetched=0;
     ComponentEnumItem *item;
     HRESULT hr=S_OK;
 
@@ -1929,7 +1934,7 @@ static HRESULT WINAPI ComponentEnum_Next(IEnumUnknown *iface, ULONG celt,
 static HRESULT WINAPI ComponentEnum_Skip(IEnumUnknown *iface, ULONG celt)
 {
     ComponentEnum *This = impl_from_IEnumUnknown(iface);
-    int i;
+    ULONG i;
     HRESULT hr=S_OK;
 
     TRACE("(%p,%u)\n", iface, celt);

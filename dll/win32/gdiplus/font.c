@@ -17,25 +17,25 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <stdarg.h>
+//#include <stdarg.h>
 
-#include "windef.h"
-#include "winbase.h"
-#include "wingdi.h"
-#include "winnls.h"
-#include "winreg.h"
-#include "wine/debug.h"
-#include "wine/unicode.h"
+//#include "windef.h"
+//#include "winbase.h"
+//#include "wingdi.h"
+//#include "winnls.h"
+//#include "winreg.h"
+#include <wine/debug.h>
+#include <wine/unicode.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL (gdiplus);
 
-#include "objbase.h"
+//#include "objbase.h"
 
-#include "gdiplus.h"
+//#include "gdiplus.h"
 #include "gdiplus_private.h"
 
 /* PANOSE is 10 bytes in size, need to pack the structure properly */
-#include "pshpack2.h"
+#include <pshpack2.h>
 typedef struct
 {
     USHORT version;
@@ -100,7 +100,7 @@ typedef struct
     SHORT metricDataFormat;
     USHORT numberOfHMetrics;
 } TT_HHEA;
-#include "poppack.h"
+#include <poppack.h>
 
 #ifdef WORDS_BIGENDIAN
 #define GET_BE_WORD(x) (x)
@@ -979,12 +979,12 @@ GpStatus WINGDIPAPI GdipIsStyleAvailable(GDIPCONST GpFontFamily* family,
 
     *IsStyleAvailable = FALSE;
 
-    hdc = GetDC(0);
+    hdc = CreateCompatibleDC(0);
 
     if(!EnumFontFamiliesW(hdc, family->FamilyName, font_has_style_proc, (LPARAM)style))
         *IsStyleAvailable = TRUE;
 
-    ReleaseDC(0, hdc);
+    DeleteDC(hdc);
 
     return Ok;
 }
@@ -1276,7 +1276,7 @@ GpStatus WINGDIPAPI GdipPrivateAddMemoryFont(GpFontCollection* fontCollection,
         HDC hdc;
         LOGFONTW lfw;
 
-        hdc = GetDC(0);
+        hdc = CreateCompatibleDC(0);
 
         lfw.lfCharSet = DEFAULT_CHARSET;
         lstrcpyW(lfw.lfFaceName, name);
@@ -1288,7 +1288,7 @@ GpStatus WINGDIPAPI GdipPrivateAddMemoryFont(GpFontCollection* fontCollection,
             return OutOfMemory;
         }
 
-        ReleaseDC(0, hdc);
+        DeleteDC(hdc);
     }
     return Ok;
 }
@@ -1403,7 +1403,7 @@ GpStatus WINGDIPAPI GdipNewInstalledFontCollection(
         HDC hdc;
         LOGFONTW lfw;
 
-        hdc = GetDC(0);
+        hdc = CreateCompatibleDC(0);
 
         lfw.lfCharSet = DEFAULT_CHARSET;
         lfw.lfFaceName[0] = 0;
@@ -1416,7 +1416,7 @@ GpStatus WINGDIPAPI GdipNewInstalledFontCollection(
             return OutOfMemory;
         }
 
-        ReleaseDC(0, hdc);
+        DeleteDC(hdc);
     }
 
     *fontCollection = &installedFontCollection;

@@ -29,30 +29,21 @@ NtUserAttachThreadInput(
     IN BOOL fAttach)
 {
   NTSTATUS Status;
-  PETHREAD Thread, ThreadTo;
   PTHREADINFO pti, ptiTo;
   BOOL Ret = FALSE;
 
   UserEnterExclusive();
   ERR("Enter NtUserAttachThreadInput %s\n",(fAttach ? "TRUE" : "FALSE" ));
-  Status = PsLookupThreadByThreadId((HANDLE)idAttach, &Thread);
-  if (!NT_SUCCESS(Status))
-  {
-     EngSetLastError(ERROR_INVALID_PARAMETER);
-     goto Exit;
-  }
-  Status = PsLookupThreadByThreadId((HANDLE)idAttachTo, &ThreadTo);
-  if (!NT_SUCCESS(Status))
-  {
-     EngSetLastError(ERROR_INVALID_PARAMETER);
-     ObDereferenceObject(Thread);
-     goto Exit;
-  }
 
-  pti = PsGetThreadWin32Thread(Thread);
-  ptiTo = PsGetThreadWin32Thread(ThreadTo);
-  ObDereferenceObject(Thread);
-  ObDereferenceObject(ThreadTo);
+  pti = IntTID2PTI((HANDLE)idAttach);
+  ptiTo = IntTID2PTI((HANDLE)idAttachTo);
+
+  if ( !pti || !ptiTo )
+  {
+     ERR("AttachThreadInput pti or ptiTo NULL.\n");
+     EngSetLastError(ERROR_INVALID_PARAMETER);
+     goto Exit;
+  }
 
   Status = UserAttachThreadInput( pti, ptiTo, fAttach);
   if (!NT_SUCCESS(Status))
@@ -307,15 +298,6 @@ NtUserInitTask(
    return 0;
 }
 
-BOOL
-APIENTRY
-NtUserLockWorkStation(VOID)
-{
-   STUB
-
-   return 0;
-}
-
 DWORD
 APIENTRY
 NtUserMNDragLeave(VOID)
@@ -559,15 +541,54 @@ NtUserCheckImeHotKey(
     return 0;
 }
 
-DWORD
+NTSTATUS
 APIENTRY
 NtUserConsoleControl(
-    DWORD dwUnknown1,
-    DWORD dwUnknown2,
-    DWORD dwUnknown3)
+    IN CONSOLECONTROL ConsoleCtrl,
+    IN PVOID ConsoleCtrlInfo,
+    IN DWORD ConsoleCtrlInfoLength)
 {
-    STUB;
-    return 0;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    /* Allow only Console Server to perform this operation (via CSRSS) */
+    if (gpepCSRSS != PsGetCurrentProcess())
+        return STATUS_ACCESS_DENIED;
+
+    UserEnterExclusive();
+
+    switch (ConsoleCtrl)
+    {
+        case GuiConsoleWndClassAtom:
+        {
+            _SEH2_TRY
+            {
+                ProbeForRead(ConsoleCtrlInfo, ConsoleCtrlInfoLength, 1);
+                ASSERT(ConsoleCtrlInfoLength == sizeof(ATOM));
+                gaGuiConsoleWndClass = *(ATOM*)ConsoleCtrlInfo;
+            }
+            _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+            {
+                Status = _SEH2_GetExceptionCode();
+            }
+            _SEH2_END;
+
+            break;
+        }
+
+        case ConsoleAcquireDisplayOwnership:
+        {
+            break;
+        }
+
+        default:
+            ERR("Calling invalid control %lu in NtUserConsoleControl\n", ConsoleCtrl);
+            Status = STATUS_INVALID_INFO_CLASS;
+            break;
+    }
+
+    UserLeave();
+
+    return Status;
 }
 
 DWORD

@@ -16,8 +16,7 @@
  * License along with this library; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
-/* $Id$
- *
+/*
  * PROJECT:         ReactOS Hid User Library
  * FILE:            lib/hid/hid.c
  * PURPOSE:         ReactOS Hid User Library
@@ -26,7 +25,7 @@
  * UPDATE HISTORY:
  *      07/12/2004  Created
  */
-#include <precomp.h>
+#include "precomp.h"
 
 HINSTANCE hDllInstance;
 
@@ -127,7 +126,7 @@ HIDAPI
 NTSTATUS WINAPI
 HidP_GetButtonCaps(IN HIDP_REPORT_TYPE ReportType,
                    OUT PHIDP_BUTTON_CAPS ButtonCaps,
-                   IN OUT PULONG ButtonCapsLength,
+                   IN OUT PUSHORT ButtonCapsLength,
                    IN PHIDP_PREPARSED_DATA PreparsedData)
 {
   return HidP_GetSpecificButtonCaps(ReportType, 0, 0, 0, ButtonCaps,
@@ -344,7 +343,7 @@ HIDAPI
 NTSTATUS WINAPI
 HidP_GetValueCaps(IN HIDP_REPORT_TYPE ReportType,
                   OUT PHIDP_VALUE_CAPS ValueCaps,
-                  IN OUT PULONG ValueCapsLength,
+                  IN OUT PUSHORT ValueCapsLength,
                   IN PHIDP_PREPARSED_DATA PreparsedData)
 {
   return HidP_GetSpecificValueCaps(ReportType, 0, 0, 0, ValueCaps,

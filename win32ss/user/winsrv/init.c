@@ -1,130 +1,67 @@
-/* $Id$
- *
- * init.c - ReactOS/Win32 Console+User Enviroment Subsystem Server - Initialization
- * 
- * ReactOS Operating System
- * 
- * --------------------------------------------------------------------
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
- *
- * --------------------------------------------------------------------
+/*
+ * COPYRIGHT:       See COPYING in the top level directory
+ * PROJECT:         ReactOS User API Server DLL
+ * FILE:            win32ss/user/winsrv/init.c
+ * PURPOSE:         Initialization
+ * PROGRAMMERS:     Dmitry Philippov (shedon@mail.ru)
+ *                  Hermes Belusca-Maito (hermes.belusca@sfr.fr)
  */
-#include "winsrv.h"
 
-//#define NDEBUG
+/* INCLUDES *******************************************************************/
+
+/* PSDK Headers */
+#include <stdarg.h>
+#define WIN32_NO_STATUS
+#define _INC_WINDOWS
+#define COM_NO_WINDOWS_H
+#include <windef.h>
+#include <winuser.h>
+
+#define NDEBUG
 #include <debug.h>
 
-HANDLE WinSrvApiPort = NULL;
 
-/**********************************************************************
- * NAME							PRIVATE
- * 	ConStaticServerThread/1
- */
-VOID WINAPI ConStaticServerThread (PVOID x)
+/* ENTRY-POINT ****************************************************************/
+
+/*** HACK from win32csr... ***/
+static HHOOK hhk = NULL;
+
+LRESULT
+CALLBACK
+KeyboardHookProc(int nCode,
+                 WPARAM wParam,
+                 LPARAM lParam)
 {
-	NTSTATUS Status = STATUS_SUCCESS;
-	PPORT_MESSAGE Request = (PPORT_MESSAGE) x;
-	PPORT_MESSAGE Reply = NULL;
-	ULONG MessageType = 0;
-
-	DPRINT("WINSRV: %s(%08lx) called\n", __FUNCTION__, x);
-
-	MessageType = Request->u2.s2.Type;
-	DPRINT("WINSRV: %s(%08lx) received a message (Type=%d)\n",
-		__FUNCTION__, x, MessageType);
-	switch (MessageType)
-	{
-		default:
-			Reply = Request;
-			Status = NtReplyPort (WinSrvApiPort, Reply);
-			break;
-	}
+    return CallNextHookEx(hhk, nCode, wParam, lParam);
 }
+/*** END - HACK from win32csr... ***/
 
-/**********************************************************************
- * NAME							PRIVATE
- * 	UserStaticServerThread/1
- */
-VOID WINAPI UserStaticServerThread (PVOID x)
+BOOL
+WINAPI
+DllMain(IN HINSTANCE hInstanceDll,
+        IN DWORD dwReason,
+        IN LPVOID lpReserved)
 {
-	NTSTATUS Status = STATUS_SUCCESS;
-	PPORT_MESSAGE Request = (PPORT_MESSAGE) x;
-	PPORT_MESSAGE Reply = NULL;
-	ULONG MessageType = 0;
+    UNREFERENCED_PARAMETER(hInstanceDll);
+    UNREFERENCED_PARAMETER(dwReason);
+    UNREFERENCED_PARAMETER(lpReserved);
 
-	DPRINT("WINSRV: %s(%08lx) called\n", __FUNCTION__, x);
+    if (DLL_PROCESS_ATTACH == dwReason)
+    {
+        DPRINT1("WINSRV - HACK: Use keyboard hook hack\n");
+/*** HACK from win32csr... ***/
+//
+// HACK HACK HACK ReactOS to BOOT! Initialization BUG ALERT! See bug 5655.
+//
+        hhk = SetWindowsHookEx(WH_KEYBOARD_LL, KeyboardHookProc, NULL, 0);
+// BUG ALERT! BUG ALERT! BUG ALERT! BUG ALERT! BUG ALERT! BUG ALERT! BUG ALERT!
+//  BUG ALERT! BUG ALERT! BUG ALERT! BUG ALERT! BUG ALERT! BUG ALERT! BUG ALERT!
+//   BUG ALERT! BUG ALERT! BUG ALERT! BUG ALERT! BUG ALERT! BUG ALERT! BUG ALERT!
 
-	MessageType = Request->u2.s2.Type;
-	DPRINT("WINSRV: %s(%08lx) received a message (Type=%d)\n",
-		__FUNCTION__, x, MessageType);
-	switch (MessageType)
-	{
-		default:
-			Reply = Request;
-			Status = NtReplyPort (WinSrvApiPort, Reply);
-			break;
-	}
-}
+/*** END - HACK from win32csr... ***/
+    }
 
-/*=====================================================================
- * 	PUBLIC API
- *===================================================================*/
-
-NTSTATUS WINAPI ConServerDllInitialization (ULONG ArgumentCount,
-					     LPWSTR *Argument)
-{
-	NTSTATUS Status = STATUS_SUCCESS;
-	
-	DPRINT("WINSRV: %s called\n", __FUNCTION__);
-
-	// Get the listening port from csrsrv.dll
-	WinSrvApiPort = CsrQueryApiPort ();
-	if (NULL == WinSrvApiPort)
-	{
-		return STATUS_UNSUCCESSFUL;
-	}
-	// Register our message dispatcher
-	Status = CsrAddStaticServerThread (ConStaticServerThread);
-	if (NT_SUCCESS(Status))
-	{
-		//TODO: perform the real console server internal initialization here
-	}
-	return Status;
-}
-
-NTSTATUS WINAPI UserServerDllInitialization (ULONG ArgumentCount,
-					      LPWSTR *Argument)
-{
-	NTSTATUS Status = STATUS_SUCCESS;
-	
-	DPRINT("WINSRV: %s called\n", __FUNCTION__);
-
-	// Get the listening port from csrsrv.dll
-	WinSrvApiPort = CsrQueryApiPort ();
-	if (NULL == WinSrvApiPort)
-	{
-		return STATUS_UNSUCCESSFUL;
-	}
-	// Register our message dispatcher
-	Status = CsrAddStaticServerThread (UserStaticServerThread);
-	if (NT_SUCCESS(Status))
-	{
-		//TODO: perform the real user server internal initialization here
-	}
-	return Status;
+    return TRUE;
 }
 
 /* EOF */

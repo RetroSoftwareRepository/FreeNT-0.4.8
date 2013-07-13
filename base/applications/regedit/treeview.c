@@ -18,7 +18,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
-#include <regedit.h>
+#include "regedit.h"
 
 /* Global variables and constants  */
 /* Image_Open, Image_Closed, and Image_Root - integer variables for indexes of the images.  */
@@ -34,7 +34,7 @@ static LPWSTR pathBuffer;
 
 static BOOL get_item_path(HWND hwndTV, HTREEITEM hItem, HKEY* phKey, LPWSTR* pKeyPath, int* pPathLen, int* pMaxLen)
 {
-    TVITEM item;
+    TVITEMW item;
     size_t maxLen, len;
     LPWSTR newStr;
 
@@ -109,8 +109,8 @@ BOOL DeleteNode(HWND hwndTV, HTREEITEM hItem)
 /* Add an entry to the tree. Only give hKey for root nodes (HKEY_ constants) */
 static HTREEITEM AddEntryToTree(HWND hwndTV, HTREEITEM hParent, LPWSTR label, HKEY hKey, DWORD dwChildren)
 {
-    TVITEM tvi;
-    TVINSERTSTRUCT tvins;
+    TVITEMW tvi;
+    TVINSERTSTRUCTW tvins;
 
     if (hKey)
     {
@@ -140,7 +140,7 @@ BOOL RefreshTreeItem(HWND hwndTV, HTREEITEM hItem)
     LPCWSTR KeyPath;
     DWORD dwCount, dwIndex, dwMaxSubKeyLen;
     LPWSTR Name = NULL;
-    TVITEM tvItem;
+    TVITEMW tvItem;
     LPWSTR pszNodes = NULL;
     BOOL bSuccess = FALSE;
     LPWSTR s;
@@ -332,7 +332,7 @@ HTREEITEM InsertNode(HWND hwndTV, HTREEITEM hItem, LPWSTR name)
 {
     WCHAR buf[MAX_NEW_KEY_LEN];
     HTREEITEM hNewItem = 0;
-    TVITEMEX item;
+    TVITEMEXW item;
 
     /* Default to the current selection */
     if (!hItem)
@@ -390,8 +390,8 @@ HWND StartKeyRename(HWND hwndTV)
 
 static BOOL InitTreeViewItems(HWND hwndTV, LPWSTR pHostName)
 {
-    TVITEM tvi;
-    TVINSERTSTRUCT tvins;
+    TVITEMW tvi;
+    TVINSERTSTRUCTW tvins;
     HTREEITEM hRoot;
 
     tvi.mask = TVIF_TEXT | TVIF_IMAGE | TVIF_SELECTEDIMAGE | TVIF_CHILDREN | TVIF_PARAM;
@@ -593,7 +593,7 @@ BOOL CreateNewKey(HWND hwndTV, HTREEITEM hItem)
     do
     {
         wsprintf(szNewKey, szNewKeyFormat, iIndex++);
-        nResult = RegCreateKeyExW(hKey, szNewKey, 0, NULL, 0, KEY_WRITE, NULL, &hNewKey, &dwDisposition);
+        nResult = RegCreateKeyExW(hKey, szNewKey, 0, NULL, REG_OPTION_NON_VOLATILE, KEY_WRITE, NULL, &hNewKey, &dwDisposition);
         if (hNewKey && dwDisposition == REG_OPENED_EXISTING_KEY)
         {
             RegCloseKey(hNewKey);
@@ -651,10 +651,15 @@ HWND CreateTreeView(HWND hwndParent, LPWSTR pHostName, HMENU id)
     return hwndTV;
 }
 
-void DestroyTreeView()
+void DestroyTreeView(HWND hwndTV)
 {
-    if (pathBuffer)
-        HeapFree(GetProcessHeap(), 0, pathBuffer);
+    HIMAGELIST himl;
+
+    if (pathBuffer) HeapFree(GetProcessHeap(), 0, pathBuffer);
+
+    /* Destroy the image list associated with the tree view control */
+    himl = TreeView_GetImageList(hwndTV, TVSIL_NORMAL);
+    if (himl) ImageList_Destroy(himl);
 }
 
 BOOL SelectNode(HWND hwndTV, LPCWSTR keyPath)
@@ -664,7 +669,7 @@ BOOL SelectNode(HWND hwndTV, LPCWSTR keyPath)
     WCHAR szPathPart[128];
     WCHAR szBuffer[128];
     LPCWSTR s;
-    TVITEM tvi;
+    TVITEMW tvi;
 
     /* Load "My Computer" string... */
     LoadStringW(hInst, IDS_MY_COMPUTER, szBuffer, COUNT_OF(szBuffer));
@@ -683,22 +688,22 @@ BOOL SelectNode(HWND hwndTV, LPCWSTR keyPath)
     while(keyPath[0])
     {
         s = wcschr(keyPath, L'\\');
-        wcsncpy(szPathPart, keyPath, s ? s - keyPath + 1 : wcslen(keyPath) + 1);
+        lstrcpynW(szPathPart, keyPath, s ? s - keyPath + 1 : wcslen(keyPath) + 1);
 
         /* Special case for root to expand root key abbreviations */
         if (hItem == hRoot)
         {
-            if (!wcsicmp(szPathPart, L"HKCR"))
+            if (!_wcsicmp(szPathPart, L"HKCR"))
                 wcscpy(szPathPart, L"HKEY_CLASSES_ROOT");
-            else if (!wcsicmp(szPathPart, L"HKCU"))
+            else if (!_wcsicmp(szPathPart, L"HKCU"))
                 wcscpy(szPathPart, L"HKEY_CURRENT_USER");
-            else if (!wcsicmp(szPathPart, L"HKLM"))
+            else if (!_wcsicmp(szPathPart, L"HKLM"))
                 wcscpy(szPathPart, L"HKEY_LOCAL_MACHINE");
-            else if (!wcsicmp(szPathPart, L"HKU"))
+            else if (!_wcsicmp(szPathPart, L"HKU"))
                 wcscpy(szPathPart, L"HKEY_USERS");
-            else if (!wcsicmp(szPathPart, L"HKCC"))
+            else if (!_wcsicmp(szPathPart, L"HKCC"))
                 wcscpy(szPathPart, L"HKEY_CURRENT_CONFIG");
-            else if (!wcsicmp(szPathPart, L"HKDD"))
+            else if (!_wcsicmp(szPathPart, L"HKDD"))
                 wcscpy(szPathPart, L"HKEY_DYN_DATA");
         }
 
@@ -713,7 +718,7 @@ BOOL SelectNode(HWND hwndTV, LPCWSTR keyPath)
 
             (void)TreeView_GetItem(hwndTV, &tvi);
 
-            if (!wcsicmp(szBuffer, szPathPart))
+            if (!_wcsicmp(szBuffer, szPathPart))
                 break;
         }
 

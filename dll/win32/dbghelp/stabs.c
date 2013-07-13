@@ -29,38 +29,38 @@
  *     available (hopefully) from http://sources.redhat.com/gdb/onlinedocs
  */
 
-#include "config.h"
-#include "wine/port.h"
+#include <config.h>
+//#include "wine/port.h"
 
-#include <sys/types.h>
-#include <fcntl.h>
+//#include <sys/types.h>
+//#include <fcntl.h>
 #ifdef HAVE_SYS_STAT_H
 # include <sys/stat.h>
 #endif
 #ifdef HAVE_SYS_MMAN_H
 #include <sys/mman.h>
 #endif
-#include <limits.h>
-#include <stdlib.h>
-#include <string.h>
+//#include <limits.h>
+//#include <stdlib.h>
+//#include <string.h>
 #ifdef HAVE_UNISTD_H
 # include <unistd.h>
 #endif
-#include <stdio.h>
+//#include <stdio.h>
 #include <assert.h>
-#include <stdarg.h>
+//#include <stdarg.h>
 
 #ifdef HAVE_MACH_O_NLIST_H
 # include <mach-o/nlist.h>
 #endif
 
-#include "windef.h"
-#include "winbase.h"
-#include "winnls.h"
+//#include "windef.h"
+//#include "winbase.h"
+//#include "winnls.h"
 
 #include "dbghelp_private.h"
 
-#include "wine/debug.h"
+#include <wine/debug.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(dbghelp_stabs);
 
@@ -606,7 +606,6 @@ static inline int stabs_pts_read_method_info(struct ParseTypedefData* ptd)
         if (mthd == '*')
         {
             long int            ofs;
-            struct symt*        dt;
 
             PTS_ABORTIF(ptd, stabs_pts_read_number(ptd, &ofs) == -1);
             PTS_ABORTIF(ptd, *ptd->ptr++ != ';');
@@ -631,7 +630,7 @@ static inline int stabs_pts_read_aggregate(struct ParseTypedefData* ptd,
     PTS_ABORTIF(ptd, stabs_pts_read_number(ptd, &sz) == -1);
 
     doadd = symt_set_udt_size(ptd->module, sdt, sz);
-    if (*ptd->ptr == '!') /* C++ inheritence */
+    if (*ptd->ptr == '!') /* C++ inheritance */
     {
         long     num_classes;
 
@@ -640,7 +639,7 @@ static inline int stabs_pts_read_aggregate(struct ParseTypedefData* ptd,
         PTS_ABORTIF(ptd, *ptd->ptr++ != ',');
         while (--num_classes >= 0)
         {
-            ptd->ptr += 2; /* skip visibility and inheritence */
+            ptd->ptr += 2; /* skip visibility and inheritance */
             PTS_ABORTIF(ptd, stabs_pts_read_number(ptd, &ofs) == -1);
             PTS_ABORTIF(ptd, *ptd->ptr++ != ',');
 

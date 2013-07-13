@@ -1,20 +1,15 @@
 
-set_cpp()
+set_cpp(WITH_RUNTIME)
 
 add_definitions(
-    -D__WINESRC__
-    -DROS_Headers)
-
-if (MSVC)
-    add_compile_flags("/EHa-")
-endif()
+    -D__WINESRC__)
 
 remove_definitions(-D_WIN32_WINNT=0x502)
 add_definitions(-D_WIN32_WINNT=0x600)
 
 include_directories(${REACTOS_SOURCE_DIR}/lib/atl)
 
-spec2def(browseui.dll browseui.spec)
+spec2def(browseui.dll browseui.spec ADD_IMPORTLIB)
 
 list(APPEND SOURCE
     aclmulti.cpp
@@ -71,4 +66,3 @@ add_importlibs(browseui
 
 add_pch(browseui precomp.h)
 add_cd_file(TARGET browseui DESTINATION reactos/system32 FOR all)
-

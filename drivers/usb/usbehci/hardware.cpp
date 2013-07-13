@@ -96,7 +96,7 @@ protected:
     PVOID m_SCEContext;                                                                // status change callback routine context
     BOOLEAN m_DoorBellRingInProgress;                                                  // door bell ring in progress
     WORK_QUEUE_ITEM m_StatusChangeWorkItem;                                            // work item for status change callback
-    ULONG m_WorkItemActive;                                                            // work item status
+    volatile LONG m_StatusChangeWorkItemStatus;                                        // work item status
     ULONG m_SyncFramePhysAddr;                                                         // periodic frame list physical address
     BUS_INTERFACE_STANDARD m_BusInterface;                                             // pci bus interface
     BOOLEAN m_PortResetInProgress[0xF];                                                // stores reset in progress (vbox hack)
@@ -125,6 +125,13 @@ CUSBHardwareDevice::QueryInterface(
     }
 
     return STATUS_UNSUCCESSFUL;
+}
+
+LPCSTR
+STDMETHODCALLTYPE
+CUSBHardwareDevice::GetUSBType()
+{
+    return "USBEHCI";
 }
 
 NTSTATUS
@@ -245,9 +252,9 @@ CUSBHardwareDevice::PrintCapabilities()
         DPRINT1("Controler EHCI has Port Power Control\n");
     }
 
-    DPRINT1("Controller Port Routing Rules %d\n", m_Capabilities.HCSParams.PortRouteRules);
-    DPRINT1("Number of Ports per Companion Controller %d\n", m_Capabilities.HCSParams.PortPerCHC);
-    DPRINT1("Number of Companion Controller %d\n", m_Capabilities.HCSParams.CHCCount);
+    DPRINT1("Controller Port Routing Rules %lu\n", m_Capabilities.HCSParams.PortRouteRules);
+    DPRINT1("Number of Ports per Companion Controller %lu\n", m_Capabilities.HCSParams.PortPerCHC);
+    DPRINT1("Number of Companion Controller %lu\n", m_Capabilities.HCSParams.CHCCount);
 
     if (m_Capabilities.HCSParams.PortIndicator)
     {
@@ -356,11 +363,11 @@ CUSBHardwareDevice::PnpStart(
                 m_Capabilities.HCSParamsLong = READ_REGISTER_ULONG((PULONG)((ULONG)ResourceBase + EHCI_HCSPARAMS));
                 m_Capabilities.HCCParamsLong = READ_REGISTER_ULONG((PULONG)((ULONG)ResourceBase + EHCI_HCCPARAMS));
 
-                DPRINT1("Controller has %d Length\n", m_Capabilities.Length);
+                DPRINT1("Controller has %c Length\n", m_Capabilities.Length);
                 DPRINT1("Controller EHCI Version %x\n", m_Capabilities.HCIVersion);
                 DPRINT1("Controller EHCI Caps HCSParamsLong %x\n", m_Capabilities.HCSParamsLong);
                 DPRINT1("Controller EHCI Caps HCCParamsLong %x\n", m_Capabilities.HCCParamsLong);
-                DPRINT1("Controller has %d Ports\n", m_Capabilities.HCSParams.PortCount);
+                DPRINT1("Controller has %lu Ports\n", m_Capabilities.HCSParams.PortCount);
 
                 //
                 // print capabilities
@@ -590,7 +597,7 @@ CUSBHardwareDevice::StartController(void)
                         // lets wait a bit
                         //
                         Timeout.QuadPart = 50;
-                        DPRINT1("Waiting %d milliseconds for port reset\n", Timeout.LowPart);
+                        DPRINT1("Waiting %lu milliseconds for port reset\n", Timeout.LowPart);
 
                         //
                         // convert to 100 ns units (absolute)
@@ -908,7 +915,7 @@ CUSBHardwareDevice::ResetPort(
     // delay is 50 ms for port reset as per USB 2.0 spec
     //
     Timeout.QuadPart = 50;
-    DPRINT1("Waiting %d milliseconds for port reset\n", Timeout.LowPart);
+    DPRINT1("Waiting %lu milliseconds for port reset\n", Timeout.LowPart);
 
     //
     // convert to 100 ns units (absolute)
@@ -1040,7 +1047,7 @@ CUSBHardwareDevice::ClearPortStatus(
         // delay is 50 ms
         //
         Timeout.QuadPart = 50;
-        DPRINT1("Waiting %d milliseconds for port to recover after reset\n", Timeout.LowPart);
+        DPRINT1("Waiting %lu milliseconds for port to recover after reset\n", Timeout.LowPart);
 
         //
         // convert to 100 ns units (absolute)
@@ -1093,7 +1100,7 @@ CUSBHardwareDevice::ClearPortStatus(
             // delay is 100 ms
             //
             Timeout.QuadPart = 100;
-            DPRINT1("Waiting %d milliseconds for port to stabilize after connection\n", Timeout.LowPart);
+            DPRINT1("Waiting %lu milliseconds for port to stabilize after connection\n", Timeout.LowPart);
 
             //
             // convert to 100 ns units (absolute)
@@ -1173,7 +1180,7 @@ CUSBHardwareDevice::SetPortFeature(
             // delay is 20 ms
             //
             Timeout.QuadPart = 20;
-            DPRINT1("Waiting %d milliseconds for port power up\n", Timeout.LowPart);
+            DPRINT1("Waiting %lu milliseconds for port power up\n", Timeout.LowPart);
 
             //
             // convert to 100 ns units (absolute)
@@ -1387,7 +1394,7 @@ EhciDefferedRoutine(
             {
                 if (PortStatus & EHCI_PRT_CONNECTED)
                 {
-                    DPRINT1("Device connected on port %d\n", i);
+                    DPRINT1("Device connected on port %lu\n", i);
 
                     if (This->m_Capabilities.HCSParams.CHCCount)
                     {
@@ -1411,7 +1418,7 @@ EhciDefferedRoutine(
                 }
                 else
                 {
-                    DPRINT1("Device disconnected on port %d\n", i);
+                    DPRINT1("Device disconnected on port %lu\n", i);
 
                     //
                     // work to do
@@ -1426,13 +1433,13 @@ EhciDefferedRoutine(
         //
         if (QueueSCEWorkItem && This->m_SCECallBack != NULL)
         {
-            // work item is now active
-            This->m_WorkItemActive = TRUE;
-
-            //
-            // queue work item for processing
-            //
-            ExQueueWorkItem(&This->m_StatusChangeWorkItem, DelayedWorkQueue);
+            if (InterlockedCompareExchange(&This->m_StatusChangeWorkItemStatus, 1, 0) == 0)
+            {
+                //
+                // queue work item for processing
+                //
+                ExQueueWorkItem(&This->m_StatusChangeWorkItem, DelayedWorkQueue);
+            }
         }
     }
     return;
@@ -1459,8 +1466,10 @@ StatusChangeWorkItemRoutine(
         This->m_SCECallBack(This->m_SCEContext);
     }
 
-    // work item is completed
-    This->m_WorkItemActive = FALSE;
+    //
+    // reset active status
+    //
+    InterlockedDecrement(&This->m_StatusChangeWorkItemStatus);
 }
 
 NTSTATUS

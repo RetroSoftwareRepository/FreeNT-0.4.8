@@ -16,30 +16,33 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#define WIN32_NO_STATUS
+#define _INC_WINDOWS
+
 #define COBJMACROS
 
-#include "config.h"
+#include <config.h>
 
-#include <stdarg.h>
+//#include <stdarg.h>
 #ifdef HAVE_LIBXML2
 # include <libxml/parser.h>
-# include <libxml/xmlerror.h>
+//# include <libxml/xmlerror.h>
 #endif
 
-#include "windef.h"
-#include "winbase.h"
-#include "winuser.h"
-#include "winnls.h"
-#include "ole2.h"
-#include "msxml6.h"
-#include "wininet.h"
-#include "urlmon.h"
-#include "winreg.h"
-#include "shlwapi.h"
+#include <windef.h>
+#include <winbase.h>
+//#include "winuser.h"
+//#include "winnls.h"
+#include <ole2.h>
+#include <msxml6.h>
+//#include "wininet.h"
+//#include "urlmon.h"
+//#include "winreg.h"
+//#include "shlwapi.h"
 
-#include "wine/debug.h"
-#include "wine/list.h"
-#include "wine/unicode.h"
+#include <wine/debug.h>
+#include <wine/list.h>
+//#include "wine/unicode.h"
 
 #include "msxml_private.h"
 
@@ -598,6 +601,7 @@ static HRESULT WINAPI DispatchEx_InvokeEx(IDispatchEx *iface, DISPID id, LCID lc
     hres = IUnknown_QueryInterface(This->outer, get_riid_from_tid(data->funcs[n].tid), (void**)&unk);
     if(FAILED(hres)) {
         ERR("Could not get iface: %08x\n", hres);
+        ITypeInfo_Release(ti);
         return E_FAIL;
     }
 

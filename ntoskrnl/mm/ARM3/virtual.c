@@ -7,6 +7,7 @@
  */
 
 /* INCLUDES *******************************************************************/
+/* So long, and Thanks for All the Fish */
 
 #include <ntoskrnl.h>
 #define NDEBUG
@@ -3856,15 +3857,9 @@ NtAllocateVirtualMemory(IN HANDLE ProcessHandle,
     if ((AllocationType & MEM_TOP_DOWN) == MEM_TOP_DOWN)
     {
         DPRINT1("MEM_TOP_DOWN not supported\n");
-        Status = STATUS_INVALID_PARAMETER;
-        goto FailPathNoLock;
+        AllocationType &= ~MEM_TOP_DOWN;
     }
-    if ((AllocationType & MEM_RESET) == MEM_RESET)
-    {
-        DPRINT1("MEM_RESET not supported\n");
-        Status = STATUS_INVALID_PARAMETER;
-        goto FailPathNoLock;
-    }
+
     if (Process->VmTopDown == 1)
     {
         DPRINT1("VmTopDown not supported\n");
@@ -4063,6 +4058,14 @@ NtAllocateVirtualMemory(IN HANDLE ProcessHandle,
         Status = STATUS_CONFLICTING_ADDRESSES;
         goto FailPath;
     }
+	
+	if ((AllocationType & MEM_RESET) == MEM_RESET)
+    {
+        /// @todo HACK: pretend success
+        DPRINT("MEM_RESET not supported\n");
+        Status = STATUS_SUCCESS;
+        goto FailPath;
+    }
 
     //
     // These kinds of VADs are illegal for this Windows function when trying to
@@ -4080,7 +4083,7 @@ NtAllocateVirtualMemory(IN HANDLE ProcessHandle,
     //
     // Make sure that this address range actually fits within the VAD for it
     //
-    if (((StartingAddress >> PAGE_SHIFT) < FoundVad->StartingVpn) &&
+    if (((StartingAddress >> PAGE_SHIFT) < FoundVad->StartingVpn) ||
         ((EndingAddress >> PAGE_SHIFT) > FoundVad->EndingVpn))
     {
         DPRINT1("Address range does not fit into the VAD\n");
@@ -4307,7 +4310,6 @@ NtAllocateVirtualMemory(IN HANDLE ProcessHandle,
             // There's a change in protection, remember this for later, but do
             // not yet handle it.
             //
-            DPRINT1("Protection change to: 0x%lx not implemented\n", Protect);
             ChangeProtection = TRUE;
         }
 
@@ -4318,11 +4320,6 @@ NtAllocateVirtualMemory(IN HANDLE ProcessHandle,
     }
 
     //
-    // This path is not yet handled
-    //
-    ASSERT(ChangeProtection == FALSE);
-
-    //
     // Release the working set lock, unlock the address space, and detach from
     // the target process if it was not the current process. Also dereference the
     // target process if this wasn't the case.
@@ -4331,6 +4328,26 @@ NtAllocateVirtualMemory(IN HANDLE ProcessHandle,
     Status = STATUS_SUCCESS;
 FailPath:
     MmUnlockAddressSpace(AddressSpace);
+
+    //
+    // Check if we need to update the protection
+    //
+    if (ChangeProtection)
+    {
+        PVOID ProtectBaseAddress = (PVOID)StartingAddress;
+        SIZE_T ProtectSize = PRegionSize;
+        ULONG OldProtection;
+
+        //
+        // Change the protection of the region
+        //
+        MiProtectVirtualMemory(Process,
+                               &ProtectBaseAddress,
+                               &ProtectSize,
+                               Protect,
+                               &OldProtection);
+    }
+
 FailPathNoLock:
     if (Attached) KeUnstackDetachProcess(&ApcState);
     if (ProcessHandle != NtCurrentProcess()) ObDereferenceObject(Process);

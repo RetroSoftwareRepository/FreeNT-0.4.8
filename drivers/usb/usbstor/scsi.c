@@ -171,7 +171,7 @@ NTSTATUS
 NTAPI
 USBSTOR_CSWCompletionRoutine(
     PDEVICE_OBJECT DeviceObject,
-    PIRP Irp, 
+    PIRP Irp,
     PVOID Ctx)
 {
     PIRP_CONTEXT Context;
@@ -430,7 +430,7 @@ NTSTATUS
 NTAPI
 USBSTOR_DataCompletionRoutine(
     PDEVICE_OBJECT DeviceObject,
-    PIRP Irp, 
+    PIRP Irp,
     PVOID Ctx)
 {
     PIRP_CONTEXT Context;
@@ -475,7 +475,7 @@ NTSTATUS
 NTAPI
 USBSTOR_CBWCompletionRoutine(
     PDEVICE_OBJECT DeviceObject,
-    PIRP Irp, 
+    PIRP Irp,
     PVOID Ctx)
 {
     PIRP_CONTEXT Context;
@@ -509,7 +509,7 @@ USBSTOR_CBWCompletionRoutine(
         {
             //
             // write request use bulk out pipe
-            // 
+            //
             PipeHandle = Context->FDODeviceExtension->InterfaceInformation->Pipes[Context->FDODeviceExtension->BulkOutPipeIndex].PipeHandle;
         }
         else
@@ -579,10 +579,10 @@ VOID
 DumpCBW(
     PUCHAR Block)
 {
-    DPRINT1("%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
+    DPRINT("%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
         Block[0] & 0xFF, Block[1] & 0xFF, Block[2] & 0xFF, Block[3] & 0xFF, Block[4] & 0xFF, Block[5] & 0xFF, Block[6] & 0xFF, Block[7] & 0xFF, Block[8] & 0xFF, Block[9] & 0xFF,
         Block[10] & 0xFF, Block[11] & 0xFF, Block[12] & 0xFF, Block[13] & 0xFF, Block[14] & 0xFF, Block[15] & 0xFF, Block[16] & 0xFF, Block[17] & 0xFF, Block[18] & 0xFF, Block[19] & 0xFF,
-        Block[20] & 0xFF, Block[21] & 0xFF, Block[22] & 0xFF, Block[23] & 0xFF, Block[24] & 0xFF, Block[25] & 0xFF, Block[26] & 0xFF, Block[27] & 0xFF, Block[28] & 0xFF, Block[29] & 0xFF, 
+        Block[20] & 0xFF, Block[21] & 0xFF, Block[22] & 0xFF, Block[23] & 0xFF, Block[24] & 0xFF, Block[25] & 0xFF, Block[26] & 0xFF, Block[27] & 0xFF, Block[28] & 0xFF, Block[29] & 0xFF,
         Block[30] & 0xFF);
 
 }
@@ -1079,10 +1079,10 @@ USBSTOR_SendModeSense(
     // first struct is the header
     // MODE_PARAMETER_HEADER / _MODE_PARAMETER_HEADER10
     //
-    // followed by 
+    // followed by
     // MODE_PARAMETER_BLOCK
     //
-    // 
+    //
     UNIMPLEMENTED
 
     //
@@ -1249,6 +1249,52 @@ USBSTOR_SendTestUnit(
     return USBSTOR_SendRequest(DeviceObject, Irp, UFI_TEST_UNIT_CMD_LEN, (PUCHAR)&Cmd, 0, NULL, RetryCount);
 }
 
+NTSTATUS
+USBSTOR_SendUnknownRequest(
+    IN PDEVICE_OBJECT DeviceObject,
+    IN OUT PIRP Irp,
+    IN ULONG RetryCount)
+{
+    PPDO_DEVICE_EXTENSION PDODeviceExtension;
+    PIO_STACK_LOCATION IoStack;
+    PSCSI_REQUEST_BLOCK Request;
+    UFI_UNKNOWN_CMD Cmd;
+
+    //
+    // get current stack location
+    //
+    IoStack = IoGetCurrentIrpStackLocation(Irp);
+
+    //
+    // get request block
+    //
+    Request = IoStack->Parameters.Others.Argument1;
+
+    //
+    // get PDO device extension
+    //
+    PDODeviceExtension = (PPDO_DEVICE_EXTENSION)DeviceObject->DeviceExtension;
+
+    //
+    // check that we're sending to the right LUN
+    //
+    ASSERT(Request->Cdb[1] == (PDODeviceExtension->LUN & MAX_LUN));
+
+    //
+    // sanity check
+    //
+    ASSERT(Request->CdbLength <= sizeof(UFI_UNKNOWN_CMD));
+
+    //
+    // initialize test unit cmd
+    //
+    RtlCopyMemory(&Cmd, Request->Cdb, Request->CdbLength);
+
+    //
+    // send the request
+    //
+    return USBSTOR_SendRequest(DeviceObject, Irp, Request->CdbLength, (PUCHAR)&Cmd, Request->DataTransferLength, Request->DataBuffer, RetryCount);
+}
 
 NTSTATUS
 USBSTOR_HandleExecuteSCSI(
@@ -1368,10 +1414,9 @@ USBSTOR_HandleExecuteSCSI(
     }
     else
     {
-        DPRINT1("UNIMPLEMENTED Operation Code %x\n", pCDB->AsByte[0]);
-        Request->SrbStatus = SRB_STATUS_ERROR;
-        Status = STATUS_NOT_SUPPORTED;
-        DbgBreakPoint();
+        // Unknown request. Simply forward
+        DPRINT1("Forwarding unknown Operation Code %x\n", pCDB->AsByte[0]);
+        Status = USBSTOR_SendUnknownRequest(DeviceObject, Irp, RetryCount);
     }
 
     return Status;

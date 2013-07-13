@@ -423,6 +423,11 @@ MainWndOnCommand(HWND hwnd, WPARAM wParam, LPARAM lParam)
             UpdateApplicationsList(-1);
             break;
 
+        case ID_RESETDB:
+            UpdateAppsDB();
+            UpdateApplicationsList(-1);
+            break;
+
         case ID_HELP:
             MessageBoxW(hwnd, L"Help not implemented yet", NULL, MB_OK);
             break;
@@ -758,7 +763,17 @@ wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLine, int nSh
     WCHAR szErrorText[MAX_STR_LEN];
     HANDLE hMutex = NULL;
     MSG Msg;
+   
+    switch (GetUserDefaultUILanguage())
+  {
+    case MAKELANGID(LANG_HEBREW, SUBLANG_DEFAULT):
+      SetProcessDefaultLayout(LAYOUT_RTL);
+      break;
 
+    default:
+      break;
+  }
+    
     hInst = hInstance;
 
     if (!IsUserAnAdmin())

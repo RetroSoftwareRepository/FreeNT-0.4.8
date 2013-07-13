@@ -10,7 +10,12 @@ if(NOT DEFINED SEPARATE_DBG)
 endif()
 
 # Compiler Core
-add_compile_flags("-pipe -fms-extensions")
+add_compile_flags("-pipe -fms-extensions -fno-strict-aliasing")
+if(GCC_VERSION VERSION_GREATER 4.7)
+    add_compile_flags("-mstackrealign")
+endif()
+
+add_compile_flags_language("-fno-rtti -fno-exceptions" "CXX")
 
 #bug
 #file(TO_NATIVE_PATH ${REACTOS_SOURCE_DIR} REACTOS_SOURCE_DIR_NATIVE)
@@ -28,9 +33,6 @@ else()
     add_compile_flags("-gstabs+")
 endif()
 
-# Do not allow warnings
-add_compile_flags("-Werror")
-
 # For some reason, cmake sets -fPIC, and we don't want it
 if(DEFINED CMAKE_SHARED_LIBRARY_ASM_FLAGS)
     string(REPLACE "-fPIC" "" CMAKE_SHARED_LIBRARY_ASM_FLAGS ${CMAKE_SHARED_LIBRARY_ASM_FLAGS})
@@ -44,14 +46,12 @@ else()
 endif()
 
 # Warnings
-add_compile_flags("-Wall -Wno-char-subscripts -Wpointer-arith -Wno-multichar -Wno-unused-value")
+add_compile_flags("-Werror -Wall -Wno-char-subscripts -Wpointer-arith -Wno-multichar -Wno-unused-value")
 
-if(GCC_VERSION VERSION_LESS 4.6)
+if(GCC_VERSION VERSION_LESS 4.7)
     add_compile_flags("-Wno-error=uninitialized")
-elseif((GCC_VERSION VERSION_GREATER 4.6 OR GCC_VERSION VERSION_EQUAL 4.6) AND GCC_VERSION VERSION_LESS 4.7)
-    add_compile_flags("-Wno-error=unused-but-set-variable -Wno-error=uninitialized")
 elseif(GCC_VERSION VERSION_EQUAL 4.7 OR GCC_VERSION VERSION_GREATER 4.7)
-    add_compile_flags("-Wno-error=unused-but-set-variable -Wno-error=maybe-uninitialized -Wno-error=delete-non-virtual-dtor -Wno-error=narrowing")
+    add_compile_flags("-Wno-error=unused-but-set-variable -Wno-maybe-uninitialized -Wno-error=delete-non-virtual-dtor -Wno-error=narrowing")
 endif()
 
 if(ARCH STREQUAL "amd64")
@@ -62,15 +62,19 @@ endif()
 
 # Optimizations
 if(OPTIMIZE STREQUAL "1")
-    add_compile_flags("-Os")
+    add_compile_flags("-Os -ftracer")
 elseif(OPTIMIZE STREQUAL "2")
     add_compile_flags("-Os")
 elseif(OPTIMIZE STREQUAL "3")
-    add_compile_flags("-O1")
+    add_compile_flags("-O1 -fno-inline-functions-called-once -fno-tree-sra")
 elseif(OPTIMIZE STREQUAL "4")
-    add_compile_flags("-O2")
+    add_compile_flags("-O1")
 elseif(OPTIMIZE STREQUAL "5")
+    add_compile_flags("-O2")
+elseif(OPTIMIZE STREQUAL "6")
     add_compile_flags("-O3")
+elseif(OPTIMIZE STREQUAL "7")
+    add_compile_flags("-Ofast")
 endif()
 
 # Link-time code generation
@@ -78,25 +82,13 @@ if(LTCG)
     add_compile_flags("-flto -Wno-error=clobbered")
 endif()
 
-add_compile_flags("-fno-strict-aliasing")
-
 if(ARCH STREQUAL "i386")
     add_compile_flags("-mpreferred-stack-boundary=3 -fno-set-stack-executable -fno-optimize-sibling-calls -fno-omit-frame-pointer")
-    if(OPTIMIZE STREQUAL "1")
-        add_compile_flags("-ftracer")
-        if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
-            add_compile_flags("-momit-leaf-frame-pointer")
-        endif()
+    if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+        add_compile_flags("-momit-leaf-frame-pointer")
     endif()
 elseif(ARCH STREQUAL "amd64")
     add_compile_flags("-mpreferred-stack-boundary=4")
-    if(OPTIMIZE STREQUAL "1")
-        add_compile_flags("-ftracer")
-    endif()
-elseif(ARCH STREQUAL "arm")
-    if(OPTIMIZE STREQUAL "1")
-        add_compile_flags("-ftracer")
-    endif()
 endif()
 
 # Other
@@ -174,7 +166,7 @@ SET(CMAKE_CXX_COMPILE_OBJECT "${CCACHE} <CMAKE_CXX_COMPILER>  <DEFINES> <FLAGS> 
 set(CMAKE_ASM_COMPILE_OBJECT "<CMAKE_ASM_COMPILER> -x assembler-with-cpp -o <OBJECT> -I${REACTOS_SOURCE_DIR}/include/asm -I${REACTOS_BINARY_DIR}/include/asm <FLAGS> <DEFINES> -D__ASM__ -c <SOURCE>")
 
 set(CMAKE_RC_COMPILE_OBJECT "<CMAKE_RC_COMPILER> -O coff <FLAGS> -DRC_INVOKED -D__WIN32__=1 -D__FLAT__=1 ${I18N_DEFS} <DEFINES> <SOURCE> <OBJECT>")
-set(CMAKE_DEPFILE_FLAGS_RC "--preprocessor \"${MINGW_TOOLCHAIN_PREFIX}gcc -E -xc-header -MMD -MF <DEPFILE> -MT <OBJECT>\" ")
+set(CMAKE_DEPFILE_FLAGS_RC "--preprocessor \"${MINGW_TOOLCHAIN_PREFIX}gcc${MINGW_TOOLCHAIN_SUFFIX} -E -xc-header -MMD -MF <DEPFILE> -MT <OBJECT>\" ")
 
 # Optional 3rd parameter: stdcall stack bytes
 function(set_entrypoint MODULE ENTRYPOINT)
@@ -200,12 +192,22 @@ function(set_image_base MODULE IMAGE_BASE)
 endfunction()
 
 function(set_module_type_toolchain MODULE TYPE)
-    if(IS_CPP)
+    if(CPP_USE_STL)
+        if((${TYPE} STREQUAL "kernelmodedriver") OR (${TYPE} STREQUAL "wdmdriver"))
+            message(FATAL_ERROR "Use of STL in kernelmodedriver or wdmdriver type module prohibited")
+        endif()
         target_link_libraries(${MODULE} -lstdc++ -lsupc++ -lgcc -lmingwex)
+    elseif(CPP_USE_RT)
+        target_link_libraries(${MODULE} -lsupc++ -lgcc)
+    elseif(IS_CPP)
+        target_link_libraries(${MODULE} -lgcc)
     endif()
 
-    if(${TYPE} STREQUAL "kernelmodedriver")
+    if((${TYPE} STREQUAL "kernelmodedriver") OR (${TYPE} STREQUAL "wdmdriver"))
         add_target_link_flags(${MODULE} "-Wl,--exclude-all-symbols,-file-alignment=0x1000,-section-alignment=0x1000")
+        if(${TYPE} STREQUAL "wdmdriver")
+            add_target_link_flags(${MODULE} "-Wl,--wdmdriver")
+        endif()
     endif()
 endfunction()
 
@@ -368,3 +370,8 @@ endfunction()
 function(allow_warnings __module)
     add_target_compile_flags(${__module} "-Wno-error")
 endfunction()
+
+macro(add_asm_files _target)
+    list(APPEND ${_target} ${ARGN})
+endmacro()
+
