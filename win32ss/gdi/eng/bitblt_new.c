@@ -15,6 +15,184 @@ XCLIPOBJ gxcoTrivial =
 #endif
 
 
+BOOL
+APIENTRY
+EngSrcBufferedBitBlt (
+    _Inout_ SURFOBJ *psoTrg,
+    _In_ SURFOBJ *psoSrc,
+    _In_opt_ SURFOBJ *psoMask,
+    _In_opt_ CLIPOBJ *pco,
+    _In_opt_ XLATEOBJ *pxlo,
+    _In_ RECTL *prclTrg,
+    _When_(psoSrc, _In_) POINTL *pptlSrc,
+    _When_(psoMask, _In_) POINTL *pptlMask,
+    _In_opt_ BRUSHOBJ *pbo,
+    _When_(pbo, _In_) POINTL *pptlBrush,
+    _In_ ROP4 rop4)
+{
+    BOOL bResult;
+    PSURFACE psurfTmp;
+    SURFOBJ* psoTmp;
+    RECTL rclTmp;
+    ULONG iTmpBitmapFormat;
+
+    /* Setup the target rect for the temp surface */
+    rclTmp.left = 0;
+    rclTmp.top = 0;
+    rclTmp.right = prclTrg->right - prclTrg->left;
+    rclTmp.bottom = prclTrg->bottom - prclTrg->top;
+
+    /* Get the bitmap format for the temp surface */
+    iTmpBitmapFormat = psoSrc->iBitmapFormat;
+    if (iTmpBitmapFormat == BMF_4RLE) iTmpBitmapFormat = BMF_4BPP;
+    if (iTmpBitmapFormat == BMF_8RLE) iTmpBitmapFormat = BMF_8BPP;
+
+    /* Allocate a surface */
+    psurfTmp = SURFACE_AllocSurface(STYPE_BITMAP,
+                                    rclTmp.right,
+                                    rclTmp.bottom,
+                                    iTmpBitmapFormat,
+                                    0,
+                                    0,
+                                    NULL);
+    if (psurfTmp == NULL)
+    {
+        ERR("Failed to allocate a surface\n");
+        return FALSE;
+    }
+
+    psoTmp = &psurfTmp->SurfObj;
+
+    /* Check if we have an RLE compressed source */
+    if ((psoSrc->iBitmapFormat == BMF_4RLE) ||
+        (psoSrc->iBitmapFormat == BMF_8RLE))
+    {
+        SIZEL sizl;
+
+        /* Decompress the bitmap */
+        sizl.cx = rclTmp.right;
+        sizl.cy = rclTmp.bottom;
+        DecompressBitmap(sizl,
+                         psoSrc->pvBits,
+                         psoTmp->pvBits,
+                         psoTmp->lDelta,
+                         psoSrc->iBitmapFormat);
+        bResult = TRUE;
+    }
+    else if ((psoSrc->iBitmapFormat > BMF_8RLE))
+    {
+        ERR("Bitmap format %d is not supported!\n", psoSrc->iBitmapFormat);
+        return FALSE;
+    }
+    else
+    {
+        /* Copy the bits to the temp surface */
+        bResult = EngCopyBits(psoTmp, psoSrc, NULL, NULL, &rclTmp, pptlSrc);
+    }
+
+    if (bResult)
+    {
+        /* Do the actual operation from the temp surface */
+        bResult = IntEngBitBlt(psoTrg,
+                               psoTmp,
+                               psoMask,
+                               pco,
+                               pxlo,
+                               prclTrg,
+                               (PPOINTL)&rclTmp,
+                               pptlMask,
+                               pbo,
+                               pptlBrush,
+                               rop4);
+    }
+
+    /* Delete the temp surface */
+    GDIOBJ_vDeleteObject(&psurfTmp->BaseObject);
+
+    return bResult;
+}
+
+BOOL
+APIENTRY
+EngTrgBufferedBitBlt (
+    _Inout_ SURFOBJ *psoTrg,
+    _In_opt_ SURFOBJ *psoSrc,
+    _In_opt_ SURFOBJ *psoMask,
+    _In_opt_ CLIPOBJ *pco,
+    _In_opt_ XLATEOBJ *pxlo,
+    _In_ RECTL *prclTrg,
+    _When_(psoSrc, _In_) POINTL *pptlSrc,
+    _When_(psoMask, _In_) POINTL *pptlMask,
+    _In_opt_ BRUSHOBJ *pbo,
+    _When_(pbo, _In_) POINTL *pptlBrush,
+    _In_ ROP4 rop4)
+{
+    BOOL bResult = TRUE;
+    PSURFACE psurfTmp;
+    SURFOBJ* psoTmp;
+    RECTL rclTmp;
+    ULONG iTmpBitmapFormat;
+
+    /* Setup the target rect for the temp surface */
+    rclTmp.left = 0;
+    rclTmp.top = 0;
+    rclTmp.right = prclTrg->right - prclTrg->left;
+    rclTmp.bottom = prclTrg->bottom - prclTrg->top;
+
+    /* Get the bitmap format for the temp surface */
+    iTmpBitmapFormat = psoTrg->iBitmapFormat;
+
+    /* Allocate a surface */
+    psurfTmp = SURFACE_AllocSurface(STYPE_BITMAP,
+                                    rclTmp.right,
+                                    rclTmp.bottom,
+                                    iTmpBitmapFormat,
+                                    0,
+                                    0,
+                                    NULL);
+    if (psurfTmp == NULL)
+    {
+        ERR("Failed to allocate a surface\n");
+        return FALSE;
+    }
+
+    psoTmp = &psurfTmp->SurfObj;
+
+    /* Check if the ROP uses the target pixels */
+    if (ROP4_USES_DEST(rop4))
+    {
+        /* Copy the target bits to the target surface */
+        bResult = EngCopyBits(psoTmp, psoSrc, NULL, NULL, &rclTmp, (PPOINTL)prclTrg);
+    }
+
+    if (bResult)
+    {
+        /* Do the actual operation to the temp surface */
+        bResult = IntEngBitBlt(psoTmp,
+                               psoSrc,
+                               psoMask,
+                               pco,
+                               pxlo,
+                               &rclTmp,
+                               pptlSrc,
+                               pptlMask,
+                               pbo,
+                               pptlBrush,
+                               rop4);
+    }
+
+    if (bResult)
+    {
+        /* Copy the bits to the target surface */
+        bResult = EngCopyBits(psoTrg, psoTmp, NULL, NULL, prclTrg, (PPOINTL)&rclTmp);
+    }
+
+    /* Delete the temp surface */
+    GDIOBJ_vDeleteObject(&psurfTmp->BaseObject);
+
+    return bResult;
+}
+
 static
 void
 CalculateCoordinates(
@@ -98,7 +276,7 @@ CalculateCoordinates(
 
 BOOL
 APIENTRY
-EngBitBlt(
+EngBitBlt (
     _Inout_ SURFOBJ *psoTrg,
     _In_opt_ SURFOBJ *psoSrc,
     _In_opt_ SURFOBJ *psoMask,
@@ -112,37 +290,63 @@ EngBitBlt(
     _In_ ROP4 rop4)
 {
     BLTDATA bltdata;
-    ULONG i, iFunctionIndex, iDirection = CD_ANY;
-    RECTL rcTrg;
+    ULONG i, iFunctionIndex, iDirection;
     PFN_DIBFUNCTION pfnBitBlt;
     BOOL bEnumMore;
     RECT_ENUM rcenum;
     PSIZEL psizlPat;
     SURFOBJ *psoPattern;
+    PFN_DrvCopyBits pfnCopyBits;
 
 //static int count = 0;
 //if (++count >= 1230) __debugbreak();
 
     /* Sanity checks */
-    ASSERT(psoTrg);
-    ASSERT(psoTrg->iBitmapFormat >= BMF_1BPP);
-    ASSERT(psoTrg->iBitmapFormat <= BMF_32BPP);
-    ASSERT(prclTrg);
-    ASSERT(prclTrg->left >= 0);
-    ASSERT(prclTrg->top >= 0);
-    ASSERT(prclTrg->right <= psoTrg->sizlBitmap.cx);
-    ASSERT(prclTrg->bottom <= psoTrg->sizlBitmap.cy);
+    NT_ASSERT(psoTrg);
+    NT_ASSERT(psoTrg->iBitmapFormat >= BMF_1BPP);
+    NT_ASSERT(psoTrg->iBitmapFormat <= BMF_32BPP);
+    NT_ASSERT(prclTrg);
+    NT_ASSERT(prclTrg->left >= 0);
+    NT_ASSERT(prclTrg->top >= 0);
+    NT_ASSERT(prclTrg->right <= psoTrg->sizlBitmap.cx);
+    NT_ASSERT(prclTrg->bottom <= psoTrg->sizlBitmap.cy);
     ASSERT_DEVLOCK(psoTrg);
     ASSERT_DEVLOCK(psoSrc);
     ASSERT_DEVLOCK(psoMask);
 
-    rcTrg = *prclTrg;
+    /* Check if the target is not a bitmap */
+    if (psoTrg->iType != STYPE_BITMAP)
+    {
+        /* Check for special case SRCCOPY to device */
+        if ((rop4 == ROP4_SRCCOPY) &&
+            ((psoSrc->iType == STYPE_BITMAP) || (psoSrc->hdev == psoTrg->hdev)))
+        {
+            /* Use the driver's DrvCopyBits */
+            pfnCopyBits = GDIDEVFUNCS(psoTrg).CopyBits;
+            return pfnCopyBits(psoTrg, psoSrc, pco, pxlo, prclTrg, pptlSrc);
+        }
 
+        /* We need to do a buffered bitblt */
+        return EngTrgBufferedBitBlt(psoTrg,
+                                    psoSrc,
+                                    psoMask,
+                                    pco,
+                                    pxlo,
+                                    prclTrg,
+                                    pptlSrc,
+                                    pptlMask,
+                                    pbo,
+                                    pptlBrush,
+                                    rop4);
+    }
+
+    if (!pxlo) pxlo = &gexloTrivial.xlo;
+
+    /* Initialize the BLTINFO structure */
     bltdata.dy = 1;
     bltdata.rop4 = rop4;
     bltdata.apfnDoRop[0] = gapfnRop[ROP4_BKGND(rop4)];
     bltdata.apfnDoRop[1] = gapfnRop[ROP4_FGND(rop4)];
-    if (!pxlo) pxlo = &gexloTrivial.xlo;
     bltdata.pxlo = pxlo;
     bltdata.pfnXlate = XLATEOBJ_pfnXlate(pxlo);
 
@@ -150,30 +354,61 @@ EngBitBlt(
     if (ROP4_USES_SOURCE(rop4))
     {
         /* Sanity checks */
-        ASSERT(psoSrc);
-        ASSERT(psoSrc->iBitmapFormat >= BMF_1BPP);
-        ASSERT(psoSrc->iBitmapFormat <= BMF_32BPP);
-        ASSERT(pptlSrc);
-        ASSERT(pptlSrc->x >= 0);
-        ASSERT(pptlSrc->y >= 0);
-        ASSERT(pptlSrc->x <= psoSrc->sizlBitmap.cx);
-        ASSERT(pptlSrc->y <= psoSrc->sizlBitmap.cy);
+        NT_ASSERT(psoSrc);
+        NT_ASSERT(psoSrc->iBitmapFormat >= BMF_1BPP);
+        NT_ASSERT(psoSrc->iBitmapFormat <= BMF_8RLE);
+        NT_ASSERT(pptlSrc);
+        NT_ASSERT(pptlSrc->x >= 0);
+        NT_ASSERT(pptlSrc->y >= 0);
+        NT_ASSERT(pptlSrc->x <= psoSrc->sizlBitmap.cx);
+        NT_ASSERT(pptlSrc->y <= psoSrc->sizlBitmap.cy);
 
-        /* Check if source and target are equal */
+        /* Check for special case SRCCOPY from device */
+        if ((rop4 == ROP4_SRCCOPY) &&
+            (psoSrc->iType != STYPE_BITMAP) &&
+            ((psoTrg->iType == STYPE_BITMAP) || (psoSrc->hdev == psoTrg->hdev)))
+        {
+            /* Use the driver's DrvCopyBits */
+            pfnCopyBits = GDIDEVFUNCS(psoSrc).CopyBits;
+            return pfnCopyBits(psoTrg, psoSrc, pco, pxlo, prclTrg, pptlSrc);
+        }
+
+        /* Check if the source is not a normal bitmap */
+        if ((psoSrc->iType != STYPE_BITMAP) ||
+            (psoSrc->iBitmapFormat > BMF_32BPP))
+        {
+            /* We need to do a buffered bitblt */
+            return EngSrcBufferedBitBlt(psoTrg,
+                                        psoSrc,
+                                        psoMask,
+                                        pco,
+                                        pxlo,
+                                        prclTrg,
+                                        pptlSrc,
+                                        pptlMask,
+                                        pbo,
+                                        pptlBrush,
+                                        rop4);
+        }
+
+        /* Check if source and target surface are equal */
         if (psoSrc == psoTrg)
         {
             /* Analyze the copying direction */
-            if (rcTrg.top > pptlSrc->y)
+            if (prclTrg->top > pptlSrc->y)
             {
                 /* Need to copy from bottom to top */
-                iDirection = rcTrg.left < pptlSrc->x ? CD_RIGHTUP : CD_LEFTUP;
+                iDirection = prclTrg->left < pptlSrc->x ? CD_RIGHTUP : CD_LEFTUP;
                 bltdata.dy = -1;
             }
             else
-                iDirection = rcTrg.left < pptlSrc->x ? CD_RIGHTDOWN : CD_LEFTDOWN;
+            {
+                /* We copy from top to bottom */
+                iDirection = prclTrg->left < pptlSrc->x ? CD_RIGHTDOWN : CD_LEFTDOWN;
+            }
 
             /* Check for special right to left case */
-            if ((rcTrg.top == pptlSrc->y) && (rcTrg.left > pptlSrc->x))
+            if ((prclTrg->top == pptlSrc->y) && (prclTrg->left > pptlSrc->x))
             {
                 /* Use 0 as target format to get special right to left versions */
                 bltdata.siDst.iFormat = 0;
@@ -189,11 +424,12 @@ EngBitBlt(
         }
         else
         {
+            iDirection = CD_ANY;
             bltdata.siDst.iFormat = psoTrg->iBitmapFormat;
             bltdata.siSrc.iFormat = psoSrc->iBitmapFormat;
         }
 
-        /* Set the source format info */
+        /* Set the rest of the source format info */
         bltdata.siSrc.pvScan0 = psoSrc->pvScan0;
         bltdata.siSrc.lDelta = psoSrc->lDelta;
         bltdata.siSrc.cjAdvanceY = bltdata.dy * psoSrc->lDelta;
@@ -201,10 +437,11 @@ EngBitBlt(
     }
     else
     {
+        iDirection = CD_ANY;
         bltdata.siDst.iFormat = psoTrg->iBitmapFormat;
     }
 
-    /* Set the destination format info */
+    /* Set the rest of the destination format info */
     bltdata.siDst.pvScan0 = psoTrg->pvScan0;
     bltdata.siDst.lDelta = psoTrg->lDelta;
     bltdata.siDst.cjAdvanceY = bltdata.dy * psoTrg->lDelta;
@@ -214,7 +451,7 @@ EngBitBlt(
     if (ROP4_USES_PATTERN(rop4))
     {
         /* Must have a brush */
-        ASSERT(pbo); // FIXME: test this!
+        NT_ASSERT(pbo); // FIXME: test this!
 
         /* Copy the solid color */
         bltdata.ulSolidColor = pbo->iSolidColor;
@@ -258,8 +495,8 @@ EngBitBlt(
     if (ROP4_USES_MASK(rop4))
     {
         /* Must have a mask surface and point */
-        ASSERT(psoMask);
-        ASSERT(pptlMask);
+        NT_ASSERT(psoMask);
+        NT_ASSERT(pptlMask);
 
         //__debugbreak();
 
@@ -307,7 +544,7 @@ EngBitBlt(
     else
     {
         /* Use the target rect */
-        rcenum.arcl[0] = rcTrg;
+        rcenum.arcl[0] = *prclTrg;
         rcenum.c = 1;
         bEnumMore = FALSE;
     }
@@ -319,7 +556,7 @@ EngBitBlt(
         for (i = 0; i < rcenum.c; i++)
         {
             /* Intersect this rect with the target rect */
-            if (!RECTL_bIntersectRect(&rcenum.arcl[i], &rcenum.arcl[i], &rcTrg))
+            if (!RECTL_bIntersectRect(&rcenum.arcl[i], &rcenum.arcl[i], prclTrg))
             {
                 /* This rect is outside the bounds, continue */
                 continue;
@@ -396,11 +633,11 @@ IntEngBitBlt(
 //__debugbreak();
 
     /* Sanity checks */
-    ASSERT(IS_VALID_ROP4(rop4));
-    ASSERT(psoTrg);
-    ASSERT(psoTrg->iBitmapFormat >= BMF_1BPP);
-    ASSERT(psoTrg->iBitmapFormat <= BMF_32BPP);
-    ASSERT(prclTrg);
+    NT_ASSERT(IS_VALID_ROP4(rop4));
+    NT_ASSERT(psoTrg);
+    NT_ASSERT(psoTrg->iBitmapFormat >= BMF_1BPP);
+    NT_ASSERT(psoTrg->iBitmapFormat <= BMF_32BPP);
+    NT_ASSERT(prclTrg);
 
     /* Clip the target rect to the extents of the target surface */
     rcClipped.left = max(prclTrg->left, 0);
@@ -409,10 +646,11 @@ IntEngBitBlt(
     rcClipped.bottom = min(prclTrg->bottom, psoTrg->sizlBitmap.cy);
 
     /* If no clip object is given, use trivial one */
-    if (!pco) pco = (CLIPOBJ*)&gxcoTrivial;
+    if (pco == NULL)
+        pco = (CLIPOBJ*)&gxcoTrivial;
 
-    /* Check if there is something to clip */
-    if (pco->iDComplexity != DC_TRIVIAL)
+    /* Check if there is anything to clip */
+    else if (pco->iDComplexity != DC_TRIVIAL)
     {
         /* Clip the target rect to the bounds of the clipping region */
         if (!RECTL_bIntersectRect(&rcClipped, &rcClipped, &pco->rclBounds))
@@ -420,10 +658,11 @@ IntEngBitBlt(
             /* Nothing left */
             return TRUE;
         }
-    }
 
-    /* Don't pass a clip object with a single rectangle */
-    if (pco->iDComplexity == DC_RECT) pco = (CLIPOBJ*)&gxcoTrivial;
+        /* Don't pass a clip object with a single rectangle */
+        if (pco->iDComplexity == DC_RECT)
+            pco = (CLIPOBJ*)&gxcoTrivial;
+    }
 
     /* Calculate initial offset and size */
     ptOffset.x = rcClipped.left - prclTrg->left;
@@ -435,8 +674,8 @@ IntEngBitBlt(
     if (ROP4_USES_SOURCE(rop4))
     {
         /* Must have a source surface and point */
-        ASSERT(psoSrc);
-        ASSERT(pptlSrc);
+        NT_ASSERT(psoSrc);
+        NT_ASSERT(pptlSrc);
 
         /* Get the source point */
         ptSrc = *pptlSrc;
@@ -455,8 +694,8 @@ IntEngBitBlt(
     if (ROP4_USES_MASK(rop4))
     {
         /* Must have a mask surface and point */
-        ASSERT(psoMask);
-        ASSERT(pptlMask);
+        NT_ASSERT(psoMask);
+        NT_ASSERT(pptlMask);
 
         /* Get the mask point */
         ptMask = *pptlMask;
@@ -503,7 +742,7 @@ IntEngBitBlt(
             (SURFOBJ_flags(psoSrc) & HOOK_BITBLT))
         {
             ERR("Need to copy to standard bitmap format!\n");
-            ASSERT(FALSE);
+            NT_ASSERT(FALSE);
         }
 
         pfnBitBlt = GDIDEVFUNCS(psoTrg).BitBlt;
@@ -636,12 +875,33 @@ EngCopyBits(
 {
     PFN_DrvCopyBits pfnCopyBits;
 
+    /* Check if we have 2 incompatible non-bitmap surfaces */
+    if ((psoSrc->iType != STYPE_BITMAP) &&
+        (psoTrg->iType != STYPE_BITMAP) &&
+        (psoSrc->hdev != psoTrg->hdev))
+    {
+        /* We need to create a temp bitmap */
+        return EngSrcBufferedBitBlt(psoTrg,
+                                    psoSrc,
+                                    NULL,
+                                    pco,
+                                    pxlo,
+                                    prclTrg,
+                                    pptlSrc,
+                                    NULL,
+                                    NULL,
+                                    NULL,
+                                    ROP4_SRCCOPY);
+    }
+
     /* Is the target surface device managed? */
-    if (SURFOBJ_flags(psoTrg) & HOOK_COPYBITS)
+    if ((psoTrg->iType != STYPE_BITMAP) ||
+        (SURFOBJ_flags(psoTrg) & HOOK_COPYBITS))
     {
         pfnCopyBits = GDIDEVFUNCS(psoTrg).CopyBits;
     }
-    if (SURFOBJ_flags(psoSrc) & HOOK_COPYBITS)
+    else if ((psoSrc->iType != STYPE_BITMAP) ||
+             (SURFOBJ_flags(psoSrc) & HOOK_COPYBITS))
     {
         pfnCopyBits = GDIDEVFUNCS(psoSrc).CopyBits;
     }

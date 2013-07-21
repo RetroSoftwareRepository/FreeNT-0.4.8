@@ -8,6 +8,7 @@
 #include <stdarg.h>
 #include <windef.h>
 #include <wingdi.h>
+#define _ENGINE_EXPORT_
 #include <winddi.h>
 
 #ifdef _OPTIMIZE_DIBLIB
