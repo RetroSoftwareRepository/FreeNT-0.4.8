@@ -424,6 +424,13 @@ NtGdiCreateDIBBrush(
         return NULL;
     }
 
+    /* Check for undocumented case 2 */
+    if (iUsage == 2)
+    {
+        /* Tests show that this results in a hollow/null brush */
+        return GreCreateNullBrush();
+    }
+
     /* Allocate a buffer large enough to hold the complete packed DIB */
     pvSaveDIB = ExAllocatePoolWithTag(PagedPool, cjDIBSize, TAG_DIB);
     if (pvSaveDIB == NULL)
@@ -468,18 +475,22 @@ NtGdiCreateDIBBrush(
        entries directly, instead we need to create a fake palette containing
        pal indices, which is converted into a real palette when the brush
        is realized. */
-    if (iUsage == DIB_PAL_COLORS) iUsage = DIB_PAL_BRUSHHACK;
+    if (iUsage == DIB_PAL_COLORS)
+    {
+        iUsage = DIB_PAL_BRUSHHACK;
+        flAttr |= BR_IS_DIBPALCOLORS;
+    }
 
     /* Create the pattern bitmap from the DIB. */
     hbmPattern = GreCreateDIBitmapInternal(NULL,
                                            pbmi->bmiHeader.biWidth,
                                            abs(pbmi->bmiHeader.biHeight),
-                                           CBM_INIT,
+                                           CBM_INIT | CBM_CREATDIB,
                                            pvSafeBits,
                                            pbmi,
                                            iUsage,// FIXME!!!
-                                           0,
                                            cjDIBSize - cjInfoSize,
+                                           0,
                                            NULL);
 
     /* Free the buffer already */
@@ -491,9 +502,6 @@ NtGdiCreateDIBBrush(
         EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
         return NULL;
     }
-
-    /* Remember if the palette consists of palette indices */
-    if (iUsage == DIB_PAL_COLORS) flAttr |= BR_IS_DIBPALCOLORS;
 
     /* Call the internal worker function */
     return GreCreateBrushInternal(0, hbmPattern, pvPackedDIB, 0, flAttr);

@@ -286,7 +286,7 @@ CreateDIBPalette(
                    the number of colors in the DC palette */
                 WORD wIndex = pwColors[i] % ppalDC->NumColors;
 
-                /* USe the RGB value from the DC palette */
+                /* Use the RGB value from the DC palette */
                 crColor = PALETTE_ulGetRGBColorFromIndex(ppalDC, wIndex);
                 PALETTE_vSetRGBColorForIndex(ppal, i, crColor);
             }
@@ -644,6 +644,7 @@ GreCreateDIBitmapInternal(
         if ((iUsage == DIB_PAL_COLORS) && !pdc) goto cleanup;
 
         iFormat = psurfDIB->SurfObj.iBitmapFormat;
+        if (iFormat > BMF_32BPP) goto cleanup;
 
         if (psurfDIB)
         {
@@ -1354,7 +1355,7 @@ __debugbreak();
     yTop = cyDIB - (iStartScan + cNumScan);
 
     /* Bail out if the intersecion between scanlines and copy area is empty */
-    if ((ySrc > yTop + cNumScan) || (ySrc + (INT)cy < yTop)) goto leave;
+    if ((ySrc > yTop + (INT)cNumScan) || (ySrc + (INT)cy < yTop)) goto leave;
 
     /* Check if the copy area starts below or at the topmost scanline */
     if (ySrc >= yTop)
