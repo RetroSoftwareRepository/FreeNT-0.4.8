@@ -198,6 +198,11 @@ CreateDIBitmap(
         if (pbmi->bmiHeader.biSize == sizeof(BITMAPCOREHEADER))
         {
             pbmi = ConvertBitmapCoreInfo(pbmi, iUsage);
+            if (pbmi == NULL)
+            {
+                return NULL;
+            }
+
             bConvertedInfo = TRUE;
         }
 
@@ -227,21 +232,30 @@ CreateDIBitmap(
         cjInfo = 0;
     }
 
+    /* Check for the undocumented CBM_CREATDIB flag */
     if (fdwInit & CBM_CREATDIB)
     {
-        if (!pbmi) return NULL;
+        /* We need a BITMAPINFO */
+        if (pbmi == NULL)
+        {
+            /* LastError is not set here! */
+            goto cleanup;
+        }
 
-        //__debugbreak();
-        return 0;
+        /* Get the dimension from the BITMAPINFO */
+        cx = pbmi->bmiHeader.biWidth;
+        cy = abs(pbmi->bmiHeader.biHeight);
     }
     else
     {
-        if (!pbmih)
+        /* We need the BITMAPINFOHEADER */
+        if (pbmih == NULL)
         {
             SetLastError(ERROR_INVALID_PARAMETER);
             goto cleanup;
         }
 
+        /* Check the type of the BITMAPINFOHEADER */
         if (pbmih->biSize == sizeof(BITMAPCOREHEADER))
         {
             PBITMAPCOREHEADER pbch = (PBITMAPCOREHEADER)pbmih;
@@ -258,11 +272,13 @@ CreateDIBitmap(
             SetLastError(ERROR_INVALID_PARAMETER);
             goto cleanup;
         }
+    }
 
-        if ((cx == 0) || (cy == 0))
-        {
-            return GetStockObject(DEFAULT_BITMAP);
-        }
+    /* Check if either width or height is 0 */
+    if ((cx == 0) || (cy == 0))
+    {
+        /* Return the default bitmap */
+        return GetStockObject(DEFAULT_BITMAP);
     }
 
 
@@ -279,7 +295,10 @@ CreateDIBitmap(
                                        0);
 
 cleanup:
-    if (bConvertedInfo && pbmi) HeapFree(GetProcessHeap(), 0, (PVOID)pbmi);
+    if (bConvertedInfo)
+    {
+        HeapFree(GetProcessHeap(), 0, (PVOID)pbmi);
+    }
 
     return hbmp;
 }

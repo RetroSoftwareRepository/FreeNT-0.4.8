@@ -56,14 +56,22 @@ DibGetBitmapFormat(
     }
     else
     {
+        /* This is a compressed format, no line width. */
         pbmf->cjWidthBytes = 0;
-    }
 
-    /* Check compressed format and top-down */
-    if ((pbmf->iFormat > BMF_32BPP) && (pbmf->sizel.cy < 0))
-    {
-        DPRINT1("Compressed bitmaps cannot be top-down.\n");
-        return FALSE;
+        /* Check if we have a proper image size */
+        if (pbmf->cjImageSize == 0)
+        {
+            DPRINT1("Invalid format, need biSizeImage != 0\n");
+            return FALSE;
+        }
+
+        /* Check for top-down */
+        if (pbmf->sizel.cy < 0)
+        {
+            DPRINT1("Compressed bitmaps cannot be top-down.\n");
+            return FALSE;
+        }
     }
 
     // FIXME: check bitmap extensions / size
@@ -611,6 +619,7 @@ GreCreateDIBitmapInternal(
             return NULL;
         }
 
+        /* Get the DC surface */
         psurfDC = pdc->dclevel.pSurface;
     }
     else
@@ -654,8 +663,8 @@ GreCreateDIBitmapInternal(
         else
         {
             ppalBmp = CreateDIBPalette(pbmi, pdc, iUsage);
-        }
-    }
+            }
+            }
     else
     {
         if (psurfDC)
@@ -674,8 +683,8 @@ GreCreateDIBitmapInternal(
         GDIOBJ_vReferenceObjectByPointer(&ppalBmp->BaseObject);
     }
 
-    /* Allocate a surface for the bitmap */
-    psurfBmp = SURFACE_AllocSurface(STYPE_BITMAP, cx, cy, iFormat, 0, 0, NULL);
+        /* Allocate a surface for the bitmap */
+        psurfBmp = SURFACE_AllocSurface(STYPE_BITMAP, cx, cy, iFormat, 0, 0, NULL);
     if (psurfBmp)
     {
         /* Set new palette for the bitmap */
@@ -1310,7 +1319,7 @@ NtGdiSetDIBitsToDeviceInternal(
     HANDLE hSecure;
     ULONG cyDIB;
     INT yTop, iResult;
-__debugbreak();
+//__debugbreak();
     /* Check if parameters are valid */
     if ((cNumScan == 0) || (cx >= INT_MAX) || (cy >= INT_MAX))
     {
