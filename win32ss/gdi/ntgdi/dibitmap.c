@@ -647,24 +647,59 @@ GreCreateDIBitmapInternal(
     if (fInit & CBM_CREATDIB)
     {
         if (iUsage == 2) goto cleanup;
+        if (!pbmi) goto cleanup;
         if (!psurfDIB) goto cleanup;
 
         /* Need a DC for DIB_PAL_COLORS */
         if ((iUsage == DIB_PAL_COLORS) && !pdc) goto cleanup;
+#if 0
+        /* Create an empty DIB bitmap */
+        psurfBmp = DibCreateDIBSurface(pbmi, pdc, iUsage, 0, NULL, 0);
+        if (psurfBmp == NULL)
+        {
+            goto cleanup;
+        }
 
-        iFormat = psurfDIB->SurfObj.iBitmapFormat;
+        iFormat = psurfBmp->SurfObj.iBitmapFormat;
         if (iFormat > BMF_32BPP) goto cleanup;
-
+#else
         if (psurfDIB)
         {
             ppalBmp = psurfDIB->ppal;
             GDIOBJ_vReferenceObjectByPointer(&ppalBmp->BaseObject);
+            iFormat = psurfDIB->SurfObj.iBitmapFormat;
+            if (iFormat > BMF_32BPP) goto cleanup;
         }
         else
         {
+            ULONG cBitsPixel;
             ppalBmp = CreateDIBPalette(pbmi, pdc, iUsage);
+            if (pbmi->bmiHeader.biSize < sizeof(BITMAPINFOHEADER))
+            {
+                PBITMAPCOREHEADER pbch = (PBITMAPCOREHEADER)pbmi;
+                cBitsPixel = pbch->bcBitCount * pbch->bcPlanes;
             }
+            else
+            {
+                cBitsPixel = pbmi->bmiHeader.biBitCount * pbmi->bmiHeader.biPlanes;
+                if (pbmi->bmiHeader.biCompression != BI_RGB) goto cleanup;
             }
+
+            iFormat = BitmapFormat(cBitsPixel, BI_RGB);
+        }
+
+        /* Allocate a surface for the bitmap */
+        psurfBmp = SURFACE_AllocSurface(STYPE_BITMAP, cx, cy, iFormat, 0, 0, NULL);
+        if (psurfBmp == NULL)
+        {
+            goto cleanup;
+        }
+
+        /* Set new palette for the bitmap */
+        SURFACE_vSetPalette(psurfBmp, ppalBmp);
+        ppalBmp = NULL;
+#endif
+    }
     else
     {
         if (psurfDC)
@@ -681,15 +716,21 @@ GreCreateDIBitmapInternal(
         }
 
         GDIOBJ_vReferenceObjectByPointer(&ppalBmp->BaseObject);
-    }
 
         /* Allocate a surface for the bitmap */
         psurfBmp = SURFACE_AllocSurface(STYPE_BITMAP, cx, cy, iFormat, 0, 0, NULL);
-    if (psurfBmp)
-    {
+        if (psurfBmp == NULL)
+        {
+            goto cleanup;
+        }
+
         /* Set new palette for the bitmap */
         SURFACE_vSetPalette(psurfBmp, ppalBmp);
         ppalBmp = NULL;
+    }
+
+    if (psurfBmp)
+    {
 
         if (pjInit)
         {
@@ -1294,6 +1335,7 @@ GreStretchDIBitsInternal(
  *      to. A value of 0 refers to the pixel row in the dib with the highest
  *      y coordinate.
  *
+ *
  */
 INT
 APIENTRY
@@ -1305,11 +1347,11 @@ NtGdiSetDIBitsToDeviceInternal(
     _In_ DWORD cy,
     _In_ INT xSrc,
     _In_ INT ySrc,
-    _In_ DWORD iStartScan,
+    _In_ DWORD uStartScan,
     _In_ DWORD cNumScan,
     _In_ LPBYTE pjBits,
     _In_ LPBITMAPINFO pbmiUser,
-    _In_ DWORD iUsage,
+    _In_ DWORD uUsage,
     _In_ UINT cjMaxBits,
     _In_ UINT cjMaxInfo,
     _In_ BOOL bTransformCoordinates,
@@ -1317,8 +1359,8 @@ NtGdiSetDIBitsToDeviceInternal(
 {
     PBITMAPINFO pbmi;
     HANDLE hSecure;
-    ULONG cyDIB;
-    INT yTop, iResult;
+    ULONG cyFullDIB, cyBand;
+    INT yDIB, iResult;
 //__debugbreak();
     /* Check if parameters are valid */
     if ((cNumScan == 0) || (cx >= INT_MAX) || (cy >= INT_MAX))
@@ -1333,7 +1375,7 @@ NtGdiSetDIBitsToDeviceInternal(
     }
 
     /* Capture a safe copy of the bitmap info */
-    pbmi = DibProbeAndCaptureBitmapInfo(pbmiUser, iUsage, &cjMaxInfo);
+    pbmi = DibProbeAndCaptureBitmapInfo(pbmiUser, uUsage, &cjMaxInfo);
     if (!pbmi)
     {
         /* Could not get bitmapinfo, fail. */
@@ -1344,51 +1386,54 @@ NtGdiSetDIBitsToDeviceInternal(
     hSecure = EngSecureMemForRead(pjBits, cjMaxBits);
     if (!hSecure)
     {
-        iResult = 0;
+        cNumScan = 0;
         goto leave;
     }
 
-    /* Even when nothing is copied, the function returns the scanlines */
-    iResult = cNumScan;
-
     /* Get the absolute height of the DIB */
-    cyDIB = abs(pbmi->bmiHeader.biHeight);
+    cyFullDIB = abs(pbmi->bmiHeader.biHeight);
 
     /* Bail out if the scanlines are outside of the DIB */
-    if (iStartScan >= cyDIB) goto leave;
+    if (uStartScan >= cyFullDIB) goto leave;
+    NT_ASSERT(cyFullDIB != 0);
 
     /* Limit the number of scanlines to the DIB size */
-    cNumScan = min(cNumScan, cyDIB - iStartScan);
+    cyBand = min(cNumScan, cyFullDIB - uStartScan);
+    NT_ASSERT(cyBand != 0);
 
     /* Calculate the y-origin of the given DIB data */
-    yTop = cyDIB - (iStartScan + cNumScan);
+    yDIB = cyFullDIB - (uStartScan + cyBand);
 
     /* Bail out if the intersecion between scanlines and copy area is empty */
-    if ((ySrc > yTop + (INT)cNumScan) || (ySrc + (INT)cy < yTop)) goto leave;
+    if ((ySrc >= yDIB + (INT)cyBand) || (ySrc + (INT)cy <= yDIB)) goto leave;
 
-    /* Check if the copy area starts below or at the topmost scanline */
-    if (ySrc >= yTop)
-    {
-        /* Compensate the source y-origin for the scanline offset */
-        ySrc -= yTop;
-    }
-    else
+    /* Check if the copy area starts below the y origin of the DIB */
+    if (ySrc < yDIB)
     {
         /* Start at the top-most scanline in the buffer, adjust the destination
            coordinates and crop the size accordingly. */
-        yDst += (yTop - ySrc);
-        cy -= (yTop - ySrc);
+        yDst += (yDIB - ySrc);
+        cy -= (yDIB - ySrc);
         ySrc = 0;
+    }
+    else
+    {
+        /* Compensate the source y-origin for the scanline offset */
+        ySrc -= yDIB;
     }
 
     /* Check if the DIB is top-down */
     if (pbmi->bmiHeader.biHeight < 0)
     {
-        pbmi->bmiHeader.biHeight = -(LONG)cNumScan;
+        /* Set negative band height */
+        pbmi->bmiHeader.biHeight = -(LONG)cyBand;
+        NT_ASSERT(pbmi->bmiHeader.biHeight < 0);
     }
     else
     {
-        pbmi->bmiHeader.biHeight = cNumScan;
+        /* Set positive band height */
+        pbmi->bmiHeader.biHeight = cyBand;
+        NT_ASSERT(pbmi->bmiHeader.biHeight > 0);
     }
 
     /* Call the internal function with the secure pointers */
@@ -1403,12 +1448,14 @@ NtGdiSetDIBitsToDeviceInternal(
                                        cy,
                                        pjBits,
                                        pbmi,
-                                       iUsage,
+                                       uUsage,
                                        MAKEROP4(SRCCOPY, SRCCOPY),
                                        cjMaxInfo,
                                        cjMaxBits,
                                        bTransformCoordinates,
                                        hcmXform);
+    if (iResult == 0)
+        cNumScan = 0;
 
     /* Unsecure the memory */
     EngUnsecureMem(hSecure);
@@ -1418,7 +1465,7 @@ leave:
     DibFreeBitmapInfo(pbmi);
 
     /* Return the result */
-    return iResult;
+    return cNumScan;
 }
 
 

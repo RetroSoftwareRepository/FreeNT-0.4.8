@@ -505,8 +505,9 @@ SetDIBitsToDevice(
     PBITMAPINFO pConvertedInfo;
     UINT ConvertedInfoSize;
     INT LinesCopied = 0;
-    UINT cjBmpScanSize = 0;
+    UINT cMaxScans, cjBmpScanSize = 0;
     BOOL Hit = FALSE;
+    LONG yMax;
     PVOID pvAlignedBits = (PVOID)pvBits;
 
     if ( !cScanLines || !lpbmi || !pvBits )
@@ -519,6 +520,16 @@ SetDIBitsToDevice(
                                        &ConvertedInfoSize, FALSE);
     if (!pConvertedInfo)
         return 0;
+
+    /* Calculate the max y coordinate that will be used */
+    yMax = YSrc + Height;
+
+    /* Calculate the maximum scan lines. NOTE: Yes, this is broken, since
+       biHeight can be negative, but Windows actually seems to do this! */
+    cMaxScans = min(yMax, lpbmi->bmiHeader.biHeight);
+
+    /* Limit the scan lines to the maximum we calculated, even if it's wrong */
+    cScanLines = min(cScanLines, cMaxScans - uStartScan);
 
 #if 0
 // Handle something other than a normal dc object.
@@ -592,7 +603,7 @@ SetDIBitsToDevice(
 
     if (!GdiGetHandleUserData(hdc, GDI_OBJECT_TYPE_DC, (PVOID)&pDc_Attr))
     {
-        SetLastError(ERROR_INVALID_PARAMETER);
+        SetLastError(ERROR_INVALID_HANDLE);
         goto cleanup;
     }
 
