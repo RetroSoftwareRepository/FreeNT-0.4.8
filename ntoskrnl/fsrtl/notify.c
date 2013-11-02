@@ -424,7 +424,7 @@ FsRtlNotifyCleanup(IN PNOTIFY_SYNC NotifySync,
                 }
 
                 /* Finally, free the notification, as it's not needed anymore */
-                ExFreePool(NotifyChange);
+                ExFreePoolWithTag(NotifyChange, 'FSrN');
             }
         }
     }
@@ -503,12 +503,12 @@ FsRtlNotifyFilterChangeDirectory(IN PNOTIFY_SYNC NotifySync,
 {
     ULONG SavedLength;
     PIO_STACK_LOCATION Stack;
-    PNOTIFY_CHANGE NotifyChange;
+    PNOTIFY_CHANGE NotifyChange = NULL;
     PREAL_NOTIFY_SYNC RealNotifySync;
 
     PAGED_CODE();
 
-    DPRINT("FsRtlNotifyFilterChangeDirectory(): %p, %p, %p, %wZ, %d, %d, %u, %p, %p, %p, %p\n",
+    DPRINT("FsRtlNotifyFilterChangeDirectory(): %p, %p, %p, %wZ, %u, %u, %u, %p, %p, %p, %p\n",
     NotifySync, NotifyList, FsContext, FullDirectoryName, WatchTree, IgnoreBuffer, CompletionFilter, NotifyIrp,
     TraverseCallback, SubjectContext, FilterCallback);
 

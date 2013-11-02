@@ -69,7 +69,7 @@ extern POBJECT_TYPE NTSYSAPI PsJobType;
 #define FLG_KERNEL_STACK_TRACE_DB               0x00002000
 #define FLG_MAINTAIN_OBJECT_TYPELIST            0x00004000
 #define FLG_HEAP_ENABLE_TAG_BY_DLL              0x00008000
-#define FLG_IGNORE_DEBUG_PRIV                   0x00010000
+#define FLG_DISABLE_STACK_EXTENSION             0x00010000
 #define FLG_ENABLE_CSRDEBUG                     0x00020000
 #define FLG_ENABLE_KDEBUG_SYMBOL_LOAD           0x00040000
 #define FLG_DISABLE_PAGE_KERNEL_STACKS          0x00080000
@@ -89,11 +89,17 @@ extern POBJECT_TYPE NTSYSAPI PsJobType;
 //
 // Flags for NtCreateProcessEx
 //
-#define PROCESS_CREATE_FLAGS_BREAKAWAY          0x00000001
-#define PROCESS_CREATE_FLAGS_NO_DEBUG_INHERIT   0x00000002
-#define PROCESS_CREATE_FLAGS_INHERIT_HANDLES    0x00000004
+#define PROCESS_CREATE_FLAGS_BREAKAWAY              0x00000001
+#define PROCESS_CREATE_FLAGS_NO_DEBUG_INHERIT       0x00000002
+#define PROCESS_CREATE_FLAGS_INHERIT_HANDLES        0x00000004
 #define PROCESS_CREATE_FLAGS_OVERRIDE_ADDRESS_SPACE 0x00000008
-#define PROCESS_CREATE_FLAGS_LARGE_PAGES        0x00000010
+#define PROCESS_CREATE_FLAGS_LARGE_PAGES            0x00000010
+#define PROCESS_CREATE_FLAGS_ALL_LARGE_PAGE_FLAGS   PROCESS_CREATE_FLAGS_LARGE_PAGES
+#define PROCESS_CREATE_FLAGS_LEGAL_MASK             (PROCESS_CREATE_FLAGS_BREAKAWAY | \
+                                                     PROCESS_CREATE_FLAGS_NO_DEBUG_INHERIT | \
+                                                     PROCESS_CREATE_FLAGS_INHERIT_HANDLES | \
+                                                     PROCESS_CREATE_FLAGS_OVERRIDE_ADDRESS_SPACE | \
+                                                     PROCESS_CREATE_FLAGS_ALL_LARGE_PAGE_FLAGS)
 
 //
 // Process priority classes
@@ -105,18 +111,6 @@ extern POBJECT_TYPE NTSYSAPI PsJobType;
 #define PROCESS_PRIORITY_CLASS_REALTIME         4
 #define PROCESS_PRIORITY_CLASS_BELOW_NORMAL     5
 #define PROCESS_PRIORITY_CLASS_ABOVE_NORMAL     6
-
-//
-// NtCreateProcessEx flags
-//
-#define PS_REQUEST_BREAKAWAY                    1
-#define PS_NO_DEBUG_INHERIT                     2
-#define PS_INHERIT_HANDLES                      4
-#define PS_LARGE_PAGES                          8
-#define PS_ALL_FLAGS                            (PS_REQUEST_BREAKAWAY | \
-                                                 PS_NO_DEBUG_INHERIT  | \
-                                                 PS_INHERIT_HANDLES   | \
-                                                 PS_LARGE_PAGES)
 
 //
 // Process base priorities

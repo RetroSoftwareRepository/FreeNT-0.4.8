@@ -14,6 +14,7 @@ list(APPEND CONSRV_SOURCE
     consrv/init.c
     consrv/lineinput.c
     consrv/settings.c
+    consrv/subsysreg.c
     consrv/condrv/coninput.c
     consrv/condrv/conoutput.c
     consrv/condrv/console.c
@@ -21,6 +22,7 @@ list(APPEND CONSRV_SOURCE
     consrv/condrv/graphics.c
     consrv/condrv/text.c
     consrv/frontends/input.c
+    consrv/frontends/gui/fullscreen.c
     consrv/frontends/gui/guiterm.c
     consrv/frontends/gui/guisettings.c
     consrv/frontends/gui/graphics.c
@@ -45,8 +47,8 @@ endif()
 add_library(consrv ${CONSRV_SOURCE})
 #add_object_library(consrv ${CONSRV_SOURCE})
 
-add_importlibs(consrv psapi)         # And the default ones from winsrv
-add_delay_importlibs(consrv ole32)   # And the default ones from winsrv
-target_link_libraries(consrv uuid)   # And the default ones from winsrv
+list(APPEND CONSRV_IMPORT_LIBS psapi)
+list(APPEND CONSRV_DELAY_IMPORT_LIBS ole32)
+list(APPEND CONSRV_TARGET_LINK_LIBS uuid)
 
 set_module_type(consrv module UNICODE)

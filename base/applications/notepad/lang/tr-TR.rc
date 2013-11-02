@@ -69,7 +69,7 @@ BEGIN
         MENUITEM "G&it...\tCtrl+G",         CMD_GOTO
         MENUITEM SEPARATOR
         MENUITEM "&Tümünü Seç\tCtrl+A",     CMD_SELECT_ALL
-        MENUITEM "&Şimdiki Zamânı Koy\tF5", CMD_TIME_DATE
+        MENUITEM "&Şimdiki Zamanı Koy\tF5", CMD_TIME_DATE
     END
     POPUP "&Biçim"
     BEGIN
@@ -113,7 +113,7 @@ LTEXT    "Alt:",         0x14E,  100, 73, 30, 10, WS_CHILD
 EDITTEXT /*STRING_PAGESETUP_BOTTOMVALUE,*/ 0x150,  130, 73, 35, 11, WS_CHILD | WS_BORDER | WS_TABSTOP
 
 DEFPUSHBUTTON "Tamam",  IDOK,     180,  3, 40, 15, WS_TABSTOP
-PUSHBUTTON    "Vazgeç", IDCANCEL, 180, 21, 40, 15, WS_TABSTOP
+PUSHBUTTON    "İptal", IDCANCEL, 180, 21, 40, 15, WS_TABSTOP
 PUSHBUTTON    "Yardım", IDHELP,   180, 39, 40, 15, WS_TABSTOP
 END
 
@@ -138,15 +138,15 @@ BEGIN
 EDITTEXT        ID_LINENUMBER,54,10,106,12,WS_CHILD | WS_BORDER | WS_TABSTOP
 LTEXT           "Yataç Numarası:",0x155,5,12,41,12,WS_CHILD | WS_TABSTOP | ES_NUMBER
 DEFPUSHBUTTON   "Tamam",IDOK, 75, 30, 40, 15, WS_CHILD | WS_TABSTOP
-PUSHBUTTON      "Vazgeç",IDCANCEL, 120, 30, 40, 15, WS_CHILD | WS_TABSTOP
+PUSHBUTTON      "İptal",IDCANCEL, 120, 30, 40, 15, WS_CHILD | WS_TABSTOP
 END
 
-IDD_ABOUTBOX DIALOGEX DISCARDABLE  22,16,284,170
+IDD_ABOUTBOX DIALOGEX 22,16,284,170
 STYLE DS_SHELLFONT | DS_MODALFRAME | WS_CAPTION | WS_SYSMENU
 CAPTION "Metin Düzenleyicisi Hakkında"
 FONT 8, "MS Shell Dlg"
 BEGIN
-    CONTROL         "Metin Düzenleyicisi - Sürüm: 1.0\r\nTelif Hakkı: 1997,98 Marcel Baur (mbaur@g26.ethz.ch)\r\nTelif Hakkı: 2000 Mike McCormack (Mike_McCormack@looksmart.com.au)\r\nTelif Hakkı: 2002 Sylvain Petreolle (spetreolle@yahoo.fr)\r\nTelif Hakkı: 2002 Andriy Palamarchuk\r\n",
+    CONTROL         "Metin Düzenleyicisi - Sürüm: 1.0\r\nTelif Hakları: 1997,98 Marcel Baur (mbaur@g26.ethz.ch)\r\n               2000 Mike McCormack (Mike_McCormack@looksmart.com.au)\r\n               2002 Sylvain Petreolle (spetreolle@yahoo.fr)\r\n               2002 Andriy Palamarchuk\r\n",
                     -1,"Static",SS_LEFTNOWORDWRAP | WS_GROUP,46,7,232,39
     CONTROL         " ",
                     -1,"Static",0x50000000,8,48,272,11
@@ -156,12 +156,12 @@ BEGIN
                     ES_READONLY | WS_VSCROLL
 END
 
-STRINGTABLE DISCARDABLE
+STRINGTABLE
 BEGIN
-  STRING_LICENSE, "ÖNEMLİ: Aşağıdaki metin özgün metnin resmî olmayan çevirisidir. Çeviri metniyle özgün metin arasında ayrım olabilir. Özgün metin, çeviri metninin altındadır.\r\n\r\n***\r\n\r\nBu yazılım özgürdür, yani bu yazılımı Özgür Yazılım Vakfı'nın yayınladığı GNU Genel Kamu Lisansı'nın 2. sürümü veya daha sonraki sürümleri altında yeniden dağıtabilir veya değiştirebilirsiniz.\r\n\r\nBu yazılım, kullanışlı olabileceği beklentisiyle dağıtılmıştır ancak özellikle SATILABİLİRLİK ve BELİRLİ BİR AMACA UYGUNLUK açısından olmak üzere bu yazılımın HİÇBİR GÜVENCESİ YOKTUR. Daha fazla bilgi için GNU Genel Kamu Lisansı'na bakınız.\r\n\r\nBu yazılımla birlikte GNU Genel Kamu Lisansı'nın bir sûretine de iye olmanız gerekir, eğer yoksa Özgür Yazılım Vakfı A.Ş.'ne (51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 ABD) yazınız.\r\n\r\n***\r\n\r\nThis program is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; either version 2 of the License, or (at your option) any later version.\r\n\r\nThis program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.\r\n\r\nYou should have received a copy of the GNU General Public License along with this program; if not, write to the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA."
+  STRING_LICENSE, "ÖNEMLİ: Aşağıdaki metin, özgün metnin resmî olmayan çevirisidir. Çeviri metniyle özgün metin arasında ayrım olabilir. Özgün metin, çeviri metninin altındadır.\r\n\r\n***\r\n\r\nBu yazılım özgürdür, yâni bu yazılımı Özgür Yazılım Vakfı'nın yayınladığı GNU Umûmî Kamu Ruhsatı'nın 2. sürümü veyâ daha sonraki sürümleri altında yeniden dağıtabilir veyâ değiştirebilirsiniz.\r\n\r\nBu yazılım, kullanışlı olabileceği beklentisiyle dağıtılmıştır ancak bilhassa SATILABİLİRLİK ve BELİRLİ BİR AMACA UYGUNLUK açısından olmak üzere bu yazılımın HİÇBİR GÜVENCESİ YOKTUR. Daha çok bilgi için GNU Umûmî Kamu Ruhsatı'na bakınız.\r\n\r\nBu yazılımla birlikte GNU Umûmî Kamu Ruhsatı'nın bir sûretine de iye olmanız gerekir, eğer yoksa Özgür Yazılım Vakfı A.Ş.'ne (51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 ABD) yazınız.\r\n\r\n***\r\n\r\nThis program is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; either version 2 of the License, or (at your option) any later version.\r\n\r\nThis program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.\r\n\r\nYou should have received a copy of the GNU General Public License along with this program; if not, write to the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA."
 END
 
-STRINGTABLE DISCARDABLE
+STRINGTABLE
 BEGIN
 STRING_PAGESETUP_HEADERVALUE,   "&n"        /* FIXME */
 STRING_PAGESETUP_FOOTERVALUE,   "Sayfa &s"   /* FIXME */
@@ -171,7 +171,7 @@ STRING_PAGESETUP_TOPVALUE,      "25 mm"     /* FIXME */
 STRING_PAGESETUP_BOTTOMVALUE,   "25 mm"     /* FIXME */
 
 STRING_NOTEPAD,                                 "Metin Düzenleyicisi"
-STRING_ERROR,                                   "HATÂ"
+STRING_ERROR,                                   "YANLIŞLIK"
 STRING_WARNING,                                 "UYARI"
 STRING_INFO,                                    "Bilgi"
 
@@ -182,17 +182,17 @@ STRING_TEXT_FILES_TXT,                          "Metin Belgeleri (*.txt)"
 
 STRING_TOOLARGE,                                "%s kütüğü Metin Düzenleyicisi için çok büyük. Bu kütüğü düzenlemek için başka bir düzenleyici kullanınız."
 STRING_NOTEXT,                                  "Hiçbir şey yazmadınız. Lütfen bir şeyler yazıp yeniden deneyiniz."
-STRING_DOESNOTEXIST,                            "%s kütüğü mevcut değil. Yeni bir kütük oluşturmak ister misiniz?"
+STRING_DOESNOTEXIST,                            "%s kütüğü yok. Yeni bir kütük oluşturmak ister misiniz?"
 STRING_NOTSAVED,                                "%s kütüğündeki metin değiştirilmiş. Değişiklikleri kaydetmek istiyor musunuz?"
 STRING_NOTFOUND,                                "%s kütüğü bulunamadı."
-STRING_OUT_OF_MEMORY,                           "Bu işlemi tamamlamak için gereken bellek yetersiz. Kullanılabilen belleği arttırmak için bir veya daha fazla uygulamadan çıkıp bu işlemi yeniden deneyiniz."
+STRING_OUT_OF_MEMORY,                           "Bu işlemi bitirmek için gereken bellek yetersiz. Kullanılabilen belleği arttırmak için bir veyâ daha çok uygulamadan çıkıp bu işlemi yeniden deneyiniz."
 STRING_CANNOTFIND                               "%s kütüğü bulunamadı."
 STRING_ANSI,                                    "ANSI"
 STRING_UNICODE,                                 "Unikod"
 STRING_UNICODE_BE,                              "Unikod (Büyük Sonlu)"
 STRING_UTF8,                                    "UTF-8"
-STRING_CRLF,                                    "Windows"
-STRING_LF,                                      "UNIX"
-STRING_CR,                                      "Mac"
+STRING_CRLF,                                    "Pencereler (CR + LF)"
+STRING_LF,                                      "UNIX (LF)"
+STRING_CR,                                      "Mac (CR)"
 STRING_LINE_COLUMN,                             "%d. Yataç, %d. Dikeç"
 END

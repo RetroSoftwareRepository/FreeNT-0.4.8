@@ -1,6 +1,6 @@
 LANGUAGE LANG_NEUTRAL, SUBLANG_NEUTRAL
 
-IDI_MAINAPP ICON DISCARDABLE resources/sndvol32.ico
+IDI_MAINAPP ICON  resources/sndvol32.ico
 
 // UTF-8
 #pragma code_page(65001)
@@ -72,6 +72,9 @@ IDI_MAINAPP ICON DISCARDABLE resources/sndvol32.ico
 #endif
 #ifdef LANGUAGE_TH_TH
     #include "lang/th-TH.rc"
+#endif
+#ifdef LANGUAGE_TR_TR
+    #include "lang/tr-TR.rc"
 #endif
 #ifdef LANGUAGE_UK_UA
     #include "lang/uk-UA.rc"

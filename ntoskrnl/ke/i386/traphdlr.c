@@ -100,7 +100,7 @@ KiCommonExit(IN PKTRAP_FRAME TrapFrame, BOOLEAN SkipPreviousMode)
     if (__builtin_expect(TrapFrame->Dr7 & ~DR7_RESERVED_MASK, 0))
     {
         /* Check if the frame was from user mode or v86 mode */
-        if ((TrapFrame->SegCs & MODE_MASK) ||
+        if (KiUserTrap(TrapFrame) ||
             (TrapFrame->EFlags & EFLAGS_V86_MASK))
         {
             /* Handle debug registers */
@@ -124,13 +124,13 @@ KiEoiHelper(IN PKTRAP_FRAME TrapFrame)
     if (TrapFrame->EFlags & EFLAGS_V86_MASK) KiTrapReturnNoSegments(TrapFrame);
 
     /* Check for user mode exit */
-    if (TrapFrame->SegCs & MODE_MASK) KiTrapReturn(TrapFrame);
+    if (KiUserTrap(TrapFrame)) KiTrapReturn(TrapFrame);
 
     /* Check for edited frame */
     if (KiIsFrameEdited(TrapFrame)) KiEditedTrapReturn(TrapFrame);
 
     /* Exit the trap to kernel mode */
-    KiTrapReturnNoSegments(TrapFrame);
+    KiTrapReturnNoSegmentsRet8(TrapFrame);
 }
 
 DECLSPEC_NORETURN
@@ -152,7 +152,7 @@ KiServiceExit(IN PKTRAP_FRAME TrapFrame,
     KeGetCurrentThread()->PreviousMode = (CCHAR)TrapFrame->PreviousPreviousMode;
 
     /* Check for user mode exit */
-    if (TrapFrame->SegCs & MODE_MASK)
+    if (KiUserTrap(TrapFrame))
     {
         /* Check if we were single stepping */
         if (TrapFrame->EFlags & EFLAGS_TF)
@@ -186,13 +186,13 @@ KiServiceExit2(IN PKTRAP_FRAME TrapFrame)
     if (TrapFrame->EFlags & EFLAGS_V86_MASK) KiTrapReturnNoSegments(TrapFrame);
 
     /* Check for user mode exit */
-    if (TrapFrame->SegCs & MODE_MASK) KiTrapReturn(TrapFrame);
+    if (KiUserTrap(TrapFrame)) KiTrapReturn(TrapFrame);
 
     /* Check for edited frame */
     if (KiIsFrameEdited(TrapFrame)) KiEditedTrapReturn(TrapFrame);
 
     /* Exit the trap to kernel mode */
-    KiTrapReturnNoSegments(TrapFrame);
+    KiTrapReturnNoSegmentsRet8(TrapFrame);
 }
 
 
@@ -978,7 +978,7 @@ KiTrap0DHandler(IN PKTRAP_FRAME TrapFrame)
             }
             
             /* Check for privileged instructions */
-            DPRINT("Instruction (%d) at fault: %lx %lx %lx %lx\n",
+            DPRINT("Instruction (%lu) at fault: %lx %lx %lx %lx\n",
                     i,
                     Instructions[i],
                     Instructions[i + 1],
@@ -1234,15 +1234,26 @@ KiTrap0EHandler(IN PKTRAP_FRAME TrapFrame)
             /* Continue execution */
             KiEoiHelper(TrapFrame);
         }
+        else
+        {
+#if 0
+            /* Do what windows does and issue an invalid access violation */
+            KiDispatchException2Args(KI_EXCEPTION_ACCESS_VIOLATION,
+                                     TrapFrame->Eip,
+                                     TrapFrame->ErrCode & 2 ? TRUE : FALSE,
+                                     Cr2,
+                                     TrapFrame);
+#endif
+        }
     }
 
     /* Call the access fault handler */
     Status = MmAccessFault(TrapFrame->ErrCode & 1,
                            (PVOID)Cr2,
-                           TrapFrame->SegCs & MODE_MASK,
+                           KiUserTrap(TrapFrame),
                            TrapFrame);
     if (NT_SUCCESS(Status)) KiEoiHelper(TrapFrame);
-    
+
     /* Check for syscall fault */
 #if 0
     if ((TrapFrame->Eip == (ULONG_PTR)CopyParams) ||
@@ -1530,7 +1541,7 @@ KiSystemCall(IN PKTRAP_FRAME TrapFrame,
     TrapFrame->Dr7 = 0;
 
     /* Check if the frame was from user mode */
-    if (TrapFrame->SegCs & MODE_MASK)
+    if (KiUserTrap(TrapFrame))
     {
         /* Check for active debugging */
         if (KeGetCurrentThread()->Header.DebugActive & 0xFF)

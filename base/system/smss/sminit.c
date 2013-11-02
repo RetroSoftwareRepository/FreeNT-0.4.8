@@ -236,7 +236,7 @@ SmpConfigureProtectionMode(IN PWSTR ValueName,
 
     /* Recreate the security descriptors to take into account security mode */
     SmpCreateSecurityDescriptors(FALSE);
-    DPRINT("SmpProtectionMode: %d\n", SmpProtectionMode);
+    DPRINT("SmpProtectionMode: %lu\n", SmpProtectionMode);
     return STATUS_SUCCESS;
 }
 
@@ -261,7 +261,7 @@ SmpConfigureAllowProtectedRenames(IN PWSTR ValueName,
         SmpAllowProtectedRenames = 0;
     }
 
-    DPRINT("SmpAllowProtectedRenames: %d\n", SmpAllowProtectedRenames);
+    DPRINT("SmpAllowProtectedRenames: %lu\n", SmpAllowProtectedRenames);
     return STATUS_SUCCESS;
 }
 
@@ -630,8 +630,8 @@ SmpRegistryConfigurationTable[] =
         0,
         L"BootExecute",
         &SmpBootExecuteList,
-        REG_NONE,
-        NULL,
+        REG_MULTI_SZ,
+        L"autocheck AutoChk.exe *\0",
         0
     },
 
@@ -710,16 +710,6 @@ SmpRegistryConfigurationTable[] =
         RTL_QUERY_REGISTRY_SUBKEY,
         L"KnownDlls",
         &SmpKnownDllsList,
-        REG_NONE,
-        NULL,
-        0
-    },
-
-    {
-        SmpConfigureEnvironment,
-        RTL_QUERY_REGISTRY_SUBKEY,
-        L"Environment",
-        NULL,
         REG_NONE,
         NULL,
         0
@@ -1404,8 +1394,8 @@ SmpInitializeKnownDllsInternal(IN PUNICODE_STRING Directory,
     NTSTATUS Status, Status1;
     PLIST_ENTRY NextEntry;
     PSMP_REGISTRY_VALUE RegEntry;
-    //ULONG_PTR ErrorParameters[3];
-    //UNICODE_STRING ErrorResponse;
+    ULONG_PTR ErrorParameters[3];
+    UNICODE_STRING ErrorResponse;
     IO_STATUS_BLOCK IoStatusBlock;
     SECURITY_DESCRIPTOR_CONTROL OldFlag = 0;
     USHORT ImageCharacteristics;
@@ -1535,7 +1525,6 @@ SmpInitializeKnownDllsInternal(IN PUNICODE_STRING Directory,
                                                SmpProcessModuleImports,
                                                RegEntry,
                                                &ImageCharacteristics);
-#if 0
         if (!NT_SUCCESS(Status))
         {
             /* Checksum failed, so don't even try going further -- kill SMSS */
@@ -1557,7 +1546,6 @@ SmpInitializeKnownDllsInternal(IN PUNICODE_STRING Directory,
             ErrorParameters[2] = (ULONG)&RegEntry->Value;
             SmpTerminate(ErrorParameters, 5, RTL_NUMBER_OF(ErrorParameters));
         }
-#endif
 
         /* Temporarily hack the SD to use a default DACL for this section */
         if (SmpLiberalSecurityDescriptor)
@@ -1829,13 +1817,13 @@ SmpCreateDynamicEnvironmentVariables(VOID)
     {
         /* To combine it into a single string */
         swprintf((PWCHAR)PartialInfo->Data + wcslen((PWCHAR)PartialInfo->Data),
-                 L", %ws",
+                 L", %S",
                  PartialInfo2->Data);
     }
 
     /* So that we can set this as the PROCESSOR_IDENTIFIER variable */
     RtlInitUnicodeString(&ValueName, L"PROCESSOR_IDENTIFIER");
-    DPRINT("Setting %wZ to %S\n", &ValueName, PartialInfo->Data);
+    DPRINT("Setting %wZ to %s\n", &ValueName, PartialInfo->Data);
     Status = NtSetValueKey(KeyHandle,
                            &ValueName,
                            0,
@@ -1894,7 +1882,7 @@ SmpCreateDynamicEnvironmentVariables(VOID)
 
     /* And finally, write the number of CPUs */
     RtlInitUnicodeString(&ValueName, L"NUMBER_OF_PROCESSORS");
-    swprintf(ValueBuffer, L"%u", BasicInfo.NumberOfProcessors);
+    swprintf(ValueBuffer, L"%d", BasicInfo.NumberOfProcessors);
     DPRINT("Setting %wZ to %S\n", &ValueName, ValueBuffer);
     Status = NtSetValueKey(KeyHandle,
                            &ValueName,
@@ -2441,7 +2429,7 @@ SmpInit(IN PUNICODE_STRING InitialCommand,
     RtlInitUnicodeString(&Os2Name, L"OS2");
 
     /* Create the SM API Port */
-    RtlInitUnicodeString(&PortName, L"\\SmApiPort2");
+    RtlInitUnicodeString(&PortName, L"\\SmApiPort");
     InitializeObjectAttributes(&ObjectAttributes, &PortName, 0, NULL, NULL);
     Status = NtCreatePort(&PortHandle,
                           &ObjectAttributes,

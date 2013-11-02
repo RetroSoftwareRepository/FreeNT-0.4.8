@@ -28,6 +28,7 @@ WINE_DEFAULT_DEBUG_CHANNEL(samsrv);
 
 ENCRYPTED_NT_OWF_PASSWORD EmptyNtHash;
 ENCRYPTED_LM_OWF_PASSWORD EmptyLmHash;
+RTL_RESOURCE SampResource;
 
 
 /* FUNCTIONS *****************************************************************/
@@ -117,6 +118,8 @@ SamIInitialize(VOID)
             return Status;
     }
 
+    RtlInitializeResource(&SampResource);
+
     /* Initialize the SAM database */
     Status = SampInitDatabase();
     if (!NT_SUCCESS(Status))
@@ -173,6 +176,23 @@ SamIFree_SAMPR_GET_GROUPS_BUFFER(PSAMPR_GET_GROUPS_BUFFER Ptr)
     {
         if (Ptr->Groups != NULL)
             MIDL_user_free(Ptr->Groups);
+
+        MIDL_user_free(Ptr);
+    }
+}
+
+
+VOID
+NTAPI
+SamIFree_SAMPR_GET_MEMBERS_BUFFER(PSAMPR_GET_MEMBERS_BUFFER Ptr)
+{
+    if (Ptr != NULL)
+    {
+        if (Ptr->Members != NULL)
+            MIDL_user_free(Ptr->Members);
+
+        if (Ptr->Attributes != NULL)
+            MIDL_user_free(Ptr->Attributes);
 
         MIDL_user_free(Ptr);
     }

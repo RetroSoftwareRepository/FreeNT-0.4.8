@@ -481,7 +481,7 @@ QSI_DEF(SystemProcessorInformation)
     Spi->Reserved = 0;
     Spi->ProcessorFeatureBits = KeFeatureBits;
 
-    DPRINT("Arch %d Level %d Rev 0x%x\n", Spi->ProcessorArchitecture,
+    DPRINT("Arch %u Level %u Rev 0x%x\n", Spi->ProcessorArchitecture,
         Spi->ProcessorLevel, Spi->ProcessorRevision);
 
     return STATUS_SUCCESS;
@@ -712,7 +712,7 @@ QSI_DEF(SystemProcessInformation)
                 !(Process->ActiveThreads) &&
                 (IsListEmpty(&Process->Pcb.ThreadListHead)))
             {
-                DPRINT1("Process %p (%s:%lx) is a zombie\n",
+                DPRINT1("Process %p (%s:%p) is a zombie\n",
                         Process, Process->ImageFileName, Process->UniqueProcessId);
                 CurrentSize = 0;
                 ImageNameMaximumLength = 0;
@@ -787,7 +787,7 @@ QSI_DEF(SystemProcessInformation)
                         RtlCopyMemory(SpiCurrent->ImageName.Buffer, szSrc, SpiCurrent->ImageName.Length);
 
                         /* Release the memory allocated by SeLocateProcessImageName */
-                        ExFreePool(ProcessImageName);
+                        ExFreePoolWithTag(ProcessImageName, TAG_SEPA);
                     }
                     else
                     {
@@ -1287,7 +1287,7 @@ QSI_DEF(SystemFullMemoryInformation)
 
     TheIdleProcess = PsIdleProcess;
 
-    DPRINT("PID: %d, KernelTime: %u PFFree: %d PFUsed: %d\n",
+    DPRINT("PID: %p, KernelTime: %u PFFree: %lu PFUsed: %lu\n",
            TheIdleProcess->UniqueProcessId,
            TheIdleProcess->Pcb.KernelTime,
            MiFreeSwapPages,
@@ -1612,27 +1612,50 @@ SSI_DEF(SystemExtendServiceTableInformation)
     /* Check who is calling */
     if (PreviousMode != KernelMode)
     {
+        static const UNICODE_STRING Win32kName = 
+            RTL_CONSTANT_STRING(L"\\SystemRoot\\System32\\win32k.sys");
+
         /* Make sure we can load drivers */
         if (!SeSinglePrivilegeCheck(SeLoadDriverPrivilege, UserMode))
         {
             /* FIXME: We can't, fail */
-            //return STATUS_PRIVILEGE_NOT_HELD;
+            return STATUS_PRIVILEGE_NOT_HELD;
         }
+        
+        _SEH2_TRY
+        {
+            /* Probe and copy the unicode string */
+            ProbeForRead(Buffer, sizeof(ImageName), 1);
+            ImageName = *(PUNICODE_STRING)Buffer;
+
+            /* Probe the string buffer */
+            ProbeForRead(ImageName.Buffer, ImageName.Length, sizeof(WCHAR));
+
+            /* Check if we have the correct name (nothing else is allowed!) */
+            if (!RtlEqualUnicodeString(&ImageName, &Win32kName, FALSE))
+            {
+                _SEH2_YIELD(return STATUS_PRIVILEGE_NOT_HELD);
+            }
+        }
+        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        {
+            _SEH2_YIELD(return _SEH2_GetExceptionCode());
+        }
+        _SEH2_END;
+        
+        /* Recursively call the function, so that we are from kernel mode */
+        return ZwSetSystemInformation(SystemExtendServiceTableInformation,
+                                      (PVOID)&Win32kName,
+                                      sizeof(Win32kName));
     }
 
-    /* Probe and capture the driver name */
-    ProbeAndCaptureUnicodeString(&ImageName, PreviousMode, Buffer);
-
     /* Load the image */
-    Status = MmLoadSystemImage(&ImageName,
+    Status = MmLoadSystemImage((PUNICODE_STRING)Buffer,
                                NULL,
                                NULL,
                                0,
                                (PVOID)&ModuleObject,
                                &ImageBase);
-
-    /* Release String */
-    ReleaseCapturedUnicodeString(&ImageName, PreviousMode);
 
     if (!NT_SUCCESS(Status)) return Status;
 

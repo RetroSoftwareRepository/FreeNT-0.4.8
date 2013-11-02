@@ -69,9 +69,7 @@ ExplorerGlobals::ExplorerGlobals()
 #endif
 
     _log = NULL;
-#ifndef __MINGW32__ // SHRestricted() missing in MinGW (as of 29.10.2003)
     _SHRestricted = 0;
-#endif
     _hwndDesktopBar = 0;
     _hwndShellView = 0;
     _hwndDesktop = 0;
@@ -81,11 +79,7 @@ ExplorerGlobals::ExplorerGlobals()
 void ExplorerGlobals::init(HINSTANCE hInstance)
 {
     _hInstance = hInstance;
-
-#ifndef __MINGW32__ // SHRestricted() missing in MinGW (as of 29.10.2003)
     _SHRestricted = (DWORD(STDAPICALLTYPE*)(RESTRICTIONS)) GetProcAddress(GetModuleHandle(TEXT("SHELL32")), "SHRestricted");
-#endif
-
     _icon_cache.init();
 }
 
@@ -999,38 +993,6 @@ int explorer_main(HINSTANCE hInstance, LPTSTR lpCmdLine, int cmdShow)
 }
 
 
- // MinGW does not provide a Unicode startup routine, so we have to implement an own.
-#if defined(__MINGW32__) && defined(UNICODE)
-
-#define _tWinMain wWinMain
-int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int);
-
-int main(int argc, char* argv[])
-{
-    CONTEXT("main");
-
-    STARTUPINFO startupinfo;
-    int nShowCmd = SW_SHOWNORMAL;
-
-    GetStartupInfo(&startupinfo);
-
-    if (startupinfo.dwFlags & STARTF_USESHOWWINDOW)
-        nShowCmd = startupinfo.wShowWindow;
-
-    LPWSTR cmdline = GetCommandLineW();
-
-    while(*cmdline && !_istspace((unsigned)*cmdline))
-        ++cmdline;
-
-    while(_istspace((unsigned)*cmdline))
-        ++cmdline;
-
-    return wWinMain(GetModuleHandle(NULL), 0, cmdline, nShowCmd);
-}
-
-#endif    // __MINGW && UNICODE
-
-
 static bool SetShellReadyEvent(LPCTSTR evtName)
 {
     HANDLE hEvent = OpenEvent(EVENT_MODIFY_STATE, FALSE, evtName);
@@ -1186,19 +1148,17 @@ int WINAPI _tWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPTSTR lpCmdL
 
     if (_tcsstr(ext_options,TEXT("-break"))) {
         LOG(TEXT("debugger breakpoint"));
-#ifdef _MSC_VER
-        __asm int 3
-#else
-        asm("int3");
-#endif
+        __debugbreak();
     }
 
+#ifdef _M_IX86
     // activate GDB remote debugging stub if no other debugger is running
     if (use_gdb_stub) {
         LOG(TEXT("waiting for debugger connection...\n"));
 
         initialize_gdb_stub();
     }
+#endif
 
     g_Globals.init(hInstance);
 

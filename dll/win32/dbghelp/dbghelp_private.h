@@ -26,18 +26,25 @@
 #define COM_NO_WINDOWS_H
 
 #include <stdarg.h>
+
+#ifndef DBGHELP_STATIC_LIB
 #include <windef.h>
 #include <winbase.h>
 #include <winver.h>
 #include <dbghelp.h>
 #include <objbase.h>
+#include <cvconst.h>
+#include <wine/unicode.h>
+#else
+#include <string.h>
+#include "compat.h"
+#endif
+
 //#include "oaidl.h"
 //#include "winnls.h"
 #include <wine/list.h>
-#include <wine/unicode.h>
 #include <wine/rbtree.h>
 
-#include <cvconst.h>
 
 /* #define USE_STATS */
 
@@ -356,6 +363,13 @@ struct module_format
     } u;
 };
 
+struct symt_idx_to_ptr
+{
+    struct hash_table_elt hash_elt;
+    DWORD idx;
+    const struct symt *sym;
+};
+
 extern const struct wine_rb_functions source_rb_functions DECLSPEC_HIDDEN;
 struct module
 {
@@ -380,6 +394,9 @@ struct module
     unsigned                    sorttab_size;
     struct symt_ht**            addr_sorttab;
     struct hash_table           ht_symbols;
+#ifdef __x86_64__
+    struct hash_table           ht_symaddr;
+#endif
 
     /* types */
     struct hash_table           ht_types;
@@ -675,7 +692,9 @@ extern BOOL         dwarf2_virtual_unwind(struct cpu_stack_walk* csw, DWORD_PTR 
                                           CONTEXT* context, ULONG_PTR* cfa) DECLSPEC_HIDDEN;
 
 /* stack.c */
+#ifndef DBGHELP_STATIC_LIB
 extern BOOL         sw_read_mem(struct cpu_stack_walk* csw, DWORD64 addr, void* ptr, DWORD sz) DECLSPEC_HIDDEN;
+#endif
 extern DWORD64      sw_xlat_addr(struct cpu_stack_walk* csw, ADDRESS64* addr) DECLSPEC_HIDDEN;
 extern void*        sw_table_access(struct cpu_stack_walk* csw, DWORD64 addr) DECLSPEC_HIDDEN;
 extern DWORD64      sw_module_base(struct cpu_stack_walk* csw, DWORD64 addr) DECLSPEC_HIDDEN;

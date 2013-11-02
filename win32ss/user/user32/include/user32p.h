@@ -32,6 +32,7 @@ extern HINSTANCE hImmInstance;
 extern RTL_CRITICAL_SECTION gcsUserApiHook;
 extern USERAPIHOOK guah;
 extern HINSTANCE ghmodUserApiHook;
+extern HICON hIconSmWindows, hIconWindows;
 
 #define IS_ATOM(x) \
   (((ULONG_PTR)(x) > 0x0) && ((ULONG_PTR)(x) < 0x10000))
@@ -52,7 +53,6 @@ extern const char *SPY_GetMsgName(UINT msg, HWND hWnd);
 extern const char *SPY_GetVKeyName(WPARAM wParam);
 extern void SPY_EnterMessage(INT iFlag, HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 extern void SPY_ExitMessage(INT iFlag, HWND hwnd, UINT msg, LRESULT lReturn, WPARAM wParam, LPARAM lParam);
-extern int SPY_Init(void);
 
 /* definitions for usrapihk.c */
 BOOL FASTCALL BeginIfHookedUserApiHook(VOID);
@@ -102,5 +102,6 @@ BOOL UserDrawSysMenuButton( HWND hWnd, HDC hDC, LPRECT, BOOL down );
 HWND* WIN_ListChildren (HWND hWndparent);
 VOID DeleteFrameBrushes(VOID);
 BOOL WINAPI GdiValidateHandle(HGDIOBJ);
+HANDLE FASTCALL UserGetProp(HWND hWnd, ATOM Atom);
 
 /* EOF */

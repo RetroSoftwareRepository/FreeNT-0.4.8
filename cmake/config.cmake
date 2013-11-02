@@ -10,7 +10,7 @@ set(OARCH "pentium" CACHE STRING
 set(TUNE "i686" CACHE STRING
 "Which CPU ReactOS should be optimized for.")
 
-set(OPTIMIZE "1" CACHE STRING
+set(OPTIMIZE "4" CACHE STRING
 "What level of optimization to use.
  0 = off
  1 = Default option, optimize for size (-Os) with some additional options
@@ -71,15 +71,8 @@ set(GENERATE_DEPENDENCY_GRAPH FALSE CACHE BOOL
 "Whether to create a graphml dependency of dlls.")
 
 if(MSVC)
-
 set(_PREFAST_ FALSE CACHE BOOL
 "Whether to enable PREFAST while compiling.")
 set(_VS_ANALYZE_ FALSE CACHE BOOL
 "Whether to enable static analysis while compiling.")
-
-else()
-
-set(USE_PSEH3 FALSE CACHE BOOL
-"Whether to use the new PSEH3 library (requires GCC 4.5 and newer).")
-
 endif()

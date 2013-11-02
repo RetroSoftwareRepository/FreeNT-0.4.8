@@ -167,7 +167,7 @@ MiAllocatePagesForMdl(IN PHYSICAL_ADDRESS LowAddress,
     PPHYSICAL_PAGE Pfn1;
     INT LookForZeroedPages;
     ASSERT(KeGetCurrentIrql() <= APC_LEVEL);
-    DPRINT1("ARM3-DEBUG: Being called with %I64x %I64x %I64x %lx %d %d\n", LowAddress, HighAddress, SkipBytes, TotalBytes, CacheAttribute, MdlFlags);
+    DPRINT1("ARM3-DEBUG: Being called with %I64x %I64x %I64x %lx %d %lu\n", LowAddress, HighAddress, SkipBytes, TotalBytes, CacheAttribute, MdlFlags);
 
     //
     // Convert the low address into a PFN
@@ -553,7 +553,7 @@ MmDereferencePage(PFN_NUMBER Pfn)
 
         /* It's not a ROS PFN anymore */
         Page->u4.AweAllocation = FALSE;
-        ExFreePool(MI_GET_ROS_DATA(Page));
+        ExFreePoolWithTag(MI_GET_ROS_DATA(Page), 'RsPf');
         Page->RosMmData = 0;
 
         /* Bring it back into the free list */

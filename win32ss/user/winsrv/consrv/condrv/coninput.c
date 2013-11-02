@@ -11,7 +11,7 @@
 
 #include "consrv.h"
 #include "include/conio.h"
-#include "include/conio2.h"
+#include "include/term.h"
 #include "handle.h"
 #include "lineinput.h"
 
@@ -60,8 +60,9 @@ ConioInputEventToAnsi(PCONSOLE Console, PINPUT_RECORD InputEvent)
 }
 
 NTSTATUS FASTCALL
-ConioProcessInputEvent(PCONSOLE Console,
-                       PINPUT_RECORD InputEvent)
+ConioAddInputEvent(PCONSOLE Console,
+                   PINPUT_RECORD InputEvent,
+                   BOOLEAN AppendToEnd)
 {
     ConsoleInput *ConInRec;
 
@@ -97,11 +98,21 @@ ConioProcessInputEvent(PCONSOLE Console,
     if (ConInRec == NULL) return STATUS_INSUFFICIENT_RESOURCES;
 
     ConInRec->InputEvent = *InputEvent;
-    InsertTailList(&Console->InputBuffer.InputEvents, &ConInRec->ListEntry);
+
+    if (AppendToEnd)
+    {
+        /* Append the event to the end of the queue */
+        InsertTailList(&Console->InputBuffer.InputEvents, &ConInRec->ListEntry);
+    }
+    else
+    {
+        /* Append the event to the beginning of the queue */
+        InsertHeadList(&Console->InputBuffer.InputEvents, &ConInRec->ListEntry);
+    }
 
     SetEvent(Console->InputBuffer.ActiveEvent);
     CsrNotifyWait(&Console->InputBuffer.ReadWaitQueue,
-                  WaitAny,
+                  FALSE,
                   NULL,
                   NULL);
     if (!IsListEmpty(&Console->InputBuffer.ReadWaitQueue))
@@ -110,6 +121,13 @@ ConioProcessInputEvent(PCONSOLE Console,
     }
 
     return STATUS_SUCCESS;
+}
+
+NTSTATUS FASTCALL
+ConioProcessInputEvent(PCONSOLE Console,
+                       PINPUT_RECORD InputEvent)
+{
+    return ConioAddInputEvent(Console, InputEvent, TRUE);
 }
 
 VOID FASTCALL
@@ -128,6 +146,11 @@ PurgeInputBuffer(PCONSOLE Console)
     CloseHandle(Console->InputBuffer.ActiveEvent);
 }
 
+/*
+ * This function explicitely references Console->ActiveBuffer
+ * (and also makes use of keyboard functions...).
+ * It is possible that it will move into frontends...
+ */
 VOID NTAPI
 ConDrvProcessKey(IN PCONSOLE Console,
                  IN BOOLEAN Down,
@@ -424,6 +447,7 @@ NTSTATUS NTAPI
 ConDrvWriteConsoleInput(IN PCONSOLE Console,
                         IN PCONSOLE_INPUT_BUFFER InputBuffer,
                         IN BOOLEAN Unicode,
+                        IN BOOLEAN AppendToEnd,
                         IN PINPUT_RECORD InputRecord,
                         IN ULONG NumEventsToWrite,
                         OUT PULONG NumEventsWritten OPTIONAL)
@@ -452,7 +476,7 @@ ConDrvWriteConsoleInput(IN PCONSOLE Console,
                                               &AsciiChar);
         }
 
-        Status = ConioProcessInputEvent(Console, InputRecord++);
+        Status = ConioAddInputEvent(Console, InputRecord++, AppendToEnd);
     }
 
     if (NumEventsWritten) *NumEventsWritten = i;

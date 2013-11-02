@@ -28,7 +28,7 @@ IntFreeDesktopHeap(IN PDESKTOP pdesk);
 /* Currently active desktop */
 PDESKTOP gpdeskInputDesktop = NULL;
 HDC ScreenDeviceContext = NULL;
-PTHREADINFO gptiDesktopThread;
+PTHREADINFO gptiDesktopThread = NULL;
 HCURSOR gDesktopCursor = NULL;
 
 /* OBJECT CALLBACKS **********************************************************/
@@ -235,12 +235,12 @@ static int GetSystemVersionString(LPWSTR buffer)
 
    if (versionInfo.dwMajorVersion <= 4)
       len = swprintf(buffer,
-                     L"ReactOS Version %d.%d %s Build %d",
+                     L"ReactOS Version %lu.%lu %s Build %lu",
                      versionInfo.dwMajorVersion, versionInfo.dwMinorVersion,
                      versionInfo.szCSDVersion, versionInfo.dwBuildNumber&0xFFFF);
    else
       len = swprintf(buffer,
-                     L"ReactOS %s (Build %d)",
+                     L"ReactOS %s (Build %lu)",
                      versionInfo.szCSDVersion, versionInfo.dwBuildNumber&0xFFFF);
 
    return len;
@@ -833,6 +833,9 @@ VOID co_IntShellHookNotify(WPARAM Message, WPARAM wParam, LPARAM lParam)
       TRACE("IntShellHookNotify: No desktop!\n");
       return;
    }
+
+   // Allow other devices have a shot at foreground.
+   if (Message == HSHELL_APPCOMMAND) ptiLastInput = NULL;
 
    // FIXME: System Tray Support.
 

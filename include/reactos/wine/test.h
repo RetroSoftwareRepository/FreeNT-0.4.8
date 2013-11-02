@@ -39,6 +39,10 @@
 #error wine/debug.h should not be used in Wine tests
 #endif
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #ifndef INVALID_FILE_ATTRIBUTES
 #define INVALID_FILE_ATTRIBUTES  (~0u)
 #endif
@@ -60,12 +64,14 @@ extern void winetest_start_todo( const char* platform );
 extern int winetest_loop_todo(void);
 extern void winetest_end_todo( const char* platform );
 extern int winetest_get_mainargs( char*** pargv );
+extern LONG winetest_get_failures(void);
+extern void winetest_add_failures( LONG new_failures );
 extern void winetest_wait_child_process( HANDLE process );
 
 extern const char *wine_dbgstr_wn( const WCHAR *str, int n );
 static inline const char *wine_dbgstr_w( const WCHAR *s ) { return wine_dbgstr_wn( s, -1 ); }
 
-/* strcmpW is avaiable for tests compiled under Wine, but not in standalone
+/* strcmpW is available for tests compiled under Wine, but not in standalone
  * builds under Windows, so we reimplement it under a different name. */
 static inline int winetest_strcmpW( const WCHAR *str1, const WCHAR *str2 )
 {
@@ -74,13 +80,21 @@ static inline int winetest_strcmpW( const WCHAR *str1, const WCHAR *str2 )
 }
 
 #ifdef STANDALONE
+
 #define START_TEST(name) \
   static void func_##name(void); \
   const struct test winetest_testlist[] = { { #name, func_##name }, { 0, 0 } }; \
   static void func_##name(void)
+
+#else /* STANDALONE */
+
+#ifdef __cplusplus
+#define START_TEST(name) extern "C" void func_##name(void)
 #else
 #define START_TEST(name) void func_##name(void)
 #endif
+
+#endif /* STANDALONE */
 
 #if defined(__x86_64__) && defined(__GNUC__) && defined(__WINE_USE_MSVCRT)
 #define __winetest_cdecl __cdecl
@@ -123,7 +137,13 @@ extern void __winetest_cdecl winetest_trace( const char *msg, ... );
 #define todo(platform) for (winetest_start_todo(platform); \
                             winetest_loop_todo(); \
                             winetest_end_todo(platform))
+
+#define todo_ros       todo("reactos")
+#ifdef USE_WINE_TODOS
+#define todo_wine      todo_ros
+#else
 #define todo_wine      todo("wine")
+#endif
 
 
 #ifdef NONAMELESSUNION
@@ -390,7 +410,7 @@ void __winetest_cdecl winetest_win_skip( const char *msg, ... )
 {
     __winetest_va_list valist;
     __winetest_va_start(valist, msg);
-    if (strcmp(winetest_platform, "windows") == 0)
+    if ((strcmp(winetest_platform, "windows") == 0) || (strcmp(winetest_platform, "reactos") == 0))
         winetest_vskip(msg, valist);
     else
         winetest_vok(0, msg, valist);
@@ -426,6 +446,17 @@ int winetest_get_mainargs( char*** pargv )
 {
     *pargv = winetest_argv;
     return winetest_argc;
+}
+
+LONG winetest_get_failures(void)
+{
+    return failures;
+}
+
+void winetest_add_failures( LONG new_failures )
+{
+    while (new_failures-- > 0)
+        InterlockedIncrement( &failures );
 }
 
 void winetest_wait_child_process( HANDLE process )
@@ -668,5 +699,9 @@ int main( int argc, char **argv )
 #define ok_int(expression, result) ok_dec(expression, result)
 #define ok_ntstatus(status, expected) ok_hex(status, expected)
 #define ok_hdl ok_ptr
+
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 
 #endif  /* __WINE_WINE_TEST_H */

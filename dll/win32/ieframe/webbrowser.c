@@ -259,8 +259,8 @@ static HRESULT WINAPI WebBrowser_GoBack(IWebBrowser2 *iface)
 static HRESULT WINAPI WebBrowser_GoForward(IWebBrowser2 *iface)
 {
     WebBrowser *This = impl_from_IWebBrowser2(iface);
-    FIXME("(%p)\n", This);
-    return E_NOTIMPL;
+    TRACE("(%p)\n", This);
+    return go_forward(&This->doc_host);
 }
 
 static HRESULT WINAPI WebBrowser_GoHome(IWebBrowser2 *iface)
@@ -565,7 +565,7 @@ static HRESULT WINAPI WebBrowser_get_Name(IWebBrowser2 *iface, BSTR *Name)
     return S_OK;
 }
 
-static HRESULT WINAPI WebBrowser_get_HWND(IWebBrowser2 *iface, LONG *pHWND)
+static HRESULT WINAPI WebBrowser_get_HWND(IWebBrowser2 *iface, SHANDLE_PTR *pHWND)
 {
     WebBrowser *This = impl_from_IWebBrowser2(iface);
 

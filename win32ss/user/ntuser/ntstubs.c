@@ -546,7 +546,7 @@ APIENTRY
 NtUserConsoleControl(
     IN CONSOLECONTROL ConsoleCtrl,
     IN PVOID ConsoleCtrlInfo,
-    IN DWORD ConsoleCtrlInfoLength)
+    IN ULONG ConsoleCtrlInfoLength)
 {
     NTSTATUS Status = STATUS_SUCCESS;
 
@@ -562,9 +562,32 @@ NtUserConsoleControl(
         {
             _SEH2_TRY
             {
-                ProbeForRead(ConsoleCtrlInfo, ConsoleCtrlInfoLength, 1);
                 ASSERT(ConsoleCtrlInfoLength == sizeof(ATOM));
+                ProbeForRead(ConsoleCtrlInfo, ConsoleCtrlInfoLength, 1);
                 gaGuiConsoleWndClass = *(ATOM*)ConsoleCtrlInfo;
+            }
+            _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+            {
+                Status = _SEH2_GetExceptionCode();
+            }
+            _SEH2_END;
+
+            break;
+        }
+
+        case ConsoleMakePalettePublic:
+        {
+            _SEH2_TRY
+            {
+                ASSERT(ConsoleCtrlInfoLength == sizeof(HPALETTE));
+                ProbeForRead(ConsoleCtrlInfo, ConsoleCtrlInfoLength, 1);
+                /*
+                 * Make the palette handle public - Use the extended
+                 * function introduced by Timo in revision 60725.
+                 */
+                GreSetObjectOwnerEx(*(HPALETTE*)ConsoleCtrlInfo,
+                                    GDI_OBJ_HMGR_PUBLIC,
+                                    GDIOBJFLAG_IGNOREPID);
             }
             _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
             {
@@ -577,6 +600,8 @@ NtUserConsoleControl(
 
         case ConsoleAcquireDisplayOwnership:
         {
+            ERR("NtUserConsoleControl - ConsoleAcquireDisplayOwnership is UNIMPLEMENTED\n");
+            Status = STATUS_NOT_IMPLEMENTED;
             break;
         }
 
@@ -707,16 +732,16 @@ NtUserHardErrorControl(
     return 0;
 }
 
-DWORD
-APIENTRY
+BOOL
+NTAPI
 NtUserNotifyProcessCreate(
-    DWORD dwUnknown1,
-    DWORD dwUnknown2,
-    DWORD dwUnknown3,
-    DWORD dwUnknown4)
+    HANDLE NewProcessId,
+    HANDLE SourceThreadId,
+    DWORD dwUnknown,
+    ULONG CreateFlags)
 {
     STUB;
-    return 0;
+    return FALSE;
 }
 
 NTSTATUS

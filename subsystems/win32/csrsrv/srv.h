@@ -49,12 +49,14 @@
 #define SESSION_ROOT        L"\\Sessions"
 #define GLOBAL_ROOT         L"\\GLOBAL??"
 #define SYMLINK_NAME        L"SymbolicLink"
-#define SB_PORT_NAME        L"SbAbiPort"
+#define SB_PORT_NAME        L"SbApiPort"
 #define CSR_PORT_NAME       L"ApiPort"
 #define UNICODE_PATH_SEP    L"\\"
 
 #define ROUND_UP(n, align) ROUND_DOWN(((ULONG)n) + (align) - 1, (align))
 #define ROUND_DOWN(n, align) (((ULONG)n) & ~((align) - 1l))
+#define InterlockedIncrementUL(Value) _InterlockedIncrement((PLONG)Value)
+#define InterlockedDecrementUL(Value) _InterlockedDecrement((PLONG)Value)
 
 #endif // _SRV_H
 

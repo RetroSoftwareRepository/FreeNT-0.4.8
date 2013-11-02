@@ -351,7 +351,7 @@ GetConsoleFontInfo(HANDLE hConsoleOutput,
                    DWORD nFontCount,
                    PCONSOLE_FONT_INFO lpConsoleFontInfo)
 {
-    DPRINT1("GetConsoleFontInfo(0x%x, %d, %d, 0x%x) UNIMPLEMENTED!\n", hConsoleOutput, bMaximumWindow, nFontCount, lpConsoleFontInfo);
+    DPRINT1("GetConsoleFontInfo(0x%p, %d, %lu, 0x%p) UNIMPLEMENTED!\n", hConsoleOutput, bMaximumWindow, nFontCount, lpConsoleFontInfo);
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
     return 0;
 }
@@ -366,7 +366,7 @@ GetConsoleFontSize(HANDLE hConsoleOutput,
                    DWORD nFont)
 {
     COORD Empty = {0, 0};
-    DPRINT1("GetConsoleFontSize(0x%x, 0x%x) UNIMPLEMENTED!\n", hConsoleOutput, nFont);
+    DPRINT1("GetConsoleFontSize(0x%p, 0x%x) UNIMPLEMENTED!\n", hConsoleOutput, nFont);
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
     return Empty;
 }
@@ -385,7 +385,7 @@ GetConsoleHardwareState(HANDLE hConsoleOutput,
     CONSOLE_API_MESSAGE ApiMessage;
     PCONSOLE_GETSETHWSTATE HardwareStateRequest = &ApiMessage.Data.HardwareStateRequest;
 
-    DPRINT1("GetConsoleHardwareState(%d, 0x%p) UNIMPLEMENTED!\n", Flags, State);
+    DPRINT1("GetConsoleHardwareState(%lu, 0x%p) UNIMPLEMENTED!\n", Flags, State);
 
     if (State == NULL)
     {
@@ -430,7 +430,7 @@ GetCurrentConsoleFont(HANDLE hConsoleOutput,
                       BOOL bMaximumWindow,
                       PCONSOLE_FONT_INFO lpConsoleCurrentFont)
 {
-    DPRINT1("GetCurrentConsoleFont(0x%x, 0x%x, 0x%x) UNIMPLEMENTED!\n", hConsoleOutput, bMaximumWindow, lpConsoleCurrentFont);
+    DPRINT1("GetCurrentConsoleFont(0x%p, 0x%x, 0x%p) UNIMPLEMENTED!\n", hConsoleOutput, bMaximumWindow, lpConsoleCurrentFont);
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
     return 0;
 }
@@ -613,7 +613,7 @@ WINAPI
 SetConsoleFont(HANDLE hConsoleOutput,
                DWORD nFont)
 {
-    DPRINT1("SetConsoleFont(0x%x, %d) UNIMPLEMENTED!\n", hConsoleOutput, nFont);
+    DPRINT1("SetConsoleFont(0x%p, %lu) UNIMPLEMENTED!\n", hConsoleOutput, nFont);
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
     return FALSE;
 }
@@ -632,7 +632,7 @@ SetConsoleHardwareState(HANDLE hConsoleOutput,
     CONSOLE_API_MESSAGE ApiMessage;
     PCONSOLE_GETSETHWSTATE HardwareStateRequest = &ApiMessage.Data.HardwareStateRequest;
 
-    DPRINT1("SetConsoleHardwareState(%d, %d) UNIMPLEMENTED!\n", Flags, State);
+    DPRINT1("SetConsoleHardwareState(%lu, %lu) UNIMPLEMENTED!\n", Flags, State);
 
     HardwareStateRequest->OutputHandle = hConsoleOutput;
     HardwareStateRequest->State = State;
@@ -677,7 +677,7 @@ WINAPI
 SetConsoleMaximumWindowSize(HANDLE hConsoleOutput,
                             COORD dwMaximumSize)
 {
-    DPRINT1("SetConsoleMaximumWindowSize(0x%x, {%d, %d}) does nothing\n",
+    DPRINT1("SetConsoleMaximumWindowSize(0x%p, {%d, %d}) does nothing\n",
             hConsoleOutput, dwMaximumSize.X, dwMaximumSize.Y);
     return TRUE;
 }
@@ -711,17 +711,35 @@ SetConsoleMenuClose(BOOL bEnable)
 
 
 /*
- * @unimplemented (Undocumented)
+ * @implemented (Undocumented)
+ * @note See http://comments.gmane.org/gmane.comp.lang.harbour.devel/27844
+ *       Usage example: https://github.com/harbour/core/commit/d79a1b7b812cbde6ddf718ebfd6939a24f633e52
  */
 BOOL
 WINAPI
-SetConsolePalette(DWORD Unknown0,
-                  DWORD Unknown1,
-                  DWORD Unknown2)
+SetConsolePalette(HANDLE hConsoleOutput,
+                  HPALETTE hPalette,
+                  UINT dwUsage)
 {
-    DPRINT1("SetConsolePalette(0x%x, 0x%x, 0x%x) UNIMPLEMENTED!\n", Unknown0, Unknown1, Unknown2);
-    SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
-    return FALSE;
+    NTSTATUS Status;
+    CONSOLE_API_MESSAGE ApiMessage;
+    PCONSOLE_SETPALETTE SetPaletteRequest = &ApiMessage.Data.SetPaletteRequest;
+
+    SetPaletteRequest->OutputHandle  = hConsoleOutput;
+    SetPaletteRequest->PaletteHandle = hPalette;
+    SetPaletteRequest->Usage         = dwUsage;
+
+    Status = CsrClientCallServer((PCSR_API_MESSAGE)&ApiMessage,
+                                 NULL,
+                                 CSR_CREATE_API_NUMBER(CONSRV_SERVERDLL_INDEX, ConsolepSetPalette),
+                                 sizeof(CONSOLE_SETPALETTE));
+    if (!NT_SUCCESS(Status))
+    {
+        BaseSetLastNTError(Status);
+        return FALSE;
+    }
+
+    return TRUE;
 }
 
 /*
@@ -783,38 +801,6 @@ VerifyConsoleIoHandle(HANDLE Handle)
     }
 
     return TRUE;
-}
-
-
-/*
- * @unimplemented
- */
-DWORD
-WINAPI
-WriteConsoleInputVDMA(DWORD Unknown0,
-                      DWORD Unknown1,
-                      DWORD Unknown2,
-                      DWORD Unknown3)
-{
-    DPRINT1("WriteConsoleInputVDMA(0x%x, 0x%x, 0x%x, 0x%x) UNIMPLEMENTED!\n", Unknown0, Unknown1, Unknown2, Unknown3);
-    SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
-    return 0;
-}
-
-
-/*
- * @unimplemented
- */
-DWORD
-WINAPI
-WriteConsoleInputVDMW(DWORD Unknown0,
-                      DWORD Unknown1,
-                      DWORD Unknown2,
-                      DWORD Unknown3)
-{
-    DPRINT1("WriteConsoleInputVDMW(0x%x, 0x%x, 0x%x, 0x%x) UNIMPLEMENTED!\n", Unknown0, Unknown1, Unknown2, Unknown3);
-    SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
-    return 0;
 }
 
 
@@ -1250,7 +1236,7 @@ BOOL
 WINAPI
 GetNumberOfConsoleMouseButtons(LPDWORD lpNumberOfMouseButtons)
 {
-    DPRINT1("GetNumberOfConsoleMouseButtons(0x%x) UNIMPLEMENTED!\n", lpNumberOfMouseButtons);
+    DPRINT1("GetNumberOfConsoleMouseButtons(0x%p) UNIMPLEMENTED!\n", lpNumberOfMouseButtons);
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
     return FALSE;
 }

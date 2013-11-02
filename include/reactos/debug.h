@@ -23,6 +23,10 @@
 #error Please include SDK first.
 #endif
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 ULONG
 __cdecl
 DbgPrint(
@@ -36,7 +40,7 @@ __cdecl
 DbgPrintEx(
     _In_ ULONG ComponentId,
     _In_ ULONG Level,
-    _In_z_ _Printf_format_string_ PCCH Format,
+    _In_z_ _Printf_format_string_ PCSTR Format,
     ...
 );
 
@@ -45,35 +49,39 @@ NTSYSAPI
 VOID
 NTAPI
 RtlAssert(
-    PVOID FailedAssertion,
-    PVOID FileName,
-    ULONG LineNumber,
-    PCHAR Message
+    _In_ PVOID FailedAssertion,
+    _In_ PVOID FileName,
+    _In_ ULONG LineNumber,
+    _In_opt_z_ PCHAR Message
 );
+
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 
 #endif /* !defined(_RTLFUNCS_H) && !defined(_NTDDK_) */
 
 #ifndef assert
-#ifndef NASSERT
+#if DBG && !defined(NASSERT)
 #define assert(x) if (!(x)) { RtlAssert((PVOID)#x, (PVOID)__FILE__, __LINE__, ""); }
 #else
-#define assert(x)
+#define assert(x) ((VOID) 0)
 #endif
 #endif
 
 #ifndef ASSERT
-#ifndef NASSERT
+#if DBG && !defined(NASSERT)
 #define ASSERT(x) if (!(x)) { RtlAssert((PVOID)#x, (PVOID)__FILE__, __LINE__, ""); }
 #else
-#define ASSERT(x)
+#define ASSERT(x) ((VOID) 0)
 #endif
 #endif
 
 #ifndef ASSERTMSG
-#ifndef NASSERT
-#define ASSERTMSG(x,m) if (!(x)) { RtlAssert((PVOID)#x, __FILE__, __LINE__, m); }
+#if DBG && !defined(NASSERT)
+#define ASSERTMSG(m, x) if (!(x)) { RtlAssert((PVOID)#x, __FILE__, __LINE__, m); }
 #else
-#define ASSERTMSG(x)
+#define ASSERTMSG(m, x) ((VOID) 0)
 #endif
 #endif
 
@@ -221,5 +229,19 @@ do {                                                        \
 #define ASSERT_IRQL_LESS_OR_EQUAL(x) ASSERT(KeGetCurrentIrql()<=(x))
 #define ASSERT_IRQL_EQUAL(x) ASSERT(KeGetCurrentIrql()==(x))
 #define ASSERT_IRQL_LESS(x) ASSERT(KeGetCurrentIrql()<(x))
+
+#define __STRING2__(x) #x
+#define __STRING__(x) __STRING2__(x)
+#define __STRLINE__ __STRING__(__LINE__)
+
+#define __TOKENPASTE2__(x, y) x ## y
+#define __TOKENPASTE__(x, y) __TOKENPASTE2__(x, y)
+
+#ifdef _MSC_VER
+#define _WARN(msg) __pragma(message("WARNING! Line " __STRLINE__ ": " msg))
+#else
+#define _WARN1(_func1, _func2, _msg) void __attribute__((warning (_msg))) _func1(void); void __attribute__((used)) _func2(void) { _func1(); }
+#define _WARN(_msg) _WARN1(__TOKENPASTE__(__warn_func1__, __LINE__), __TOKENPASTE__(__warn_func2__, __LINE__), _msg)
+#endif
 
 #endif /* __INTERNAL_DEBUG */

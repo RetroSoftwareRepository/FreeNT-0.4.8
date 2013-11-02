@@ -54,7 +54,6 @@ FowardUrbToRootHub(
     OUT PVOID OutParameter1,
     OUT PVOID OutParameter2)
 {
-    NTSTATUS Status;
     PIRP ForwardIrp;
     IO_STATUS_BLOCK IoStatus;
     PIO_STACK_LOCATION ForwardStack, CurrentStack;
@@ -115,7 +114,7 @@ FowardUrbToRootHub(
                            TRUE,
                            TRUE);
 
-    Status = IoCallDriver(RootHubDeviceObject, ForwardIrp);
+    IoCallDriver(RootHubDeviceObject, ForwardIrp);
 
     //
     // Always return pending as the completion routine will take care of it
@@ -194,8 +193,6 @@ USBHUB_PdoHandleInternalDeviceControl(
     {
         case IOCTL_INTERNAL_USB_GET_PARENT_HUB_INFO:
         {
-            PHUB_DEVICE_EXTENSION DeviceExtension;
-
             DPRINT("IOCTL_INTERNAL_USB_GET_PARENT_HUB_INFO\n");
             if (Irp->AssociatedIrp.SystemBuffer == NULL
                 || Stack->Parameters.DeviceIoControl.OutputBufferLength != sizeof(PVOID))
@@ -205,7 +202,6 @@ USBHUB_PdoHandleInternalDeviceControl(
             else
             {
                 PVOID* pHubPointer;
-                DeviceExtension = (PHUB_DEVICE_EXTENSION)DeviceObject->DeviceExtension;
 
                 pHubPointer = (PVOID*)Irp->AssociatedIrp.SystemBuffer;
                 // FIXME
@@ -241,22 +237,22 @@ USBHUB_PdoHandleInternalDeviceControl(
                 // Debugging only
                 //
                 case URB_FUNCTION_GET_DESCRIPTOR_FROM_DEVICE:
-                    DPRINT1("URB_FUNCTION_GET_DESCRIPTOR_FROM_DEVICE\n");
+                    DPRINT("URB_FUNCTION_GET_DESCRIPTOR_FROM_DEVICE\n");
                     break;
                 case URB_FUNCTION_CLASS_DEVICE:
-                    DPRINT1("URB_FUNCTION_CLASS_DEVICE\n");
+                    DPRINT("URB_FUNCTION_CLASS_DEVICE\n");
                     break;
                 case URB_FUNCTION_GET_STATUS_FROM_DEVICE:
-                    DPRINT1("URB_FUNCTION_GET_STATUS_FROM_DEVICE\n");
+                    DPRINT("URB_FUNCTION_GET_STATUS_FROM_DEVICE\n");
                     break;
                 case URB_FUNCTION_SELECT_CONFIGURATION:
-                    DPRINT1("URB_FUNCTION_SELECT_CONFIGURATION\n");
+                    DPRINT("URB_FUNCTION_SELECT_CONFIGURATION\n");
                     break;
                 case URB_FUNCTION_SELECT_INTERFACE:
-                    DPRINT1("URB_FUNCTION_SELECT_INTERFACE\n");
+                    DPRINT("URB_FUNCTION_SELECT_INTERFACE\n");
                     break;
                 case URB_FUNCTION_CLASS_OTHER:
-                    DPRINT1("URB_FUNCTION_CLASS_OTHER\n");
+                    DPRINT("URB_FUNCTION_CLASS_OTHER\n");
                     break;
                 case URB_FUNCTION_BULK_OR_INTERRUPT_TRANSFER:
                 {
@@ -277,7 +273,7 @@ USBHUB_PdoHandleInternalDeviceControl(
 
                 }
                 case URB_FUNCTION_CLASS_INTERFACE:
-                    DPRINT1("URB_FUNCTION_CLASS_INTERFACE\n");
+                    DPRINT("URB_FUNCTION_CLASS_INTERFACE\n");
                     break;
                 case URB_FUNCTION_VENDOR_DEVICE:
                     DPRINT("URB_FUNCTION_VENDOR_DEVICE\n");
@@ -497,10 +493,8 @@ USBHUB_PdoQueryDeviceText(
     PUNICODE_STRING SourceString = NULL;
     PWCHAR ReturnString = NULL;
     NTSTATUS Status = STATUS_SUCCESS;
-    LCID LocaleId;
 
     DeviceTextType = IoGetCurrentIrpStackLocation(Irp)->Parameters.QueryDeviceText.DeviceTextType;
-    LocaleId = IoGetCurrentIrpStackLocation(Irp)->Parameters.QueryDeviceText.LocaleId;
     ChildDeviceExtension = (PHUB_CHILDDEVICE_EXTENSION)DeviceObject->DeviceExtension;
 
     //

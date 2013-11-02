@@ -11,7 +11,7 @@ typedef struct _DESKTOP
     PWND spwndTray;
     PWND spwndMessage;
     PWND spwndTooltip;
-    PSECTION_OBJECT hsectionDesktop;
+    PVOID hsectionDesktop;
     PWIN32HEAP pheapDesktop;
     ULONG_PTR ulHeapSize;
     LIST_ENTRY PtiList;
@@ -69,9 +69,10 @@ typedef struct _DESKTOP
                             DESKTOP_SWITCHDESKTOP    | \
                             DESKTOP_WRITEOBJECTS
 
-extern PDESKTOP InputDesktop;
+extern PDESKTOP gpdeskInputDesktop;
 extern PCLS DesktopWindowClass;
 extern HDC ScreenDeviceContext;
+extern PTHREADINFO gptiForeground;
 extern PTHREADINFO gptiDesktopThread;
 
 typedef struct _SHELL_HOOK_WINDOW

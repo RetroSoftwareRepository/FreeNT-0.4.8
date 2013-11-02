@@ -11,30 +11,151 @@
 #define NDEBUG
 #include <debug.h>
 
-DWORD WINAPI
-KeyboardClassInstaller(
-	IN DI_FUNCTION InstallFunction,
-	IN HDEVINFO DeviceInfoSet,
-	IN PSP_DEVINFO_DATA DeviceInfoData OPTIONAL)
+
+/*
+ * @unimplemented
+ */
+DWORD
+WINAPI
+ComputerClassInstaller(
+    IN DI_FUNCTION InstallFunction,
+    IN HDEVINFO DeviceInfoSet,
+    IN PSP_DEVINFO_DATA DeviceInfoData OPTIONAL)
 {
-	switch (InstallFunction)
-	{
-		default:
-			DPRINT("Install function %u ignored\n", InstallFunction);
-			return ERROR_DI_DO_DEFAULT;
-	}
+    switch (InstallFunction)
+    {
+        default:
+            DPRINT1("Install function %u ignored\n", InstallFunction);
+            return ERROR_DI_DO_DEFAULT;
+    }
 }
 
-DWORD WINAPI
-MouseClassInstaller(
-	IN DI_FUNCTION InstallFunction,
-	IN HDEVINFO DeviceInfoSet,
-	IN PSP_DEVINFO_DATA DeviceInfoData OPTIONAL)
+
+/*
+ * @unimplemented
+ */
+DWORD
+WINAPI
+DeviceBayClassInstaller(
+    IN DI_FUNCTION InstallFunction,
+    IN HDEVINFO DeviceInfoSet,
+    IN PSP_DEVINFO_DATA DeviceInfoData OPTIONAL)
 {
-	switch (InstallFunction)
-	{
-		default:
-			DPRINT("Install function %u ignored\n", InstallFunction);
-			return ERROR_DI_DO_DEFAULT;
-	}
+    switch (InstallFunction)
+    {
+        default:
+            DPRINT("Install function %u ignored\n", InstallFunction);
+            return ERROR_DI_DO_DEFAULT;
+    }
 }
+
+
+/*
+ * @implemented
+ */
+DWORD
+WINAPI
+HdcClassInstaller(
+    IN DI_FUNCTION InstallFunction,
+    IN HDEVINFO DeviceInfoSet,
+    IN PSP_DEVINFO_DATA DeviceInfoData OPTIONAL)
+{
+    return ERROR_DI_DO_DEFAULT;
+}
+
+
+/*
+ * @unimplemented
+ */
+DWORD
+WINAPI
+KeyboardClassInstaller(
+    IN DI_FUNCTION InstallFunction,
+    IN HDEVINFO DeviceInfoSet,
+    IN PSP_DEVINFO_DATA DeviceInfoData OPTIONAL)
+{
+    switch (InstallFunction)
+    {
+        default:
+            DPRINT("Install function %u ignored\n", InstallFunction);
+            return ERROR_DI_DO_DEFAULT;
+    }
+}
+
+
+/*
+ * @unimplemented
+ */
+DWORD
+WINAPI
+MouseClassInstaller(
+    IN DI_FUNCTION InstallFunction,
+    IN HDEVINFO DeviceInfoSet,
+    IN PSP_DEVINFO_DATA DeviceInfoData OPTIONAL)
+{
+    switch (InstallFunction)
+    {
+        default:
+            DPRINT("Install function %u ignored\n", InstallFunction);
+            return ERROR_DI_DO_DEFAULT;
+    }
+}
+
+
+/*
+ * @unimplemented
+ */
+DWORD
+WINAPI
+NtApmClassInstaller(
+    IN DI_FUNCTION InstallFunction,
+    IN HDEVINFO DeviceInfoSet,
+    IN PSP_DEVINFO_DATA DeviceInfoData OPTIONAL)
+{
+    switch (InstallFunction)
+    {
+        default:
+            DPRINT("Install function %u ignored\n", InstallFunction);
+            return ERROR_DI_DO_DEFAULT;
+    }
+}
+
+
+/*
+ * @unimplemented
+ */
+DWORD
+WINAPI
+ScsiClassInstaller(
+    IN DI_FUNCTION InstallFunction,
+    IN HDEVINFO DeviceInfoSet,
+    IN PSP_DEVINFO_DATA DeviceInfoData OPTIONAL)
+{
+    switch (InstallFunction)
+    {
+        default:
+            DPRINT("Install function %u ignored\n", InstallFunction);
+            return ERROR_DI_DO_DEFAULT;
+    }
+}
+
+
+/*
+ * @unimplemented
+ */
+DWORD
+WINAPI
+TapeClassInstaller(
+    IN DI_FUNCTION InstallFunction,
+    IN HDEVINFO DeviceInfoSet,
+    IN PSP_DEVINFO_DATA DeviceInfoData OPTIONAL)
+{
+    switch (InstallFunction)
+    {
+        default:
+            DPRINT("Install function %u ignored\n", InstallFunction);
+            return ERROR_DI_DO_DEFAULT;
+    }
+}
+
+/* EOF */

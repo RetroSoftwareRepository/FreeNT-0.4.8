@@ -371,7 +371,7 @@ CsrInitializeProcessStructure(VOID)
     CsrRootProcess->ClientId = NtCurrentTeb()->ClientId;
 
     /* Initialize the Thread Hash List */
-    for (i = 0; i < 256; i++) InitializeListHead(&CsrThreadHashTable[i]);
+    for (i = 0; i < NUMBER_THREAD_HASH_BUCKETS; i++) InitializeListHead(&CsrThreadHashTable[i]);
 
     /* Initialize the Wait Lock */
     return RtlInitializeCriticalSection(&CsrWaitListsLock);
@@ -690,7 +690,15 @@ CsrCreateProcess(IN HANDLE hProcess,
     CsrThread->Flags = 0;
 
     /* Insert the Thread into the Process */
-    CsrInsertThread(CsrProcess, CsrThread);
+    Status = CsrInsertThread(CsrProcess, CsrThread);
+    if (!NT_SUCCESS(Status))
+    {
+        /* Bail out */
+        CsrDeallocateProcess(CsrProcess);
+        CsrDeallocateThread(CsrThread);
+        CsrReleaseProcessLock();
+        return Status;
+    }
 
     /* Reference the session */
     CsrReferenceNtSession(NtSession);
@@ -732,7 +740,7 @@ NTAPI
 CsrDebugProcess(IN PCSR_PROCESS CsrProcess)
 {
     /* CSR does not handle debugging anymore */
-    DPRINT("CSRSRV: %s(%08lx) called\n", __FUNCTION__, CsrProcess);
+    DPRINT("CSRSRV: %s(0x%p) called\n", __FUNCTION__, CsrProcess);
     return STATUS_UNSUCCESSFUL;
 }
 
@@ -756,7 +764,7 @@ NTAPI
 CsrDebugProcessStop(IN PCSR_PROCESS CsrProcess)
 {
     /* CSR does not handle debugging anymore */
-    DPRINT("CSRSRV: %s(%08lx) called\n", __FUNCTION__, CsrProcess);
+    DPRINT("CSRSRV: %s(0x%p) called\n", __FUNCTION__, CsrProcess);
     return STATUS_UNSUCCESSFUL;
 }
 
@@ -1382,7 +1390,7 @@ CsrEnumProcesses(IN CSRSS_ENUM_PROCESS_PROC EnumProc,
 
     /* Acquire process lock */
     CsrAcquireProcessLock();
-    
+
     /* Get the list pointers */
     NextEntry = CsrRootProcess->ListLink.Flink;
     while (NextEntry != &CsrRootProcess->ListLink)
@@ -1397,13 +1405,13 @@ CsrEnumProcesses(IN CSRSS_ENUM_PROCESS_PROC EnumProc,
         CsrProcess->Flags &= ~CsrProcessSkipShutdown;
         CsrProcess->ShutdownFlags = 0;
     }
-    
+
     /* Set shudown Priority */
     CsrSetToShutdownPriority();
 
     /* Loop all processes */
     //DPRINT1("Enumerating for LUID: %lx %lx\n", CallerLuid->HighPart, CallerLuid->LowPart);
-    
+
     /* Start looping */
     while (TRUE)
     {

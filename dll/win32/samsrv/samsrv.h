@@ -9,6 +9,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <limits.h>
 #define WIN32_NO_STATUS
 #define _INC_WINDOWS
 #define COM_NO_WINDOWS_H
@@ -120,6 +121,7 @@ typedef struct _SAM_USER_FIXED_DATA
 extern PGENERIC_MAPPING pServerMapping;
 extern ENCRYPTED_NT_OWF_PASSWORD EmptyNtHash;
 extern ENCRYPTED_LM_OWF_PASSWORD EmptyLmHash;
+extern RTL_RESOURCE SampResource;
 
 
 /* alias.c */
@@ -138,6 +140,14 @@ NTSTATUS
 NTAPI
 SampRemoveMemberFromAlias(IN PSAM_DB_OBJECT AliasObject,
                           IN PRPC_SID MemberId);
+
+NTSTATUS
+SampGetMembersInAlias(IN PSAM_DB_OBJECT AliasObject,
+                      OUT PULONG MemberCount,
+                      OUT PSAMPR_SID_INFORMATION *MemberArray);
+
+NTSTATUS
+SampRemoveAllMembersFromAlias(IN PSAM_DB_OBJECT AliasObject);
 
 
 /* database.c */
@@ -192,8 +202,12 @@ SampGetObjectAttribute(PSAM_DB_OBJECT DbObject,
 NTSTATUS
 SampGetObjectAttributeString(PSAM_DB_OBJECT DbObject,
                              LPWSTR AttributeName,
-                             RPC_UNICODE_STRING *String);
+                             PRPC_UNICODE_STRING String);
 
+NTSTATUS
+SampSetObjectAttributeString(PSAM_DB_OBJECT DbObject,
+                             LPWSTR AttributeName,
+                             PRPC_UNICODE_STRING String);
 
 /* domain.c */
 
@@ -216,6 +230,10 @@ NTSTATUS
 SampRemoveMemberFromAllAliases(IN PSAM_DB_OBJECT DomainObject,
                                IN PRPC_SID MemberSid);
 
+NTSTATUS
+SampCreateAccountSid(IN PSAM_DB_OBJECT DomainObject,
+                     IN ULONG ulRelativeId,
+                     IN OUT PSID *AccountSid);
 
 /* group.h */
 
@@ -237,13 +255,13 @@ SampRemoveMemberFromGroup(IN PSAM_DB_OBJECT GroupObject,
 /* registry.h */
 
 NTSTATUS
-SampRegCloseKey(IN HANDLE KeyHandle);
+SampRegCloseKey(IN OUT PHANDLE KeyHandle);
 
 NTSTATUS
 SampRegCreateKey(IN HANDLE ParentKeyHandle,
                  IN LPCWSTR KeyName,
                  IN ACCESS_MASK DesiredAccess,
-                 OUT HANDLE KeyHandle);
+                 OUT PHANDLE KeyHandle);
 
 NTSTATUS
 SampRegDeleteKey(IN HANDLE ParentKeyHandle,
@@ -259,7 +277,7 @@ NTSTATUS
 SampRegOpenKey(IN HANDLE ParentKeyHandle,
                IN LPCWSTR KeyName,
                IN ACCESS_MASK DesiredAccess,
-               OUT HANDLE KeyHandle);
+               OUT PHANDLE KeyHandle);
 
 NTSTATUS
 SampRegQueryKeyInfo(IN HANDLE KeyHandle,
@@ -306,6 +324,26 @@ NTSTATUS
 SampCreateServerSD(OUT PSECURITY_DESCRIPTOR *ServerSd,
                    OUT PULONG Size);
 
+NTSTATUS
+SampCreateBuiltinDomainSD(OUT PSECURITY_DESCRIPTOR *DomainSd,
+                          OUT PULONG Size);
+
+NTSTATUS
+SampCreateAccountDomainSD(OUT PSECURITY_DESCRIPTOR *DomainSd,
+                          OUT PULONG Size);
+
+NTSTATUS
+SampCreateAliasSD(OUT PSECURITY_DESCRIPTOR *AliasSd,
+                  OUT PULONG Size);
+
+NTSTATUS
+SampCreateGroupSD(OUT PSECURITY_DESCRIPTOR *GroupSd,
+                  OUT PULONG Size);
+
+NTSTATUS
+SampCreateUserSD(IN PSID UserSid,
+                 OUT PSECURITY_DESCRIPTOR *UserSd,
+                 OUT PULONG Size);
 
 /* setup.c */
 
@@ -379,6 +417,10 @@ AppendRidToSid(PSID SrcSid,
 NTSTATUS
 SampGetRidFromSid(IN PSID Sid,
                   OUT PULONG Rid);
+
+NTSTATUS
+SampCheckAccountName(IN PRPC_UNICODE_STRING AccountName,
+                     IN USHORT MaxLength);
 
 
 /* Undocumented advapi32 functions */

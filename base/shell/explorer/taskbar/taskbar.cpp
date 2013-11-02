@@ -133,7 +133,6 @@ LRESULT TaskBar::Init(LPCREATESTRUCT pcs)
 	//SetWindowFont(_htoolbar, GetStockFont(ANSI_VAR_FONT), FALSE);
 	//SendMessage(_htoolbar, TB_SETPADDING, 0, MAKELPARAM(8,8));
 
-#ifndef __MINGW32__	// TBMETRICS missing in MinGW (as of 20.09.2005)
 	 // set metrics for the Taskbar toolbar to enable button spacing
 	TBMETRICS metrics;
 
@@ -145,7 +144,6 @@ LRESULT TaskBar::Init(LPCREATESTRUCT pcs)
 	metrics.cyButtonSpacing = 3;
 
 	SendMessage(_htoolbar, TB_SETMETRICS, 0, (LPARAM)&metrics);
-#endif
 
 	_next_id = IDC_FIRST_APP;
 
@@ -264,11 +262,9 @@ int TaskBar::Notify(int id, NMHDR* pnmh)
 
 				ActivateApp(it, false, false);	// don't restore minimized windows on right button click
 
-#ifndef __MINGW32__	// SHRestricted() missing in MinGW (as of 29.10.2003)
 				static DynamicFct<DWORD(STDAPICALLTYPE*)(RESTRICTIONS)> pSHRestricted(TEXT("SHELL32"), "SHRestricted");
 
 				if (pSHRestricted && !(*pSHRestricted)(REST_NOTRAYCONTEXTMENU))
-#endif
 					ShowAppSystemMenu(it);
 			}
 			break;}
@@ -328,13 +324,13 @@ HICON get_window_icon_small(HWND hwnd)
 {
 	HICON hIcon = 0;
 
-	SendMessageTimeout(hwnd, WM_GETICON, ICON_SMALL2, 0, SMTO_ABORTIFHUNG, 1000, (LPDWORD)&hIcon);
+	SendMessageTimeout(hwnd, WM_GETICON, ICON_SMALL2, 0, SMTO_ABORTIFHUNG, 1000, (PDWORD_PTR)&hIcon);
 
 	if (!hIcon)
-		SendMessageTimeout(hwnd, WM_GETICON, ICON_SMALL, 0, SMTO_ABORTIFHUNG, 1000, (LPDWORD)&hIcon);
+		SendMessageTimeout(hwnd, WM_GETICON, ICON_SMALL, 0, SMTO_ABORTIFHUNG, 1000, (PDWORD_PTR)&hIcon);
 
 	if (!hIcon)
-		SendMessageTimeout(hwnd, WM_GETICON, ICON_BIG, 0, SMTO_ABORTIFHUNG, 1000, (LPDWORD)&hIcon);
+		SendMessageTimeout(hwnd, WM_GETICON, ICON_BIG, 0, SMTO_ABORTIFHUNG, 1000, (PDWORD_PTR)&hIcon);
 
 	if (!hIcon)
 		hIcon = (HICON)GetClassLongPtr(hwnd, GCL_HICONSM);
@@ -343,7 +339,7 @@ HICON get_window_icon_small(HWND hwnd)
 		hIcon = (HICON)GetClassLongPtr(hwnd, GCL_HICON);
 
 	if (!hIcon)
-		SendMessageTimeout(hwnd, WM_QUERYDRAGICON, 0, 0, 0, 1000, (LPDWORD)&hIcon);
+		SendMessageTimeout(hwnd, WM_QUERYDRAGICON, 0, 0, 0, 1000, (PDWORD_PTR)&hIcon);
 
 	return hIcon;
 }
@@ -352,13 +348,13 @@ HICON get_window_icon_big(HWND hwnd, bool allow_from_class)
 {
 	HICON hIcon = 0;
 
-	SendMessageTimeout(hwnd, WM_GETICON, ICON_BIG, 0, SMTO_ABORTIFHUNG, 1000, (LPDWORD)&hIcon);
+	SendMessageTimeout(hwnd, WM_GETICON, ICON_BIG, 0, SMTO_ABORTIFHUNG, 1000, (PDWORD_PTR)&hIcon);
 
 	if (!hIcon)
-		SendMessageTimeout(hwnd, WM_GETICON, ICON_SMALL2, 0, SMTO_ABORTIFHUNG, 1000, (LPDWORD)&hIcon);
+		SendMessageTimeout(hwnd, WM_GETICON, ICON_SMALL2, 0, SMTO_ABORTIFHUNG, 1000, (PDWORD_PTR)&hIcon);
 
 	if (!hIcon)
-		SendMessageTimeout(hwnd, WM_GETICON, ICON_SMALL, 0, SMTO_ABORTIFHUNG, 1000, (LPDWORD)&hIcon);
+		SendMessageTimeout(hwnd, WM_GETICON, ICON_SMALL, 0, SMTO_ABORTIFHUNG, 1000, (PDWORD_PTR)&hIcon);
 
 	if (allow_from_class) {
 		if (!hIcon)
@@ -369,7 +365,7 @@ HICON get_window_icon_big(HWND hwnd, bool allow_from_class)
 	}
 
 	if (!hIcon)
-		SendMessageTimeout(hwnd, WM_QUERYDRAGICON, 0, 0, 0, 1000, (LPDWORD)&hIcon);
+		SendMessageTimeout(hwnd, WM_QUERYDRAGICON, 0, 0, 0, 1000, (PDWORD_PTR)&hIcon);
 
 	return hIcon;
 }
@@ -519,7 +515,7 @@ void TaskBar::Refresh()
 			if (!SendMessage(_htoolbar, TB_DELETEBUTTON, idx, 0))
 				MessageBoxW(NULL, L"failed to delete button", NULL, MB_OK);
 
-			
+
 			for(TaskBarMap::iterator it2=_map.begin(); it2!=_map.end(); ++it2) {
 				TaskBarEntry& entry = it2->second;
 
@@ -528,7 +524,7 @@ void TaskBar::Refresh()
 					--entry._btn_idx;
 #if 0
 					--entry._bmp_idx;
-					
+
 					TBBUTTONINFO info;
 
 					info.cbSize = sizeof(TBBUTTONINFO);
@@ -540,7 +536,7 @@ void TaskBar::Refresh()
 #endif
 				}
 			}
-			
+
 		}
 
 		for(set<HBITMAP>::iterator it=hbmp_to_delete.begin(); it!=hbmp_to_delete.end(); ++it) {

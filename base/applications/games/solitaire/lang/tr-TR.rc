@@ -12,9 +12,9 @@ LANGUAGE LANG_TURKISH, SUBLANG_DEFAULT
 
 /* Dialogs */
 
-IDD_OPTIONS DIALOGEX DISCARDABLE 0, 0, 186, 118
+IDD_OPTIONS DIALOGEX 0, 0, 186, 118
 STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_SHELLFONT
-CAPTION "Ayarlar"
+CAPTION "Seçenekler"
 FONT 8, "MS Shell Dlg"
 BEGIN
     GROUPBOX        "Kağıtlar", -1, 7, 7, 90, 40
@@ -25,7 +25,7 @@ BEGIN
     AUTOCHECKBOX    "&Durum çubuğu", IDC_OPT_STATUSBAR, 7, 66, 64, 10, WS_TABSTOP
 
     DEFPUSHBUTTON   "Tamam", IDOK, 35, 97, 50, 14
-    PUSHBUTTON      "Vazgeç", IDCANCEL, 101, 97, 50, 14
+    PUSHBUTTON      "İptal", IDCANCEL, 101, 97, 50, 14
 END
 
 
@@ -47,7 +47,7 @@ BEGIN
     CONTROL       "", IDC_CARDBACK11, "Static", SS_NOTIFY, 124, 46, 26, 32
     CONTROL       "", IDC_CARDBACK12, "Static", SS_NOTIFY, 154, 46, 26, 32
     DEFPUSHBUTTON "Tamam", IDOK, 66, 84, 54, 13
-    PUSHBUTTON    "Vazgeç", IDCANCEL, 126, 84, 54, 13
+    PUSHBUTTON    "İptal", IDCANCEL, 126, 84, 54, 13
 END
 
 
@@ -56,7 +56,7 @@ END
 STRINGTABLE
 BEGIN
     IDS_SOL_NAME    "Solitaire"
-    IDS_SOL_ABOUT   "Solitaire, J Brown tarafından yapılmıştır.\n\nCardLib sürümü: 1.0"
+    IDS_SOL_ABOUT   "Solitaire, J Brown eliyle yapılmıştır.\n\nCardLib sürümü: 1.0"
     IDS_SOL_QUIT    "Bu oyundan çıkmak ister misiniz?"
     IDS_SOL_WIN     "Tebrikler, kazandınız!"
     IDS_SOL_DEAL    "Tekrar dağıtılsın mı?"
@@ -65,14 +65,14 @@ END
 
 /* Menus */
 
-IDR_MENU1 MENU DISCARDABLE
+IDR_MENU1 MENU
 BEGIN
     POPUP "&Oyun"
     BEGIN
         MENUITEM "&Dağıt\tF2",                  IDM_GAME_NEW
         MENUITEM SEPARATOR
         MENUITEM "D&esteler...",                IDM_GAME_DECK
-        MENUITEM "&Ayarlar...",                 IDM_GAME_OPTIONS
+        MENUITEM "&Seçenekler...",              IDM_GAME_OPTIONS
         MENUITEM SEPARATOR
         MENUITEM "&Çıkış",                      IDM_GAME_EXIT
     END
@@ -87,7 +87,7 @@ END
 
 /* Accelerator */
 
-IDR_ACCELERATOR1 ACCELERATORS DISCARDABLE
+IDR_ACCELERATOR1 ACCELERATORS
 BEGIN
     VK_F1,          IDM_HELP_CONTENTS,      VIRTKEY, NOINVERT
     VK_F2,          IDM_GAME_NEW,           VIRTKEY, NOINVERT

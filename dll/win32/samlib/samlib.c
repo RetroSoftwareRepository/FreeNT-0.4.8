@@ -113,6 +113,42 @@ PSAMPR_SERVER_NAME_unbind(PSAMPR_SERVER_NAME pszSystemName,
 
 
 NTSTATUS
+SampCheckPassword(IN SAMPR_HANDLE UserHandle,
+                  IN PUNICODE_STRING Password)
+{
+    USER_DOMAIN_PASSWORD_INFORMATION DomainPasswordInformation;
+    ULONG PasswordLength;
+    NTSTATUS Status;
+
+    TRACE("(%p %p)\n", UserHandle, Password);
+
+    /* Get the domain password information */
+    Status = SamrGetUserDomainPasswordInformation(UserHandle,
+                                                  &DomainPasswordInformation);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SamrGetUserDomainPasswordInformation failed (Status 0x%08lx)\n", Status);
+        return Status;
+    }
+
+    PasswordLength = (ULONG)(Password->Length / sizeof(WCHAR));
+
+    /* Fail if the password is too short or too long */
+    if ((PasswordLength < DomainPasswordInformation.MinPasswordLength) ||
+        (PasswordLength > 256))
+        return STATUS_PASSWORD_RESTRICTION;
+
+    /* Check the password complexity */
+    if (DomainPasswordInformation.PasswordProperties & DOMAIN_PASSWORD_COMPLEX)
+    {
+        /* FIXME */
+    }
+
+    return STATUS_SUCCESS;
+}
+
+
+NTSTATUS
 NTAPI
 SamAddMemberToAlias(IN SAM_HANDLE AliasHandle,
                     IN PSID MemberId)
@@ -872,6 +908,39 @@ SamGetCompatibilityMode(IN SAM_HANDLE ObjectHandle,
 
 NTSTATUS
 NTAPI
+SamGetDisplayEnumerationIndex(IN SAM_HANDLE DomainHandle,
+                              IN DOMAIN_DISPLAY_INFORMATION DisplayInformation,
+                              IN PUNICODE_STRING Prefix,
+                              OUT PULONG Index)
+{
+    NTSTATUS Status;
+
+    TRACE("(%p %lu %wZ %p)\n",
+           DomainHandle, DisplayInformation, Prefix, Index);
+
+    if ((Prefix == NULL) ||
+        (Index == NULL))
+        return STATUS_INVALID_PARAMETER;
+
+    RpcTryExcept
+    {
+        Status = SamrGetDisplayEnumerationIndex2((SAMPR_HANDLE)DomainHandle,
+                                                 DisplayInformation,
+                                                 (PRPC_UNICODE_STRING)Prefix,
+                                                 Index);
+    }
+    RpcExcept(EXCEPTION_EXECUTE_HANDLER)
+    {
+        Status = I_RpcMapWin32Status(RpcExceptionCode());
+    }
+    RpcEndExcept;
+
+    return Status;
+}
+
+
+NTSTATUS
+NTAPI
 SamGetGroupsForUser(IN SAM_HANDLE UserHandle,
                     OUT PGROUP_MEMBERSHIP *Groups,
                     OUT PULONG MembershipCount)
@@ -1342,6 +1411,92 @@ SamOpenUser(IN SAM_HANDLE DomainHandle,
 
 NTSTATUS
 NTAPI
+SamQueryDisplayInformation(IN SAM_HANDLE DomainHandle,
+                           IN DOMAIN_DISPLAY_INFORMATION DisplayInformation,
+                           IN ULONG Index,
+                           IN ULONG EntryCount,
+                           IN ULONG PreferredMaximumLength,
+                           OUT PULONG TotalAvailable,
+                           OUT PULONG TotalReturned,
+                           OUT PULONG ReturnedEntryCount,
+                           OUT PVOID *SortedBuffer)
+{
+    SAMPR_DISPLAY_INFO_BUFFER LocalBuffer;
+    NTSTATUS Status;
+
+    TRACE("(%p %lu %lu %lu %lu %p %p %p %p)\n",
+          DomainHandle, DisplayInformation, Index, EntryCount,
+          PreferredMaximumLength, TotalAvailable, TotalReturned,
+          ReturnedEntryCount, SortedBuffer);
+
+    if ((TotalAvailable == NULL) ||
+        (TotalReturned == NULL) ||
+        (ReturnedEntryCount == NULL) ||
+        (SortedBuffer == NULL))
+        return STATUS_INVALID_PARAMETER;
+
+    RpcTryExcept
+    {
+        Status = SamrQueryDisplayInformation3((SAMPR_HANDLE)DomainHandle,
+                                              DisplayInformation,
+                                              Index,
+                                              EntryCount,
+                                              PreferredMaximumLength,
+                                              TotalAvailable,
+                                              TotalReturned,
+                                              &LocalBuffer);
+        if (NT_SUCCESS(Status))
+        {
+            switch (DisplayInformation)
+            {
+                case DomainDisplayUser:
+                    *ReturnedEntryCount = LocalBuffer.UserInformation.EntriesRead;
+                    *SortedBuffer = LocalBuffer.UserInformation.Buffer;
+                    break;
+
+                case DomainDisplayMachine:
+                    *ReturnedEntryCount = LocalBuffer.MachineInformation.EntriesRead;
+                    *SortedBuffer = LocalBuffer.MachineInformation.Buffer;
+                    break;
+
+                case DomainDisplayGroup:
+                    *ReturnedEntryCount = LocalBuffer.GroupInformation.EntriesRead;
+                    *SortedBuffer = LocalBuffer.GroupInformation.Buffer;
+                    break;
+
+                case DomainDisplayOemUser:
+                    *ReturnedEntryCount = LocalBuffer.OemUserInformation.EntriesRead;
+                    *SortedBuffer = LocalBuffer.OemUserInformation.Buffer;
+                    break;
+
+                case DomainDisplayOemGroup:
+                    *ReturnedEntryCount = LocalBuffer.OemGroupInformation.EntriesRead;
+                    *SortedBuffer = LocalBuffer.OemGroupInformation.Buffer;
+                    break;
+
+                case DomainDisplayServer:
+                    /* FIXME */
+                    break;
+            }
+        }
+        else
+        {
+            *ReturnedEntryCount = 0;
+            *SortedBuffer = NULL;
+        }
+    }
+    RpcExcept(EXCEPTION_EXECUTE_HANDLER)
+    {
+        Status = I_RpcMapWin32Status(RpcExceptionCode());
+    }
+    RpcEndExcept;
+
+    return Status;
+}
+
+
+NTSTATUS
+NTAPI
 SamQueryInformationAlias(IN SAM_HANDLE AliasHandle,
                          IN ALIAS_INFORMATION_CLASS AliasInformationClass,
                          OUT PVOID *Buffer)
@@ -1692,6 +1847,7 @@ SamSetInformationUser(IN SAM_HANDLE UserHandle,
 {
     PSAMPR_USER_SET_PASSWORD_INFORMATION PasswordBuffer;
     SAMPR_USER_INTERNAL1_INFORMATION Internal1Buffer;
+    USER_ALL_INFORMATION InternalAllBuffer;
     OEM_STRING LmPwdString;
     CHAR LmPwdBuffer[15];
     NTSTATUS Status;
@@ -1702,6 +1858,14 @@ SamSetInformationUser(IN SAM_HANDLE UserHandle,
     if (UserInformationClass == UserSetPasswordInformation)
     {
         PasswordBuffer = (PSAMPR_USER_SET_PASSWORD_INFORMATION)Buffer;
+
+        Status = SampCheckPassword(UserHandle,
+                                   (PUNICODE_STRING)&PasswordBuffer->Password);
+        if (!NT_SUCCESS(Status))
+        {
+            TRACE("SampCheckPassword failed (Status 0x%08lx)\n", Status);
+            return Status;
+        }
 
         /* Calculate the NT hash value of the passord */
         Status = SystemFunction007((PUNICODE_STRING)&PasswordBuffer->Password,
@@ -1750,8 +1914,118 @@ SamSetInformationUser(IN SAM_HANDLE UserHandle,
         if (!NT_SUCCESS(Status))
         {
             TRACE("SamrSetInformation() failed (Status 0x%08lx)\n", Status);
-            return Status;
         }
+
+        return Status;
+    }
+    else if (UserInformationClass == UserAllInformation)
+    {
+        RtlCopyMemory(&InternalAllBuffer,
+                      Buffer,
+                      sizeof(USER_ALL_INFORMATION));
+
+        if (InternalAllBuffer.WhichFields & (USER_ALL_LMPASSWORDPRESENT | USER_ALL_NTPASSWORDPRESENT))
+        {
+            if (InternalAllBuffer.WhichFields & USER_ALL_OWFPASSWORD)
+            {
+                /* Check NT password hash */
+                if (InternalAllBuffer.WhichFields & USER_ALL_NTPASSWORDPRESENT)
+                {
+                    if (InternalAllBuffer.NtPassword.Length != sizeof(ENCRYPTED_NT_OWF_PASSWORD))
+                        return STATUS_INVALID_PARAMETER;
+                }
+
+                /* Check LM password hash */
+                if (InternalAllBuffer.WhichFields & USER_ALL_LMPASSWORDPRESENT)
+                {
+                    if (InternalAllBuffer.LmPassword.Length != sizeof(ENCRYPTED_LM_OWF_PASSWORD))
+                        return STATUS_INVALID_PARAMETER;
+                }
+            }
+            else
+            {
+                /*
+                 * Only allow the NT password to be set.
+                 * The LM password will be created here.
+                 */
+                if (InternalAllBuffer.WhichFields & USER_ALL_LMPASSWORDPRESENT)
+                {
+                    TRACE("Do not try to set a clear text LM password!\n");
+                    return STATUS_INVALID_PARAMETER;
+                }
+
+                if (InternalAllBuffer.WhichFields & USER_ALL_NTPASSWORDPRESENT)
+                {
+                    Status = SampCheckPassword(UserHandle,
+                                               &InternalAllBuffer.NtPassword);
+                    if (!NT_SUCCESS(Status))
+                    {
+                        TRACE("SampCheckPassword failed (Status 0x%08lx)\n", Status);
+                        return Status;
+                    }
+
+                    /* Calculate the NT password hash */
+                    Status = SystemFunction007((PUNICODE_STRING)&InternalAllBuffer.NtPassword,
+                                               (LPBYTE)&Internal1Buffer.EncryptedNtOwfPassword);
+                    if (!NT_SUCCESS(Status))
+                    {
+                        TRACE("SystemFunction007 failed (Status 0x%08lx)\n", Status);
+                        return Status;
+                    }
+
+                    InternalAllBuffer.NtPasswordPresent = TRUE;
+                    InternalAllBuffer.LmPasswordPresent = FALSE;
+
+                    InternalAllBuffer.NtPassword.Length = sizeof(ENCRYPTED_NT_OWF_PASSWORD);
+                    InternalAllBuffer.NtPassword.MaximumLength = sizeof(ENCRYPTED_NT_OWF_PASSWORD);
+                    InternalAllBuffer.NtPassword.Buffer = (LPWSTR)&Internal1Buffer.EncryptedNtOwfPassword;
+
+                    /* Build the LM password */
+                    LmPwdString.Length = 15;
+                    LmPwdString.MaximumLength = 15;
+                    LmPwdString.Buffer = LmPwdBuffer;
+                    ZeroMemory(LmPwdString.Buffer, LmPwdString.MaximumLength);
+
+                    Status = RtlUpcaseUnicodeStringToOemString(&LmPwdString,
+                                                               (PUNICODE_STRING)&InternalAllBuffer.NtPassword,
+                                                               FALSE);
+                    if (NT_SUCCESS(Status))
+                    {
+                        /* Calculate the LM password hash */
+                        Status = SystemFunction006(LmPwdString.Buffer,
+                                                   (LPSTR)&Internal1Buffer.EncryptedLmOwfPassword);
+                        if (NT_SUCCESS(Status))
+                        {
+                            InternalAllBuffer.WhichFields |= USER_ALL_LMPASSWORDPRESENT;
+                            InternalAllBuffer.LmPasswordPresent = TRUE;
+
+                            InternalAllBuffer.LmPassword.Length = sizeof(ENCRYPTED_LM_OWF_PASSWORD);
+                            InternalAllBuffer.LmPassword.MaximumLength = sizeof(ENCRYPTED_LM_OWF_PASSWORD);
+                            InternalAllBuffer.LmPassword.Buffer = (LPWSTR)&Internal1Buffer.EncryptedLmOwfPassword;
+                        }
+                    }
+                }
+            }
+        }
+
+        RpcTryExcept
+        {
+            Status = SamrSetInformationUser((SAMPR_HANDLE)UserHandle,
+                                            UserAllInformation,
+                                            (PVOID)&InternalAllBuffer);
+        }
+        RpcExcept(EXCEPTION_EXECUTE_HANDLER)
+        {
+            Status = I_RpcMapWin32Status(RpcExceptionCode());
+        }
+        RpcEndExcept;
+
+        if (!NT_SUCCESS(Status))
+        {
+            TRACE("SamrSetInformation() failed (Status 0x%08lx)\n", Status);
+        }
+
+        return Status;
     }
 
     RpcTryExcept

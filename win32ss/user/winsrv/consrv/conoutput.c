@@ -12,7 +12,7 @@
 #include "consrv.h"
 #include "console.h"
 #include "include/conio.h"
-#include "include/conio2.h"
+#include "include/term.h"
 #include "conoutput.h"
 #include "handle.h"
 
@@ -45,6 +45,55 @@ CSR_API(SrvInvalidateBitMapRect)
     Status = ConDrvInvalidateBitMapRect(Buffer->Header.Console,
                                         Buffer,
                                         &InvalidateDIBitsRequest->Region);
+
+    ConSrvReleaseScreenBuffer(Buffer, TRUE);
+    return Status;
+}
+
+NTSTATUS NTAPI
+ConDrvSetConsolePalette(IN PCONSOLE Console,
+                        // IN PGRAPHICS_SCREEN_BUFFER Buffer,
+                        IN PCONSOLE_SCREEN_BUFFER Buffer,
+                        IN HPALETTE PaletteHandle,
+                        IN UINT PaletteUsage);
+CSR_API(SrvSetConsolePalette)
+{
+    NTSTATUS Status;
+    PCONSOLE_SETPALETTE SetPaletteRequest = &((PCONSOLE_API_MESSAGE)ApiMessage)->Data.SetPaletteRequest;
+    // PGRAPHICS_SCREEN_BUFFER Buffer;
+    PCONSOLE_SCREEN_BUFFER Buffer;
+
+    DPRINT("SrvSetConsolePalette\n");
+
+    // NOTE: Tests show that this function is used only for graphics screen buffers
+    // and otherwise it returns FALSE + sets last error to invalid handle.
+    // I think it's ridiculous, because if you are in text mode, simulating
+    // a change of VGA palette via DAC registers (done by a call to SetConsolePalette)
+    // cannot be done... So I allow it in ReactOS !
+    /*
+    Status = ConSrvGetGraphicsBuffer(ConsoleGetPerProcessData(CsrGetClientThread()->Process),
+                                     SetPaletteRequest->OutputHandle,
+                                     &Buffer, GENERIC_WRITE, TRUE);
+    */
+    Status = ConSrvGetScreenBuffer(ConsoleGetPerProcessData(CsrGetClientThread()->Process),
+                                   SetPaletteRequest->OutputHandle,
+                                   &Buffer, GENERIC_WRITE, TRUE);
+    if (!NT_SUCCESS(Status)) return Status;
+
+    /*
+     * Make the palette handle public, so that it can be
+     * used by other threads calling GDI functions on it.
+     * Indeed, the palette handle comes from a console app
+     * calling ourselves, running in CSRSS.
+     */
+    NtUserConsoleControl(ConsoleMakePalettePublic,
+                         &SetPaletteRequest->PaletteHandle,
+                         sizeof(SetPaletteRequest->PaletteHandle));
+
+    Status = ConDrvSetConsolePalette(Buffer->Header.Console,
+                                     Buffer,
+                                     SetPaletteRequest->PaletteHandle,
+                                     SetPaletteRequest->Usage);
 
     ConSrvReleaseScreenBuffer(Buffer, TRUE);
     return Status;
@@ -278,6 +327,7 @@ DoWriteConsole(IN PCSR_API_MESSAGE ApiMessage,
 
 // Wait function CSR_WAIT_FUNCTION
 static BOOLEAN
+NTAPI
 WriteConsoleThread(IN PLIST_ENTRY WaitList,
                    IN PCSR_THREAD WaitThread,
                    IN PCSR_API_MESSAGE WaitApiMessage,
@@ -350,7 +400,6 @@ DoWriteConsole(IN PCSR_API_MESSAGE ApiMessage,
                                WriteConsoleThread,
                                ClientThread,
                                ApiMessage,
-                               NULL,
                                NULL))
             {
                 /* Fail */
