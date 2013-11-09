@@ -94,7 +94,7 @@ Dib_BitBlt_SRCCOPY_S32_D32_EqSurf(PBLTDATA pBltData)
 
 #define __FUNCTIONNAME BitBlt_SRCCOPY
 
-#define _DibDoRop(pBltData, M, D, S, P) ROP_SRCCOPY(D,S,P)
+#define _DibDoRop(pBltData, M, D, S, P) ROP_SRCCOPY(D,S,P) /* No ANDing needed */
 
 #include "DibLib_AllSrcBPP.h"
 

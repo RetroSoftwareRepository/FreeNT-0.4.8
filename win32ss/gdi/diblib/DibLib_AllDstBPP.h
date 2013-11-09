@@ -8,26 +8,32 @@
 #endif
 
 #define _DEST_BPP 1
+#define _DEST_MASK 1
 #include "DibLib_BitBlt.h"
 #undef _DEST_BPP
 
 #define _DEST_BPP 4
+#define _DEST_MASK 0xf
 #include "DibLib_BitBlt.h"
 #undef _DEST_BPP
 
 #define _DEST_BPP 8
+#define _DEST_MASK 0xff
 #include "DibLib_BitBlt.h"
 #undef _DEST_BPP
 
 #define _DEST_BPP 16
+#define _DEST_MASK 0xffff
 #include "DibLib_BitBlt.h"
 #undef _DEST_BPP
 
 #define _DEST_BPP 24
+#define _DEST_MASK 0xffffff
 #include "DibLib_BitBlt.h"
 #undef _DEST_BPP
 
 #define _DEST_BPP 32
+#define _DEST_MASK 0xffffffff
 #include "DibLib_BitBlt.h"
 #undef _DEST_BPP
 

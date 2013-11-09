@@ -8,7 +8,7 @@
 
 #define __FUNCTIONNAME BitBlt_NOTPATCOPY
 
-#define _DibDoRop(pBltData, M, D, S, P) (~(P))
+#define _DibDoRop(pBltData, M, D, S, P) (ROP_NOTPATCOPY(0,0,P) & _DEST_MASK)
 
 #include "DibLib_AllDstBPP.h"
 

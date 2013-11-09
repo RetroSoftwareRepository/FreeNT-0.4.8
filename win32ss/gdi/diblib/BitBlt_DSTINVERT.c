@@ -6,7 +6,7 @@
 #define __USES_DEST 1
 #define __USES_MASK 0
 
-#define _DibDoRop(pBltData, M, D, S, P) ROP_DSTINVERT(D,S,P)
+#define _DibDoRop(pBltData, M, D, S, P) (ROP_DSTINVERT(D,S,P) & _DEST_MASK)
 
 #define __FUNCTIONNAME BitBlt_DSTINVERT
 #include "DibLib_AllDstBPP.h"

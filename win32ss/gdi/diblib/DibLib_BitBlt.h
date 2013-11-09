@@ -135,3 +135,4 @@ _DibFunction(PBLTDATA pBltData)
 
 #undef _DibFunction
 #undef __FUNCTIONNAME2
+#undef _DEST_MASK

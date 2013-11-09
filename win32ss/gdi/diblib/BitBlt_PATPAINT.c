@@ -8,7 +8,7 @@
 
 #define __FUNCTIONNAME BitBlt_PATPAINT
 
-#define _DibDoRop(pBltData, M, D, S, P) ROP_PATPAINT(D,S,P)
+#define _DibDoRop(pBltData, M, D, S, P) (ROP_PATPAINT(D,S,P) & _DEST_MASK)
 
 #include "DibLib_AllSrcBPP.h"
 

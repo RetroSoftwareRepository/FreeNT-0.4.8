@@ -8,7 +8,7 @@
 
 #define __FUNCTIONNAME SrcPaint
 
-#define _DibDoRop(pBltData, M, D, S, P) pBltData->apfnDoRop[0](D,S,0)
+#define _DibDoRop(pBltData, M, D, S, P) (pBltData->apfnDoRop[0](D,S,0) & _DEST_MASK)
 
 #include "DibLib_AllSrcBPP.h"
 

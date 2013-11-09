@@ -8,7 +8,7 @@
 
 #define __FUNCTIONNAME BitBlt
 
-#define _DibDoRop(pBltData, M, D, S, P) pBltData->apfnDoRop[0](D,S,P)
+#define _DibDoRop(pBltData, M, D, S, P) (pBltData->apfnDoRop[0](D,S,P) & _DEST_MASK)
 
 #include "DibLib_AllSrcBPP.h"
 

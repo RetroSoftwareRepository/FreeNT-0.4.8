@@ -8,7 +8,7 @@
 
 #define __FUNCTIONNAME SrcPatBlt
 
-#define _DibDoRop(pBltData, M, D, S, P) pBltData->apfnDoRop[0](0,S,P)
+#define _DibDoRop(pBltData, M, D, S, P) (pBltData->apfnDoRop[0](0,S,P) & _DEST_MASK)
 
 #include "DibLib_AllSrcBPP.h"
 

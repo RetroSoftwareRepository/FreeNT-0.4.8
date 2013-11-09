@@ -8,7 +8,7 @@
 
 #define __FUNCTIONNAME BitBlt_SRCINVERT
 
-#define _DibDoRop(pBltData, M, D, S, P) ROP_SRCINVERT(D,S,P)
+#define _DibDoRop(pBltData, M, D, S, P) ROP_SRCINVERT(D,S,P) /* No ANDing needed */
 
 #include "DibLib_AllSrcBPP.h"
 

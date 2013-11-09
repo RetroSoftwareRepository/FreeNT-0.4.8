@@ -8,7 +8,7 @@
 
 #define __FUNCTIONNAME BitBlt_PATCOPY
 
-#define _DibDoRop(pBltData, M, D, S, P) ROP_PATCOPY(D,S,P)
+#define _DibDoRop(pBltData, M, D, S, P) ROP_PATCOPY(D,S,P) /* No ANDing needed */
 
 #include "DibLib_AllDstBPP.h"
 

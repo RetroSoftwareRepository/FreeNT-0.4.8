@@ -6,7 +6,7 @@
 #define __USES_DEST 0
 #define __USES_MASK 0
 
-#define _DibDoRop(pBltData, M, D, S, P) ROP_MERGECOPY(D,S,P)
+#define _DibDoRop(pBltData, M, D, S, P) ROP_MERGECOPY(D,S,P) /* No ANDing needed */
 
 #define __FUNCTIONNAME BitBlt_MERGECOPY
 #include "DibLib_AllSrcBPP.h"

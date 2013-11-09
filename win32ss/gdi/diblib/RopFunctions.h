@@ -278,5 +278,6 @@ extern const PFN_DOROP gapfnRop[256];
 #define ROP_PATCOPY ROP_P
 #define ROP_PATPAINT ROP_DPSnoo
 #define ROP_WHITENESS ROP_1
+#define ROP_NOTPATCOPY ROP_Pn
 
 

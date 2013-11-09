@@ -8,7 +8,7 @@
 
 #define __FUNCTIONNAME BitBlt_SRCAND
 
-#define _DibDoRop(pBltData, M, D, S, P) ROP_SRCAND(D,S,P)
+#define _DibDoRop(pBltData, M, D, S, P) ROP_SRCAND(D,S,P) /* No ANDing needed */
 
 #include "DibLib_AllSrcBPP.h"
 
