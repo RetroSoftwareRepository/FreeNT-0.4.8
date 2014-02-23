@@ -131,73 +131,70 @@ ObSetSecurityDescriptorInfo(IN PVOID Object,
 
     /* Get the object header */
     ObjectHeader = OBJECT_TO_OBJECT_HEADER(Object);
+
+    /* Reference the old descriptor */
+    OldDescriptor = ObpReferenceSecurityDescriptor(ObjectHeader);
+    NewDescriptor = OldDescriptor;
+
+    /* Set the SD information */
+    Status = SeSetSecurityDescriptorInfo(Object,
+                                         SecurityInformation,
+                                         SecurityDescriptor,
+                                         &NewDescriptor,
+                                         PoolType,
+                                         GenericMapping);
+    if (!NT_SUCCESS(Status))
+    {
+        /* We failed, dereference the old one */
+        if (OldDescriptor) ObDereferenceSecurityDescriptor(OldDescriptor, 1);
+        return Status;
+    }
+
     while (TRUE)
     {
-        /* Reference the old descriptor */
-        OldDescriptor = ObpReferenceSecurityDescriptor(ObjectHeader);
-        NewDescriptor = OldDescriptor;
+        /* Now add this to the cache */
+        Status = ObLogSecurityDescriptor(NewDescriptor,
+                                         &CachedDescriptor,
+                                         MAX_FAST_REFS + 1);
 
-        /* Set the SD information */
-        Status = SeSetSecurityDescriptorInfo(Object,
-                                             SecurityInformation,
-                                             SecurityDescriptor,
-                                             &NewDescriptor,
-                                             PoolType,
-                                             GenericMapping);
-        if (NT_SUCCESS(Status))
+        /* Let go of our uncached copy */
+        ExFreePool(NewDescriptor);
+
+        /* Check for success */
+        if (!NT_SUCCESS(Status))
         {
-            /* Now add this to the cache */
-            Status = ObLogSecurityDescriptor(NewDescriptor,
-                                             &CachedDescriptor,
-                                             MAX_FAST_REFS + 1);
+            /* We failed, dereference the old one */
+            ObDereferenceSecurityDescriptor(OldDescriptor, 1);
+            break;
+        }
 
-            /* Let go of our uncached copy */
-            ExFreePool(NewDescriptor);
+        /* Do the swap */
+        FastRef = (PEX_FAST_REF)OutputSecurityDescriptor;
+        OldValue = ExCompareSwapFastReference(FastRef,
+                                              CachedDescriptor,
+                                              OldDescriptor);
 
-            /* Check for success */
-            if (NT_SUCCESS(Status))
-            {
-                /* Do the swap */
-                FastRef = (PEX_FAST_REF)OutputSecurityDescriptor;
-                OldValue = ExCompareSwapFastReference(FastRef,
-                                                      CachedDescriptor,
-                                                      OldDescriptor);
+        /* Get the security descriptor */
+        SecurityDescriptor = ExGetObjectFastReference(OldValue);
+        Count = ExGetCountFastReference(OldValue);
 
-                /* Get the security descriptor */
-                SecurityDescriptor = ExGetObjectFastReference(OldValue);
-                Count = ExGetCountFastReference(OldValue);
+        /* Make sure the swap worked */
+        if (SecurityDescriptor == OldDescriptor)
+        {
+            /* Flush waiters */
+            ObpAcquireObjectLock(ObjectHeader);
+            ObpReleaseObjectLock(ObjectHeader);
 
-                /* Make sure the swap worked */
-                if (SecurityDescriptor == OldDescriptor)
-                {
-                    /* Flush waiters */
-                    ObpAcquireObjectLock(ObjectHeader);
-                    ObpReleaseObjectLock(ObjectHeader);
-
-                    /* And dereference the old one */
-                    ObDereferenceSecurityDescriptor(OldDescriptor, Count + 2);
-                    break;
-                }
-                else
-                {
-                    /* Someone changed it behind our back -- try again */
-                    ObDereferenceSecurityDescriptor(OldDescriptor, 1);
-                    ObDereferenceSecurityDescriptor(CachedDescriptor,
-                                                    MAX_FAST_REFS + 1);
-                }
-            }
-            else
-            {
-                /* We failed, dereference the old one */
-                ObDereferenceSecurityDescriptor(OldDescriptor, 1);
-                break;
-            }
+            /* And dereference the old one */
+            ObDereferenceSecurityDescriptor(OldDescriptor, Count + 2);
+            break;
         }
         else
         {
-            /* We failed, dereference the old one */
-            if (OldDescriptor) ObDereferenceSecurityDescriptor(OldDescriptor, 1);
-            break;
+            /* Someone changed it behind our back -- try again */
+            ObDereferenceSecurityDescriptor(OldDescriptor, 1);
+            ObDereferenceSecurityDescriptor(CachedDescriptor,
+                                            MAX_FAST_REFS + 1);
         }
     }
 
