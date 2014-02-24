@@ -33,11 +33,35 @@ typedef struct _WMIP_RESULT
 {
     HANDLE Handle;
     ULONG Unknown04;
-    ULONG Unknown08;
-    ULONG Unknown0C;
+    TRACEHANDLE TraceHandle;
     BOOLEAN Unknown10;
 } WMIP_RESULT, *PWMIP_RESULT;
 
+typedef struct _WMI_UNREGISTER_GUID
+{
+    GUID Guid;
+    ULONG Unknown10;
+    ULONG Unknown14;
+    ULONG Unknown18;
+    ULONG Unknown1C;
+} WMI_UNREGISTER_GUID, *PWMI_UNREGISTER_GUID;
+
+typedef struct _WMI_GUID_OBJECT_ENTRY
+{
+    HANDLE Handle;
+    ULONG Unknown04;
+} WMI_GUID_OBJECT_ENTRY, *PWMI_GUID_OBJECT_ENTRY;
+
+typedef struct _WMI_NOTIFICATION
+{
+    ULONG NumberOfGuidObjects;
+    ULONG Unknown04;
+    ULONG Unknown08;
+    ULONG Unknown0C;
+    ULONG Unknown10;
+    ULONG Unknown14;
+    WMI_GUID_OBJECT_ENTRY GuidObjects[0];
+} WMI_NOTIFICATION, *PWMI_NOTIFICATION;
 
 PDEVICE_OBJECT WmipServiceDeviceObject;
 PDEVICE_OBJECT WmipAdminDeviceObject;
@@ -106,7 +130,7 @@ WmipRegisterGuids(
 
     /* Make sure the input buffer is large enough */
     if ((InputLength < sizeof(WMIP_REGISTER_GUIDS)) ||
-        (RegisterGuids->RegInfo.BufferSize > 
+        (RegisterGuids->RegInfo.BufferSize >
          (InputLength - FIELD_OFFSET(WMIP_REGISTER_GUIDS, RegInfo))))
     {
         return STATUS_UNSUCCESSFUL;
@@ -168,14 +192,139 @@ WmipRegisterGuids(
         return Status;
     }
 
-    /* Derefernce the GUID object */
+    /* Dereference the GUID object */
     ObDereferenceObject(GuidObject);
 
-    /* Return the handle */
+    /* Return the handle (user mode will close it) */
     Result->Handle = GuidObjectHandle;
+    Result->TraceHandle = 0;
     *OutputLength = 24;
 
     return STATUS_SUCCESS;
+}
+
+
+static
+NTSTATUS
+WmipUnregisterGuids(
+    _In_ PVOID Buffer,
+    _In_ ULONG InputLength,
+    _Inout_ PULONG OutputLength)
+{
+    /* For now we have nothing to do */
+    return STATUS_SUCCESS;
+}
+
+VOID
+NTAPI
+WmipClearIrpObjectList(
+    _In_ PIRP Irp)
+{
+    PWMIP_IRP_CONTEXT IrpContext;
+    PLIST_ENTRY ListEntry;
+    PWMIP_GUID_OBJECT GuidObject;
+
+    /* Get the IRP context */
+    IrpContext = (PWMIP_IRP_CONTEXT)Irp->Tail.Overlay.DriverContext;
+
+    /* Loop all GUID objects attached to this IRP */
+    for (ListEntry = IrpContext->GuidObjectListHead.Flink;
+         ListEntry != &IrpContext->GuidObjectListHead;
+         ListEntry = ListEntry->Flink)
+    {
+        /* Get the GUID object */
+        GuidObject = CONTAINING_RECORD(ListEntry, WMIP_GUID_OBJECT, IrpLink);
+
+        /* Make sure the IRP matches and clear it */
+        ASSERT(GuidObject->Irp == Irp);
+        GuidObject->Irp = NULL;
+
+        /* Remove the entry */
+        RemoveEntryList(ListEntry);
+    }
+}
+
+VOID
+NTAPI
+WmipNotificationIrpCancel(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _Inout_ PIRP Irp)
+{
+    /* Clear the list */
+    WmipClearIrpObjectList(Irp);
+
+    /* Release the cancel spin lock */
+    IoReleaseCancelSpinLock(Irp->CancelIrql);
+
+    /* Set the status to cancelled and complete the IRP */
+    Irp->IoStatus.Status = STATUS_CANCELLED;
+    Irp->IoStatus.Information = 0;
+    IoCompleteRequest(Irp, IO_NO_INCREMENT);
+}
+
+static
+VOID
+WmipInitializeIrpContext(
+    PWMIP_IRP_CONTEXT IrpContext)
+{
+    /* Initialize the list head for GUID objects */
+    InitializeListHead(&IrpContext->GuidObjectListHead);
+}
+
+static
+NTSTATUS
+WmipReceiveNotifications(
+    _Inout_ PIRP Irp,
+    _In_ PVOID Buffer,
+    _In_ ULONG InputLength,
+    _Inout_ PULONG OutputLength)
+{
+    PWMI_NOTIFICATION Notification;
+    PWMIP_IRP_CONTEXT IrpContext;
+    NTSTATUS Status;
+
+    //__debugbreak();
+    if ((InputLength < sizeof(WMI_NOTIFICATION)) || (*OutputLength < 0x38))
+    {
+        return STATUS_INVALID_DEVICE_REQUEST;
+    }
+
+    /// FIXME: For now we don't do any actual work, but simply pretend we are
+    /// waiting for notifications. We won't ever deliver any though.
+    Notification = (PWMI_NOTIFICATION)Buffer;
+    DBG_UNREFERENCED_LOCAL_VARIABLE(Notification);
+
+    // loop all objects
+        // reference the object
+            // on failure, fail the whole request
+
+    // loop all objects
+        // update the irp (synchronization!)
+            // if we had one before complete the old irp with an error
+
+    /* Get the IRP context and initialize it */
+    IrpContext = (PWMIP_IRP_CONTEXT)Irp->Tail.Overlay.DriverContext;
+    WmipInitializeIrpContext(IrpContext);
+
+    // loop all objects
+        // insert the objects into the IRP list
+
+    /* Set our cancel routine for cleanup */
+    IoSetCancelRoutine(Irp, WmipNotificationIrpCancel);
+
+    /* Check if the IRP is already being cancelled */
+    if (Irp->Cancel && IoSetCancelRoutine(Irp, NULL))
+    {
+        Status = STATUS_CANCELLED;
+    }
+    else
+    {
+        /* Mark the IRP as pending */
+        IoMarkIrpPending(Irp);
+        Status = STATUS_PENDING;
+    }
+
+    return Status;
 }
 
 NTSTATUS
@@ -209,6 +358,23 @@ WmipIoControl(
                                        Buffer,
                                        InputLength,
                                        &OutputLength);
+            break;
+        }
+
+        case IOCTL_WMI_UNREGISTER_GUIDS:
+        {
+            Status = WmipUnregisterGuids(Buffer,
+                                         InputLength,
+                                         &OutputLength);
+            break;
+        }
+
+        case IOCTL_WMI_RECEIVE_NOTIFICATIONS:
+        {
+            Status = WmipReceiveNotifications(Irp,
+                                              Buffer,
+                                              InputLength,
+                                              &OutputLength);
             break;
         }
 
