@@ -112,6 +112,59 @@ WmiTraceUserMessage(
 
 static
 NTSTATUS
+WmipCaptureGuidObjectAttributes(
+    _In_ POBJECT_ATTRIBUTES GuidObjectAttributes,
+    _Out_ POBJECT_ATTRIBUTES CapuredObjectAttributes,
+    _Out_ PUNICODE_STRING CapturedObjectName,
+    _Out_ PWSTR ObjectNameBuffer,
+    _In_ KPROCESSOR_MODE AccessMode)
+{
+    NT_ASSERT(AccessMode != KernelMode);
+
+    _SEH2_TRY
+    {
+        /* Probe and copy the object attributes structure */
+        ProbeForRead(GuidObjectAttributes,
+                     sizeof(OBJECT_ATTRIBUTES),
+                     sizeof(PVOID));
+        *CapuredObjectAttributes = *GuidObjectAttributes;
+
+        /* Probe and copy the object name UNICODE_STRING */
+        ProbeForRead(CapuredObjectAttributes->ObjectName,
+                     sizeof(UNICODE_STRING),
+                     sizeof(PVOID));
+        *CapturedObjectName = *CapuredObjectAttributes->ObjectName;
+
+        /* Check if the object name has the expected length */
+        if (CapturedObjectName->Length != 45 * sizeof(WCHAR))
+        {
+            return STATUS_INVALID_PARAMETER;
+        }
+
+        /* Probe and copy the object name buffer */
+        ProbeForRead(CapturedObjectName->Buffer,
+                     CapturedObjectName->Length,
+                     sizeof(WCHAR));
+        RtlCopyMemory(ObjectNameBuffer,
+                      CapturedObjectName->Buffer,
+                      CapturedObjectName->Length);
+
+        /* Fix pointers */
+        CapturedObjectName->Buffer = ObjectNameBuffer;
+        GuidObjectAttributes->ObjectName = CapturedObjectName;
+    }
+    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+    {
+        DPRINT1("Got exception!\n");
+        return _SEH2_GetExceptionCode();
+    }
+    _SEH2_END;
+
+    return STATUS_SUCCESS;
+}
+
+static
+NTSTATUS
 WmipRegisterGuids(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PVOID Buffer,
@@ -143,45 +196,20 @@ WmipRegisterGuids(
         return STATUS_UNSUCCESSFUL;
     }
 
-    _SEH2_TRY
+    /* Capture object attributes */
+    PreviousMode = ExGetPreviousMode();
+    Status = WmipCaptureGuidObjectAttributes(RegisterGuids->ObjectAttributes,
+                                             &LocalObjectAttributes,
+                                             &LocalObjectName,
+                                             LocalObjectNameBuffer,
+                                             PreviousMode);
+    if (!NT_SUCCESS(Status))
     {
-        /* Probe and copy the object attributes structure */
-        ProbeForRead(RegisterGuids->ObjectAttributes,
-                     sizeof(OBJECT_ATTRIBUTES),
-                     sizeof(PVOID));
-        LocalObjectAttributes = *RegisterGuids->ObjectAttributes;
-
-        /* Probe and copy the object name UNICODE_STRING */
-        ProbeForRead(LocalObjectAttributes.ObjectName,
-                     sizeof(UNICODE_STRING),
-                     sizeof(PVOID));
-        LocalObjectName = *LocalObjectAttributes.ObjectName;
-
-        /* Check if the object name has the expected length */
-        if (LocalObjectName.Length != 45 * sizeof(WCHAR))
-        {
-            return STATUS_INVALID_PARAMETER;
-        }
-
-        /* Probe and copy the object name buffer */
-        ProbeForRead(LocalObjectName.Buffer, LocalObjectName.Length, sizeof(WCHAR));
-        RtlCopyMemory(LocalObjectNameBuffer,
-                      LocalObjectName.Buffer,
-                      LocalObjectName.Length);
-
-        /* Fix pointers */
-        LocalObjectName.Buffer = LocalObjectNameBuffer;
-        LocalObjectAttributes.ObjectName = &LocalObjectName;
+        DPRINT1("WmipCaptureGuidObjectAttributes failed: 0x%lx\n", Status);
+        return Status;
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        DPRINT1("Got exception!\n");
-        return _SEH2_GetExceptionCode();
-    }
-    _SEH2_END;
 
     /* Open a new GUID object */
-    PreviousMode = ExGetPreviousMode();
     Status = WmipOpenGuidObject(&LocalObjectAttributes,
                                 SPECIFIC_RIGHTS_ALL,
                                 PreviousMode,
@@ -189,6 +217,7 @@ WmipRegisterGuids(
                                 &GuidObject);
     if (!NT_SUCCESS(Status))
     {
+        DPRINT1("WmipOpenGuidObject failed: 0x%lx\n", Status);
         return Status;
     }
 
@@ -327,6 +356,77 @@ WmipReceiveNotifications(
     return Status;
 }
 
+typedef struct _WMI_OPEN_GUID_FOR_EVENTS
+{
+    POBJECT_ATTRIBUTES ObjectAttributes;
+    ACCESS_MASK DesiredAccess;
+    ULONG Unknown08;
+    ULONG Unknown0C;
+} WMI_OPEN_GUID_FOR_EVENTS, *PWMI_OPEN_GUID_FOR_EVENTS;
+
+typedef struct _WMIP_RESULT2
+{
+    ULONG Unknown00;
+    ULONG Unknown04;
+    HANDLE Handle;
+    ULONG Unknown0C;
+} WMIP_RESULT2, *PWMIP_RESULT2;
+
+static
+NTSTATUS
+WmipOpenGuidForEvents(
+    PVOID Buffer,
+    ULONG InputLength,
+    PULONG OutputLength)
+{
+    PWMI_OPEN_GUID_FOR_EVENTS OpenGuidForEvents = Buffer;
+    PWMIP_RESULT2 Result = (PWMIP_RESULT2)Buffer;
+    OBJECT_ATTRIBUTES LocalObjectAttributes;
+    UNICODE_STRING LocalObjectName;
+    WCHAR LocalObjectNameBuffer[45 + 1];
+    KPROCESSOR_MODE PreviousMode;
+    HANDLE GuidObjectHandle;
+    PVOID GuidObject;
+    NTSTATUS Status;
+
+    if ((InputLength != sizeof(WMI_OPEN_GUID_FOR_EVENTS)) ||
+        (*OutputLength != sizeof(WMIP_RESULT2)))
+    {
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    /* Capture object attributes */
+    PreviousMode = ExGetPreviousMode();
+    Status = WmipCaptureGuidObjectAttributes(OpenGuidForEvents->ObjectAttributes,
+                                             &LocalObjectAttributes,
+                                             &LocalObjectName,
+                                             LocalObjectNameBuffer,
+                                             PreviousMode);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ProbeAndCaptureGuidObjectAttributes failed: 0x%lx\n", Status);
+        return Status;
+    }
+
+    /* Open a new GUID object */
+    Status = WmipOpenGuidObject(&LocalObjectAttributes,
+                                OpenGuidForEvents->DesiredAccess,
+                                PreviousMode,
+                                &GuidObjectHandle,
+                                &GuidObject);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("WmipOpenGuidObject failed: 0x%lx\n", Status);
+        return Status;
+    }
+
+    Result->Handle = GuidObjectHandle;
+
+    ObDereferenceObject(GuidObject);
+
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS
 NTAPI
 WmipIoControl(
@@ -375,6 +475,19 @@ WmipIoControl(
                                               Buffer,
                                               InputLength,
                                               &OutputLength);
+            break;
+        }
+
+        case 0x228168:
+        {
+            DPRINT1("IOCTL 0x228168 is unimplemented, ignoring\n");
+            Status = STATUS_SUCCESS;
+            break;
+        }
+
+        case IOCTL_WMI_OPEN_GUID_FOR_EVENTS:
+        {
+            Status = WmipOpenGuidForEvents(Buffer, InputLength, &OutputLength);
             break;
         }
 

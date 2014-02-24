@@ -80,7 +80,14 @@ NTAPI
 WmipDeleteMethod(
     _In_ PVOID Object)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    PWMIP_GUID_OBJECT GuidObject = Object;
+
+    /* Check if the object is attached to an IRP */
+    if (GuidObject->Irp != NULL)
+    {
+        /* This is not supported yet */
+        ASSERT(FALSE);
+    }
 }
 
 VOID
@@ -92,7 +99,7 @@ WmipCloseMethod(
     _In_ ULONG ProcessHandleCount,
     _In_ ULONG SystemHandleCount)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    /* For now nothing */
 }
 
 NTSTATUS
@@ -199,6 +206,7 @@ WmipCreateGuidObject(
         return Status;
     }
 
+    RtlZeroMemory(GuidObject, sizeof(*GuidObject));
     GuidObject->Guid = Guid;
 
     *OutGuidObject = GuidObject;
