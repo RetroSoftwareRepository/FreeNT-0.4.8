@@ -1,9 +1,81 @@
 
+# set_cpp
+#  Marks the current folder as containing C++ modules, additionally enabling
+#  specific C++ language features as specified (all of these default to off):
+#
+#  WITH_RUNTIME
+#   Links with the C++ runtime. Enable this for modules which use new/delete or
+#   RTTI, but do not require STL. This is the right choice if you see undefined
+#   references to operator new/delete, vector constructor/destructor iterator,
+#   type_info::vtable, ...
+#   Note: this only affects linking, so cannot be used for static libraries.
+#  WITH_RTTI
+#   Enables run-time type information. Enable this if the module uses typeid or
+#   dynamic_cast. You will probably need to enable WITH_RUNTIME as well, if
+#   you're not already using STL.
+#  WITH_EXCEPTIONS
+#   Enables C++ exception handling. Enable this if the module uses try/catch or
+#   throw. You might also need this if you use a standard operator new (the one
+#   without nothrow).
+#  WITH_STL
+#   Enables standard C++ headers and links to the Standard Template Library.
+#   Use this for modules using anything from the std:: namespace, e.g. maps,
+#   strings, vectors, etc.
+#   Note: this affects both compiling (via include directories) and
+#         linking (by adding STL). Implies WITH_RUNTIME.
+#   FIXME: WITH_STL is currently also required for runtime headers such as
+#          <new> and <exception>. This is not a big issue because in stl-less
+#          environments you usually don't want those anyway; but we might want
+#          to have modules like this in the future.
+#
+# Examples:
+#  set_cpp()
+#   Enables the C++ language, but will cause errors if any runtime or standard
+#   library features are used. This should be the default for C++ in kernel
+#   mode or otherwise restricted environments.
+#   Note: this is required to get libgcc (for multiplication/division) linked
+#         in for C++ modules, and to set the correct language for precompiled
+#         header files, so it IS required even with no features specified.
+#  set_cpp(WITH_RUNTIME)
+#   Links with the C++ runtime, so that e.g. custom operator new implementations
+#   can be used in a restricted environment. This is also required for linking
+#   with libraries (such as ATL) which have RTTI enabled, even if the module in
+#   question does not use WITH_RTTI.
+#  set_cpp(WITH_RTTI WITH_EXCEPTIONS WITH_STL)
+#   The full package. This will adjust compiler and linker so that all C++
+#   features can be used.
 macro(set_cpp)
-    set(IS_CPP 1)
-    if(MSVC)
-        include_directories(${REACTOS_SOURCE_DIR}/include/c++)
+    cmake_parse_arguments(__cppopts "WITH_RUNTIME;WITH_RTTI;WITH_EXCEPTIONS;WITH_STL" "" "" ${ARGN})
+    if(__cppopts_UNPARSED_ARGUMENTS)
+        message(FATAL_ERROR "set_cpp: unparsed arguments ${__cppopts_UNPARSED_ARGUMENTS}")
     endif()
+
+    if(__cppopts_WITH_RUNTIME)
+        set(CPP_USE_RT 1)
+    endif()
+    if(__cppopts_WITH_RTTI)
+        if(MSVC)
+            replace_compile_flags("/GR-" "/GR")
+        else()
+            replace_compile_flags_language("-fno-rtti" "-frtti" "CXX")
+        endif()
+    endif()
+    if(__cppopts_WITH_EXCEPTIONS)
+        if(MSVC)
+            replace_compile_flags("/EHs-c-" "/EHsc")
+        else()
+            replace_compile_flags_language("-fno-exceptions" "-fexceptions" "CXX")
+        endif()
+    endif()
+    if(__cppopts_WITH_STL)
+        set(CPP_USE_STL 1)
+        if(MSVC)
+            add_definitions(-DNATIVE_CPP_INCLUDE=${REACTOS_SOURCE_DIR}/include/c++)
+            include_directories(${REACTOS_SOURCE_DIR}/include/c++/stlport)
+        endif()
+    endif()
+
+    set(IS_CPP 1)
 endmacro()
 
 function(add_dependency_node _node)
@@ -115,6 +187,10 @@ macro(dir_to_num dir var)
         set(${var} 15)
     elseif(${dir} STREQUAL reactos/Resources/Themes)
         set(${var} 16)
+    elseif(${dir} STREQUAL reactos/system32/wbem)
+        set(${var} 17)
+    elseif(${dir} STREQUAL reactos/Resources/Themes/Lautus)
+        set(${var} 18)
     else()
         message(FATAL_ERROR "Wrong destination: ${dir}")
     endif()
@@ -133,7 +209,7 @@ function(add_cd_file)
     endif()
 
     if(NOT _CD_FOR)
-        message(FATAL_ERROR "You must provide a cd name (or "all" for all of them) to install the file on!")
+        message(FATAL_ERROR "You must provide a cd name (or \"all\" for all of them) to install the file on!")
     endif()
 
     #get file if we need to
@@ -153,13 +229,14 @@ function(add_cd_file)
         if(_CD_NO_CAB)
             #directly on cd
             foreach(item ${_CD_FILE})
-                file(APPEND ${REACTOS_BINARY_DIR}/boot/bootcd.cmake "file(COPY \"${item}\" DESTINATION \"\${CD_DIR}/${_CD_DESTINATION}\")\n")
+                if(_CD_NAME_ON_CD)
+                    #rename it in the cd tree
+                    set(__file ${_CD_NAME_ON_CD})
+                else()
+                    get_filename_component(__file ${item} NAME)
+                endif()
+                set_property(GLOBAL APPEND PROPERTY BOOTCD_FILE_LIST "${_CD_DESTINATION}/${__file}=${item}")
             endforeach()
-            if(_CD_NAME_ON_CD)
-                get_filename_component(__file ${_CD_FILE} NAME)
-                #rename it in the cd tree
-                file(APPEND ${REACTOS_BINARY_DIR}/boot/bootcd.cmake "file(RENAME \${CD_DIR}/${_CD_DESTINATION}/${__file} \${CD_DIR}/${_CD_DESTINATION}/${_CD_NAME_ON_CD})\n")
-            endif()
             if(_CD_TARGET)
                 #manage dependency
                 add_dependencies(bootcd ${_CD_TARGET})
@@ -185,13 +262,14 @@ function(add_cd_file)
             add_dependencies(livecd ${_CD_TARGET})
         endif()
         foreach(item ${_CD_FILE})
-            file(APPEND ${REACTOS_BINARY_DIR}/boot/livecd.cmake "file(COPY \"${item}\" DESTINATION \"\${CD_DIR}/${_CD_DESTINATION}\")\n")
+            if(_CD_NAME_ON_CD)
+                #rename it in the cd tree
+                set(__file ${_CD_NAME_ON_CD})
+            else()
+                get_filename_component(__file ${item} NAME)
+            endif()
+            set_property(GLOBAL APPEND PROPERTY LIVECD_FILE_LIST "${_CD_DESTINATION}/${__file}=${item}")
         endforeach()
-        if(_CD_NAME_ON_CD)
-            get_filename_component(__file ${_CD_FILE} NAME)
-            #rename it in the cd tree
-            file(APPEND ${REACTOS_BINARY_DIR}/boot/livecd.cmake "file(RENAME \${CD_DIR}/${_CD_DESTINATION}/${__file} \${CD_DIR}/${_CD_DESTINATION}/${_CD_NAME_ON_CD})\n")
-        endif()
     endif() #end livecd
 
     #do we add it to regtest?
@@ -201,13 +279,14 @@ function(add_cd_file)
         if(_CD_NO_CAB)
             #directly on cd
             foreach(item ${_CD_FILE})
-                file(APPEND ${REACTOS_BINARY_DIR}/boot/bootcdregtest.cmake "file(COPY \"${item}\" DESTINATION \"\${CD_DIR}/${_CD_DESTINATION}\")\n")
+                if(_CD_NAME_ON_CD)
+                    #rename it in the cd tree
+                    set(__file ${_CD_NAME_ON_CD})
+                else()
+                    get_filename_component(__file ${item} NAME)
+                endif()
+                set_property(GLOBAL APPEND PROPERTY BOOTCDREGTEST_FILE_LIST "${_CD_DESTINATION}/${__file}=${item}")
             endforeach()
-            if(_CD_NAME_ON_CD)
-                get_filename_component(__file ${_CD_FILE} NAME)
-                #rename it in the cd tree
-                file(APPEND ${REACTOS_BINARY_DIR}/boot/bootcdregtest.cmake "file(RENAME \${CD_DIR}/${_CD_DESTINATION}/${__file} \${CD_DIR}/${_CD_DESTINATION}/${_CD_NAME_ON_CD})\n")
-            endif()
             if(_CD_TARGET)
                 #manage dependency
                 add_dependencies(bootcdregtest ${_CD_TARGET})
@@ -222,6 +301,23 @@ function(add_cd_file)
             #endif()
         endif()
     endif() #end bootcd
+endfunction()
+
+function(create_iso_lists)
+    get_property(_filelist GLOBAL PROPERTY BOOTCD_FILE_LIST)
+    string(REPLACE ";" "\n" _filelist "${_filelist}")
+    file(APPEND ${REACTOS_BINARY_DIR}/boot/bootcd.lst "${_filelist}")
+    unset(_filelist)
+
+    get_property(_filelist GLOBAL PROPERTY LIVECD_FILE_LIST)
+    string(REPLACE ";" "\n" _filelist "${_filelist}")
+    file(APPEND ${REACTOS_BINARY_DIR}/boot/livecd.lst "${_filelist}")
+    unset(_filelist)
+
+    get_property(_filelist GLOBAL PROPERTY BOOTCDREGTEST_FILE_LIST)
+    string(REPLACE ";" "\n" _filelist "${_filelist}")
+    file(APPEND ${REACTOS_BINARY_DIR}/boot/bootcdregtest.lst "${_filelist}")
+    unset(_filelist)
 endfunction()
 
 # Create module_clean targets
@@ -250,6 +346,32 @@ if(NOT MSVC_IDE)
     function(add_executable name)
         _add_executable(${name} ${ARGN})
         add_clean_target(${name})
+    endfunction()
+elseif(USE_FOLDER_STRUCTURE)
+    set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+    string(LENGTH ${CMAKE_SOURCE_DIR} CMAKE_SOURCE_DIR_LENGTH)
+
+    function(add_custom_target name)
+        _add_custom_target(${name} ${ARGN})
+        string(SUBSTRING ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR_LENGTH} -1 CMAKE_CURRENT_SOURCE_DIR_RELATIVE)
+        set_property(TARGET "${name}" PROPERTY FOLDER "${CMAKE_CURRENT_SOURCE_DIR_RELATIVE}")
+    endfunction()
+
+    function(add_library name)
+        _add_library(${name} ${ARGN})
+        get_target_property(_target_excluded ${name} EXCLUDE_FROM_ALL)
+        if(_target_excluded AND ${name} MATCHES "^lib.*")
+            set_property(TARGET "${name}" PROPERTY FOLDER "Importlibs")
+        else()
+            string(SUBSTRING ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR_LENGTH} -1 CMAKE_CURRENT_SOURCE_DIR_RELATIVE)
+            set_property(TARGET "${name}" PROPERTY FOLDER "${CMAKE_CURRENT_SOURCE_DIR_RELATIVE}")
+        endif()
+    endfunction()
+
+    function(add_executable name)
+        _add_executable(${name} ${ARGN})
+        string(SUBSTRING ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR_LENGTH} -1 CMAKE_CURRENT_SOURCE_DIR_RELATIVE)
+        set_property(TARGET "${name}" PROPERTY FOLDER "${CMAKE_CURRENT_SOURCE_DIR_RELATIVE}")
     endfunction()
 endif()
 
@@ -295,7 +417,7 @@ function(add_importlibs _module)
 endfunction()
 
 function(set_module_type MODULE TYPE)
-    cmake_parse_arguments(__module "UNICODE" "IMAGEBASE" "ENTRYPOINT" ${ARGN})
+    cmake_parse_arguments(__module "UNICODE;HOTPATCHABLE" "IMAGEBASE" "ENTRYPOINT" ${ARGN})
 
     if(__module_UNPARSED_ARGUMENTS)
         message(STATUS "set_module_type : unparsed arguments ${__module_UNPARSED_ARGUMENTS}, module : ${MODULE}")
@@ -309,6 +431,18 @@ function(set_module_type MODULE TYPE)
         set(__subsystem console)
     elseif(${TYPE} STREQUAL win32gui)
         set(__subsystem windows)
+    elseif(${TYPE} STREQUAL kbdlayout)
+        set_entrypoint(${MODULE} 0)
+        set_image_base(${MODULE} 0x5FFF0000)
+        set_subsystem(${MODULE} native)
+        if (MSVC)
+            # Merge the .text and .rdata section into the .data section
+            add_target_link_flags(${MODULE} "/ignore:4254 /SECTION:.data,ER /MERGE:.text=.data /MERGE:.rdata=.data /MERGE:.bss=.data /MERGE:.edata=.data")
+        else()
+            # Use a custom linker script
+            add_target_link_flags(${MODULE} "-Wl,-T,${CMAKE_SOURCE_DIR}/kbdlayout.lds")
+            add_dependencies(${MODULE} "${CMAKE_SOURCE_DIR}/kbdlayout.lds")
+        endif()
     elseif(NOT ((${TYPE} STREQUAL win32dll) OR (${TYPE} STREQUAL win32ocx)
             OR (${TYPE} STREQUAL cpl) OR (${TYPE} STREQUAL module)))
         message(FATAL_ERROR "Unknown type ${TYPE} for module ${MODULE}")
@@ -321,6 +455,17 @@ function(set_module_type MODULE TYPE)
     #set unicode definitions
     if(__module_UNICODE)
         add_target_compile_definitions(${MODULE} UNICODE _UNICODE)
+    endif()
+
+    # Handle hotpatchable images.
+    # GCC has this as a function attribute so we're handling it using DECLSPEC_HOTPATCH
+    if(__module_HOTPATCHABLE AND MSVC)
+        set_property(TARGET ${_target} APPEND_STRING PROPERTY COMPILE_FLAGS " /hotpatch")
+        if(ARCH STREQUAL "i386")
+            set_property(TARGET ${_target} APPEND_STRING PROPERTY LINK_FLAGS " /FUNCTIONPADMIN:5")
+        elseif(ARCH STREQUAL "amd64")
+            set_property(TARGET ${_target} APPEND_STRING PROPERTY LINK_FLAGS " /FUNCTIONPADMIN:6")
+        endif()
     endif()
 
     # set entry point
@@ -336,7 +481,13 @@ function(set_module_type MODULE TYPE)
     elseif(${TYPE} STREQUAL nativecui)
         set(__entrypoint NtProcessStartup)
         set(__entrystack 4)
-    elseif((${TYPE} STREQUAL win32gui) OR (${TYPE} STREQUAL win32cui))
+    elseif(${TYPE} STREQUAL win32cui)
+        if(__module_UNICODE)
+            set(__entrypoint wmainCRTStartup)
+        else()
+            set(__entrypoint mainCRTStartup)
+        endif()
+    elseif(${TYPE} STREQUAL win32gui)
         if(__module_UNICODE)
             set(__entrypoint wWinMainCRTStartup)
         else()
@@ -427,7 +578,7 @@ function(get_defines OUTPUT_VAR)
     set(${OUTPUT_VAR} ${__tmp_var} PARENT_SCOPE)
 endfunction()
 
-if(NOT MSVC AND (CMAKE_VERSION VERSION_GREATER 2.8.7))
+if(NOT MSVC)
     function(add_object_library _target)
         add_library(${_target} OBJECT ${ARGN})
     endfunction()
@@ -435,4 +586,10 @@ else()
     function(add_object_library _target)
         add_library(${_target} ${ARGN})
     endfunction()
+endif()
+
+if(KDBG)
+    set(ROSSYM_LIB "rossym")
+else()
+    set(ROSSYM_LIB "")
 endif()

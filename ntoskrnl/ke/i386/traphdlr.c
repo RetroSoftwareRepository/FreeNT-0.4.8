@@ -57,8 +57,8 @@ BOOLEAN StopChecking = FALSE;
 
 /* TRAP EXIT CODE *************************************************************/
 
-BOOLEAN
 FORCEINLINE
+BOOLEAN
 KiVdmTrap(IN PKTRAP_FRAME TrapFrame)
 {
     /* Either the V8086 flag is on, or this is user-mode with a VDM */
@@ -66,16 +66,16 @@ KiVdmTrap(IN PKTRAP_FRAME TrapFrame)
             ((KiUserTrap(TrapFrame)) && (PsGetCurrentProcess()->VdmObjects)));
 }
 
-BOOLEAN
 FORCEINLINE
+BOOLEAN
 KiV86Trap(IN PKTRAP_FRAME TrapFrame)
 {
     /* Check if the V8086 flag is on */
     return ((TrapFrame->EFlags & EFLAGS_V86_MASK) != 0);
 }
 
-BOOLEAN
 FORCEINLINE
+BOOLEAN
 KiIsFrameEdited(IN PKTRAP_FRAME TrapFrame)
 {
     /* An edited frame changes esp. It is marked by clearing the bits
@@ -83,8 +83,8 @@ KiIsFrameEdited(IN PKTRAP_FRAME TrapFrame)
     return ((TrapFrame->SegCs & FRAME_EDITED) == 0);
 }
 
-VOID
 FORCEINLINE
+VOID
 KiCommonExit(IN PKTRAP_FRAME TrapFrame, BOOLEAN SkipPreviousMode)
 {
     /* Disable interrupts until we return */
@@ -100,7 +100,7 @@ KiCommonExit(IN PKTRAP_FRAME TrapFrame, BOOLEAN SkipPreviousMode)
     if (__builtin_expect(TrapFrame->Dr7 & ~DR7_RESERVED_MASK, 0))
     {
         /* Check if the frame was from user mode or v86 mode */
-        if ((TrapFrame->SegCs & MODE_MASK) ||
+        if (KiUserTrap(TrapFrame) ||
             (TrapFrame->EFlags & EFLAGS_V86_MASK))
         {
             /* Handle debug registers */
@@ -124,13 +124,16 @@ KiEoiHelper(IN PKTRAP_FRAME TrapFrame)
     if (TrapFrame->EFlags & EFLAGS_V86_MASK) KiTrapReturnNoSegments(TrapFrame);
 
     /* Check for user mode exit */
-    if (TrapFrame->SegCs & MODE_MASK) KiTrapReturn(TrapFrame);
+    if (KiUserTrap(TrapFrame)) KiTrapReturn(TrapFrame);
 
     /* Check for edited frame */
     if (KiIsFrameEdited(TrapFrame)) KiEditedTrapReturn(TrapFrame);
 
+    /* Check if we have single stepping enabled */
+    if (TrapFrame->EFlags & EFLAGS_TF) KiTrapReturnNoSegments(TrapFrame);
+
     /* Exit the trap to kernel mode */
-    KiTrapReturnNoSegments(TrapFrame);
+    KiTrapReturnNoSegmentsRet8(TrapFrame);
 }
 
 DECLSPEC_NORETURN
@@ -152,7 +155,7 @@ KiServiceExit(IN PKTRAP_FRAME TrapFrame,
     KeGetCurrentThread()->PreviousMode = (CCHAR)TrapFrame->PreviousPreviousMode;
 
     /* Check for user mode exit */
-    if (TrapFrame->SegCs & MODE_MASK)
+    if (KiUserTrap(TrapFrame))
     {
         /* Check if we were single stepping */
         if (TrapFrame->EFlags & EFLAGS_TF)
@@ -186,13 +189,16 @@ KiServiceExit2(IN PKTRAP_FRAME TrapFrame)
     if (TrapFrame->EFlags & EFLAGS_V86_MASK) KiTrapReturnNoSegments(TrapFrame);
 
     /* Check for user mode exit */
-    if (TrapFrame->SegCs & MODE_MASK) KiTrapReturn(TrapFrame);
+    if (KiUserTrap(TrapFrame)) KiTrapReturn(TrapFrame);
 
     /* Check for edited frame */
     if (KiIsFrameEdited(TrapFrame)) KiEditedTrapReturn(TrapFrame);
 
+    /* Check if we have single stepping enabled */
+    if (TrapFrame->EFlags & EFLAGS_TF) KiTrapReturnNoSegments(TrapFrame);
+
     /* Exit the trap to kernel mode */
-    KiTrapReturnNoSegments(TrapFrame);
+    KiTrapReturnNoSegmentsRet8(TrapFrame);
 }
 
 
@@ -230,7 +236,7 @@ KiNpxHandler(IN PKTRAP_FRAME TrapFrame,
              IN PFX_SAVE_AREA SaveArea)
 {
     ULONG Cr0, Mask, Error, ErrorOffset, DataOffset;
-    
+
     /* Check for VDM trap */
     ASSERT((KiVdmTrap(TrapFrame)) == FALSE);
 
@@ -239,7 +245,7 @@ KiNpxHandler(IN PKTRAP_FRAME TrapFrame,
     {
         /* Kernel might've tripped a delayed error */
         SaveArea->Cr0NpxState |= CR0_TS;
-        
+
         /* Only valid if it happened during a restore */
         //if ((PVOID)TrapFrame->Eip == FrRestore)
         {
@@ -978,7 +984,7 @@ KiTrap0DHandler(IN PKTRAP_FRAME TrapFrame)
             }
             
             /* Check for privileged instructions */
-            DPRINT("Instruction (%d) at fault: %lx %lx %lx %lx\n",
+            DPRINT("Instruction (%lu) at fault: %lx %lx %lx %lx\n",
                     i,
                     Instructions[i],
                     Instructions[i + 1],
@@ -1234,15 +1240,26 @@ KiTrap0EHandler(IN PKTRAP_FRAME TrapFrame)
             /* Continue execution */
             KiEoiHelper(TrapFrame);
         }
+        else
+        {
+#if 0
+            /* Do what windows does and issue an invalid access violation */
+            KiDispatchException2Args(KI_EXCEPTION_ACCESS_VIOLATION,
+                                     TrapFrame->Eip,
+                                     TrapFrame->ErrCode & 2 ? TRUE : FALSE,
+                                     Cr2,
+                                     TrapFrame);
+#endif
+        }
     }
 
     /* Call the access fault handler */
     Status = MmAccessFault(TrapFrame->ErrCode & 1,
                            (PVOID)Cr2,
-                           TrapFrame->SegCs & MODE_MASK,
+                           KiUserTrap(TrapFrame),
                            TrapFrame);
     if (NT_SUCCESS(Status)) KiEoiHelper(TrapFrame);
-    
+
     /* Check for syscall fault */
 #if 0
     if ((TrapFrame->Eip == (ULONG_PTR)CopyParams) ||
@@ -1438,7 +1455,16 @@ VOID
 FASTCALL
 KiCallbackReturnHandler(IN PKTRAP_FRAME TrapFrame)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    NTSTATUS Status;
+
+    /* Pass the register parameters to NtCallbackReturn.
+       Result pointer is in ecx, result length in edx, status in eax */
+    Status = NtCallbackReturn((PVOID)TrapFrame->Ecx,
+                              TrapFrame->Edx,
+                              TrapFrame->Eax);
+
+    /* If we got here, something went wrong. Return an error to the caller */
+    KiServiceExit(TrapFrame, Status);
 }
 
 DECLSPEC_NORETURN
@@ -1495,9 +1521,9 @@ KiDbgPostServiceHook(ULONG SystemCallNumber, ULONG_PTR Result)
     return Result;
 }
 
+FORCEINLINE
 DECLSPEC_NORETURN
 VOID
-FORCEINLINE
 KiSystemCall(IN PKTRAP_FRAME TrapFrame,
              IN PVOID Arguments)
 {
@@ -1530,7 +1556,7 @@ KiSystemCall(IN PKTRAP_FRAME TrapFrame,
     TrapFrame->Dr7 = 0;
 
     /* Check if the frame was from user mode */
-    if (TrapFrame->SegCs & MODE_MASK)
+    if (KiUserTrap(TrapFrame))
     {
         /* Check for active debugging */
         if (KeGetCurrentThread()->Header.DebugActive & 0xFF)
@@ -1550,7 +1576,7 @@ KiSystemCall(IN PKTRAP_FRAME TrapFrame,
     /* Decode the system call number */
     Offset = (SystemCallNumber >> SERVICE_TABLE_SHIFT) & SERVICE_TABLE_MASK;
     Id = SystemCallNumber & SERVICE_NUMBER_MASK;
-    
+
     /* Get descriptor table */
     DescriptorTable = (PVOID)((ULONG_PTR)Thread->ServiceTable + Offset);
 

@@ -1236,6 +1236,9 @@ ObCreateObjectType(IN PUNICODE_STRING TypeName,
 
     /* Set the index and the entry into the object type array */
     LocalObjectType->Index = ObpTypeObjectType->TotalNumberOfObjects;
+
+    NT_ASSERT(LocalObjectType->Index != 0);
+
     if (LocalObjectType->Index < 32)
     {
         /* It fits, insert it */
@@ -1267,6 +1270,24 @@ ObCreateObjectType(IN PUNICODE_STRING TypeName,
     /* If we got here, then we failed */
     ObpReleaseLookupContext(&Context);
     return STATUS_INSUFFICIENT_RESOURCES;
+}
+
+VOID
+NTAPI
+ObDeleteCapturedInsertInfo(IN PVOID Object)
+{
+    POBJECT_HEADER ObjectHeader;
+    PAGED_CODE();
+
+    /* Check if there is anything to free */
+    ObjectHeader = OBJECT_TO_OBJECT_HEADER(Object);
+    if ((ObjectHeader->Flags & OB_FLAG_CREATE_INFO) &&
+        (ObjectHeader->ObjectCreateInfo != NULL))
+    {
+        /* Free the create info */
+        ObpFreeObjectCreateInformation(ObjectHeader->ObjectCreateInfo);
+        ObjectHeader->ObjectCreateInfo = NULL;
+    }
 }
 
 VOID
@@ -1664,14 +1685,14 @@ NtSetInformationObject(IN HANDLE ObjectHandle,
     switch (ObjectInformationClass)
     {
         case ObjectHandleFlagInformation:
-        
+
             /* Validate the length */
             if (Length != sizeof(OBJECT_HANDLE_ATTRIBUTE_INFORMATION))
             {
                 /* Invalid length */
                 return STATUS_INFO_LENGTH_MISMATCH;
             }
-            
+
             /* Save the previous mode */
             Context.PreviousMode = ExGetPreviousMode();
 
@@ -1703,7 +1724,7 @@ NtSetInformationObject(IN HANDLE ObjectHandle,
             }
 
             /* Check if this is a kernel handle */
-            if (ObIsKernelHandle(ObjectHandle, Context.PreviousMode))
+            if (ObpIsKernelHandle(ObjectHandle, Context.PreviousMode))
             {
                 /* Get the actual handle */
                 ObjectHandle = ObKernelHandleToHandle(ObjectHandle);
@@ -1741,9 +1762,9 @@ NtSetInformationObject(IN HANDLE ObjectHandle,
             /* De-attach if we were attached, and return status */
             if (AttachedToProcess) KeUnstackDetachProcess(&ApcState);
             break;
-        
+
         case ObjectSessionInformation:
-        
+
             /* Only a system process can do this */
             PreviousMode = ExGetPreviousMode();
             if (!SeSinglePrivilegeCheck(SeTcbPrivilege, PreviousMode))
@@ -1755,8 +1776,8 @@ NtSetInformationObject(IN HANDLE ObjectHandle,
             else
             {
                 /* Get the object directory */
-                Status = ObReferenceObjectByHandle(ObjectHandle, 
-                                                   0, 
+                Status = ObReferenceObjectByHandle(ObjectHandle,
+                                                   0,
                                                    ObDirectoryType,
                                                    PreviousMode,
                                                    (PVOID*)&Directory,
@@ -1770,7 +1791,7 @@ NtSetInformationObject(IN HANDLE ObjectHandle,
                 }
             }
             break;
-        
+
         default:
             /* Unsupported class */
             Status = STATUS_INVALID_INFO_CLASS;

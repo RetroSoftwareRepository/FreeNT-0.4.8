@@ -5,7 +5,7 @@ Name = Microsoft XML 3
 Version = 3.0
 Licence = Unknown
 Description = MSXML3 is needed for some MSI Installers. Contains: msxml3.dll, msxml3a.dll, msxml3r.dll.
-Size = 1.85MB
+Size = 1.85 MB
 Category = 14
 URLSite = http://www.microsoft.com/downloads/details.aspx?FamilyID=28494391-052B-42FF-9674-F752BDCA9582&displaylang=en
 URLDownload = ftp://ftp.uni-rostock.de/pub/tools/microsoft/XML/US/msxml3.msi
@@ -40,6 +40,11 @@ Description = Niektóre spośród plików instalacyjnych MSI potrzebują parsera
 Licence = Nespecificată
 Description = MSXML3 este necesar unor Instalatori MSI. Conține: msxml3.dll, msxml3a.dll, msxml3r.dll.
 Size = 1,85 Mo
+
+[Section.041f]
+Licence = Bilinmiyor
+Description = Birtakım Mikroyazılım Yükleyicileri için gereklidir. Şunları içerir: msxml3.dll, msxml3a.dll, msxml3r.dll.
+Size = 1,85 MB
 
 [Section.0422]
 Licence = Невідома

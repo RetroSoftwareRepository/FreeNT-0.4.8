@@ -24,10 +24,11 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <config.h>
-#include <wine/port.h>
-
 #include "wined3d_private.h"
+
+#ifdef _MSC_VER
+#define copysignf(x, y) ((x) < 0.0f ? -fabsf(y) : fabsf(y))
+#endif
 
 WINE_DEFAULT_DEBUG_CHANNEL(d3d);
 
@@ -120,18 +121,33 @@ static const struct wined3d_format_channels formats[] =
     {WINED3DFMT_VERTEXDATA,                 0,  0,  0,  0,   0,  0,  0,  0,    0,   0,     0},
     {WINED3DFMT_R16_UINT,                  16,  0,  0,  0,   0,  0,  0,  0,    2,   0,     0},
     {WINED3DFMT_R32_UINT,                  32,  0,  0,  0,   0,  0,  0,  0,    4,   0,     0},
+    {WINED3DFMT_R32G32_UINT,               32, 32,  0,  0,   0, 32,  0,  0,    8,   0,     0},
+    {WINED3DFMT_R32G32B32_UINT,            32, 32, 32,  0,   0, 32, 64,  0,   12,   0,     0},
+    {WINED3DFMT_R32G32B32A32_UINT,         32, 32, 32, 32,   0, 32, 64, 96,   16,   0,     0},
     {WINED3DFMT_R16G16B16A16_SNORM,        16, 16, 16, 16,   0, 16, 32, 48,    8,   0,     0},
     /* Vendor-specific formats */
     {WINED3DFMT_ATI2N,                      0,  0,  0,  0,   0,  0,  0,  0,    1,   0,     0},
     {WINED3DFMT_NVDB,                       0,  0,  0,  0,   0,  0,  0,  0,    0,   0,     0},
     {WINED3DFMT_INST,                       0,  0,  0,  0,   0,  0,  0,  0,    0,   0,     0},
     {WINED3DFMT_INTZ,                       0,  0,  0,  0,   0,  0,  0,  0,    4,  24,     8},
+    {WINED3DFMT_RESZ,                       0,  0,  0,  0,   0,  0,  0,  0,    0,   0,     0},
     {WINED3DFMT_NVHU,                       0,  0,  0,  0,   0,  0,  0,  0,    2,   0,     0},
     {WINED3DFMT_NVHS,                       0,  0,  0,  0,   0,  0,  0,  0,    2,   0,     0},
     {WINED3DFMT_NULL,                       8,  8,  8,  8,   0,  8, 16, 24,    4,   0,     0},
     /* Unsure about them, could not find a Windows driver that supports them */
     {WINED3DFMT_R16,                       16,  0,  0,  0,   0,  0,  0,  0,    2,   0,     0},
     {WINED3DFMT_AL16,                       0,  0,  0, 16,   0,  0,  0, 16,    4,   0,     0},
+    /* Typeless */
+    {WINED3DFMT_R8_TYPELESS,                8,  0,  0,  0,   0,  0,  0,  0,    1,   0,     0},
+    {WINED3DFMT_R8G8_TYPELESS,              8,  8,  0,  0,   0,  8,  0,  0,    2,   0,     0},
+    {WINED3DFMT_R8G8B8A8_TYPELESS,          8,  8,  8,  8,   0,  8, 16, 24,    4,   0,     0},
+    {WINED3DFMT_R16_TYPELESS,              16,  0,  0,  0,   0,  0,  0,  0,    2,   0,     0},
+    {WINED3DFMT_R16G16_TYPELESS,           16, 16,  0,  0,   0, 16,  0,  0,    4,   0,     0},
+    {WINED3DFMT_R16G16B16A16_TYPELESS,     16, 16, 16, 16,   0, 16, 32, 48,    8,   0,     0},
+    {WINED3DFMT_R32_TYPELESS,              32,  0,  0,  0,   0,  0,  0,  0,    4,   0,     0},
+    {WINED3DFMT_R32G32_TYPELESS,           32, 32,  0,  0,   0, 32,  0,  0,    8,   0,     0},
+    {WINED3DFMT_R32G32B32_TYPELESS,        32, 32, 32,  0,   0, 32, 64,  0,   12,   0,     0},
+    {WINED3DFMT_R32G32B32A32_TYPELESS,     32, 32, 32, 32,   0, 32, 64, 96,   16,   0,     0},
 };
 
 struct wined3d_format_base_flags
@@ -145,19 +161,6 @@ struct wined3d_format_base_flags
  * resource size. */
 static const struct wined3d_format_base_flags format_base_flags[] =
 {
-    {WINED3DFMT_UYVY,               WINED3DFMT_FLAG_FOURCC},
-    {WINED3DFMT_YUY2,               WINED3DFMT_FLAG_FOURCC},
-    {WINED3DFMT_YV12,               WINED3DFMT_FLAG_FOURCC},
-    {WINED3DFMT_DXT1,               WINED3DFMT_FLAG_FOURCC},
-    {WINED3DFMT_DXT2,               WINED3DFMT_FLAG_FOURCC},
-    {WINED3DFMT_DXT3,               WINED3DFMT_FLAG_FOURCC},
-    {WINED3DFMT_DXT4,               WINED3DFMT_FLAG_FOURCC},
-    {WINED3DFMT_DXT5,               WINED3DFMT_FLAG_FOURCC},
-    {WINED3DFMT_MULTI2_ARGB8,       WINED3DFMT_FLAG_FOURCC},
-    {WINED3DFMT_G8R8_G8B8,          WINED3DFMT_FLAG_FOURCC},
-    {WINED3DFMT_R8G8_B8G8,          WINED3DFMT_FLAG_FOURCC},
-    {WINED3DFMT_INTZ,               WINED3DFMT_FLAG_FOURCC},
-    {WINED3DFMT_NULL,               WINED3DFMT_FLAG_FOURCC},
     {WINED3DFMT_P8_UINT,            WINED3DFMT_FLAG_GETDC},
     {WINED3DFMT_B8G8R8_UNORM,       WINED3DFMT_FLAG_GETDC},
     {WINED3DFMT_B8G8R8A8_UNORM,     WINED3DFMT_FLAG_GETDC},
@@ -169,10 +172,7 @@ static const struct wined3d_format_base_flags format_base_flags[] =
     {WINED3DFMT_B4G4R4X4_UNORM,     WINED3DFMT_FLAG_GETDC},
     {WINED3DFMT_R8G8B8A8_UNORM,     WINED3DFMT_FLAG_GETDC},
     {WINED3DFMT_R8G8B8X8_UNORM,     WINED3DFMT_FLAG_GETDC},
-    {WINED3DFMT_ATI2N,              WINED3DFMT_FLAG_FOURCC | WINED3DFMT_FLAG_BROKEN_PITCH},
-    {WINED3DFMT_NVDB,               WINED3DFMT_FLAG_FOURCC},
-    {WINED3DFMT_NVHU,               WINED3DFMT_FLAG_FOURCC},
-    {WINED3DFMT_NVHS,               WINED3DFMT_FLAG_FOURCC},
+    {WINED3DFMT_ATI2N,              WINED3DFMT_FLAG_BROKEN_PITCH},
     {WINED3DFMT_R32_FLOAT,          WINED3DFMT_FLAG_FLOAT},
     {WINED3DFMT_R32G32_FLOAT,       WINED3DFMT_FLAG_FLOAT},
     {WINED3DFMT_R32G32B32_FLOAT,    WINED3DFMT_FLAG_FLOAT},
@@ -190,18 +190,19 @@ struct wined3d_format_block_info
     UINT block_width;
     UINT block_height;
     UINT block_byte_count;
+    BOOL verify;
 };
 
 static const struct wined3d_format_block_info format_block_info[] =
 {
-    {WINED3DFMT_DXT1,   4,  4,  8},
-    {WINED3DFMT_DXT2,   4,  4,  16},
-    {WINED3DFMT_DXT3,   4,  4,  16},
-    {WINED3DFMT_DXT4,   4,  4,  16},
-    {WINED3DFMT_DXT5,   4,  4,  16},
-    {WINED3DFMT_ATI2N,  4,  4,  16},
-    {WINED3DFMT_YUY2,   2,  1,  4},
-    {WINED3DFMT_UYVY,   2,  1,  4},
+    {WINED3DFMT_DXT1,   4,  4,  8,  TRUE},
+    {WINED3DFMT_DXT2,   4,  4,  16, TRUE},
+    {WINED3DFMT_DXT3,   4,  4,  16, TRUE},
+    {WINED3DFMT_DXT4,   4,  4,  16, TRUE},
+    {WINED3DFMT_DXT5,   4,  4,  16, TRUE},
+    {WINED3DFMT_ATI2N,  4,  4,  16, FALSE},
+    {WINED3DFMT_YUY2,   2,  1,  4,  FALSE},
+    {WINED3DFMT_UYVY,   2,  1,  4,  FALSE},
 };
 
 struct wined3d_format_vertex_info
@@ -233,7 +234,11 @@ static const struct wined3d_format_vertex_info format_vertex_info[] =
     {WINED3DFMT_R10G10B10A2_UINT,   WINED3D_FFP_EMIT_UDEC3,     3, GL_UNSIGNED_SHORT, 3, GL_FALSE, sizeof(short int)},
     {WINED3DFMT_R10G10B10A2_SNORM,  WINED3D_FFP_EMIT_DEC3N,     3, GL_SHORT,          3, GL_TRUE,  sizeof(short int)},
     {WINED3DFMT_R16G16_FLOAT,       WINED3D_FFP_EMIT_FLOAT16_2, 2, GL_FLOAT,          2, GL_FALSE, sizeof(GLhalfNV)},
-    {WINED3DFMT_R16G16B16A16_FLOAT, WINED3D_FFP_EMIT_FLOAT16_4, 4, GL_FLOAT,          4, GL_FALSE, sizeof(GLhalfNV)}
+    {WINED3DFMT_R16G16B16A16_FLOAT, WINED3D_FFP_EMIT_FLOAT16_4, 4, GL_FLOAT,          4, GL_FALSE, sizeof(GLhalfNV)},
+    {WINED3DFMT_R32_UINT,           WINED3D_FFP_EMIT_INVALID,   1, GL_UNSIGNED_INT,   1, GL_FALSE, sizeof(UINT)},
+    {WINED3DFMT_R32G32_UINT,        WINED3D_FFP_EMIT_INVALID,   2, GL_UNSIGNED_INT,   2, GL_FALSE, sizeof(UINT)},
+    {WINED3DFMT_R32G32B32_UINT,     WINED3D_FFP_EMIT_INVALID,   3, GL_UNSIGNED_INT,   3, GL_FALSE, sizeof(UINT)},
+    {WINED3DFMT_R32G32B32A32_UINT,  WINED3D_FFP_EMIT_INVALID,   4, GL_UNSIGNED_INT,   4, GL_FALSE, sizeof(UINT)},
 };
 
 struct wined3d_format_texture_info
@@ -247,117 +252,136 @@ struct wined3d_format_texture_info
     unsigned int conv_byte_count;
     unsigned int flags;
     enum wined3d_gl_extension extension;
-    void (*convert)(const BYTE *src, BYTE *dst, UINT pitch, UINT width, UINT height);
+    void (*convert)(const BYTE *src, BYTE *dst, UINT src_row_pitch, UINT src_slice_pitch,
+            UINT dst_row_pitch, UINT dst_slice_pitch, UINT width, UINT height, UINT depth);
 };
 
-static void convert_l4a4_unorm(const BYTE *src, BYTE *dst, UINT pitch, UINT width, UINT height)
+static void convert_l4a4_unorm(const BYTE *src, BYTE *dst, UINT src_row_pitch, UINT src_slice_pitch,
+        UINT dst_row_pitch, UINT dst_slice_pitch, UINT width, UINT height, UINT depth)
 {
     /* WINED3DFMT_L4A4_UNORM exists as an internal gl format, but for some reason there is not
      * format+type combination to load it. Thus convert it to A8L8, then load it
      * with A4L4 internal, but A8L8 format+type
      */
-    unsigned int x, y;
+    unsigned int x, y, z;
     const unsigned char *Source;
     unsigned char *Dest;
-    UINT outpitch = pitch * 2;
 
-    for(y = 0; y < height; y++) {
-        Source = src + y * pitch;
-        Dest = dst + y * outpitch;
-        for (x = 0; x < width; x++ ) {
-            unsigned char color = (*Source++);
-            /* A */ Dest[1] = (color & 0xf0) << 0;
-            /* L */ Dest[0] = (color & 0x0f) << 4;
-            Dest += 2;
+    for (z = 0; z < depth; z++)
+    {
+        for (y = 0; y < height; y++)
+        {
+            Source = src + z * src_slice_pitch + y * src_row_pitch;
+            Dest = dst + z * dst_slice_pitch + y * dst_row_pitch;
+            for (x = 0; x < width; x++ )
+            {
+                unsigned char color = (*Source++);
+                /* A */ Dest[1] = (color & 0xf0) << 0;
+                /* L */ Dest[0] = (color & 0x0f) << 4;
+                Dest += 2;
+            }
         }
     }
 }
 
-static void convert_r5g5_snorm_l6_unorm(const BYTE *src, BYTE *dst, UINT pitch, UINT width, UINT height)
+static void convert_r5g5_snorm_l6_unorm(const BYTE *src, BYTE *dst, UINT src_row_pitch, UINT src_slice_pitch,
+        UINT dst_row_pitch, UINT dst_slice_pitch, UINT width, UINT height, UINT depth)
 {
-    unsigned int x, y;
+    unsigned int x, y, z;
     const WORD *Source;
 
-    for(y = 0; y < height; y++)
+    for (z = 0; z < depth; z++)
     {
-        unsigned short *Dest_s = (unsigned short *) (dst + y * pitch);
-        Source = (const WORD *)(src + y * pitch);
-        for (x = 0; x < width; x++ )
+        for (y = 0; y < height; y++)
         {
-            short color = (*Source++);
-            unsigned char l = ((color >> 10) & 0xfc);
-                    short v = ((color >>  5) & 0x3e);
-                    short u = ((color      ) & 0x1f);
-            short v_conv = v + 16;
-            short u_conv = u + 16;
+            unsigned short *Dest_s = (unsigned short *) (dst + z * dst_slice_pitch + y * dst_row_pitch);
+            Source = (const WORD *)(src + z * src_slice_pitch + y * src_row_pitch);
+            for (x = 0; x < width; x++ )
+            {
+                short color = (*Source++);
+                unsigned char l = ((color >> 10) & 0xfc);
+                        short v = ((color >>  5) & 0x3e);
+                        short u = ((color      ) & 0x1f);
+                short v_conv = v + 16;
+                short u_conv = u + 16;
 
-            *Dest_s = ((v_conv << 11) & 0xf800) | ((l << 5) & 0x7e0) | (u_conv & 0x1f);
-            Dest_s += 1;
+                *Dest_s = ((v_conv << 11) & 0xf800) | ((l << 5) & 0x7e0) | (u_conv & 0x1f);
+                Dest_s += 1;
+            }
         }
     }
 }
 
-static void convert_r5g5_snorm_l6_unorm_nv(const BYTE *src, BYTE *dst, UINT pitch, UINT width, UINT height)
+static void convert_r5g5_snorm_l6_unorm_nv(const BYTE *src, BYTE *dst, UINT src_row_pitch, UINT src_slice_pitch,
+        UINT dst_row_pitch, UINT dst_slice_pitch, UINT width, UINT height, UINT depth)
 {
-    unsigned int x, y;
+    unsigned int x, y, z;
     const WORD *Source;
     unsigned char *Dest;
-    UINT outpitch = (pitch * 3)/2;
 
     /* This makes the gl surface bigger(24 bit instead of 16), but it works with
      * fixed function and shaders without further conversion once the surface is
      * loaded
      */
-    for(y = 0; y < height; y++) {
-        Source = (const WORD *)(src + y * pitch);
-        Dest = dst + y * outpitch;
-        for (x = 0; x < width; x++ ) {
-            short color = (*Source++);
-            unsigned char l = ((color >> 10) & 0xfc);
-                     char v = ((color >>  5) & 0x3e);
-                     char u = ((color      ) & 0x1f);
+    for (z = 0; z < depth; z++)
+    {
+        for (y = 0; y < height; y++)
+        {
+            Source = (const WORD *)(src + z * src_slice_pitch + y * src_row_pitch);
+            Dest = dst + z * dst_slice_pitch + y * dst_row_pitch;
+            for (x = 0; x < width; x++ )
+            {
+                short color = (*Source++);
+                unsigned char l = ((color >> 10) & 0xfc);
+                         char v = ((color >>  5) & 0x3e);
+                         char u = ((color      ) & 0x1f);
 
-            /* 8 bits destination, 6 bits source, 8th bit is the sign. gl ignores the sign
-             * and doubles the positive range. Thus shift left only once, gl does the 2nd
-             * shift. GL reads a signed value and converts it into an unsigned value.
-             */
-            /* M */ Dest[2] = l << 1;
+                /* 8 bits destination, 6 bits source, 8th bit is the sign. gl ignores the sign
+                 * and doubles the positive range. Thus shift left only once, gl does the 2nd
+                 * shift. GL reads a signed value and converts it into an unsigned value.
+                 */
+                /* M */ Dest[2] = l << 1;
 
-            /* Those are read as signed, but kept signed. Just left-shift 3 times to scale
-             * from 5 bit values to 8 bit values.
-             */
-            /* V */ Dest[1] = v << 3;
-            /* U */ Dest[0] = u << 3;
-            Dest += 3;
+                /* Those are read as signed, but kept signed. Just left-shift 3 times to scale
+                 * from 5 bit values to 8 bit values.
+                 */
+                /* V */ Dest[1] = v << 3;
+                /* U */ Dest[0] = u << 3;
+                Dest += 3;
+            }
         }
     }
 }
 
-static void convert_r8g8_snorm(const BYTE *src, BYTE *dst, UINT pitch, UINT width, UINT height)
+static void convert_r8g8_snorm(const BYTE *src, BYTE *dst, UINT src_row_pitch, UINT src_slice_pitch,
+        UINT dst_row_pitch, UINT dst_slice_pitch, UINT width, UINT height, UINT depth)
 {
-    unsigned int x, y;
+    unsigned int x, y, z;
     const short *Source;
     unsigned char *Dest;
-    UINT outpitch = (pitch * 3)/2;
 
-    for(y = 0; y < height; y++)
+    for (z = 0; z < depth; z++)
     {
-        Source = (const short *)(src + y * pitch);
-        Dest = dst + y * outpitch;
-        for (x = 0; x < width; x++ )
+        for (y = 0; y < height; y++)
         {
-            const short color = (*Source++);
-            /* B */ Dest[0] = 0xff;
-            /* G */ Dest[1] = (color >> 8) + 128; /* V */
-            /* R */ Dest[2] = (color & 0xff) + 128;      /* U */
-            Dest += 3;
+            Source = (const short *)(src + z * src_slice_pitch + y * src_row_pitch);
+            Dest = dst + z * dst_slice_pitch + y * dst_row_pitch;
+            for (x = 0; x < width; x++ )
+            {
+                const short color = (*Source++);
+                /* B */ Dest[0] = 0xff;
+                /* G */ Dest[1] = (color >> 8) + 128; /* V */
+                /* R */ Dest[2] = (color & 0xff) + 128;      /* U */
+                Dest += 3;
+            }
         }
     }
 }
 
-static void convert_r8g8_snorm_l8x8_unorm(const BYTE *src, BYTE *dst, UINT pitch, UINT width, UINT height)
+static void convert_r8g8_snorm_l8x8_unorm(const BYTE *src, BYTE *dst, UINT src_row_pitch, UINT src_slice_pitch,
+        UINT dst_row_pitch, UINT dst_slice_pitch, UINT width, UINT height, UINT depth)
 {
-    unsigned int x, y;
+    unsigned int x, y, z;
     const DWORD *Source;
     unsigned char *Dest;
 
@@ -365,193 +389,222 @@ static void convert_r8g8_snorm_l8x8_unorm(const BYTE *src, BYTE *dst, UINT pitch
      * shaders if the shader is adjusted. (There's no use for this format in gl's
      * standard fixed function pipeline anyway).
      */
-    for(y = 0; y < height; y++)
+    for (z = 0; z < depth; z++)
     {
-        Source = (const DWORD *)(src + y * pitch);
-        Dest = dst + y * pitch;
-        for (x = 0; x < width; x++ )
+        for (y = 0; y < height; y++)
         {
-            LONG color = (*Source++);
-            /* B */ Dest[0] = ((color >> 16) & 0xff);       /* L */
-            /* G */ Dest[1] = ((color >> 8 ) & 0xff) + 128; /* V */
-            /* R */ Dest[2] = (color         & 0xff) + 128; /* U */
-            Dest += 4;
+            Source = (const DWORD *)(src + z * src_slice_pitch + y * src_row_pitch);
+            Dest = dst + z * dst_slice_pitch + y * dst_row_pitch;
+            for (x = 0; x < width; x++ )
+            {
+                LONG color = (*Source++);
+                /* B */ Dest[0] = ((color >> 16) & 0xff);       /* L */
+                /* G */ Dest[1] = ((color >> 8 ) & 0xff) + 128; /* V */
+                /* R */ Dest[2] = (color         & 0xff) + 128; /* U */
+                Dest += 4;
+            }
         }
     }
 }
 
-static void convert_r8g8_snorm_l8x8_unorm_nv(const BYTE *src, BYTE *dst, UINT pitch, UINT width, UINT height)
+static void convert_r8g8_snorm_l8x8_unorm_nv(const BYTE *src, BYTE *dst, UINT src_row_pitch, UINT src_slice_pitch,
+        UINT dst_row_pitch, UINT dst_slice_pitch, UINT width, UINT height, UINT depth)
 {
-    unsigned int x, y;
+    unsigned int x, y, z;
     const DWORD *Source;
     unsigned char *Dest;
 
     /* This implementation works with the fixed function pipeline and shaders
      * without further modification after converting the surface.
      */
-    for(y = 0; y < height; y++)
+    for (z = 0; z < depth; z++)
     {
-        Source = (const DWORD *)(src + y * pitch);
-        Dest = dst + y * pitch;
-        for (x = 0; x < width; x++ )
+        for (y = 0; y < height; y++)
         {
-            LONG color = (*Source++);
-            /* L */ Dest[2] = ((color >> 16) & 0xff);   /* L */
-            /* V */ Dest[1] = ((color >> 8 ) & 0xff);   /* V */
-            /* U */ Dest[0] = (color         & 0xff);   /* U */
-            /* I */ Dest[3] = 255;                      /* X */
-            Dest += 4;
+            Source = (const DWORD *)(src + z * src_slice_pitch + y * src_row_pitch);
+            Dest = dst + z * dst_slice_pitch + y * dst_row_pitch;
+            for (x = 0; x < width; x++ )
+            {
+                LONG color = (*Source++);
+                /* L */ Dest[2] = ((color >> 16) & 0xff);   /* L */
+                /* V */ Dest[1] = ((color >> 8 ) & 0xff);   /* V */
+                /* U */ Dest[0] = (color         & 0xff);   /* U */
+                /* I */ Dest[3] = 255;                      /* X */
+                Dest += 4;
+            }
         }
     }
 }
 
-static void convert_r8g8b8a8_snorm(const BYTE *src, BYTE *dst, UINT pitch, UINT width, UINT height)
+static void convert_r8g8b8a8_snorm(const BYTE *src, BYTE *dst, UINT src_row_pitch, UINT src_slice_pitch,
+        UINT dst_row_pitch, UINT dst_slice_pitch, UINT width, UINT height, UINT depth)
 {
-    unsigned int x, y;
+    unsigned int x, y, z;
     const DWORD *Source;
     unsigned char *Dest;
 
-    for(y = 0; y < height; y++)
+    for (z = 0; z < depth; z++)
     {
-        Source = (const DWORD *)(src + y * pitch);
-        Dest = dst + y * pitch;
-        for (x = 0; x < width; x++ )
+        for (y = 0; y < height; y++)
         {
-            LONG color = (*Source++);
-            /* B */ Dest[0] = ((color >> 16) & 0xff) + 128; /* W */
-            /* G */ Dest[1] = ((color >> 8 ) & 0xff) + 128; /* V */
-            /* R */ Dest[2] = (color         & 0xff) + 128; /* U */
-            /* A */ Dest[3] = ((color >> 24) & 0xff) + 128; /* Q */
-            Dest += 4;
+            Source = (const DWORD *)(src + z * src_slice_pitch + y * src_row_pitch);
+            Dest = dst + z * dst_slice_pitch + y * dst_row_pitch;
+            for (x = 0; x < width; x++ )
+            {
+                LONG color = (*Source++);
+                /* B */ Dest[0] = ((color >> 16) & 0xff) + 128; /* W */
+                /* G */ Dest[1] = ((color >> 8 ) & 0xff) + 128; /* V */
+                /* R */ Dest[2] = (color         & 0xff) + 128; /* U */
+                /* A */ Dest[3] = ((color >> 24) & 0xff) + 128; /* Q */
+                Dest += 4;
+            }
         }
     }
 }
 
-static void convert_r16g16_snorm(const BYTE *src, BYTE *dst, UINT pitch, UINT width, UINT height)
+static void convert_r16g16_snorm(const BYTE *src, BYTE *dst, UINT src_row_pitch, UINT src_slice_pitch,
+        UINT dst_row_pitch, UINT dst_slice_pitch, UINT width, UINT height, UINT depth)
 {
-    unsigned int x, y;
+    unsigned int x, y, z;
     const DWORD *Source;
     unsigned short *Dest;
-    UINT outpitch = (pitch * 3)/2;
 
-    for(y = 0; y < height; y++)
+    for (z = 0; z < depth; z++)
     {
-        Source = (const DWORD *)(src + y * pitch);
-        Dest = (unsigned short *) (dst + y * outpitch);
-        for (x = 0; x < width; x++ )
+        for (y = 0; y < height; y++)
         {
-            const DWORD color = (*Source++);
-            /* B */ Dest[0] = 0xffff;
-            /* G */ Dest[1] = (color >> 16) + 32768; /* V */
-            /* R */ Dest[2] = (color & 0xffff) + 32768; /* U */
-            Dest += 3;
+            Source = (const DWORD *)(src + z * src_slice_pitch + y * src_row_pitch);
+            Dest = (unsigned short *) (dst + z * dst_slice_pitch + y * dst_row_pitch);
+            for (x = 0; x < width; x++ )
+            {
+                const DWORD color = (*Source++);
+                /* B */ Dest[0] = 0xffff;
+                /* G */ Dest[1] = (color >> 16) + 32768; /* V */
+                /* R */ Dest[2] = (color & 0xffff) + 32768; /* U */
+                Dest += 3;
+            }
         }
     }
 }
 
-static void convert_r16g16(const BYTE *src, BYTE *dst, UINT pitch, UINT width, UINT height)
+static void convert_r16g16(const BYTE *src, BYTE *dst, UINT src_row_pitch, UINT src_slice_pitch,
+        UINT dst_row_pitch, UINT dst_slice_pitch, UINT width, UINT height, UINT depth)
 {
-    unsigned int x, y;
+    unsigned int x, y, z;
     const WORD *Source;
     WORD *Dest;
-    UINT outpitch = (pitch * 3)/2;
 
-    for(y = 0; y < height; y++)
+    for (z = 0; z < depth; z++)
     {
-        Source = (const WORD *)(src + y * pitch);
-        Dest = (WORD *) (dst + y * outpitch);
-        for (x = 0; x < width; x++ )
+        for (y = 0; y < height; y++)
         {
-            WORD green = (*Source++);
-            WORD red = (*Source++);
-            Dest[0] = green;
-            Dest[1] = red;
-            /* Strictly speaking not correct for R16G16F, but it doesn't matter because the
-             * shader overwrites it anyway
-             */
-            Dest[2] = 0xffff;
-            Dest += 3;
+            Source = (const WORD *)(src + z * src_slice_pitch + y * src_row_pitch);
+            Dest = (WORD *) (dst + z * dst_slice_pitch + y * dst_row_pitch);
+            for (x = 0; x < width; x++ )
+            {
+                WORD green = (*Source++);
+                WORD red = (*Source++);
+                Dest[0] = green;
+                Dest[1] = red;
+                /* Strictly speaking not correct for R16G16F, but it doesn't matter because the
+                 * shader overwrites it anyway */
+                Dest[2] = 0xffff;
+                Dest += 3;
+            }
         }
     }
 }
 
-static void convert_r32g32_float(const BYTE *src, BYTE *dst, UINT pitch, UINT width, UINT height)
+static void convert_r32g32_float(const BYTE *src, BYTE *dst, UINT src_row_pitch, UINT src_slice_pitch,
+        UINT dst_row_pitch, UINT dst_slice_pitch, UINT width, UINT height, UINT depth)
 {
-    unsigned int x, y;
+    unsigned int x, y, z;
     const float *Source;
     float *Dest;
-    UINT outpitch = (pitch * 3)/2;
 
-    for(y = 0; y < height; y++)
+    for (z = 0; z < depth; z++)
     {
-        Source = (const float *)(src + y * pitch);
-        Dest = (float *) (dst + y * outpitch);
-        for (x = 0; x < width; x++ )
+        for (y = 0; y < height; y++)
         {
-            float green = (*Source++);
-            float red = (*Source++);
-            Dest[0] = green;
-            Dest[1] = red;
-            Dest[2] = 1.0f;
-            Dest += 3;
+            Source = (const float *)(src + z * src_slice_pitch + y * src_row_pitch);
+            Dest = (float *) (dst + z * dst_slice_pitch + y * dst_row_pitch);
+            for (x = 0; x < width; x++ )
+            {
+                float green = (*Source++);
+                float red = (*Source++);
+                Dest[0] = green;
+                Dest[1] = red;
+                Dest[2] = 1.0f;
+                Dest += 3;
+            }
         }
     }
 }
 
-static void convert_s1_uint_d15_unorm(const BYTE *src, BYTE *dst, UINT pitch, UINT width, UINT height)
+static void convert_s1_uint_d15_unorm(const BYTE *src, BYTE *dst, UINT src_row_pitch, UINT src_slice_pitch,
+        UINT dst_row_pitch, UINT dst_slice_pitch, UINT width, UINT height, UINT depth)
 {
-    unsigned int x, y;
-    UINT outpitch = pitch * 2;
+    unsigned int x, y, z;
 
-    for (y = 0; y < height; ++y)
+    for (z = 0; z < depth; z++)
     {
-        const WORD *source = (const WORD *)(src + y * pitch);
-        DWORD *dest = (DWORD *)(dst + y * outpitch);
-
-        for (x = 0; x < width; ++x)
+        for (y = 0; y < height; ++y)
         {
-            /* The depth data is normalized, so needs to be scaled,
-             * the stencil data isn't.  Scale depth data by
-             *      (2^24-1)/(2^15-1) ~~ (2^9 + 2^-6). */
-            WORD d15 = source[x] >> 1;
-            DWORD d24 = (d15 << 9) + (d15 >> 6);
-            dest[x] = (d24 << 8) | (source[x] & 0x1);
+            const WORD *source = (const WORD *)(src + z * src_slice_pitch + y * src_row_pitch);
+            DWORD *dest = (DWORD *)(dst + z * dst_slice_pitch + y * dst_row_pitch);
+
+            for (x = 0; x < width; ++x)
+            {
+                /* The depth data is normalized, so needs to be scaled,
+                * the stencil data isn't.  Scale depth data by
+                *      (2^24-1)/(2^15-1) ~~ (2^9 + 2^-6). */
+                WORD d15 = source[x] >> 1;
+                DWORD d24 = (d15 << 9) + (d15 >> 6);
+                dest[x] = (d24 << 8) | (source[x] & 0x1);
+            }
         }
     }
 }
 
-static void convert_s4x4_uint_d24_unorm(const BYTE *src, BYTE *dst, UINT pitch, UINT width, UINT height)
+static void convert_s4x4_uint_d24_unorm(const BYTE *src, BYTE *dst, UINT src_row_pitch, UINT src_slice_pitch,
+        UINT dst_row_pitch, UINT dst_slice_pitch, UINT width, UINT height, UINT depth)
 {
-    unsigned int x, y;
+    unsigned int x, y, z;
 
-    for (y = 0; y < height; ++y)
+    for (z = 0; z < depth; z++)
     {
-        const DWORD *source = (const DWORD *)(src + y * pitch);
-        DWORD *dest = (DWORD *)(dst + y * pitch);
-
-        for (x = 0; x < width; ++x)
+        for (y = 0; y < height; ++y)
         {
-            /* Just need to clear out the X4 part. */
-            dest[x] = source[x] & ~0xf0;
+            const DWORD *source = (const DWORD *)(src + z * src_slice_pitch + y * src_row_pitch);
+            DWORD *dest = (DWORD *)(dst + z * dst_slice_pitch + y * dst_row_pitch);
+
+            for (x = 0; x < width; ++x)
+            {
+                /* Just need to clear out the X4 part. */
+                dest[x] = source[x] & ~0xf0;
+            }
         }
     }
 }
 
-static void convert_s8_uint_d24_float(const BYTE *src, BYTE *dst, UINT pitch, UINT width, UINT height)
+static void convert_s8_uint_d24_float(const BYTE *src, BYTE *dst, UINT src_row_pitch, UINT src_slice_pitch,
+        UINT dst_row_pitch, UINT dst_slice_pitch, UINT width, UINT height, UINT depth)
 {
-    unsigned int x, y;
-    UINT outpitch = pitch * 2;
+    unsigned int x, y, z;
 
-    for (y = 0; y < height; ++y)
+    for (z = 0; z < depth; z++)
     {
-        const DWORD *source = (const DWORD *)(src + y * pitch);
-        float *dest_f = (float *)(dst + y * outpitch);
-        DWORD *dest_s = (DWORD *)(dst + y * outpitch);
-
-        for (x = 0; x < width; ++x)
+        for (y = 0; y < height; ++y)
         {
-            dest_f[x * 2] = float_24_to_32((source[x] & 0xffffff00) >> 8);
-            dest_s[x * 2 + 1] = source[x] & 0xff;
+            const DWORD *source = (const DWORD *)(src + z * src_slice_pitch + y * src_row_pitch);
+            float *dest_f = (float *)(dst + z * dst_slice_pitch + y * dst_row_pitch);
+            DWORD *dest_s = (DWORD *)dest_f;
+
+            for (x = 0; x < width; ++x)
+            {
+                dest_f[x * 2] = float_24_to_32((source[x] & 0xffffff00) >> 8);
+                dest_s[x * 2 + 1] = source[x] & 0xff;
+            }
         }
     }
 }
@@ -581,10 +634,10 @@ static void convert_s8_uint_d24_float(const BYTE *src, BYTE *dst, UINT pitch, UI
  *     WINED3DFMT_NVHS */
 static const struct wined3d_format_texture_info format_texture_info[] =
 {
-    /* format id                        internal                          srgbInternal                       rtInternal
-            format                      type
+    /* format id                        gl_internal                       gl_srgb_internal                      gl_rt_internal
+            gl_format                   gl_type                           conv_byte_count
             flags
-            extension */
+            extension                   convert */
     /* FourCC formats */
     /* GL_APPLE_ycbcr_422 claims that its '2YUV' format, which is supported via the UNSIGNED_SHORT_8_8_REV_APPLE type
      * is equivalent to 'UYVY' format on Windows, and the 'YUVS' via UNSIGNED_SHORT_8_8_APPLE equates to 'YUY2'. The
@@ -685,10 +738,6 @@ static const struct wined3d_format_texture_info format_texture_info[] =
             GL_ALPHA,                   GL_UNSIGNED_BYTE,                 0,
             0,
             ARB_FRAGMENT_PROGRAM,       NULL},
-    {WINED3DFMT_P8_UINT,                GL_COLOR_INDEX8_EXT,              GL_COLOR_INDEX8_EXT,                    0,
-            GL_COLOR_INDEX,             GL_UNSIGNED_BYTE,                 0,
-            0,
-            EXT_PALETTED_TEXTURE,       NULL},
     /* Standard ARGB formats */
     {WINED3DFMT_B8G8R8_UNORM,           GL_RGB8,                          GL_RGB8,                                0,
             GL_BGR,                     GL_UNSIGNED_BYTE,                 0,
@@ -742,7 +791,8 @@ static const struct wined3d_format_texture_info format_texture_info[] =
             WINED3D_GL_EXT_NONE,        NULL},
     {WINED3DFMT_R8G8B8A8_UNORM,         GL_RGBA8,                         GL_RGBA8,                               0,
             GL_RGBA,                    GL_UNSIGNED_INT_8_8_8_8_REV,      0,
-            WINED3DFMT_FLAG_TEXTURE | WINED3DFMT_FLAG_POSTPIXELSHADER_BLENDING | WINED3DFMT_FLAG_FILTERING,
+            WINED3DFMT_FLAG_TEXTURE | WINED3DFMT_FLAG_POSTPIXELSHADER_BLENDING | WINED3DFMT_FLAG_FILTERING
+            | WINED3DFMT_FLAG_RENDERTARGET,
             WINED3D_GL_EXT_NONE,        NULL},
     {WINED3DFMT_R8G8B8X8_UNORM,         GL_RGB8,                          GL_RGB8,                                0,
             GL_RGBA,                    GL_UNSIGNED_INT_8_8_8_8_REV,      0,
@@ -834,10 +884,18 @@ static const struct wined3d_format_texture_info format_texture_info[] =
             | WINED3DFMT_FLAG_BUMPMAP,
             NV_TEXTURE_SHADER,          NULL},
     /* Depth stencil formats */
+    {WINED3DFMT_D16_LOCKABLE,           GL_DEPTH_COMPONENT,               GL_DEPTH_COMPONENT,                     0,
+            GL_DEPTH_COMPONENT,         GL_UNSIGNED_SHORT,                0,
+            WINED3DFMT_FLAG_DEPTH,
+            WINED3D_GL_EXT_NONE,        NULL},
     {WINED3DFMT_D16_LOCKABLE,           GL_DEPTH_COMPONENT24_ARB,         GL_DEPTH_COMPONENT24_ARB,               0,
             GL_DEPTH_COMPONENT,         GL_UNSIGNED_SHORT,                0,
             WINED3DFMT_FLAG_TEXTURE | WINED3DFMT_FLAG_DEPTH | WINED3DFMT_FLAG_SHADOW,
             ARB_DEPTH_TEXTURE,          NULL},
+    {WINED3DFMT_D32_UNORM,              GL_DEPTH_COMPONENT,               GL_DEPTH_COMPONENT,                     0,
+            GL_DEPTH_COMPONENT,         GL_UNSIGNED_INT,                  0,
+            WINED3DFMT_FLAG_DEPTH,
+            WINED3D_GL_EXT_NONE,        NULL},
     {WINED3DFMT_D32_UNORM,              GL_DEPTH_COMPONENT32_ARB,         GL_DEPTH_COMPONENT32_ARB,               0,
             GL_DEPTH_COMPONENT,         GL_UNSIGNED_INT,                  0,
             WINED3DFMT_FLAG_TEXTURE | WINED3DFMT_FLAG_DEPTH | WINED3DFMT_FLAG_SHADOW,
@@ -869,6 +927,10 @@ static const struct wined3d_format_texture_info format_texture_info[] =
             WINED3DFMT_FLAG_TEXTURE | WINED3DFMT_FLAG_POSTPIXELSHADER_BLENDING | WINED3DFMT_FLAG_FILTERING
             | WINED3DFMT_FLAG_DEPTH | WINED3DFMT_FLAG_STENCIL | WINED3DFMT_FLAG_SHADOW,
             ARB_FRAMEBUFFER_OBJECT,     NULL},
+    {WINED3DFMT_X8D24_UNORM,            GL_DEPTH_COMPONENT,               GL_DEPTH_COMPONENT,                     0,
+            GL_DEPTH_COMPONENT,         GL_UNSIGNED_INT,                  0,
+            WINED3DFMT_FLAG_DEPTH,
+            WINED3D_GL_EXT_NONE,        NULL},
     {WINED3DFMT_X8D24_UNORM,            GL_DEPTH_COMPONENT24_ARB,         GL_DEPTH_COMPONENT24_ARB,               0,
             GL_DEPTH_COMPONENT,         GL_UNSIGNED_INT,                  0,
             WINED3DFMT_FLAG_TEXTURE | WINED3DFMT_FLAG_POSTPIXELSHADER_BLENDING | WINED3DFMT_FLAG_FILTERING
@@ -886,6 +948,10 @@ static const struct wined3d_format_texture_info format_texture_info[] =
             GL_DEPTH_STENCIL,           GL_UNSIGNED_INT_24_8,             4,
             WINED3DFMT_FLAG_DEPTH | WINED3DFMT_FLAG_STENCIL | WINED3DFMT_FLAG_SHADOW,
             ARB_FRAMEBUFFER_OBJECT,     convert_s4x4_uint_d24_unorm},
+    {WINED3DFMT_D16_UNORM,              GL_DEPTH_COMPONENT,               GL_DEPTH_COMPONENT,                     0,
+            GL_DEPTH_COMPONENT,         GL_UNSIGNED_SHORT,                0,
+            WINED3DFMT_FLAG_DEPTH,
+            WINED3D_GL_EXT_NONE,        NULL},
     {WINED3DFMT_D16_UNORM,              GL_DEPTH_COMPONENT24_ARB,         GL_DEPTH_COMPONENT24_ARB,               0,
             GL_DEPTH_COMPONENT,         GL_UNSIGNED_SHORT,                0,
             WINED3DFMT_FLAG_TEXTURE | WINED3DFMT_FLAG_POSTPIXELSHADER_BLENDING | WINED3DFMT_FLAG_FILTERING
@@ -924,7 +990,7 @@ static const struct wined3d_format_texture_info format_texture_info[] =
             WINED3DFMT_FLAG_TEXTURE | WINED3DFMT_FLAG_POSTPIXELSHADER_BLENDING | WINED3DFMT_FLAG_FILTERING
             | WINED3DFMT_FLAG_DEPTH | WINED3DFMT_FLAG_STENCIL,
             ARB_FRAMEBUFFER_OBJECT,     NULL},
-    {WINED3DFMT_NULL,                   GL_RGBA8,                         GL_RGBA8,                               0,
+    {WINED3DFMT_NULL,                   0,                                0,                                      0,
             GL_RGBA,                    GL_UNSIGNED_INT_8_8_8_8_REV,      0,
             WINED3DFMT_FLAG_TEXTURE | WINED3DFMT_FLAG_RENDERTARGET,
             ARB_FRAMEBUFFER_OBJECT,     NULL},
@@ -1022,6 +1088,8 @@ static BOOL init_format_block_info(struct wined3d_gl_info *gl_info)
         format->block_height = format_block_info[i].block_height;
         format->block_byte_count = format_block_info[i].block_byte_count;
         format->flags |= WINED3DFMT_FLAG_BLOCKS;
+        if (!format_block_info[i].verify)
+            format->flags |= WINED3DFMT_FLAG_BLOCKS_NO_VERIFY;
     }
 
     return TRUE;
@@ -1236,11 +1304,104 @@ static void check_fbo_compat(const struct wined3d_gl_info *gl_info, struct wined
     gl_info->gl_ops.gl.p_glDeleteTextures(1, &tex);
 }
 
+static void query_format_flag(struct wined3d_gl_info *gl_info, struct wined3d_format *format,
+        GLint internal, GLenum pname, DWORD flag, const char *string)
+{
+    GLint value;
+
+    gl_info->gl_ops.ext.p_glGetInternalformativ(GL_TEXTURE_2D, internal, pname, 1, &value);
+    if (value == GL_FULL_SUPPORT)
+    {
+        TRACE("Format %s supports %s.\n", debug_d3dformat(format->id), string);
+        format->flags |= flag;
+    }
+    else
+    {
+        TRACE("Format %s doesn't support %s.\n", debug_d3dformat(format->id), string);
+        format->flags &= ~flag;
+    }
+}
+
 /* Context activation is done by the caller. */
 static void init_format_fbo_compat_info(struct wined3d_gl_info *gl_info)
 {
     unsigned int i;
     GLuint fbo;
+
+    if (gl_info->supported[ARB_INTERNALFORMAT_QUERY2])
+    {
+        for (i = 0; i < sizeof(formats) / sizeof(*formats); ++i)
+        {
+            GLint value;
+            struct wined3d_format *format = &gl_info->formats[i];
+
+            if (!format->glInternal)
+                continue;
+            if (format->flags & (WINED3DFMT_FLAG_DEPTH | WINED3DFMT_FLAG_STENCIL))
+                continue;
+
+            gl_info->gl_ops.ext.p_glGetInternalformativ(GL_TEXTURE_2D, format->glInternal,
+                    GL_FRAMEBUFFER_RENDERABLE, 1, &value);
+            if (value == GL_FULL_SUPPORT)
+            {
+                TRACE("Format %s is supported as FBO color attachment.\n", debug_d3dformat(format->id));
+                format->flags |= WINED3DFMT_FLAG_FBO_ATTACHABLE;
+                format->rtInternal = format->glInternal;
+
+                query_format_flag(gl_info, format, format->glInternal, GL_FRAMEBUFFER_BLEND,
+                        WINED3DFMT_FLAG_POSTPIXELSHADER_BLENDING, "post-pixelshader blending");
+            }
+            else
+            {
+                if (!format->rtInternal)
+                {
+                    if (format->flags & WINED3DFMT_FLAG_RENDERTARGET)
+                    {
+                        WARN("Format %s with rendertarget flag is not supported as FBO color attachment"
+                                " and no fallback specified.\n", debug_d3dformat(format->id));
+                        format->flags &= ~WINED3DFMT_FLAG_RENDERTARGET;
+                    }
+                    else
+                        TRACE("Format %s is not supported as FBO color attachment.\n", debug_d3dformat(format->id));
+                    format->rtInternal = format->glInternal;
+                }
+                else
+                {
+                    gl_info->gl_ops.ext.p_glGetInternalformativ(GL_TEXTURE_2D, format->rtInternal,
+                            GL_FRAMEBUFFER_RENDERABLE, 1, &value);
+                    if (value == GL_FULL_SUPPORT)
+                    {
+                        TRACE("Format %s rtInternal format is supported as FBO color attachment.\n",
+                                debug_d3dformat(format->id));
+                    }
+                    else
+                    {
+                        WARN("Format %s rtInternal format is not supported as FBO color attachment.\n",
+                                debug_d3dformat(format->id));
+                        format->flags &= ~WINED3DFMT_FLAG_RENDERTARGET;
+                    }
+                }
+            }
+
+            if (format->glInternal != format->glGammaInternal)
+            {
+                gl_info->gl_ops.ext.p_glGetInternalformativ(GL_TEXTURE_2D, format->glGammaInternal,
+                        GL_FRAMEBUFFER_RENDERABLE, 1, &value);
+                if (value == GL_FULL_SUPPORT)
+                {
+                    TRACE("Format %s's sRGB format is FBO attachable.\n", debug_d3dformat(format->id));
+                    format->flags |= WINED3DFMT_FLAG_FBO_ATTACHABLE_SRGB;
+                }
+                else
+                {
+                    WARN("Format %s's sRGB format is not FBO attachable.\n", debug_d3dformat(format->id));
+                }
+            }
+            else if (format->flags & WINED3DFMT_FLAG_FBO_ATTACHABLE)
+                format->flags |= WINED3DFMT_FLAG_FBO_ATTACHABLE_SRGB;
+        }
+        return;
+    }
 
     if (wined3d_settings.offscreen_rendering_mode == ORM_FBO)
     {
@@ -1329,30 +1490,57 @@ static BOOL init_format_texture_info(struct wined3d_adapter *adapter, struct win
         format->height_scale.numerator = 1;
         format->height_scale.denominator = 1;
 
-        if (!gl_info->limits.vertex_samplers)
-            format->flags &= ~WINED3DFMT_FLAG_VTF;
-
-        if (!(gl_info->quirks & WINED3D_QUIRK_LIMITED_TEX_FILTERING))
-            format->flags |= WINED3DFMT_FLAG_FILTERING;
-        else if (format->id != WINED3DFMT_R32G32B32A32_FLOAT && format->id != WINED3DFMT_R32_FLOAT)
-            format->flags &= ~WINED3DFMT_FLAG_VTF;
-
-        if (format->glGammaInternal != format->glInternal)
+        if (gl_info->supported[ARB_INTERNALFORMAT_QUERY2])
         {
-            /* Filter sRGB capabilities if EXT_texture_sRGB is not supported. */
-            if (!gl_info->supported[EXT_TEXTURE_SRGB])
+            query_format_flag(gl_info, format, format->glInternal, GL_VERTEX_TEXTURE,
+                    WINED3DFMT_FLAG_VTF, "vertex texture usage");
+            query_format_flag(gl_info, format, format->glInternal, GL_FILTER,
+                    WINED3DFMT_FLAG_FILTERING, "filtering");
+
+            if (format->glGammaInternal != format->glInternal)
             {
-                format->glGammaInternal = format->glInternal;
-                format->flags &= ~(WINED3DFMT_FLAG_SRGB_READ | WINED3DFMT_FLAG_SRGB_WRITE);
-            }
-            else if (gl_info->supported[EXT_TEXTURE_SRGB_DECODE])
-            {
-                format->glInternal = format->glGammaInternal;
+                query_format_flag(gl_info, format, format->glGammaInternal, GL_SRGB_READ,
+                        WINED3DFMT_FLAG_SRGB_READ, "sRGB read");
+
+                if (srgb_write)
+                    query_format_flag(gl_info, format, format->glGammaInternal, GL_SRGB_WRITE,
+                            WINED3DFMT_FLAG_SRGB_WRITE, "sRGB write");
+                else
+                    format->flags &= ~WINED3DFMT_FLAG_SRGB_WRITE;
+
+                if (!(format->flags & (WINED3DFMT_FLAG_SRGB_READ | WINED3DFMT_FLAG_SRGB_WRITE)))
+                    format->glGammaInternal = format->glInternal;
+                else if (gl_info->supported[EXT_TEXTURE_SRGB_DECODE])
+                    format->glInternal = format->glGammaInternal;
             }
         }
+        else
+        {
+            if (!gl_info->limits.vertex_samplers)
+                format->flags &= ~WINED3DFMT_FLAG_VTF;
 
-        if ((format->flags & WINED3DFMT_FLAG_SRGB_WRITE) && !srgb_write)
-            format->flags &= ~WINED3DFMT_FLAG_SRGB_WRITE;
+            if (!(gl_info->quirks & WINED3D_QUIRK_LIMITED_TEX_FILTERING))
+                format->flags |= WINED3DFMT_FLAG_FILTERING;
+            else if (format->id != WINED3DFMT_R32G32B32A32_FLOAT && format->id != WINED3DFMT_R32_FLOAT)
+                format->flags &= ~WINED3DFMT_FLAG_VTF;
+
+            if (format->glGammaInternal != format->glInternal)
+            {
+                /* Filter sRGB capabilities if EXT_texture_sRGB is not supported. */
+                if (!gl_info->supported[EXT_TEXTURE_SRGB])
+                {
+                    format->glGammaInternal = format->glInternal;
+                    format->flags &= ~(WINED3DFMT_FLAG_SRGB_READ | WINED3DFMT_FLAG_SRGB_WRITE);
+                }
+                else if (gl_info->supported[EXT_TEXTURE_SRGB_DECODE])
+                {
+                    format->glInternal = format->glGammaInternal;
+                }
+            }
+
+            if ((format->flags & WINED3DFMT_FLAG_SRGB_WRITE) && !srgb_write)
+                format->flags &= ~WINED3DFMT_FLAG_SRGB_WRITE;
+        }
 
         /* Texture conversion stuff */
         format->convert = format_texture_info[i].convert;
@@ -1484,6 +1672,10 @@ static void init_format_filter_info(struct wined3d_gl_info *gl_info, enum wined3
         WINED3DFMT_R16G16B16A16_FLOAT,
     };
     BOOL filtered;
+
+    if (gl_info->supported[ARB_INTERNALFORMAT_QUERY2])
+        /* This was already handled by init_format_texture_info(). */
+        return;
 
     if(wined3d_settings.offscreen_rendering_mode != ORM_FBO)
     {
@@ -1640,7 +1832,7 @@ static void apply_format_fixups(struct wined3d_adapter *adapter, struct wined3d_
     gl_info->formats[idx].height_scale.denominator = 2;
     gl_info->formats[idx].color_fixup = create_complex_fixup_desc(COMPLEX_FIXUP_YV12);
 
-    if (gl_info->supported[EXT_PALETTED_TEXTURE] || gl_info->supported[ARB_FRAGMENT_PROGRAM])
+    if (gl_info->supported[ARB_FRAGMENT_PROGRAM])
     {
         idx = getFmtIdx(WINED3DFMT_P8_UINT);
         gl_info->formats[idx].color_fixup = create_complex_fixup_desc(COMPLEX_FIXUP_P8);
@@ -1712,9 +1904,18 @@ static void apply_format_fixups(struct wined3d_adapter *adapter, struct wined3d_
         gl_info->formats[idx].flags |= WINED3DFMT_FLAG_TEXTURE;
     }
 
+    /* RESZ aka AMD DX9-level hack for multisampled depth buffer resolve. You query for RESZ
+     * support by checking for availability of MAKEFOURCC('R','E','S','Z') surfaces with
+     * RENDERTARGET usage. */
+    if (gl_info->supported[ARB_FRAMEBUFFER_OBJECT])
+    {
+        idx = getFmtIdx(WINED3DFMT_RESZ);
+        gl_info->formats[idx].flags |= WINED3DFMT_FLAG_TEXTURE | WINED3DFMT_FLAG_RENDERTARGET;
+    }
+
     for (i = 0; i < sizeof(formats) / sizeof(*formats); ++i)
     {
-        struct wined3d_format *format = &gl_info->formats[idx];
+        struct wined3d_format *format = &gl_info->formats[i];
 
         if (!(format->flags & WINED3DFMT_FLAG_TEXTURE))
             continue;
@@ -1806,7 +2007,8 @@ const struct wined3d_format *wined3d_get_format(const struct wined3d_gl_info *gl
     return &gl_info->formats[idx];
 }
 
-UINT wined3d_format_calculate_size(const struct wined3d_format *format, UINT alignment, UINT width, UINT height)
+UINT wined3d_format_calculate_size(const struct wined3d_format *format, UINT alignment,
+        UINT width, UINT height, UINT depth)
 {
     UINT size;
 
@@ -1831,6 +2033,8 @@ UINT wined3d_format_calculate_size(const struct wined3d_format *format, UINT ali
         size *= format->height_scale.numerator;
         size /= format->height_scale.denominator;
     }
+
+    size *= depth;
 
     return size;
 }
@@ -1975,6 +2179,7 @@ const char *debug_d3dformat(enum wined3d_format_id format_id)
         FMT_TO_STR(WINED3DFMT_B8G8R8A8_UNORM);
         FMT_TO_STR(WINED3DFMT_B8G8R8X8_UNORM);
         FMT_TO_STR(WINED3DFMT_INTZ);
+        FMT_TO_STR(WINED3DFMT_RESZ);
         FMT_TO_STR(WINED3DFMT_NULL);
         FMT_TO_STR(WINED3DFMT_R16);
         FMT_TO_STR(WINED3DFMT_AL16);
@@ -2420,6 +2625,21 @@ const char *debug_d3dtstype(enum wined3d_transform_state tstype)
     }
 }
 
+static const char *debug_shader_type(enum wined3d_shader_type type)
+{
+    switch(type)
+    {
+#define WINED3D_TO_STR(type) case type: return #type
+        WINED3D_TO_STR(WINED3D_SHADER_TYPE_PIXEL);
+        WINED3D_TO_STR(WINED3D_SHADER_TYPE_VERTEX);
+        WINED3D_TO_STR(WINED3D_SHADER_TYPE_GEOMETRY);
+#undef WINED3D_TO_STR
+        default:
+            FIXME("Unrecognized shader type %#x.\n", type);
+            return "unrecognized";
+    }
+}
+
 const char *debug_d3dstate(DWORD state)
 {
     if (STATE_IS_RENDER(state))
@@ -2433,8 +2653,8 @@ const char *debug_d3dstate(DWORD state)
     }
     if (STATE_IS_SAMPLER(state))
         return wine_dbg_sprintf("STATE_SAMPLER(%#x)", state - STATE_SAMPLER(0));
-    if (STATE_IS_PIXELSHADER(state))
-        return "STATE_PIXELSHADER";
+    if (STATE_IS_SHADER(state))
+        return wine_dbg_sprintf("STATE_SHADER(%s)", debug_shader_type(state - STATE_SHADER(0)));
     if (STATE_IS_TRANSFORM(state))
         return wine_dbg_sprintf("STATE_TRANSFORM(%s)", debug_d3dtstype(state - STATE_TRANSFORM(0)));
     if (STATE_IS_STREAMSRC(state))
@@ -2443,16 +2663,10 @@ const char *debug_d3dstate(DWORD state)
         return "STATE_INDEXBUFFER";
     if (STATE_IS_VDECL(state))
         return "STATE_VDECL";
-    if (STATE_IS_VSHADER(state))
-        return "STATE_VSHADER";
-    if (STATE_IS_GEOMETRY_SHADER(state))
-        return "STATE_GEOMETRY_SHADER";
     if (STATE_IS_VIEWPORT(state))
         return "STATE_VIEWPORT";
-    if (STATE_IS_VERTEXSHADERCONSTANT(state))
-        return "STATE_VERTEXSHADERCONSTANT";
-    if (STATE_IS_PIXELSHADERCONSTANT(state))
-        return "STATE_PIXELSHADERCONSTANT";
+    if (STATE_IS_LIGHT_TYPE(state))
+        return "STATE_LIGHT_TYPE";
     if (STATE_IS_ACTIVELIGHT(state))
         return wine_dbg_sprintf("STATE_ACTIVELIGHT(%#x)", state - STATE_ACTIVELIGHT(0));
     if (STATE_IS_SCISSORRECT(state))
@@ -2469,6 +2683,8 @@ const char *debug_d3dstate(DWORD state)
         return "STATE_BASEVERTEXINDEX";
     if (STATE_IS_FRAMEBUFFER(state))
         return "STATE_FRAMEBUFFER";
+    if (STATE_IS_POINT_SIZE_ENABLE(state))
+        return "STATE_POINT_SIZE_ENABLE";
 
     return wine_dbg_sprintf("UNKNOWN_STATE(%#x)", state);
 }
@@ -2575,19 +2791,6 @@ void dump_color_fixup_desc(struct color_fixup_desc fixup)
     TRACE("\tY: %s%s\n", debug_fixup_channel_source(fixup.y_source), fixup.y_sign_fixup ? ", SIGN_FIXUP" : "");
     TRACE("\tZ: %s%s\n", debug_fixup_channel_source(fixup.z_source), fixup.z_sign_fixup ? ", SIGN_FIXUP" : "");
     TRACE("\tW: %s%s\n", debug_fixup_channel_source(fixup.w_source), fixup.w_sign_fixup ? ", SIGN_FIXUP" : "");
-}
-
-const char *debug_surflocation(DWORD flag) {
-    char buf[128];
-
-    buf[0] = 0;
-    if (flag & SFLAG_INSYSMEM) strcat(buf, " | SFLAG_INSYSMEM");                    /* 17 */
-    if (flag & SFLAG_INDRAWABLE) strcat(buf, " | SFLAG_INDRAWABLE");                /* 19 */
-    if (flag & SFLAG_INTEXTURE) strcat(buf, " | SFLAG_INTEXTURE");                  /* 18 */
-    if (flag & SFLAG_INSRGBTEX) strcat(buf, " | SFLAG_INSRGBTEX");                  /* 18 */
-    if (flag & SFLAG_INRB_MULTISAMPLE) strcat(buf, " | SFLAG_INRB_MULTISAMPLE");    /* 25 */
-    if (flag & SFLAG_INRB_RESOLVED) strcat(buf, " | SFLAG_INRB_RESOLVED");          /* 22 */
-    return wine_dbg_sprintf("%s", buf[0] ? buf + 3 : "0");
 }
 
 BOOL is_invalid_op(const struct wined3d_state *state, int stage,
@@ -2971,7 +3174,7 @@ DWORD get_flexible_vertex_size(DWORD d3dvtVertexType) {
     return size;
 }
 
-void gen_ffp_frag_op(const struct wined3d_device *device, const struct wined3d_state *state,
+void gen_ffp_frag_op(const struct wined3d_context *context, const struct wined3d_state *state,
         struct ffp_frag_settings *settings, BOOL ignore_textype)
 {
 #define ARG1 0x01
@@ -3011,9 +3214,10 @@ void gen_ffp_frag_op(const struct wined3d_device *device, const struct wined3d_s
     DWORD ttff;
     DWORD cop, aop, carg0, carg1, carg2, aarg0, aarg1, aarg2;
     const struct wined3d_surface *rt = state->fb->render_targets[0];
-    const struct wined3d_gl_info *gl_info = &device->adapter->gl_info;
+    const struct wined3d_gl_info *gl_info = context->gl_info;
+    const struct wined3d_d3d_info *d3d_info = context->d3d_info;
 
-    for (i = 0; i < gl_info->limits.texture_stages; ++i)
+    for (i = 0; i < d3d_info->limits.ffp_blend_stages; ++i)
     {
         const struct wined3d_texture *texture;
 
@@ -3106,9 +3310,7 @@ void gen_ffp_frag_op(const struct wined3d_device *device, const struct wined3d_s
 
             if (texture_dimensions == GL_TEXTURE_2D || texture_dimensions == GL_TEXTURE_RECTANGLE_ARB)
             {
-                struct wined3d_surface *surf = surface_from_resource(texture->sub_resources[0]);
-
-                if (surf->CKeyFlags & WINEDDSD_CKSRCBLT && !surf->resource.format->alpha_size)
+                if (texture->color_key_flags & WINEDDSD_CKSRCBLT && !texture->resource.format->alpha_size)
                 {
                     if (aop == WINED3D_TOP_DISABLE)
                     {
@@ -3183,13 +3385,13 @@ void gen_ffp_frag_op(const struct wined3d_device *device, const struct wined3d_s
 
     if (!state->render_states[WINED3D_RS_FOGENABLE])
     {
-        settings->fog = FOG_OFF;
+        settings->fog = WINED3D_FFP_PS_FOG_OFF;
     }
     else if (state->render_states[WINED3D_RS_FOGTABLEMODE] == WINED3D_FOG_NONE)
     {
         if (use_vs(state) || state->vertex_declaration->position_transformed)
         {
-            settings->fog = FOG_LINEAR;
+            settings->fog = WINED3D_FFP_PS_FOG_LINEAR;
         }
         else
         {
@@ -3197,13 +3399,13 @@ void gen_ffp_frag_op(const struct wined3d_device *device, const struct wined3d_s
             {
                 case WINED3D_FOG_NONE:
                 case WINED3D_FOG_LINEAR:
-                    settings->fog = FOG_LINEAR;
+                    settings->fog = WINED3D_FFP_PS_FOG_LINEAR;
                     break;
                 case WINED3D_FOG_EXP:
-                    settings->fog = FOG_EXP;
+                    settings->fog = WINED3D_FFP_PS_FOG_EXP;
                     break;
                 case WINED3D_FOG_EXP2:
-                    settings->fog = FOG_EXP2;
+                    settings->fog = WINED3D_FFP_PS_FOG_EXP2;
                     break;
             }
         }
@@ -3213,13 +3415,13 @@ void gen_ffp_frag_op(const struct wined3d_device *device, const struct wined3d_s
         switch (state->render_states[WINED3D_RS_FOGTABLEMODE])
         {
             case WINED3D_FOG_LINEAR:
-                settings->fog = FOG_LINEAR;
+                settings->fog = WINED3D_FFP_PS_FOG_LINEAR;
                 break;
             case WINED3D_FOG_EXP:
-                settings->fog = FOG_EXP;
+                settings->fog = WINED3D_FFP_PS_FOG_EXP;
                 break;
             case WINED3D_FOG_EXP2:
-                settings->fog = FOG_EXP2;
+                settings->fog = WINED3D_FFP_PS_FOG_EXP2;
                 break;
         }
     }
@@ -3231,7 +3433,7 @@ void gen_ffp_frag_op(const struct wined3d_device *device, const struct wined3d_s
     } else {
         settings->sRGB_write = 0;
     }
-    if (device->vs_clipping || !use_vs(state) || !state->render_states[WINED3D_RS_CLIPPING]
+    if (d3d_info->vs_clipping || !use_vs(state) || !state->render_states[WINED3D_RS_CLIPPING]
             || !state->render_states[WINED3D_RS_CLIPPLANEENABLE])
     {
         /* No need to emulate clipplanes if GL supports native vertex shader clipping or if
@@ -3355,14 +3557,14 @@ void texture_activate_dimensions(const struct wined3d_texture *texture, const st
 void sampler_texdim(struct wined3d_context *context, const struct wined3d_state *state, DWORD state_id)
 {
     DWORD sampler = state_id - STATE_SAMPLER(0);
-    DWORD mapped_stage = context->swapchain->device->texUnitMap[sampler];
+    DWORD mapped_stage = context->tex_unit_map[sampler];
 
     /* No need to enable / disable anything here for unused samplers. The
      * tex_colorop handler takes care. Also no action is needed with pixel
      * shaders, or if tex_colorop will take care of this business. */
     if (mapped_stage == WINED3D_UNMAPPED_STAGE || mapped_stage >= context->gl_info->limits.textures)
         return;
-    if (sampler >= state->lowest_disabled_stage)
+    if (sampler >= context->lowest_disabled_stage)
         return;
     if (isStateDirty(context, STATE_TEXTURESTAGE(sampler, WINED3D_TSS_COLOR_OP)))
         return;
@@ -3399,6 +3601,117 @@ const struct wine_rb_functions wined3d_ffp_frag_program_rb_functions =
     wined3d_rb_realloc,
     wined3d_rb_free,
     ffp_frag_program_key_compare,
+};
+
+void wined3d_ffp_get_vs_settings(const struct wined3d_state *state, const struct wined3d_stream_info *si,
+        struct wined3d_ffp_vs_settings *settings)
+{
+    unsigned int coord_idx, i;
+
+    if (si->position_transformed)
+    {
+        memset(settings, 0, sizeof(*settings));
+
+        settings->transformed = 1;
+        settings->point_size = state->gl_primitive_type == GL_POINTS;
+        if (!state->render_states[WINED3D_RS_FOGENABLE])
+            settings->fog_mode = WINED3D_FFP_VS_FOG_OFF;
+        else if (state->render_states[WINED3D_RS_FOGTABLEMODE] != WINED3D_FOG_NONE)
+            settings->fog_mode = WINED3D_FFP_VS_FOG_DEPTH;
+        else
+            settings->fog_mode = WINED3D_FFP_VS_FOG_FOGCOORD;
+
+        for (i = 0; i < MAX_TEXTURES; ++i)
+        {
+            coord_idx = state->texture_states[i][WINED3D_TSS_TEXCOORD_INDEX];
+            if (coord_idx < MAX_TEXTURES && (si->use_map & (1 << (WINED3D_FFP_TEXCOORD0 + coord_idx))))
+                settings->texcoords |= 1 << i;
+            settings->texgen[i] = (state->texture_states[i][WINED3D_TSS_TEXCOORD_INDEX] >> WINED3D_FFP_TCI_SHIFT)
+                    & WINED3D_FFP_TCI_MASK;
+        }
+        return;
+    }
+
+    settings->transformed = 0;
+    settings->clipping = state->render_states[WINED3D_RS_CLIPPING]
+            && state->render_states[WINED3D_RS_CLIPPLANEENABLE];
+    settings->normal = !!(si->use_map & (1 << WINED3D_FFP_NORMAL));
+    settings->normalize = settings->normal && state->render_states[WINED3D_RS_NORMALIZENORMALS];
+    settings->lighting = !!state->render_states[WINED3D_RS_LIGHTING];
+    settings->localviewer = !!state->render_states[WINED3D_RS_LOCALVIEWER];
+    settings->point_size = state->gl_primitive_type == GL_POINTS;
+
+    if (state->render_states[WINED3D_RS_COLORVERTEX] && (si->use_map & (1 << WINED3D_FFP_DIFFUSE)))
+    {
+        settings->diffuse_source = state->render_states[WINED3D_RS_DIFFUSEMATERIALSOURCE];
+        settings->emission_source = state->render_states[WINED3D_RS_EMISSIVEMATERIALSOURCE];
+        settings->ambient_source = state->render_states[WINED3D_RS_AMBIENTMATERIALSOURCE];
+        settings->specular_source = state->render_states[WINED3D_RS_SPECULARMATERIALSOURCE];
+    }
+    else
+    {
+        settings->diffuse_source = WINED3D_MCS_MATERIAL;
+        settings->emission_source = WINED3D_MCS_MATERIAL;
+        settings->ambient_source = WINED3D_MCS_MATERIAL;
+        settings->specular_source = WINED3D_MCS_MATERIAL;
+    }
+
+    settings->texcoords = 0;
+    for (i = 0; i < MAX_TEXTURES; ++i)
+    {
+        coord_idx = state->texture_states[i][WINED3D_TSS_TEXCOORD_INDEX];
+        if (coord_idx < MAX_TEXTURES && (si->use_map & (1 << (WINED3D_FFP_TEXCOORD0 + coord_idx))))
+            settings->texcoords |= 1 << i;
+        settings->texgen[i] = (state->texture_states[i][WINED3D_TSS_TEXCOORD_INDEX] >> WINED3D_FFP_TCI_SHIFT)
+                & WINED3D_FFP_TCI_MASK;
+    }
+
+    settings->light_type = 0;
+    for (i = 0; i < MAX_ACTIVE_LIGHTS; ++i)
+    {
+        if (state->lights[i])
+            settings->light_type |= (state->lights[i]->OriginalParms.type
+                    & WINED3D_FFP_LIGHT_TYPE_MASK) << WINED3D_FFP_LIGHT_TYPE_SHIFT(i);
+    }
+
+    settings->ortho_fog = 0;
+    if (!state->render_states[WINED3D_RS_FOGENABLE])
+        settings->fog_mode = WINED3D_FFP_VS_FOG_OFF;
+    else if (state->render_states[WINED3D_RS_FOGTABLEMODE] != WINED3D_FOG_NONE)
+    {
+        settings->fog_mode = WINED3D_FFP_VS_FOG_DEPTH;
+
+        if (state->transforms[WINED3D_TS_PROJECTION].u.m[0][3] == 0.0f
+                && state->transforms[WINED3D_TS_PROJECTION].u.m[1][3] == 0.0f
+                && state->transforms[WINED3D_TS_PROJECTION].u.m[2][3] == 0.0f
+                && state->transforms[WINED3D_TS_PROJECTION].u.m[3][3] == 1.0f)
+            settings->ortho_fog = 1;
+    }
+    else if (state->render_states[WINED3D_RS_FOGVERTEXMODE] == WINED3D_FOG_NONE)
+        settings->fog_mode = WINED3D_FFP_VS_FOG_FOGCOORD;
+    else if (state->render_states[WINED3D_RS_RANGEFOGENABLE])
+        settings->fog_mode = WINED3D_FFP_VS_FOG_RANGE;
+    else
+        settings->fog_mode = WINED3D_FFP_VS_FOG_DEPTH;
+
+    settings->padding = 0;
+}
+
+static int wined3d_ffp_vertex_program_key_compare(const void *key, const struct wine_rb_entry *entry)
+{
+    const struct wined3d_ffp_vs_settings *ka = key;
+    const struct wined3d_ffp_vs_settings *kb = &WINE_RB_ENTRY_VALUE(entry,
+            const struct wined3d_ffp_vs_desc, entry)->settings;
+
+    return memcmp(ka, kb, sizeof(*ka));
+}
+
+const struct wine_rb_functions wined3d_ffp_vertex_program_rb_functions =
+{
+    wined3d_rb_alloc,
+    wined3d_rb_realloc,
+    wined3d_rb_free,
+    wined3d_ffp_vertex_program_key_compare,
 };
 
 UINT wined3d_log2i(UINT32 x)
@@ -3458,4 +3771,57 @@ void wined3d_get_draw_rect(const struct wined3d_state *state, RECT *rect)
 
     if (state->render_states[WINED3D_RS_SCISSORTESTENABLE])
         IntersectRect(rect, rect, &state->scissor_rect);
+}
+
+const char *wined3d_debug_location(DWORD location)
+{
+    char buf[294];
+
+    buf[0] = '\0';
+#define LOCATION_TO_STR(u) if (location & u) { strcat(buf, " | "#u); location &= ~u; }
+    LOCATION_TO_STR(WINED3D_LOCATION_DISCARDED);
+    LOCATION_TO_STR(WINED3D_LOCATION_SYSMEM);
+    LOCATION_TO_STR(WINED3D_LOCATION_USER_MEMORY);
+    LOCATION_TO_STR(WINED3D_LOCATION_DIB);
+    LOCATION_TO_STR(WINED3D_LOCATION_BUFFER);
+    LOCATION_TO_STR(WINED3D_LOCATION_TEXTURE_RGB);
+    LOCATION_TO_STR(WINED3D_LOCATION_TEXTURE_SRGB);
+    LOCATION_TO_STR(WINED3D_LOCATION_DRAWABLE);
+    LOCATION_TO_STR(WINED3D_LOCATION_RB_MULTISAMPLE);
+    LOCATION_TO_STR(WINED3D_LOCATION_RB_RESOLVED);
+#undef LOCATION_TO_STR
+    if (location) FIXME("Unrecognized location flag(s) %#x.\n", location);
+
+    return buf[0] ? wine_dbg_sprintf("%s", &buf[3]) : "0";
+}
+
+/* Print a floating point value with the %.8e format specifier, always using
+ * '.' as decimal separator. */
+void wined3d_ftoa(float value, char *s)
+{
+    int idx = 1;
+
+    if (copysignf(1.0f, value) < 0.0f)
+        ++idx;
+
+    /* Be sure to allocate a buffer of at least 17 characters for the result
+       as sprintf may return a 3 digit exponent when using the MSVC runtime
+       instead of a 2 digit exponent. */
+    sprintf(s, "%.8e", value);
+    if (isfinite(value))
+        s[idx] = '.';
+}
+
+void wined3d_release_dc(HWND window, HDC dc)
+{
+    /* You'd figure ReleaseDC() would fail if the DC doesn't match the window.
+     * However, that's not what actually happens, and there are user32 tests
+     * that confirm ReleaseDC() with the wrong window is supposed to succeed.
+     * So explicitly check that the DC belongs to the window, since we want to
+     * avoid releasing a DC that belongs to some other window if the original
+     * window was already destroyed. */
+    if (WindowFromDC(dc) != window)
+        WARN("DC %p does not belong to window %p.\n", dc, window);
+    else if (!ReleaseDC(window, dc))
+        ERR("Failed to release device context %p, last error %#x.\n", dc, GetLastError());
 }

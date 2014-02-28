@@ -6,12 +6,7 @@
  * COPYRIGHT:   Copyright 2012 Eric Kohl
  */
 
-/* INCLUDES ****************************************************************/
-
 #include "samsrv.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(samsrv);
-
 
 /* GLOBALS *****************************************************************/
 
@@ -162,15 +157,11 @@ done:
             RtlFreeHeap(RtlGetProcessHeap(), 0, NewObject);
         }
 
-        if (MembersKeyHandle != NULL)
-            SampRegCloseKey(MembersKeyHandle);
-
-        if (ObjectKeyHandle != NULL)
-            SampRegCloseKey(ObjectKeyHandle);
+        SampRegCloseKey(&MembersKeyHandle);
+        SampRegCloseKey(&ObjectKeyHandle);
     }
 
-    if (ContainerKeyHandle != NULL)
-        SampRegCloseKey(ContainerKeyHandle);
+    SampRegCloseKey(&ContainerKeyHandle);
 
     return Status;
 }
@@ -294,15 +285,11 @@ done:
             RtlFreeHeap(RtlGetProcessHeap(), 0, NewObject);
         }
 
-        if (MembersKeyHandle != NULL)
-            SampRegCloseKey(MembersKeyHandle);
-
-        if (ObjectKeyHandle != NULL)
-            SampRegCloseKey(ObjectKeyHandle);
+        SampRegCloseKey(&MembersKeyHandle);
+        SampRegCloseKey(&ObjectKeyHandle);
     }
 
-    if (ContainerKeyHandle != NULL)
-        SampRegCloseKey(ContainerKeyHandle);
+    SampRegCloseKey(&ContainerKeyHandle);
 
     return Status;
 }
@@ -356,7 +343,6 @@ SampValidateDbObject(SAMPR_HANDLE Handle,
 NTSTATUS
 SampCloseDbObject(PSAM_DB_OBJECT DbObject)
 {
-    PSAM_DB_OBJECT ParentObject = NULL;
     NTSTATUS Status = STATUS_SUCCESS;
 
     DbObject->RefCount--;
@@ -364,14 +350,8 @@ SampCloseDbObject(PSAM_DB_OBJECT DbObject)
     if (DbObject->RefCount > 0)
         return STATUS_SUCCESS;
 
-    if (DbObject->KeyHandle != NULL)
-        SampRegCloseKey(DbObject->KeyHandle);
-
-    if (DbObject->MembersKeyHandle != NULL)
-        SampRegCloseKey(DbObject->MembersKeyHandle);
-
-    if (DbObject->ParentObject != NULL)
-        ParentObject = DbObject->ParentObject;
+    SampRegCloseKey(&DbObject->KeyHandle);
+    SampRegCloseKey(&DbObject->MembersKeyHandle);
 
     if (DbObject->Name != NULL)
         RtlFreeHeap(RtlGetProcessHeap(), 0, DbObject->Name);
@@ -387,8 +367,8 @@ SampDeleteAccountDbObject(PSAM_DB_OBJECT DbObject)
 {
     LPCWSTR ContainerName;
     LPWSTR AccountName = NULL;
-    HKEY ContainerKey;
-    HKEY NamesKey;
+    HANDLE ContainerKey = NULL;
+    HANDLE NamesKey = NULL;
     ULONG Length = 0;
     NTSTATUS Status = STATUS_SUCCESS;
 
@@ -445,13 +425,11 @@ SampDeleteAccountDbObject(PSAM_DB_OBJECT DbObject)
         goto done;
     }
 
-    if (DbObject->KeyHandle != NULL)
-        SampRegCloseKey(DbObject->KeyHandle);
+    SampRegCloseKey(&DbObject->KeyHandle);
 
     if (DbObject->ObjectType == SamDbAliasObject)
     {
-        if (DbObject->MembersKeyHandle != NULL)
-            SampRegCloseKey(DbObject->MembersKeyHandle);
+        SampRegCloseKey(&DbObject->MembersKeyHandle);
 
         SampRegDeleteKey(DbObject->KeyHandle,
                          L"Members");
@@ -507,11 +485,8 @@ SampDeleteAccountDbObject(PSAM_DB_OBJECT DbObject)
     Status = STATUS_SUCCESS;
 
 done:
-    if (NamesKey != NULL)
-        SampRegCloseKey(NamesKey);
-
-    if (ContainerKey != NULL)
-        SampRegCloseKey(ContainerKey);
+    SampRegCloseKey(&NamesKey);
+    SampRegCloseKey(&ContainerKey);
 
     if (AccountName != NULL)
         RtlFreeHeap(RtlGetProcessHeap(), 0, AccountName);
@@ -553,7 +528,7 @@ SampGetObjectAttribute(PSAM_DB_OBJECT DbObject,
 NTSTATUS
 SampGetObjectAttributeString(PSAM_DB_OBJECT DbObject,
                              LPWSTR AttributeName,
-                             RPC_UNICODE_STRING *String)
+                             PRPC_UNICODE_STRING String)
 {
     ULONG Length = 0;
     NTSTATUS Status;
@@ -566,6 +541,16 @@ SampGetObjectAttributeString(PSAM_DB_OBJECT DbObject,
     if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW)
     {
         TRACE("Status 0x%08lx\n", Status);
+        goto done;
+    }
+
+    if (Length == 0)
+    {
+        String->Length = 0;
+        String->MaximumLength = 0;
+        String->Buffer = NULL;
+
+        Status = STATUS_SUCCESS;
         goto done;
     }
 
@@ -602,6 +587,29 @@ done:
 
     return Status;
 }
+
+
+NTSTATUS
+SampSetObjectAttributeString(PSAM_DB_OBJECT DbObject,
+                             LPWSTR AttributeName,
+                             PRPC_UNICODE_STRING String)
+{
+    PWCHAR Buffer = NULL;
+    USHORT Length = 0;
+
+    if ((String != NULL) && (String->Buffer != NULL))
+    {
+        Buffer = String->Buffer;
+        Length = String->Length + sizeof(WCHAR);
+    }
+
+    return SampSetObjectAttribute(DbObject,
+                                  AttributeName,
+                                  REG_SZ,
+                                  Buffer,
+                                  Length);
+}
+
 
 /* EOF */
 

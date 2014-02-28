@@ -21,6 +21,62 @@ FAST_MUTEX ExpEnvironmentLock;
 ERESOURCE ExpFirmwareTableResource;
 LIST_ENTRY ExpFirmwareTableProviderListHead;
 
+FORCEINLINE
+NTSTATUS
+ExpConvertLdrModuleToRtlModule(IN ULONG ModuleCount,
+                               IN PLDR_DATA_TABLE_ENTRY LdrEntry,
+                               OUT PRTL_PROCESS_MODULE_INFORMATION ModuleInfo)
+{
+    PCHAR p;
+    NTSTATUS Status;
+    ANSI_STRING ModuleName;
+
+    /* Fill it out */
+    ModuleInfo->MappedBase = NULL;
+    ModuleInfo->ImageBase = LdrEntry->DllBase;
+    ModuleInfo->ImageSize = LdrEntry->SizeOfImage;
+    ModuleInfo->Flags = LdrEntry->Flags;
+    ModuleInfo->LoadCount = LdrEntry->LoadCount;
+    ModuleInfo->LoadOrderIndex = (USHORT)ModuleCount;
+    ModuleInfo->InitOrderIndex = 0;
+
+    /* Setup name */
+    RtlInitEmptyAnsiString(&ModuleName,
+                           ModuleInfo->FullPathName,
+                           sizeof(ModuleInfo->FullPathName));
+
+    /* Convert it */
+    Status = RtlUnicodeStringToAnsiString(&ModuleName,
+                                          &LdrEntry->FullDllName,
+                                          FALSE);
+    if ((NT_SUCCESS(Status)) || (Status == STATUS_BUFFER_OVERFLOW))
+    {
+        /* Calculate offset to name */
+        p = ModuleName.Buffer + ModuleName.Length;
+        while ((p > ModuleName.Buffer) && (*--p))
+        {
+            /* Check if we found the separator */
+            if (*p == OBJ_NAME_PATH_SEPARATOR)
+            {
+                /* We did, break out */
+                p++;
+                break;
+            }
+        }
+
+        /* Set the offset */
+        ModuleInfo->OffsetToFileName = (USHORT)(p - ModuleName.Buffer);
+    }
+    else
+    {
+        /* Return empty name */
+        ModuleInfo->FullPathName[0] = ANSI_NULL;
+        ModuleInfo->OffsetToFileName = 0;
+    }
+
+    return Status;
+}
+
 NTSTATUS
 NTAPI
 ExpQueryModuleInformation(IN PLIST_ENTRY KernelModeList,
@@ -33,10 +89,8 @@ ExpQueryModuleInformation(IN PLIST_ENTRY KernelModeList,
     ULONG RequiredLength;
     PRTL_PROCESS_MODULE_INFORMATION ModuleInfo;
     PLDR_DATA_TABLE_ENTRY LdrEntry;
-    ANSI_STRING ModuleName;
     ULONG ModuleCount = 0;
     PLIST_ENTRY NextEntry;
-    PCHAR p;
 
     /* Setup defaults */
     RequiredLength = FIELD_OFFSET(RTL_PROCESS_MODULES, Modules);
@@ -55,48 +109,9 @@ ExpQueryModuleInformation(IN PLIST_ENTRY KernelModeList,
         RequiredLength += sizeof(RTL_PROCESS_MODULE_INFORMATION);
         if (Length >= RequiredLength)
         {
-            /* Fill it out */
-            ModuleInfo->MappedBase = NULL;
-            ModuleInfo->ImageBase = LdrEntry->DllBase;
-            ModuleInfo->ImageSize = LdrEntry->SizeOfImage;
-            ModuleInfo->Flags = LdrEntry->Flags;
-            ModuleInfo->LoadCount = LdrEntry->LoadCount;
-            ModuleInfo->LoadOrderIndex = (USHORT)ModuleCount;
-            ModuleInfo->InitOrderIndex = 0;
-
-            /* Setup name */
-            RtlInitEmptyAnsiString(&ModuleName,
-                                   ModuleInfo->FullPathName,
-                                   sizeof(ModuleInfo->FullPathName));
-
-            /* Convert it */
-            Status = RtlUnicodeStringToAnsiString(&ModuleName,
-                                                  &LdrEntry->FullDllName,
-                                                  FALSE);
-            if ((NT_SUCCESS(Status)) || (Status == STATUS_BUFFER_OVERFLOW))
-            {
-                /* Calculate offset to name */
-                p = ModuleName.Buffer + ModuleName.Length;
-                while ((p > ModuleName.Buffer) && (*--p))
-                {
-                    /* Check if we found the separator */
-                    if (*p == OBJ_NAME_PATH_SEPARATOR)
-                    {
-                        /* We did, break out */
-                        p++;
-                        break;
-                    }
-                }
-
-                /* Set the offset */
-                ModuleInfo->OffsetToFileName = (USHORT)(p - ModuleName.Buffer);
-            }
-            else
-            {
-                /* Return empty name */
-                ModuleInfo->FullPathName[0] = ANSI_NULL;
-                ModuleInfo->OffsetToFileName = 0;
-            }
+            Status = ExpConvertLdrModuleToRtlModule(ModuleCount,
+                                                    LdrEntry,
+                                                    ModuleInfo);
 
             /* Go to the next module */
             ModuleInfo++;
@@ -115,8 +130,35 @@ ExpQueryModuleInformation(IN PLIST_ENTRY KernelModeList,
     /* Check if caller also wanted user modules */
     if (UserModeList)
     {
-        /* FIXME: TODO */
-        DPRINT1("User-mode list not yet supported in ReactOS!\n");
+        NextEntry = UserModeList->Flink;
+        while (NextEntry != UserModeList)
+        {
+            /* Get the entry */
+            LdrEntry = CONTAINING_RECORD(NextEntry,
+                                         LDR_DATA_TABLE_ENTRY,
+                                         InLoadOrderLinks);
+
+            /* Update size and check if we can manage one more entry */
+            RequiredLength += sizeof(RTL_PROCESS_MODULE_INFORMATION);
+            if (Length >= RequiredLength)
+            {
+                Status = ExpConvertLdrModuleToRtlModule(ModuleCount,
+                                                        LdrEntry,
+                                                        ModuleInfo);
+
+                /* Go to the next module */
+                ModuleInfo++;
+            }
+            else
+            {
+                /* Set error code */
+                Status = STATUS_INFO_LENGTH_MISMATCH;
+            }
+
+            /* Update count and move to next entry */
+            ModuleCount++;
+            NextEntry = NextEntry->Flink;
+        }
     }
 
     /* Update return length */
@@ -136,6 +178,62 @@ ExpQueryModuleInformation(IN PLIST_ENTRY KernelModeList,
 
     /* Done */
     return Status;
+}
+
+VOID
+NTAPI
+ExUnlockUserBuffer(PMDL Mdl)
+{
+    MmUnlockPages(Mdl);
+    ExFreePoolWithTag(Mdl, TAG_MDL);
+}
+
+NTSTATUS
+NTAPI
+ExLockUserBuffer(
+    PVOID BaseAddress,
+    ULONG Length,
+    KPROCESSOR_MODE AccessMode,
+    LOCK_OPERATION Operation,
+    PVOID *MappedSystemVa,
+    PMDL *OutMdl)
+{
+    PMDL Mdl;
+    PAGED_CODE();
+
+    *MappedSystemVa = NULL;
+    *OutMdl = NULL;
+
+    /* Allocate an MDL for the buffer */
+    Mdl = IoAllocateMdl(BaseAddress, Length, FALSE, TRUE, NULL);
+    if (Mdl == NULL)
+    {
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    /* Enter SEH for probing */
+    _SEH2_TRY
+    {
+        MmProbeAndLockPages(Mdl, AccessMode, Operation);
+    }
+    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+    {
+        ExFreePoolWithTag(Mdl, TAG_MDL);
+        return _SEH2_GetExceptionCode();
+    }
+    _SEH2_END;
+
+    /* Return the safe kernel mode buffer */
+    *MappedSystemVa = MmGetSystemAddressForMdlSafe(Mdl, NormalPagePriority);
+    if (*MappedSystemVa == NULL)
+    {
+        ExUnlockUserBuffer(Mdl);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    /* Return the MDL */
+    *OutMdl = Mdl;
+    return STATUS_SUCCESS;
 }
 
 /* FUNCTIONS *****************************************************************/
@@ -481,7 +579,7 @@ QSI_DEF(SystemProcessorInformation)
     Spi->Reserved = 0;
     Spi->ProcessorFeatureBits = KeFeatureBits;
 
-    DPRINT("Arch %d Level %d Rev 0x%x\n", Spi->ProcessorArchitecture,
+    DPRINT("Arch %u Level %u Rev 0x%x\n", Spi->ProcessorArchitecture,
         Spi->ProcessorLevel, Spi->ProcessorRevision);
 
     return STATUS_SUCCESS;
@@ -712,7 +810,7 @@ QSI_DEF(SystemProcessInformation)
                 !(Process->ActiveThreads) &&
                 (IsListEmpty(&Process->Pcb.ThreadListHead)))
             {
-                DPRINT1("Process %p (%s:%lx) is a zombie\n",
+                DPRINT1("Process %p (%s:%p) is a zombie\n",
                         Process, Process->ImageFileName, Process->UniqueProcessId);
                 CurrentSize = 0;
                 ImageNameMaximumLength = 0;
@@ -787,7 +885,7 @@ QSI_DEF(SystemProcessInformation)
                         RtlCopyMemory(SpiCurrent->ImageName.Buffer, szSrc, SpiCurrent->ImageName.Length);
 
                         /* Release the memory allocated by SeLocateProcessImageName */
-                        ExFreePool(ProcessImageName);
+                        ExFreePoolWithTag(ProcessImageName, TAG_SEPA);
                     }
                     else
                     {
@@ -1287,7 +1385,7 @@ QSI_DEF(SystemFullMemoryInformation)
 
     TheIdleProcess = PsIdleProcess;
 
-    DPRINT("PID: %d, KernelTime: %u PFFree: %d PFUsed: %d\n",
+    DPRINT("PID: %p, KernelTime: %u PFFree: %lu PFUsed: %lu\n",
            TheIdleProcess->UniqueProcessId,
            TheIdleProcess->Pcb.KernelTime,
            MiFreeSwapPages,
@@ -1355,7 +1453,7 @@ SSI_DEF(SystemLoadGdiDriverInformation)
 /* Class 27 - Unload Image */
 SSI_DEF(SystemUnloadGdiDriverInformation)
 {
-    PVOID SectionPointer = Buffer;
+    PVOID *SectionPointer = Buffer;
 
     /* Validate size */
     if (Size != sizeof(PVOID))
@@ -1368,7 +1466,7 @@ SSI_DEF(SystemUnloadGdiDriverInformation)
     if (ExGetPreviousMode() != KernelMode) return STATUS_PRIVILEGE_NOT_HELD;
 
     /* Unload the image */
-    MmUnloadSystemImage(SectionPointer);
+    MmUnloadSystemImage(*SectionPointer);
     return STATUS_SUCCESS;
 }
 
@@ -1612,27 +1710,50 @@ SSI_DEF(SystemExtendServiceTableInformation)
     /* Check who is calling */
     if (PreviousMode != KernelMode)
     {
+        static const UNICODE_STRING Win32kName =
+            RTL_CONSTANT_STRING(L"\\SystemRoot\\System32\\win32k.sys");
+
         /* Make sure we can load drivers */
         if (!SeSinglePrivilegeCheck(SeLoadDriverPrivilege, UserMode))
         {
             /* FIXME: We can't, fail */
-            //return STATUS_PRIVILEGE_NOT_HELD;
+            return STATUS_PRIVILEGE_NOT_HELD;
         }
+
+        _SEH2_TRY
+        {
+            /* Probe and copy the unicode string */
+            ProbeForRead(Buffer, sizeof(ImageName), 1);
+            ImageName = *(PUNICODE_STRING)Buffer;
+
+            /* Probe the string buffer */
+            ProbeForRead(ImageName.Buffer, ImageName.Length, sizeof(WCHAR));
+
+            /* Check if we have the correct name (nothing else is allowed!) */
+            if (!RtlEqualUnicodeString(&ImageName, &Win32kName, FALSE))
+            {
+                _SEH2_YIELD(return STATUS_PRIVILEGE_NOT_HELD);
+            }
+        }
+        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        {
+            _SEH2_YIELD(return _SEH2_GetExceptionCode());
+        }
+        _SEH2_END;
+
+        /* Recursively call the function, so that we are from kernel mode */
+        return ZwSetSystemInformation(SystemExtendServiceTableInformation,
+                                      (PVOID)&Win32kName,
+                                      sizeof(Win32kName));
     }
 
-    /* Probe and capture the driver name */
-    ProbeAndCaptureUnicodeString(&ImageName, PreviousMode, Buffer);
-
     /* Load the image */
-    Status = MmLoadSystemImage(&ImageName,
+    Status = MmLoadSystemImage((PUNICODE_STRING)Buffer,
                                NULL,
                                NULL,
                                0,
                                (PVOID)&ModuleObject,
                                &ImageBase);
-
-    /* Release String */
-    ReleaseCapturedUnicodeString(&ImageName, PreviousMode);
 
     if (!NT_SUCCESS(Status)) return Status;
 
@@ -1734,13 +1855,151 @@ SSI_DEF(SystemCurrentTimeZoneInformation)
     return ExpSetTimeZoneInformation((PTIME_ZONE_INFORMATION)Buffer);
 }
 
+static
+VOID
+ExpCopyLookasideInformation(
+    PSYSTEM_LOOKASIDE_INFORMATION *InfoPointer,
+    PULONG RemainingPointer,
+    PLIST_ENTRY ListHead,
+    BOOLEAN ListUsesMisses)
+
+{
+    PSYSTEM_LOOKASIDE_INFORMATION Info;
+    PGENERAL_LOOKASIDE LookasideList;
+    PLIST_ENTRY ListEntry;
+    ULONG Remaining;
+
+    /* Get info pointer and remaining count of free array element */
+    Info = *InfoPointer;
+    Remaining = *RemainingPointer;
+
+    /* Loop as long as we have lookaside lists and free array elements */
+    for (ListEntry = ListHead->Flink;
+         (ListEntry != ListHead) && (Remaining > 0);
+         ListEntry = ListEntry->Flink, Remaining--)
+    {
+        LookasideList = CONTAINING_RECORD(ListEntry, GENERAL_LOOKASIDE, ListEntry);
+
+        /* Fill the next array element */
+        Info->CurrentDepth = LookasideList->Depth;
+        Info->MaximumDepth = LookasideList->MaximumDepth;
+        Info->TotalAllocates = LookasideList->TotalAllocates;
+        Info->TotalFrees = LookasideList->TotalFrees;
+        Info->Type = LookasideList->Type;
+        Info->Tag = LookasideList->Tag;
+        Info->Size = LookasideList->Size;
+
+        /* Check how the lists track misses/hits */
+        if (ListUsesMisses)
+        {
+            /* Copy misses */
+            Info->AllocateMisses = LookasideList->AllocateMisses;
+            Info->FreeMisses = LookasideList->FreeMisses;
+        }
+        else
+        {
+            /* Calculate misses */
+            Info->AllocateMisses = LookasideList->TotalAllocates
+                                   - LookasideList->AllocateHits;
+            Info->FreeMisses = LookasideList->TotalFrees
+                               - LookasideList->FreeHits;
+        }
+    }
+
+    /* Return the updated pointer and remaining count */
+    *InfoPointer = Info;
+    *RemainingPointer = Remaining;
+}
 
 /* Class 45 - Lookaside Information */
 QSI_DEF(SystemLookasideInformation)
 {
-    /* FIXME */
-    DPRINT1("NtQuerySystemInformation - SystemLookasideInformation not implemented\n");
-    return STATUS_NOT_IMPLEMENTED;
+    KPROCESSOR_MODE PreviousMode;
+    PSYSTEM_LOOKASIDE_INFORMATION Info;
+    PMDL Mdl;
+    ULONG MaxCount, Remaining;
+    KIRQL OldIrql;
+    NTSTATUS Status;
+
+    /* First we need to lock down the memory, since we are going to access it
+       at high IRQL */
+    PreviousMode = ExGetPreviousMode();
+    Status = ExLockUserBuffer(Buffer,
+                              Size,
+                              PreviousMode,
+                              IoWriteAccess,
+                              (PVOID*)&Info,
+                              &Mdl);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("Failed to lock the user buffer: 0x%lx\n", Status);
+        return Status;
+    }
+
+    /* Calculate how many items we can store */
+    Remaining = MaxCount = Size / sizeof(SYSTEM_LOOKASIDE_INFORMATION);
+    if (Remaining == 0)
+    {
+        goto Leave;
+    }
+
+    /* Copy info from pool lookaside lists */
+    ExpCopyLookasideInformation(&Info,
+                                &Remaining,
+                                &ExPoolLookasideListHead,
+                                FALSE);
+    if (Remaining == 0)
+    {
+        goto Leave;
+    }
+
+    /* Copy info from system lookaside lists */
+    ExpCopyLookasideInformation(&Info,
+                                &Remaining,
+                                &ExSystemLookasideListHead,
+                                TRUE);
+    if (Remaining == 0)
+    {
+        goto Leave;
+    }
+
+    /* Acquire spinlock for ExpNonPagedLookasideListHead */
+    OldIrql = KfAcquireSpinLock(&ExpNonPagedLookasideListLock);
+
+    /* Copy info from non-paged lookaside lists */
+    ExpCopyLookasideInformation(&Info,
+                                &Remaining,
+                                &ExpNonPagedLookasideListHead,
+                                TRUE);
+
+    /* Release spinlock for ExpNonPagedLookasideListHead */
+    KfReleaseSpinLock(&ExpNonPagedLookasideListLock, OldIrql);
+
+    if (Remaining == 0)
+    {
+        goto Leave;
+    }
+
+    /* Acquire spinlock for ExpPagedLookasideListHead */
+    OldIrql = KfAcquireSpinLock(&ExpPagedLookasideListLock);
+
+    /* Copy info from paged lookaside lists */
+    ExpCopyLookasideInformation(&Info,
+                                &Remaining,
+                                &ExpPagedLookasideListHead,
+                                TRUE);
+
+    /* Release spinlock for ExpPagedLookasideListHead */
+    KfReleaseSpinLock(&ExpPagedLookasideListLock, OldIrql);
+
+Leave:
+
+    /* Release the locked user buffer */
+    ExUnlockUserBuffer(Mdl);
+
+    /* Return the size of the actually written data */
+    *ReqSize = (MaxCount - Remaining) * sizeof(SYSTEM_LOOKASIDE_INFORMATION);
+    return STATUS_SUCCESS;
 }
 
 
@@ -1891,51 +2150,51 @@ CallQS [] =
     SI_QX(SystemPerformanceInformation),
     SI_QX(SystemTimeOfDayInformation),
     SI_QX(SystemPathInformation), /* should be SI_XX */
-    SI_QX(SystemProcessInformation),
-    SI_QX(SystemCallCountInformation),
-    SI_QX(SystemDeviceInformation),
-    SI_QX(SystemProcessorPerformanceInformation),
-    SI_QS(SystemFlagsInformation),
+    SI_QX(SystemProcessInformation),  // aka SystemProcessesAndThreadsInformation
+    SI_QX(SystemCallCountInformation), // aka SystemCallCounts
+    SI_QX(SystemDeviceInformation), // aka SystemConfigurationInformation
+    SI_QX(SystemProcessorPerformanceInformation), // aka SystemProcessorTimes
+    SI_QS(SystemFlagsInformation), // aka SystemGlobalFlag
     SI_QX(SystemCallTimeInformation), /* should be SI_XX */
     SI_QX(SystemModuleInformation),
-    SI_QX(SystemLocksInformation),
+    SI_QX(SystemLocksInformation), // aka SystemLockInformation
     SI_QX(SystemStackTraceInformation), /* should be SI_XX */
     SI_QX(SystemPagedPoolInformation), /* should be SI_XX */
     SI_QX(SystemNonPagedPoolInformation), /* should be SI_XX */
     SI_QX(SystemHandleInformation),
     SI_QX(SystemObjectInformation),
-    SI_QX(SystemPageFileInformation),
-    SI_QX(SystemVdmInstemulInformation),
+    SI_QX(SystemPageFileInformation), // aka SystemPagefileInformation
+    SI_QX(SystemVdmInstemulInformation), // aka SystemInstructionEmulationCounts
     SI_QX(SystemVdmBopInformation), /* it should be SI_XX */
-    SI_QS(SystemFileCacheInformation),
+    SI_QS(SystemFileCacheInformation), // aka SystemCacheInformation
     SI_QX(SystemPoolTagInformation),
-    SI_QX(SystemInterruptInformation),
-    SI_QS(SystemDpcBehaviourInformation),
+    SI_QX(SystemInterruptInformation), // aka SystemProcessorStatistics
+    SI_QS(SystemDpcBehaviourInformation), // aka SystemDpcInformation
     SI_QX(SystemFullMemoryInformation), /* it should be SI_XX */
-    SI_XS(SystemLoadGdiDriverInformation),
-    SI_XS(SystemUnloadGdiDriverInformation),
-    SI_QS(SystemTimeAdjustmentInformation),
+    SI_XS(SystemLoadGdiDriverInformation), // correct: SystemLoadImage
+    SI_XS(SystemUnloadGdiDriverInformation), // correct: SystemUnloadImage
+    SI_QS(SystemTimeAdjustmentInformation), // aka SystemTimeAdjustment
     SI_QX(SystemSummaryMemoryInformation), /* it should be SI_XX */
     SI_QX(SystemNextEventIdInformation), /* it should be SI_XX */
-    SI_QX(SystemEventIdsInformation), /* it should be SI_XX */
+    SI_QX(SystemEventIdsInformation), /* it should be SI_XX */ // SystemPerformanceTraceInformation
     SI_QX(SystemCrashDumpInformation),
     SI_QX(SystemExceptionInformation),
     SI_QX(SystemCrashDumpStateInformation),
     SI_QX(SystemKernelDebuggerInformation),
     SI_QX(SystemContextSwitchInformation),
     SI_QS(SystemRegistryQuotaInformation),
-    SI_XS(SystemExtendServiceTableInformation),
+    SI_XS(SystemExtendServiceTableInformation), // correct: SystemLoadAndCallImage
     SI_XS(SystemPrioritySeperation),
     SI_QX(SystemPlugPlayBusInformation), /* it should be SI_XX */
     SI_QX(SystemDockInformation), /* it should be SI_XX */
-    SI_QX(SystemPowerInformation), /* it should be SI_XX */
+    SI_QX(SystemPowerInformation), /* it should be SI_XX */ // SystemPowerInformationNative? SystemInvalidInfoClass2
     SI_QX(SystemProcessorSpeedInformation), /* it should be SI_XX */
-    SI_QS(SystemCurrentTimeZoneInformation), /* it should be SI_QX */
+    SI_QS(SystemCurrentTimeZoneInformation), /* it should be SI_QX */ // aka SystemTimeZoneInformation
     SI_QX(SystemLookasideInformation),
     SI_XS(SystemSetTimeSlipEvent),
     SI_XS(SystemCreateSession),
     SI_XS(SystemDeleteSession),
-    SI_QX(SystemInvalidInfoClass4), /* it should be SI_XX */
+    SI_QX(SystemInvalidInfoClass4), /* it should be SI_XX */ // SystemSessionInformation?
     SI_QX(SystemRangeStartInformation),
     SI_QS(SystemVerifierInformation),
     SI_XS(SystemAddVerifier),
@@ -1956,7 +2215,7 @@ NtQuerySystemInformation(IN SYSTEM_INFORMATION_CLASS SystemInformationClass,
                          OUT PULONG UnsafeResultLength)
 {
     KPROCESSOR_MODE PreviousMode;
-    ULONG ResultLength;
+    ULONG ResultLength = 0;
     NTSTATUS FStatus = STATUS_NOT_IMPLEMENTED;
 
     PAGED_CODE();
@@ -1973,8 +2232,11 @@ NtQuerySystemInformation(IN SYSTEM_INFORMATION_CLASS SystemInformationClass,
                 ProbeForWriteUlong(UnsafeResultLength);
         }
 
+        if (UnsafeResultLength)
+            *UnsafeResultLength = 0;
+
         /*
-         * Check the request is valid.
+         * Check if the request is valid.
          */
         if (SystemInformationClass >= MAX_SYSTEM_INFO_CLASS)
         {

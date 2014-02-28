@@ -1,8 +1,7 @@
 #include "precomp.h"
 
-WINE_DEFAULT_DEBUG_CHANNEL (shell);
-
-class CNetshellClassFactory: public IClassFactory
+class CNetshellClassFactory :
+    public IClassFactory
 {
     public:
         CNetshellClassFactory(REFCLSID rclsid);

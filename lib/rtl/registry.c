@@ -10,6 +10,9 @@
 /* INCLUDES *****************************************************************/
 
 #include <rtl.h>
+
+#include <ndk/cmfuncs.h>
+
 #define NDEBUG
 #include <debug.h>
 
@@ -38,7 +41,7 @@ RtlpQueryRegistryDirect(IN ULONG ValueType,
                         IN ULONG ValueLength,
                         IN PVOID Buffer)
 {
-    USHORT ActualLength = (USHORT)ValueLength;
+    USHORT ActualLength;
     PUNICODE_STRING ReturnString = Buffer;
     PULONG Length = Buffer;
     ULONG RealLength;
@@ -49,7 +52,10 @@ RtlpQueryRegistryDirect(IN ULONG ValueType,
         (ValueType == REG_MULTI_SZ))
     {
         /* Normalize the length */
-        if (ValueLength > MAXUSHORT) ValueLength = MAXUSHORT;
+        if (ValueLength > MAXUSHORT)
+            ActualLength = MAXUSHORT;
+        else
+            ActualLength = (USHORT)ValueLength;
 
         /* Check if the return string has been allocated */
         if (!ReturnString->Buffer)
@@ -205,7 +211,7 @@ RtlpCallQueryRegistryRoutine(IN PRTL_QUERY_REGISTRY_TABLE QueryTable,
 
             /* Check if we have space to copy the data */
             RequiredLength = KeyValueInfo->NameLength + sizeof(UNICODE_NULL);
-            if (SpareLength < RequiredLength)
+            if ((SpareData > DataEnd) || (SpareLength < RequiredLength))
             {
                 /* Fail and return the missing length */
                 *InfoSize = (ULONG)(SpareData - (PCHAR)KeyValueInfo) + RequiredLength;
@@ -242,7 +248,8 @@ RtlpCallQueryRegistryRoutine(IN PRTL_QUERY_REGISTRY_TABLE QueryTable,
         {
             /* Prepare defaults */
             Status = STATUS_SUCCESS;
-            ValueEnd = (PWSTR)((ULONG_PTR)Data + Length - sizeof(UNICODE_NULL));
+            /* Skip the last two UNICODE_NULL chars (the terminating null string) */
+            ValueEnd = (PWSTR)((ULONG_PTR)Data + Length - 2 * sizeof(UNICODE_NULL));
             p = Data;
 
             /* Loop all strings */
@@ -260,9 +267,9 @@ RtlpCallQueryRegistryRoutine(IN PRTL_QUERY_REGISTRY_TABLE QueryTable,
                                                      Data,
                                                      (ULONG)Length,
                                                      QueryTable->EntryContext);
-                    QueryTable->EntryContext = (PVOID)((ULONG_PTR)QueryTable->
-                                                       EntryContext +
-                                                       sizeof(UNICODE_STRING));
+                    QueryTable->EntryContext =
+                        (PVOID)((ULONG_PTR)QueryTable->EntryContext +
+                                sizeof(UNICODE_STRING));
                 }
                 else
                 {
@@ -328,13 +335,13 @@ RtlpCallQueryRegistryRoutine(IN PRTL_QUERY_REGISTRY_TABLE QueryTable,
                 {
                     /* This is the good case, where we fit into a string */
                     Destination.MaximumLength = (USHORT)SpareLength;
-                    Destination.Buffer[SpareLength / 2 - 1] = UNICODE_NULL;
+                    Destination.Buffer[SpareLength / sizeof(WCHAR) - 1] = UNICODE_NULL;
                 }
                 else
                 {
                     /* We can't fit into a string, so truncate */
                     Destination.MaximumLength = MAXUSHORT;
-                    Destination.Buffer[MAXUSHORT / 2 - 1] = UNICODE_NULL;
+                    Destination.Buffer[MAXUSHORT / sizeof(WCHAR) - 1] = UNICODE_NULL;
                 }
 
                 /* Expand the strings and set our type as one string */
@@ -657,8 +664,13 @@ RtlWriteRegistryValue(IN ULONG RelativeTo,
                            ValueData,
                            ValueLength);
 
-    /* All went well, close the handle and return status */
-    ZwClose(KeyHandle);
+    /* Did the caller pass a key handle? */
+    if (!(RelativeTo & RTL_REGISTRY_HANDLE))
+    {
+        /* We opened the key in RtlpGetRegistryHandle, so close it now */
+        ZwClose(KeyHandle);
+    }
+
     return Status;
 }
 
@@ -1149,7 +1161,7 @@ RtlQueryRegistryValues(IN ULONG RelativeTo,
                     if (KeyValueInfo->Type == REG_MULTI_SZ)
                     {
                         /* Add a null-char */
-                        ((PWCHAR)KeyValueInfo)[ResultLength / 2] = UNICODE_NULL;
+                        ((PWCHAR)KeyValueInfo)[ResultLength / sizeof(WCHAR)] = UNICODE_NULL;
                         KeyValueInfo->DataLength += sizeof(UNICODE_NULL);
                     }
 

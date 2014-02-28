@@ -6,7 +6,11 @@
  * PROGRAMMER:      Andrew Greenwood
  *                  Johannes Anderwald
  */
+
 #include "wdmaud.h"
+
+#define NDEBUG
+#include <debug.h>
 
 NTSTATUS
 WdmAudOpenSysAudioDevice(
@@ -256,6 +260,3 @@ WdmAudOpenSysaudio(
     /* done */
     return STATUS_SUCCESS;
 }
-
-
-

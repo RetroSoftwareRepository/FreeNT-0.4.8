@@ -18,30 +18,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-#define COM_NO_WINDOWS_H
-
-//#include <stdarg.h>
-#include <assert.h>
-
-#define COBJMACROS
-#define NONAMELESSUNION
-#define NONAMELESSSTRUCT
-
-//#include "windef.h"
-//#include "winbase.h"
-//#include "winerror.h"
-//#include "msi.h"
-//#include "msiquery.h"
-//#include "objbase.h"
-//#include "objidl.h"
-//#include "winnls.h"
-//#include "msipriv.h"
-#include "query.h"
-
-#include <wine/debug.h>
-#include <wine/unicode.h>
+#include "msipriv.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(msidb);
 
@@ -1263,6 +1240,7 @@ static UINT get_table_value_from_record( MSITABLEVIEW *tv, MSIRECORD *rec, UINT 
 {
     MSICOLUMNINFO columninfo;
     UINT r;
+    int ival;
 
     if ( (iField <= 0) ||
          (iField > tv->num_cols) ||
@@ -1289,16 +1267,21 @@ static UINT get_table_value_from_record( MSITABLEVIEW *tv, MSIRECORD *rec, UINT 
     }
     else if ( bytes_per_column( tv->db, &columninfo, LONG_STR_BYTES ) == 2 )
     {
-        *pvalue = 0x8000 + MSI_RecordGetInteger( rec, iField );
-        if ( *pvalue & 0xffff0000 )
+        ival = MSI_RecordGetInteger( rec, iField );
+        if (ival == 0x80000000) *pvalue = 0x8000;
+        else
         {
-            ERR("field %u value %d out of range\n", iField, *pvalue - 0x8000);
-            return ERROR_FUNCTION_FAILED;
+            *pvalue = 0x8000 + MSI_RecordGetInteger( rec, iField );
+            if (*pvalue & 0xffff0000)
+            {
+                ERR("field %u value %d out of range\n", iField, *pvalue - 0x8000);
+                return ERROR_FUNCTION_FAILED;
+            }
         }
     }
     else
     {
-        INT ival = MSI_RecordGetInteger( rec, iField );
+        ival = MSI_RecordGetInteger( rec, iField );
         *pvalue = ival ^ 0x80000000;
     }
 

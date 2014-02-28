@@ -19,10 +19,6 @@
 
 #include "urlmon_main.h"
 
-#include <wine/debug.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(urlmon);
-
 static inline HRESULT report_progress(Protocol *protocol, ULONG status_code, LPCWSTR status_text)
 {
     return IInternetProtocolSink_ReportProgress(protocol->protocol_sink, status_code, status_text);
@@ -78,7 +74,7 @@ static HRESULT start_downloading(Protocol *protocol)
     if(FAILED(hres)) {
         protocol_close_connection(protocol);
         report_result(protocol, hres);
-        return S_OK;
+        return hres;
     }
 
     if(protocol->bindf & BINDF_NEEDFILE) {

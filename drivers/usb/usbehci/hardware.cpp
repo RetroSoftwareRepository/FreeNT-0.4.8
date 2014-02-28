@@ -8,9 +8,10 @@
  *              Johannes Anderwald (johannes.anderwald@reactos.org)
  */
 
-#define INITGUID
 #include "usbehci.h"
-#include "hardware.h"
+
+#define NDEBUG
+#include <debug.h>
 
 typedef VOID __stdcall HD_INIT_CALLBACK(IN PVOID CallBackContext);
 
@@ -1124,14 +1125,10 @@ CUSBHardwareDevice::SetPortFeature(
     ULONG PortId,
     ULONG Feature)
 {
-    ULONG Value;
-
     DPRINT("CUSBHardwareDevice::SetPortFeature\n");
 
     if (PortId > m_Capabilities.HCSParams.PortCount)
         return STATUS_UNSUCCESSFUL;
-
-    Value = EHCI_READ_REGISTER_ULONG(EHCI_PORTSC + (4 * PortId));
 
     if (Feature == PORT_ENABLE)
     {

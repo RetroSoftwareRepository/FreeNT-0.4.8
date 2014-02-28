@@ -216,18 +216,9 @@ typedef struct _MM_SECTION_SEGMENT
 
 typedef struct _MM_IMAGE_SECTION_OBJECT
 {
-    ULONG_PTR ImageBase;
-    ULONG_PTR StackReserve;
-    ULONG_PTR StackCommit;
-    ULONG_PTR EntryPoint;
-    USHORT Subsystem;
-    USHORT ImageCharacteristics;
-    USHORT MinorSubsystemVersion;
-    USHORT MajorSubsystemVersion;
-    USHORT Machine;
-    BOOLEAN Executable;
+    SECTION_IMAGE_INFORMATION ImageInformation;
+    PVOID BasedAddress;
     ULONG NrSegments;
-    ULONG ImageSize;
     PMM_SECTION_SEGMENT Segments;
 } MM_IMAGE_SECTION_OBJECT, *PMM_IMAGE_SECTION_OBJECT;
 
@@ -348,10 +339,13 @@ typedef struct _MMPFN
     union
     {
         PFN_NUMBER Flink;
-        ULONG WsIndex;                       // SavedSwapEntry
+        ULONG WsIndex;
         PKEVENT Event;
         NTSTATUS ReadStatus;
         SINGLE_LIST_ENTRY NextStackPfn;
+
+        // HACK for ROSPFN
+        SWAPENTRY SwapEntry;
     } u1;
     PMMPTE PteAddress;
     union
@@ -363,7 +357,7 @@ typedef struct _MMPFN
     {
         struct
         {
-            USHORT ReferenceCount;           // ReferenceCount
+            USHORT ReferenceCount;
             MMPFNENTRY e1;
         };
         struct
@@ -375,7 +369,10 @@ typedef struct _MMPFN
     union
     {
         MMPTE OriginalPte;
-        LONG AweReferenceCount;              // RmapListHead
+        LONG AweReferenceCount;
+
+        // HACK for ROSPFN
+        PMM_RMAP_ENTRY RmapListHead;
     };
     union
     {
@@ -394,6 +391,9 @@ typedef struct _MMPFN
     MI_PFN_USAGES PfnUsage;
     CHAR ProcessName[16];
 #endif
+
+    // HACK until WS lists are supported
+    MMWSLE Wsle;
 } MMPFN, *PMMPFN;
 
 extern PMMPFN MmPfnDatabase;
@@ -502,6 +502,12 @@ MmGetSessionId(
     IN PEPROCESS Process
 );
 
+ULONG
+NTAPI
+MmGetSessionIdEx(
+    IN PEPROCESS Process
+);
+
 /* marea.c *******************************************************************/
 
 NTSTATUS
@@ -515,7 +521,7 @@ MmCreateMemoryArea(
     PMEMORY_AREA *Result,
     BOOLEAN FixedAddress,
     ULONG AllocationFlags,
-    PHYSICAL_ADDRESS BoundaryAddressMultiple OPTIONAL
+    ULONG AllocationGranularity
 );
 
 PMEMORY_AREA
@@ -1295,24 +1301,10 @@ MmInitGlobalKernelPageDirectory(VOID);
 
 VOID
 NTAPI
-MmDisableVirtualMapping(
-    struct _EPROCESS *Process,
-    PVOID Address,
-    BOOLEAN* WasDirty,
-    PPFN_NUMBER Page
-);
-
-VOID
-NTAPI
 MmEnableVirtualMapping(
     struct _EPROCESS *Process,
     PVOID Address
 );
-
-VOID
-NTAPI
-MmRawDeleteVirtualMapping(PVOID Address);
-
 
 VOID
 NTAPI
@@ -1548,6 +1540,12 @@ MmFindRegion(
 
 /* section.c *****************************************************************/
 
+VOID
+NTAPI
+MmGetImageInformation(
+    OUT PSECTION_IMAGE_INFORMATION ImageInformation
+);
+
 PFILE_OBJECT
 NTAPI
 MmGetFileObjectForSection(
@@ -1767,3 +1765,61 @@ ExpCheckPoolAllocation(
     PVOID P,
     POOL_TYPE PoolType,
     ULONG Tag);
+
+
+/* mmsup.c *****************************************************************/
+
+NTSTATUS
+NTAPI
+MmAdjustWorkingSetSize(
+    IN SIZE_T WorkingSetMinimumInBytes,
+    IN SIZE_T WorkingSetMaximumInBytes,
+    IN ULONG SystemCache,
+    IN BOOLEAN IncreaseOkay);
+
+
+/* session.c *****************************************************************/
+
+_IRQL_requires_max_(APC_LEVEL)
+NTSTATUS
+NTAPI
+MmAttachSession(
+    _Inout_ PVOID SessionEntry,
+    _Out_ PKAPC_STATE ApcState);
+
+_IRQL_requires_max_(APC_LEVEL)
+VOID
+NTAPI
+MmDetachSession(
+    _Inout_ PVOID SessionEntry,
+    _Out_ PKAPC_STATE ApcState);
+
+VOID
+NTAPI
+MmQuitNextSession(
+    _Inout_ PVOID SessionEntry);
+
+PVOID
+NTAPI
+MmGetSessionById(
+    _In_ ULONG SessionId);
+
+_IRQL_requires_max_(APC_LEVEL)
+VOID
+NTAPI
+MmSetSessionLocaleId(
+    _In_ LCID LocaleId);
+
+
+/* virtual.c *****************************************************************/
+
+NTSTATUS
+NTAPI
+MmCopyVirtualMemory(IN PEPROCESS SourceProcess,
+                    IN PVOID SourceAddress,
+                    IN PEPROCESS TargetProcess,
+                    OUT PVOID TargetAddress,
+                    IN SIZE_T BufferSize,
+                    IN KPROCESSOR_MODE PreviousMode,
+                    OUT PSIZE_T ReturnSize);
+

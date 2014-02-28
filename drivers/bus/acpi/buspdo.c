@@ -1,12 +1,4 @@
-#include <ntddk.h>
-
-#include <acpi.h>
-#include <acpisys.h>
-#include <wdmguid.h>
-#include <stdio.h>
-
-#include <acpi_bus.h>
-#include <acpi_drivers.h>
+#include "precomp.h"
 
 #include <initguid.h>
 #include <poclass.h>
@@ -406,7 +398,7 @@ Bus_PDO_QueryDeviceId(
       PIRP   Irp )
 {
     PIO_STACK_LOCATION      stack;
-    PWCHAR                  buffer;
+    PWCHAR                  buffer, src;
     WCHAR                   temp[256];
     ULONG                   length;
     NTSTATUS                status = STATUS_SUCCESS;
@@ -419,6 +411,9 @@ Bus_PDO_QueryDeviceId(
     switch (stack->Parameters.QueryId.IdType) {
 
     case BusQueryDeviceID:
+
+        /* This is a REG_SZ value */
+
         if (DeviceData->AcpiHandle)
         {
             acpi_bus_get_device(DeviceData->AcpiHandle, &Device);
@@ -437,9 +432,11 @@ Bus_PDO_QueryDeviceId(
                               L"ACPI\\FixedButton");
         }
 
-        temp[++length] = UNICODE_NULL;
+        temp[length++] = UNICODE_NULL;
 
-         buffer = ExAllocatePoolWithTag (PagedPool, length * sizeof(WCHAR), 'IPCA');
+        NT_ASSERT(length * sizeof(WCHAR) <= sizeof(temp));
+
+        buffer = ExAllocatePoolWithTag (PagedPool, length * sizeof(WCHAR), 'IPCA');
 
         if (!buffer) {
            status = STATUS_INSUFFICIENT_RESOURCES;
@@ -452,6 +449,9 @@ Bus_PDO_QueryDeviceId(
         break;
 
     case BusQueryInstanceID:
+
+        /* This is a REG_SZ value */
+
         /* See comment in BusQueryDeviceID case */
         if(DeviceData->AcpiHandle)
         {
@@ -466,10 +466,14 @@ Bus_PDO_QueryDeviceId(
               length = swprintf(temp, L"%ls", L"0000");
         }
         else
+        {
            /* FIXME: Generate unique id! */
            length = swprintf(temp, L"%ls", L"0000");
+        }
 
-        temp[++length] = UNICODE_NULL;
+        temp[length++] = UNICODE_NULL;
+
+        NT_ASSERT(length * sizeof(WCHAR) <= sizeof(temp));
 
         buffer = ExAllocatePoolWithTag (PagedPool, length * sizeof (WCHAR), 'IPCA');
         if (!buffer) {
@@ -483,6 +487,8 @@ Bus_PDO_QueryDeviceId(
         break;
 
     case BusQueryHardwareIDs:
+
+        /* This is a REG_MULTI_SZ value */
         length = 0;
 
         /* See comment in BusQueryDeviceID case */
@@ -490,32 +496,43 @@ Bus_PDO_QueryDeviceId(
         {
             acpi_bus_get_device(DeviceData->AcpiHandle, &Device);
 
-            length += swprintf(&temp[length],
-                               L"ACPI\\%hs",
-                               Device->pnp.hardware_id);
-            length++;
+            DPRINT1("Device name: %s\n", Device->pnp.device_name);
+            DPRINT1("Hardware ID: %s\n", Device->pnp.hardware_id);
 
-            length += swprintf(&temp[length],
-                               L"*%hs",
-                               Device->pnp.hardware_id);
-            length++;
-         }
-         else
-         {
+            if (strcmp(Device->pnp.hardware_id, "Processor") == 0)
+            {
+                length = ProcessorHardwareIds.Length / sizeof(WCHAR);
+                src = ProcessorHardwareIds.Buffer;
+            }
+            else
+            {
+                length += swprintf(&temp[length],
+                                   L"ACPI\\%hs",
+                                   Device->pnp.hardware_id);
+                temp[length++] = UNICODE_NULL;
+
+                length += swprintf(&temp[length],
+                                   L"*%hs",
+                                   Device->pnp.hardware_id);
+                temp[length++] = UNICODE_NULL;
+                temp[length++] = UNICODE_NULL;
+                src = temp;
+            }
+        }
+        else
+        {
             length += swprintf(&temp[length],
                                L"ACPI\\FixedButton");
-            length++;
+            temp[length++] = UNICODE_NULL;
 
             length += swprintf(&temp[length],
                                L"*FixedButton");
-            length++;
-         }
+            temp[length++] = UNICODE_NULL;
+            temp[length++] = UNICODE_NULL;
+            src = temp;
+        }
 
-         temp[length] = UNICODE_NULL;
-
-         length++;
-
-         temp[length] = UNICODE_NULL;
+        NT_ASSERT(length * sizeof(WCHAR) <= sizeof(temp));
 
         buffer = ExAllocatePoolWithTag (PagedPool, length * sizeof(WCHAR), 'IPCA');
 
@@ -524,9 +541,53 @@ Bus_PDO_QueryDeviceId(
            break;
         }
 
-        RtlCopyMemory (buffer, temp, length * sizeof(WCHAR));
+        RtlCopyMemory (buffer, src, length * sizeof(WCHAR));
         Irp->IoStatus.Information = (ULONG_PTR) buffer;
         DPRINT("BusQueryHardwareIDs: %ls\n",buffer);
+        break;
+
+    case BusQueryCompatibleIDs:
+
+        /* This is a REG_MULTI_SZ value */
+        length = 0;
+        status = STATUS_NOT_SUPPORTED;
+
+        /* See comment in BusQueryDeviceID case */
+        if (DeviceData->AcpiHandle)
+        {
+            acpi_bus_get_device(DeviceData->AcpiHandle, &Device);
+
+            if (strcmp(Device->pnp.hardware_id, "Processor") == 0)
+            {
+                DPRINT("Device name: %s\n", Device->pnp.device_name);
+                DPRINT("Hardware ID: %s\n", Device->pnp.hardware_id);
+
+                length += swprintf(&temp[length],
+                                   L"ACPI\\%hs",
+                                   Device->pnp.hardware_id);
+                temp[length++] = UNICODE_NULL;
+
+                length += swprintf(&temp[length],
+                                   L"*%hs",
+                                   Device->pnp.hardware_id);
+                temp[length++] = UNICODE_NULL;
+                temp[length++] = UNICODE_NULL;
+
+                NT_ASSERT(length * sizeof(WCHAR) <= sizeof(temp));
+
+                buffer = ExAllocatePoolWithTag (PagedPool, length * sizeof(WCHAR), 'IPCA');
+                if (!buffer)
+                {
+                    status = STATUS_INSUFFICIENT_RESOURCES;
+                    break;
+                }
+
+                RtlCopyMemory (buffer, temp, length * sizeof(WCHAR));
+                Irp->IoStatus.Information = (ULONG_PTR) buffer;
+                DPRINT("BusQueryHardwareIDs: %ls\n",buffer);
+                status = STATUS_SUCCESS;
+            }
+        }
         break;
 
     default:
@@ -604,7 +665,12 @@ Bus_PDO_QueryDeviceText(
            else if (wcsstr(DeviceData->HardwareIDs, L"ACPI_PWR") != 0)
             Temp = L"ACPI Power Resource";
            else if (wcsstr(DeviceData->HardwareIDs, L"Processor") != 0)
-            Temp = L"Processor";
+           {
+               if (ProcessorNameString != NULL)
+                   Temp = ProcessorNameString;
+               else
+                   Temp = L"Processor";
+           }
            else if (wcsstr(DeviceData->HardwareIDs, L"ThermalZone") != 0)
             Temp = L"ACPI Thermal Zone";
            else if (wcsstr(DeviceData->HardwareIDs, L"ACPI0002") != 0)
@@ -906,7 +972,7 @@ Bus_PDO_QueryResources(
                 ResourceDescriptor->Flags = CM_RESOURCE_PORT_IO;
                 ResourceDescriptor->u.Port.Start.QuadPart = io_data->Address;
                 ResourceDescriptor->u.Port.Length = io_data->AddressLength;
-                
+
                 ResourceDescriptor++;
                 break;
             }
@@ -1036,7 +1102,7 @@ Bus_PDO_QueryResources(
                         case ACPI_CACHABLE_MEMORY: ResourceDescriptor->Flags |= CM_RESOURCE_MEMORY_CACHEABLE; break;
                         case ACPI_WRITE_COMBINING_MEMORY: ResourceDescriptor->Flags |= CM_RESOURCE_MEMORY_COMBINEDWRITE; break;
                         case ACPI_PREFETCHABLE_MEMORY: ResourceDescriptor->Flags |= CM_RESOURCE_MEMORY_PREFETCHABLE; break;
-                    }    
+                    }
                     ResourceDescriptor->u.Memory.Start.QuadPart = addr64_data->Minimum;
                     ResourceDescriptor->u.Memory.Length = addr64_data->AddressLength;
                 }
@@ -1081,7 +1147,7 @@ Bus_PDO_QueryResources(
                         case ACPI_CACHABLE_MEMORY: ResourceDescriptor->Flags |= CM_RESOURCE_MEMORY_CACHEABLE; break;
                         case ACPI_WRITE_COMBINING_MEMORY: ResourceDescriptor->Flags |= CM_RESOURCE_MEMORY_COMBINEDWRITE; break;
                         case ACPI_PREFETCHABLE_MEMORY: ResourceDescriptor->Flags |= CM_RESOURCE_MEMORY_PREFETCHABLE; break;
-                    }    
+                    }
                     ResourceDescriptor->u.Memory.Start.QuadPart = addr64_data->Minimum;
                     ResourceDescriptor->u.Memory.Length = addr64_data->AddressLength;
                 }
@@ -1132,7 +1198,7 @@ Bus_PDO_QueryResources(
                     ResourceDescriptor->Flags |= CM_RESOURCE_MEMORY_READ_WRITE;
                 ResourceDescriptor->u.Memory.Start.QuadPart = memfixed32_data->Address;
                 ResourceDescriptor->u.Memory.Length = memfixed32_data->AddressLength;
-                
+
                 ResourceDescriptor++;
                 break;
             }
@@ -1384,7 +1450,7 @@ Bus_PDO_QueryResourceRequirements(
                 RequirementDescriptor->u.Port.Alignment = 1;
                 RequirementDescriptor->u.Port.MinimumAddress.QuadPart = io_data->Address;
                 RequirementDescriptor->u.Port.MaximumAddress.QuadPart = io_data->Address + io_data->AddressLength - 1;
-                
+
                 RequirementDescriptor++;
                 break;
             }
@@ -1525,7 +1591,7 @@ Bus_PDO_QueryResourceRequirements(
                         case ACPI_CACHABLE_MEMORY: RequirementDescriptor->Flags |= CM_RESOURCE_MEMORY_CACHEABLE; break;
                         case ACPI_WRITE_COMBINING_MEMORY: RequirementDescriptor->Flags |= CM_RESOURCE_MEMORY_COMBINEDWRITE; break;
                         case ACPI_PREFETCHABLE_MEMORY: RequirementDescriptor->Flags |= CM_RESOURCE_MEMORY_PREFETCHABLE; break;
-                    }    
+                    }
                     RequirementDescriptor->u.Memory.MinimumAddress.QuadPart = addr64_data->Minimum;
                     RequirementDescriptor->u.Memory.MaximumAddress.QuadPart = addr64_data->Maximum + addr64_data->AddressLength - 1;
                     RequirementDescriptor->u.Memory.Length = addr64_data->AddressLength;
@@ -1574,7 +1640,7 @@ Bus_PDO_QueryResourceRequirements(
                         case ACPI_CACHABLE_MEMORY: RequirementDescriptor->Flags |= CM_RESOURCE_MEMORY_CACHEABLE; break;
                         case ACPI_WRITE_COMBINING_MEMORY: RequirementDescriptor->Flags |= CM_RESOURCE_MEMORY_COMBINEDWRITE; break;
                         case ACPI_PREFETCHABLE_MEMORY: RequirementDescriptor->Flags |= CM_RESOURCE_MEMORY_PREFETCHABLE; break;
-                    }    
+                    }
                     RequirementDescriptor->u.Memory.MinimumAddress.QuadPart = addr64_data->Minimum;
                     RequirementDescriptor->u.Memory.MaximumAddress.QuadPart = addr64_data->Maximum + addr64_data->AddressLength - 1;
                     RequirementDescriptor->u.Memory.Length = addr64_data->AddressLength;
@@ -1632,7 +1698,7 @@ Bus_PDO_QueryResourceRequirements(
                 RequirementDescriptor->u.Memory.MinimumAddress.QuadPart = fixedmem32_data->Address;
                 RequirementDescriptor->u.Memory.MaximumAddress.QuadPart = fixedmem32_data->Address + fixedmem32_data->AddressLength - 1;
                 RequirementDescriptor->u.Memory.Length = fixedmem32_data->AddressLength;
-                
+
                 RequirementDescriptor++;
                 break;
             }

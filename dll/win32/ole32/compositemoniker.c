@@ -18,25 +18,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-
-//#include <assert.h>
-#include <stdarg.h>
-//#include <string.h>
-
-#define COBJMACROS
-#define NONAMELESSUNION
-#define NONAMELESSSTRUCT
-
-#include <windef.h>
-#include <winbase.h>
-//#include "winuser.h"
-//#include "winerror.h"
-#include <wine/debug.h>
-#include <wine/unicode.h>
-#include <ole2.h>
-#include "moniker.h"
+#include "precomp.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(ole);
 
@@ -239,7 +221,7 @@ CompositeMonikerImpl_Load(IMoniker* iface,IStream* pStm)
         if (++This->tabLastIndex==This->tabSize){
 
             This->tabSize+=BLOCK_TAB_SIZE;
-            This->tabMoniker=HeapReAlloc(GetProcessHeap(),0,This->tabMoniker,This->tabSize*sizeof(IMoniker));
+            This->tabMoniker=HeapReAlloc(GetProcessHeap(),0,This->tabMoniker,This->tabSize*sizeof(This->tabMoniker[0]));
 
             if (This->tabMoniker==NULL)
             return E_OUTOFMEMORY;
@@ -1446,7 +1428,7 @@ static HRESULT WINAPI CompositeMonikerMarshalImpl_UnmarshalInterface(IMarshal *i
     if (This->tabLastIndex + 2 > This->tabSize)
     {
         This->tabSize += max(BLOCK_TAB_SIZE, 2);
-        This->tabMoniker=HeapReAlloc(GetProcessHeap(),0,This->tabMoniker,This->tabSize*sizeof(IMoniker));
+        This->tabMoniker=HeapReAlloc(GetProcessHeap(),0,This->tabMoniker,This->tabSize*sizeof(This->tabMoniker[0]));
 
         if (This->tabMoniker==NULL)
             return E_OUTOFMEMORY;
@@ -1661,7 +1643,7 @@ EnumMonikerImpl_CreateEnumMoniker(IMoniker** tabMoniker, ULONG tabSize,
     newEnumMoniker->tabSize=tabSize;
     newEnumMoniker->currentPos=currentPos;
 
-    newEnumMoniker->tabMoniker=HeapAlloc(GetProcessHeap(),0,tabSize*sizeof(IMoniker));
+    newEnumMoniker->tabMoniker=HeapAlloc(GetProcessHeap(),0,tabSize*sizeof(newEnumMoniker->tabMoniker[0]));
 
     if (newEnumMoniker->tabMoniker==NULL) {
         HeapFree(GetProcessHeap(), 0, newEnumMoniker);
@@ -1768,7 +1750,7 @@ CompositeMonikerImpl_Construct(IMoniker **ppMoniker, IMoniker *pmkFirst, IMonike
     This->tabSize=BLOCK_TAB_SIZE;
     This->tabLastIndex=0;
 
-    This->tabMoniker=HeapAlloc(GetProcessHeap(),0,This->tabSize*sizeof(IMoniker));
+    This->tabMoniker=HeapAlloc(GetProcessHeap(),0,This->tabSize*sizeof(This->tabMoniker[0]));
     if (This->tabMoniker==NULL) {
         HeapFree(GetProcessHeap(), 0, This);
         return E_OUTOFMEMORY;
@@ -1896,7 +1878,7 @@ CompositeMonikerImpl_Construct(IMoniker **ppMoniker, IMoniker *pmkFirst, IMonike
 
                 This->tabSize+=BLOCK_TAB_SIZE;
 
-                This->tabMoniker=HeapReAlloc(GetProcessHeap(),0,This->tabMoniker,This->tabSize*sizeof(IMoniker));
+                This->tabMoniker=HeapReAlloc(GetProcessHeap(),0,This->tabMoniker,This->tabSize*sizeof(This->tabMoniker[0]));
 
                 if (This->tabMoniker==NULL){
                     HeapFree(GetProcessHeap(), 0, tab_moniker);

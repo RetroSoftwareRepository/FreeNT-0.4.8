@@ -27,6 +27,7 @@ list(APPEND SOURCE
     bitmap.c
     bmpdecode.c
     bmpencode.c
+    clipper.c
     clsfactory.c
     colorcontext.c
     colortransform.c
@@ -50,19 +51,19 @@ list(APPEND SOURCE
     tgaformat.c
     tiffformat.c
     ungif.c
+    wincodecs_private.h)
+
+add_library(windowscodecs SHARED
+    ${SOURCE}
+    guid.c
+    version.rc
     ${CMAKE_CURRENT_BINARY_DIR}/proxy.dlldata.c
     ${CMAKE_CURRENT_BINARY_DIR}/windowscodecs_stubs.c
     ${CMAKE_CURRENT_BINARY_DIR}/windowscodecs.def
     ${CMAKE_CURRENT_BINARY_DIR}/windowscodecs_wincodec_p.c)
 
-if(NOT MSVC)
-    # FIXME: http://www.cmake.org/Bug/view.php?id=12998
-    #allow_warnings(windowscodecs)
-    set_source_files_properties(${SOURCE} PROPERTIES COMPILE_FLAGS "-Wno-error")
-endif()
-
-add_library(windowscodecs SHARED ${SOURCE} version.rc)
 set_module_type(windowscodecs win32dll)
 target_link_libraries(windowscodecs wine uuid ${PSEH_LIB})
 add_importlibs(windowscodecs ole32 oleaut32 rpcrt4 shlwapi user32 gdi32 advapi32 msvcrt kernel32 ntdll)
+add_pch(windowscodecs wincodecs_private.h SOURCE)
 add_cd_file(TARGET windowscodecs DESTINATION reactos/system32 FOR all)

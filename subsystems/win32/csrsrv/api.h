@@ -7,13 +7,6 @@
 
 #pragma once
 
-#define NTOS_MODE_USER
-#include <ndk/psfuncs.h>
-#include <ndk/rtlfuncs.h>
-
-#include <csr/csrsrv.h>
-
-
 extern RTL_CRITICAL_SECTION CsrProcessLock, CsrWaitListsLock;
 
 #define CsrAcquireProcessLock() \
@@ -41,14 +34,17 @@ extern RTL_CRITICAL_SECTION CsrProcessLock, CsrWaitListsLock;
 #define CSR_SERVER_DLL_MAX  4
 
 
+// Debug Flag
+extern ULONG CsrDebug;
+
 extern HANDLE hBootstrapOk;
 extern HANDLE CsrApiPort;
 extern HANDLE CsrSmApiPort;
 extern HANDLE CsrSbApiPort;
-extern LIST_ENTRY CsrThreadHashTable[256];
+#define NUMBER_THREAD_HASH_BUCKETS 257
+extern LIST_ENTRY CsrThreadHashTable[NUMBER_THREAD_HASH_BUCKETS];
 extern PCSR_PROCESS CsrRootProcess;
 extern UNICODE_STRING CsrDirectoryName;
-extern ULONG CsrDebug;
 extern ULONG CsrTotalPerProcessDataLength;
 extern SYSTEM_BASIC_INFORMATION CsrNtSysInfo;
 extern HANDLE CsrHeap;
@@ -136,10 +132,14 @@ BOOLEAN
 NTAPI
 UnProtectHandle(IN HANDLE ObjectHandle);
 
-VOID
+NTSTATUS
 NTAPI
 CsrInsertThread(IN PCSR_PROCESS Process,
                 IN PCSR_THREAD Thread);
+
+VOID
+NTAPI
+CsrDeallocateThread(IN PCSR_THREAD CsrThread);
 
 VOID
 NTAPI
@@ -171,7 +171,7 @@ CsrInitializeNtSessionList(VOID);
 NTSTATUS
 NTAPI
 CsrSrvAttachSharedSection(IN PCSR_PROCESS CsrProcess OPTIONAL,
-                          OUT PCSR_CONNECTION_INFO ConnectInfo);
+                          OUT PCSR_API_CONNECTINFO ConnectInfo);
 
 NTSTATUS
 NTAPI

@@ -7,6 +7,9 @@
  */
 
 #include <win32k.h>
+
+#include <winlogon.h>
+
 DBG_DEFAULT_CHANNEL(UserMisc);
 
 /* registered Logon process */
@@ -237,17 +240,13 @@ NtUserCallOneParam(
 
       case ONEPARAM_ROUTINE_CREATEEMPTYCUROBJECT:
          {
-            PCURICON_OBJECT CurIcon;
 			DWORD_PTR Result ;
 
-            if (!(CurIcon = IntCreateCurIconHandle((DWORD)Param)))
+            if (!(Result = (DWORD_PTR)IntCreateCurIconHandle((DWORD)Param)))
             {
                EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
                RETURN(0);
             }
-
-            Result = (DWORD_PTR)CurIcon->Self;
-			UserDereferenceObject(CurIcon);
 			RETURN(Result);
          }
 

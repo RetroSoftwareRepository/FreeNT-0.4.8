@@ -11,6 +11,7 @@ list(APPEND INF_FILES
     disk.inf
     display.inf
     fdc.inf
+    flpydisk.inf
     font.inf
     hal.inf
     hdc.inf
@@ -27,6 +28,7 @@ list(APPEND INF_FILES
     NET_NIC.inf
     netamd.inf
     netisa.inf
+    netrtl.inf
     netrtpnt.inf
     nettcpip.inf
     ports.inf

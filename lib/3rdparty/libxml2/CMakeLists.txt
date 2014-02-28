@@ -55,13 +55,14 @@ list(APPEND SOURCE
     xmlwriter.c
     xpath.c
     xpointer.c
-    xmlstring.c)
+    xmlstring.c
+    libxml.h)
 
 add_library(libxml2 ${SOURCE})
 target_link_libraries(libxml2 oldnames)
+add_pch(libxml2 libxml.h SOURCE)
 add_dependencies(libxml2 psdk)
 
 if(NOT MSVC)
-    add_target_compile_flags(libxml2 "-Wno-format -Wno-pointer-sign")
-    allow_warnings(libxml2)
+    add_target_compile_flags(libxml2 "-w")
 endif()

@@ -1,21 +1,20 @@
+#ifndef _MSTSC_PCH_
+#define _MSTSC_PCH_
+
+#include <stdarg.h>
+
 #define WIN32_NO_STATUS
 #define _INC_WINDOWS
 #define COM_NO_WINDOWS_H
-#include <stdarg.h>
+
 #include <windef.h>
 #include <winbase.h>
-#include <winreg.h>
 #include <wingdi.h>
-#include <winuser.h>
 #include <wincon.h>
-#include <commdlg.h>
 #include <shlobj.h>
 #include <stdio.h>
 
-#include "uimain.h"
 #include "rdesktop.h"
-#include "bsops.h"
-#include "orders.h"
 #include "resource.h"
 
 #ifndef __TODO_MSTSC_H
@@ -110,3 +109,5 @@ BOOL SetStringToSettings(PRDPSETTINGS pRdpSettings, LPWSTR lpKey, LPWSTR lpValue
 VOID SaveAllSettings(PINFO pInfo);
 
 #endif /* __TODO_MSTSC_H */
+
+#endif /* _MSTSC_PCH_ */

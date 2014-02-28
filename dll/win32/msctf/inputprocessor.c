@@ -18,33 +18,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-#define COM_NO_WINDOWS_H
-
-#include <config.h>
-
-//#include <stdarg.h>
-
-#define COBJMACROS
-
-#include <wine/debug.h>
-//#include "windef.h"
-#include <winbase.h>
-#include <winreg.h>
-//#include "winuser.h"
-//#include "shlwapi.h"
-//#include "winerror.h"
-#include <objbase.h>
-#include <olectl.h>
-
-#include <wine/unicode.h>
-#include <wine/list.h>
-
-#include <msctf.h>
 #include "msctf_internal.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(msctf);
 
 static const WCHAR szwLngp[] = {'L','a','n','g','u','a','g','e','P','r','o','f','i','l','e',0};
 static const WCHAR szwEnable[] = {'E','n','a','b','l','e',0};
@@ -176,7 +150,7 @@ static HRESULT WINAPI InputProcessorProfiles_QueryInterface(ITfInputProcessorPro
 
     if (*ppvOut)
     {
-        IUnknown_AddRef(iface);
+        ITfInputProcessorProfiles_AddRef(iface);
         return S_OK;
     }
 
@@ -743,7 +717,7 @@ static HRESULT WINAPI IPPSource_UnadviseSink(ITfSource *iface, DWORD pdwCookie)
     if (get_Cookie_magic(pdwCookie)!=COOKIE_MAGIC_IPPSINK)
         return E_INVALIDARG;
 
-    sink = (InputProcessorProfilesSink*)remove_Cookie(pdwCookie);
+    sink = remove_Cookie(pdwCookie);
     if (!sink)
         return CONNECT_E_NOCONNECTION;
 
@@ -807,7 +781,7 @@ static HRESULT WINAPI ProfilesEnumGuid_QueryInterface(IEnumGUID *iface, REFIID i
 
     if (*ppvOut)
     {
-        IUnknown_AddRef(iface);
+        IEnumGUID_AddRef(iface);
         return S_OK;
     }
 
@@ -963,7 +937,7 @@ static HRESULT WINAPI EnumTfLanguageProfiles_QueryInterface(IEnumTfLanguageProfi
 
     if (*ppvOut)
     {
-        IUnknown_AddRef(iface);
+        IEnumTfLanguageProfiles_AddRef(iface);
         return S_OK;
     }
 

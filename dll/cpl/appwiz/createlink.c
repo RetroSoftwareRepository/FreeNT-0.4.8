@@ -11,6 +11,8 @@
 
 #include "appwiz.h"
 
+#include <tchar.h>
+
 BOOL
 IsShortcut(HKEY hKey)
 {
@@ -362,14 +364,14 @@ ShowCreateShortcutWizard(HWND hwndCPl, LPWSTR szPath)
     psp.dwFlags = PSP_DEFAULT | PSP_HIDEHEADER;
     psp.hInstance = hApplet;
     psp.pfnDlgProc = WelcomeDlgProc;
-    psp.pszTemplate = MAKEINTRESOURCE(IDD_SHORTCUT_LOCATION);
+    psp.pszTemplate = MAKEINTRESOURCEW(IDD_SHORTCUT_LOCATION);
     psp.lParam = (LPARAM)pContext;
     ahpsp[nPages++] = CreatePropertySheetPage(&psp);
 
     /* Create the Finish page */
     psp.dwFlags = PSP_DEFAULT | PSP_HIDEHEADER;
     psp.pfnDlgProc = FinishDlgProc;
-    psp.pszTemplate = MAKEINTRESOURCE(IDD_SHORTCUT_FINISH);
+    psp.pszTemplate = MAKEINTRESOURCEW(IDD_SHORTCUT_FINISH);
     ahpsp[nPages++] = CreatePropertySheetPage(&psp);
 
 
@@ -381,28 +383,13 @@ ShowCreateShortcutWizard(HWND hwndCPl, LPWSTR szPath)
     psh.nPages = nPages;
     psh.nStartPage = 0;
     psh.phpage = ahpsp;
-    psh.pszbmWatermark = MAKEINTRESOURCE(IDB_WATERMARK);
+    psh.pszbmWatermark = MAKEINTRESOURCEW(IDB_WATERMARK);
 
     /* Display the wizard */
     PropertySheet(&psh);
     HeapFree(GetProcessHeap(), 0, pContext);
     return TRUE;
 }
-
-
-LONG
-CALLBACK
-NewLinkHere(HWND hwndCPl, UINT uMsg, LPARAM lParam1, LPARAM lParam2)
-{
-    WCHAR szFile[MAX_PATH];
-
-    if (MultiByteToWideChar(CP_ACP, 0, (LPSTR) lParam1, -1, szFile, MAX_PATH))
-    {
-        return ShowCreateShortcutWizard(hwndCPl, szFile);
-    }
-    return -1;
-}
-
 
 LONG
 CALLBACK

@@ -54,7 +54,7 @@ HKCU,"Control Panel\Desktop","CoolSwitch",2,"1"
 HKCU,"Control Panel\Desktop","CoolSwitchColumns",2,"7"
 HKCU,"Control Panel\Desktop","CoolSwitchRows",2,"3"
 HKCU,"Control Panel\Desktop","CursorBlinkRate",2,"530"
-HKCU,"Control Panel\Desktop","DragFullWindows",2,"0"
+HKCU,"Control Panel\Desktop","DragFullWindows",2,"1"
 HKCU,"Control Panel\Desktop","DragHeight",0x00000000,"4"
 HKCU,"Control Panel\Desktop","DragWidth",0x00000000,"4"
 HKCU,"Control Panel\Desktop","PaintDesktopVersion",0x00010001,"0"
@@ -1662,6 +1662,15 @@ HKCU,"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows","load",2,""
 HKCU,"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows","NetMessage",2,"no"
 HKCU,"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows","NullPort",2,"None"
 HKCU,"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows","Programs",2,"com exe bat pif cmd"
+
+; Global RIP flags for win32k
+HKCU,"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows","fPromptOnError",0x00010001,0x1
+HKCU,"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows","fPromptOnWarning",0x00010001,0x1
+HKCU,"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows","fPromptOnVerbose",0x00010001,0x1
+HKCU,"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows","fPrintError",0x00010001,0x1
+HKCU,"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows","fPrintWarning",0x00010001,0x1
+HKCU,"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows","fPrintVerbose",0x00010001,0x1
+HKCU,"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows","fPrintFileLine",0x00010001,0x1
 
 ; Application compatibility settings for Windows 95
 HKCU,"SOFTWARE\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers\WIN95","MajorVersion",0x00010001,0x00000004

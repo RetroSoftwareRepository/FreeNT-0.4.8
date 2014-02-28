@@ -6,7 +6,13 @@
  * PROGRAMMER:      Johannes Anderwald
  */
 
-#include "priv.h"
+#include "precomp.h"
+
+/* SEH support with PSEH */
+#include <pseh/pseh2.h>
+
+#define NDEBUG
+#include <debug.h>
 
 const GUID KSPROPTYPESETID_General = {0x97E99BA0L, 0xBDEA, 0x11CF, {0xA5, 0xD6, 0x28, 0xDB, 0x04, 0xC1, 0x00, 0x00}};
 
@@ -277,8 +283,16 @@ KspPropertyHandler(
             KSPROPERTY_ITEM_IRP_STORAGE(Irp) = PropertyItem;
         }
 
-        /* call property handler */
-        Status = PropertyHandler(Irp, Property, (OutputBufferLength > 0 ? Irp->AssociatedIrp.SystemBuffer : NULL));
+        _SEH2_TRY
+        {
+            /* call property handler */
+            Status = PropertyHandler(Irp, Property, (OutputBufferLength > 0 ? Irp->AssociatedIrp.SystemBuffer : NULL));
+        }
+        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        {
+            _SEH2_YIELD(return _SEH2_GetExceptionCode());
+        }
+        _SEH2_END;
 
         if (Status == STATUS_BUFFER_TOO_SMALL)
         {
@@ -294,9 +308,16 @@ KspPropertyHandler(
                     /* no memory */
                     return STATUS_INSUFFICIENT_RESOURCES;
                 }
-
-                /* re-call property handler */
-                Status = PropertyHandler(Irp, Property, Irp->AssociatedIrp.SystemBuffer);
+                _SEH2_TRY
+                {
+                    /* re-call property handler */
+                    Status = PropertyHandler(Irp, Property, Irp->AssociatedIrp.SystemBuffer);
+                }
+                _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+                {
+                    Status =  _SEH2_GetExceptionCode();
+                }
+                _SEH2_END;
             }
         }
     }

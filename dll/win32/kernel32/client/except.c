@@ -396,7 +396,6 @@ WINAPI
 SetErrorMode(IN UINT uMode)
 {
     UINT PrevErrMode, NewMode;
-    NTSTATUS Status;
 
     /* Get the previous mode */
     PrevErrMode = GetErrorMode();
@@ -418,10 +417,10 @@ SetErrorMode(IN UINT uMode)
     NewMode |= (PrevErrMode & SEM_NOALIGNMENTFAULTEXCEPT);
 
     /* Set the new mode */
-    Status = NtSetInformationProcess(NtCurrentProcess(),
-                                     ProcessDefaultHardErrorMode,
-                                     (PVOID)&NewMode,
-                                     sizeof(NewMode));
+    NtSetInformationProcess(NtCurrentProcess(),
+                            ProcessDefaultHardErrorMode,
+                            (PVOID)&NewMode,
+                            sizeof(NewMode));
 
     /* Return the previous mode */
     return PrevErrMode;
@@ -437,7 +436,7 @@ SetUnhandledExceptionFilter(IN LPTOP_LEVEL_EXCEPTION_FILTER lpTopLevelExceptionF
     PVOID EncodedPointer, EncodedOldPointer;
 
     EncodedPointer = RtlEncodePointer(lpTopLevelExceptionFilter);
-    EncodedOldPointer = InterlockedExchangePointer(&GlobalTopLevelExceptionFilter,
+    EncodedOldPointer = InterlockedExchangePointer((PVOID*)&GlobalTopLevelExceptionFilter,
                                             EncodedPointer);
     return RtlDecodePointer(EncodedOldPointer);
 }

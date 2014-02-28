@@ -23,7 +23,6 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL (shell);
 
-
 /*
 This folder should not exist. It is just a file system folder...
 */
@@ -149,7 +148,7 @@ HRESULT WINAPI CAdminToolsFolder::EnumObjects(HWND hwndOwner, DWORD dwFlags, LPE
     ATLTRY (theEnumerator = new CComObject<CDesktopFolderEnumY>);
     if (theEnumerator == NULL)
         return E_OUTOFMEMORY;
-    hResult = theEnumerator->QueryInterface (IID_IEnumIDList, (void **)&result);
+    hResult = theEnumerator->QueryInterface(IID_PPV_ARG(IEnumIDList, &result));
     if (FAILED (hResult))
     {
         delete theEnumerator;

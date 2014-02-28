@@ -18,21 +18,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-#define COM_NO_WINDOWS_H
-
-#define COBJMACROS
-
-#include <wine/debug.h>
-#include <winbase.h>
-#include <winreg.h>
-#include <shlwapi.h>
-
-#include <msctf.h>
-//#include "msctf_internal.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(msctf);
+#include "msctf_internal.h"
 
 typedef struct tagDisplayAttributeMgr {
     ITfDisplayAttributeMgr ITfDisplayAttributeMgr_iface;
@@ -65,7 +51,7 @@ static HRESULT WINAPI DisplayAttributeMgr_QueryInterface(ITfDisplayAttributeMgr 
 
     if (*ppvOut)
     {
-        IUnknown_AddRef(iface);
+        ITfDisplayAttributeMgr_AddRef(iface);
         return S_OK;
     }
 

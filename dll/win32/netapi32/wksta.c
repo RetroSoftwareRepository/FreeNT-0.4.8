@@ -18,28 +18,10 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <config.h>
-//#include "wine/port.h"
+#include "netapi32.h"
 
-#include <stdarg.h>
-//#include <stdlib.h>
-#include <ntstatus.h>
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-#define COM_NO_WINDOWS_H
-#include <windef.h>
-#include <winbase.h>
-//#include "winsock2.h"
-//#include "nb30.h"
-//#include "lmcons.h"
-//#include "lmapibuf.h"
-//#include "lmerr.h"
-//#include "lmwksta.h"
-#include <iphlpapi.h>
-//#include "winerror.h"
-#include <ntsecapi.h>
-#include "netbios.h"
-#include <wine/debug.h>
+#include <lmwksta.h>
+#include <lmjoin.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(netapi32);
 
@@ -587,6 +569,9 @@ NET_API_STATUS NET_API_FUNCTION NetGetJoinInformation(
     PNETSETUP_JOIN_STATUS type)
 {
     FIXME("Stub %s %p %p\n", wine_dbgstr_w(Server), Name, type);
+
+    if (Name == NULL || type == NULL)
+        return ERROR_INVALID_PARAMETER;
 
     *Name = NULL;
     *type = NetSetupUnknownStatus;

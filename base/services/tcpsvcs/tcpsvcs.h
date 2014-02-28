@@ -1,13 +1,14 @@
-#define WIN32_NO_STATUS
+#ifndef _TCPSVCS_H
+#define _TCPSVCS_H
+
 #include <stdarg.h>
+
+#define WIN32_NO_STATUS
 #include <windef.h>
 #include <winbase.h>
-#include <winsvc.h>
-#include <stdlib.h>
 #define _INC_WINDOWS
 #include <winsock2.h>
 #include <tchar.h>
-#include <time.h>
 
 #ifndef _MSC_VER
 #define _swprintf swprintf
@@ -55,3 +56,5 @@ DWORD WINAPI DaytimeHandler(VOID* sock_);
 DWORD WINAPI EchoHandler(VOID* sock_);
 DWORD WINAPI DiscardHandler(VOID* sock_);
 DWORD WINAPI QotdHandler(VOID* sock_);
+
+#endif /* _TCPSVCS_H */

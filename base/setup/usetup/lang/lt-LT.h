@@ -1360,7 +1360,7 @@ MUI_ERROR ltLTErrorEntries[] =
           "\n"
           "Creating or deleting partitions can destroy the partition table.\n"
           "\n"
-          "  \x07  Press F3 to quit Setup."
+          "  \x07  Press F3 to quit Setup.\n"
           "  \x07  Press ENTER to continue.",
           "F3= Quit  ENTER = Continue"
     },
@@ -1656,11 +1656,11 @@ MUI_STRING ltLTStrings[] =
     {STRING_REBOOTCOMPUTER2,
     "   ENTER = Reboot computer"},
     {STRING_CONSOLEFAIL1,
-    "Unable to open the console\n\n"},
+    "Unable to open the console\r\n\r\n"},
     {STRING_CONSOLEFAIL2,
-    "The most common cause of this is using an USB keyboard\n"},
+    "The most common cause of this is using an USB keyboard\r\n"},
     {STRING_CONSOLEFAIL3,
-    "USB keyboards are not fully supported yet\n"},
+    "USB keyboards are not fully supported yet\r\n"},
     {STRING_FORMATTINGDISK,
     "Setup is formatting your disk"},
     {STRING_CHECKINGDISK,

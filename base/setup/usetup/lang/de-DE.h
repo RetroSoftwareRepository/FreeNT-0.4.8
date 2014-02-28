@@ -1346,12 +1346,12 @@ MUI_ERROR deDEErrorEntries[] =
     },
     {
         //ERROR_WARN_PARTITION,
-        "Setup hat mindestens eine Festplatte mit einer inkompatiblen Partitionstabelle\n"
-        "gefunden, die nicht richtig verwendet werden kann!\n"
+        "Setup hat mindestens eine Festplatte mit einer inkompatiblen\n"
+        "Partitionstabelle gefunden, die nicht richtig verwendet werden kann!\n"
         "\n"
         "Partitionen zu erstellen/lîschen kann die Partitionstabelle zerstîren.\n"
         "\n"
-        "  \x07  DrÅcken Sie F3, um das Setup zu beenden."
+        "  \x07  DrÅcken Sie F3, um das Setup zu beenden.\n"
         "  \x07  DrÅcken Sie ENTER, um das Setup Fortzusetzen.",
         "F3 = Beenden  ENTER = Fortsetzen"
     },
@@ -1647,11 +1647,11 @@ MUI_STRING deDEStrings[] =
     {STRING_REBOOTCOMPUTER2,
     "   ENTER = Computer neu starten"},
     {STRING_CONSOLEFAIL1,
-    "Konsole konnte nicht geîffnet werden\n\n"},
+    "Konsole konnte nicht geîffnet werden\r\n\r\n"},
     {STRING_CONSOLEFAIL2,
-    "Der hÑufigste Grund hierfÅr ist die Verwendung einer USB-Tastatur\n"},
+    "Der hÑufigste Grund hierfÅr ist die Verwendung einer USB-Tastatur\r\n"},
     {STRING_CONSOLEFAIL3,
-    "USB-Tastaturen werden noch nicht vollstÑndig unterstÅtzt\n"},
+    "USB-Tastaturen werden noch nicht vollstÑndig unterstÅtzt\r\n"},
     {STRING_FORMATTINGDISK,
     "Setup formatiert Ihre Festplatte"},
     {STRING_CHECKINGDISK,

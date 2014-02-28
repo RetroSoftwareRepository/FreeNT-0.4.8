@@ -5,6 +5,9 @@
  *            Copyright 2001 - 2005 Eric Kohl
  */
 
+#ifndef _CMLIB_H_
+#define _CMLIB_H_
+
 //
 // Debug support switch
 //
@@ -14,6 +17,21 @@
     #include <typedefs.h>
     #include <stdio.h>
     #include <string.h>
+
+    #ifdef _WIN32
+    #define strncasecmp _strnicmp
+    #define strcasecmp _stricmp
+    #endif//_WIN32
+
+    #ifndef _MSC_VER
+    #define _In_
+    #define _Out_
+    #define _Inout_
+    #endif
+
+    #ifndef min
+    #define min(a, b)  (((a) < (b)) ? (a) : (b))
+    #endif
 
     // Definitions copied from <ntstatus.h>
     // We only want to include host headers, so we define them manually
@@ -32,6 +50,10 @@
     VOID NTAPI
     KeQuerySystemTime(
         OUT PLARGE_INTEGER CurrentTime);
+
+    WCHAR NTAPI
+    RtlUpcaseUnicodeChar(
+        IN WCHAR Source);
 
     VOID NTAPI
     RtlInitializeBitMap(
@@ -219,7 +241,7 @@ extern ULONG CmlibTraceLevel;
  */
 NTSTATUS CMAPI
 HvInitialize(
-             PHHIVE RegistryHive,
+   PHHIVE RegistryHive,
    ULONG Operation,
    ULONG HiveType,
    ULONG HiveFlags,
@@ -231,7 +253,7 @@ HvInitialize(
    PFILE_READ_ROUTINE FileRead,
    PFILE_FLUSH_ROUTINE FileFlush,
    ULONG Cluster OPTIONAL,
-   PUNICODE_STRING FileName);
+   PCUNICODE_STRING FileName OPTIONAL);
 
 VOID CMAPI
 HvFree(
@@ -312,6 +334,49 @@ VOID CMAPI
 CmPrepareHive(
    PHHIVE RegistryHive);
 
+BOOLEAN
+NTAPI
+CmCompareHash(
+	IN PCUNICODE_STRING KeyName,
+	IN PCHAR HashString,
+	IN BOOLEAN CaseInsensitive);
+
+BOOLEAN
+NTAPI
+CmComparePackedNames(
+	IN PCUNICODE_STRING Name,
+	IN PVOID NameBuffer,
+	IN USHORT NameBufferSize,
+	IN BOOLEAN NamePacked,
+	IN BOOLEAN CaseInsensitive);
+
+BOOLEAN
+NTAPI
+CmCompareKeyName(
+	IN PCM_KEY_NODE KeyCell,
+	IN PCUNICODE_STRING KeyName,
+	IN BOOLEAN CaseInsensitive);
+
+BOOLEAN
+NTAPI
+CmCompareKeyValueName(
+    IN PCM_KEY_VALUE ValueCell,
+    IN PCUNICODE_STRING KeyName,
+    IN BOOLEAN CaseInsensitive);
+
+ULONG
+NTAPI
+CmCopyKeyName(
+    _In_ PCM_KEY_NODE KeyNode,
+    _Out_ PWCHAR KeyNameBuffer,
+    _Inout_ ULONG BufferLength);
+
+ULONG
+NTAPI
+CmCopyKeyValueName(
+    _In_ PCM_KEY_VALUE ValueCell,
+    _Out_ PWCHAR ValueNameBuffer,
+    _Inout_ ULONG BufferLength);
 
 BOOLEAN
 CMAPI
@@ -344,3 +409,5 @@ HvpCreateHiveFreeCellList(
 ULONG CMAPI
 HvpHiveHeaderChecksum(
    PHBASE_BLOCK HiveHeader);
+
+#endif /* _CMLIB_H_ */

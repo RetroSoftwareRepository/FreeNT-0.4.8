@@ -15,12 +15,12 @@
 
 HANDLE hModuleWin;
 
-PGDI_HANDLE_TABLE NTAPI GDIOBJ_iAllocHandleTable(OUT PSECTION_OBJECT *SectionObject);
+PGDI_HANDLE_TABLE NTAPI GDIOBJ_iAllocHandleTable(OUT PVOID *SectionObject);
 BOOL NTAPI GDI_CleanupForProcess (struct _EPROCESS *Process);
 NTSTATUS NTAPI UserDestroyThreadInfo(struct _ETHREAD *Thread);
 
 HANDLE GlobalUserHeap = NULL;
-PSECTION_OBJECT GlobalUserHeapSection = NULL;
+PVOID GlobalUserHeapSection = NULL;
 
 PSERVERINFO gpsi = NULL; // Global User Server Information.
 
@@ -57,7 +57,7 @@ Win32kProcessCallback(struct _EPROCESS *Process,
                       BOOLEAN Create)
 {
     PPROCESSINFO ppiCurrent, *pppi;
-    DECLARE_RETURN(NTSTATUS);
+    NTSTATUS Status;
 
     ASSERT(Process->Peb);
 
@@ -69,23 +69,31 @@ Win32kProcessCallback(struct _EPROCESS *Process,
         LARGE_INTEGER Offset;
         PVOID UserBase = NULL;
         PRTL_USER_PROCESS_PARAMETERS pParams = Process->Peb->ProcessParameters;
-        NTSTATUS Status;
 
-        ASSERT(PsGetProcessWin32Process(Process) == NULL);
+        /* We might be called with an already allocated win32 process */
+        ppiCurrent = PsGetProcessWin32Process(Process);
+        if (ppiCurrent != NULL)
+        {
+            /* There is no more to do for us (this is a success code!) */
+            Status = STATUS_ALREADY_WIN32;
+            goto Leave;
+        }
 
+        /* Allocate a new win32 process */
         ppiCurrent = ExAllocatePoolWithTag(NonPagedPool,
                                            sizeof(PROCESSINFO),
                                            USERTAG_PROCESSINFO);
-
         if (ppiCurrent == NULL)
         {
-            ERR_CH(UserProcess, "Failed to allocate ppi for PID:0x%lx\n", HandleToUlong(Process->UniqueProcessId));
-            RETURN( STATUS_NO_MEMORY);
+            ERR_CH(UserProcess, "Failed to allocate ppi for PID:0x%lx\n",
+                   HandleToUlong(Process->UniqueProcessId));
+            Status = STATUS_NO_MEMORY;
+            goto Leave;
         }
 
         RtlZeroMemory(ppiCurrent, sizeof(PROCESSINFO));
 
-        PsSetProcessWin32Process(Process, ppiCurrent);
+        PsSetProcessWin32Process(Process, ppiCurrent, NULL);
 
 #if DBG
         DbgInitDebugChannels();
@@ -111,7 +119,7 @@ Win32kProcessCallback(struct _EPROCESS *Process,
         if (!NT_SUCCESS(Status))
         {
             TRACE_CH(UserProcess,"Failed to map the global heap! 0x%x\n", Status);
-            RETURN(Status);
+            goto Leave;
         }
         ppiCurrent->HeapMappings.Next = NULL;
         ppiCurrent->HeapMappings.KernelMapping = (PVOID)GlobalUserHeap;
@@ -153,6 +161,9 @@ Win32kProcessCallback(struct _EPROCESS *Process,
            ppiScrnSaver = ppiCurrent;
            ppiCurrent->W32PF_flags |= W32PF_SCREENSAVER;
         }
+
+        // Fixme check if this process is allowed.
+        ppiCurrent->W32PF_flags |= W32PF_ALLOWFOREGROUNDACTIVATE; // Starting application it will get toggled off.
 
         /* Create pools for GDI object attributes */
         ppiCurrent->pPoolDcAttr = GdiPoolCreate(sizeof(DC_ATTR), 'acdG');
@@ -234,15 +245,15 @@ Win32kProcessCallback(struct _EPROCESS *Process,
 #endif
 
         /* Free the PROCESSINFO */
-        PsSetProcessWin32Process(Process, NULL);
+        PsSetProcessWin32Process(Process, NULL, ppiCurrent);
         ExFreePoolWithTag(ppiCurrent, USERTAG_PROCESSINFO);
     }
 
-    RETURN( STATUS_SUCCESS);
+    Status = STATUS_SUCCESS;
 
-CLEANUP:
+Leave:
     UserLeave();
-    END_CLEANUP;
+    return Status;
 }
 
 NTSTATUS NTAPI
@@ -275,14 +286,17 @@ UserCreateThreadInfo(struct _ETHREAD *Thread)
 
     RtlZeroMemory(ptiCurrent, sizeof(THREADINFO));
 
-    PsSetThreadWin32Thread(Thread, ptiCurrent);
+    /* Initialize the THREADINFO */
+
+    PsSetThreadWin32Thread(Thread, ptiCurrent, NULL);
+    IntReferenceThreadInfo(ptiCurrent);
+    ptiCurrent->pEThread = Thread;
+    ptiCurrent->ppi = PsGetCurrentProcessWin32Process();
     pTeb->Win32ThreadInfo = ptiCurrent;
     ptiCurrent->pClientInfo = (PCLIENTINFO)pTeb->Win32ClientInfo;
 
     TRACE_CH(UserThread, "Allocated pti 0x%p for TID %p\n", ptiCurrent, Thread->Cid.UniqueThread);
 
-    /* Initialize the THREADINFO */
-    IntReferenceThreadInfo(ptiCurrent);
     InitializeListHead(&ptiCurrent->WindowListHead);
     InitializeListHead(&ptiCurrent->W32CallbackListHead);
     InitializeListHead(&ptiCurrent->PostedMessagesListHead);
@@ -294,8 +308,6 @@ UserCreateThreadInfo(struct _ETHREAD *Thread)
     {
         InitializeListHead(&ptiCurrent->aphkStart[i]);
     }
-    ptiCurrent->pEThread = Thread;
-    ptiCurrent->ppi = PsGetCurrentProcessWin32Process();
     ptiCurrent->ptiSibling = ptiCurrent->ppi->ptiList;
     ptiCurrent->ppi->ptiList = ptiCurrent;
     ptiCurrent->ppi->cThreads++;
@@ -307,7 +319,7 @@ UserCreateThreadInfo(struct _ETHREAD *Thread)
     {
        goto error;
     }
-   Status = ObReferenceObjectByHandle(ptiCurrent->hEventQueueClient, 0,
+    Status = ObReferenceObjectByHandle(ptiCurrent->hEventQueueClient, 0,
                                        ExEventObjectType, KernelMode,
                                        (PVOID*)&ptiCurrent->pEventQueueServer, NULL);
     if (!NT_SUCCESS(Status))
@@ -319,7 +331,7 @@ UserCreateThreadInfo(struct _ETHREAD *Thread)
 
     KeQueryTickCount(&LargeTickCount);
     ptiCurrent->timeLast = LargeTickCount.u.LowPart;
-    
+
     ptiCurrent->MessageQueue = MsqCreateMessageQueue(ptiCurrent);
     if(ptiCurrent->MessageQueue == NULL)
     {
@@ -419,8 +431,14 @@ UserCreateThreadInfo(struct _ETHREAD *Thread)
 
     /* mark the thread as fully initialized */
     ptiCurrent->TIF_flags |= TIF_GUITHREADINITIALIZED;
-    ptiCurrent->pClientInfo->dwTIFlags = ptiCurrent->TIF_flags;
 
+    if (!(ptiCurrent->ppi->W32PF_flags & (W32PF_ALLOWFOREGROUNDACTIVATE | W32PF_APPSTARTING)) &&
+         (gptiForeground && gptiForeground->ppi == ptiCurrent->ppi ))
+    {
+       ptiCurrent->TIF_flags |= TIF_ALLOWFOREGROUNDACTIVATE;
+    }
+    ptiCurrent->pClientInfo->dwTIFlags = ptiCurrent->TIF_flags;
+    TRACE_CH(UserThread,"UserCreateW32Thread pti 0x%p\n",ptiCurrent);
     return STATUS_SUCCESS;
 
 error:
@@ -438,7 +456,7 @@ UserDeleteW32Thread(PTHREADINFO pti)
 {
     if (!pti->RefCount)
     {
-       ERR_CH(UserThread,"UserDeleteW32Thread pti 0x%p\n",pti);
+       TRACE_CH(UserThread,"UserDeleteW32Thread pti 0x%p\n",pti);
        if (pti->hEventQueueClient != NULL)
           ZwClose(pti->hEventQueueClient);
        pti->hEventQueueClient = NULL;
@@ -453,7 +471,7 @@ UserDeleteW32Thread(PTHREADINFO pti)
 
        IntSetThreadDesktop(NULL, TRUE);
 
-       PsSetThreadWin32Thread(pti->pEThread, NULL);
+       PsSetThreadWin32Thread(pti->pEThread, NULL, pti);
        ExFreePoolWithTag(pti, USERTAG_THREADINFO);
     }
 }
@@ -483,27 +501,10 @@ UserDestroyThreadInfo(struct _ETHREAD *Thread)
     ppiCurrent = ptiCurrent->ppi;
     ASSERT(ppiCurrent);
 
-    // ptiTo
-    if (IsThreadAttach(ptiCurrent))
-    {
-       PTHREADINFO ptiFrom = IsThreadAttach(ptiCurrent);
-       TRACE_CH(UserThread,"Attached Thread ptiTo is getting switched!\n");
-       UserAttachThreadInput(ptiFrom, ptiCurrent, FALSE);
-    }
+    IsRemoveAttachThread(ptiCurrent);
 
-    // ptiFrom
-    if (ptiCurrent->pqAttach && ptiCurrent->MessageQueue)
-    {
-       PTHREADINFO ptiTo;
-       ptiTo = ptiCurrent->MessageQueue->ptiOwner;
-       TRACE_CH(UserThread,"Attached Thread ptiFrom is getting switched!\n");
-       if (ptiTo) UserAttachThreadInput( ptiCurrent, ptiTo, FALSE);
-       else
-       {
-          // eThread maybe okay but Win32Thread already made NULL!
-          ERR_CH(UserThread,"Attached Thread ptiFrom did not switch due to ptiTo is NULL!\n");
-       }
-    }
+    ptiCurrent->TIF_flags |= TIF_DONTATTACHQUEUE;
+    ptiCurrent->pClientInfo->dwTIFlags = ptiCurrent->TIF_flags;
 
     /* Decrement thread count and check if its 0 */
     ppiCurrent->cThreads--;
@@ -544,7 +545,7 @@ UserDestroyThreadInfo(struct _ETHREAD *Thread)
         EVENT_DestroyThreadEvents(Thread);
         DestroyTimersForThread(ptiCurrent);
         KeSetEvent(ptiCurrent->pEventQueueServer, IO_NO_INCREMENT, FALSE);
-        UnregisterThreadHotKeys(Thread);
+        UnregisterThreadHotKeys(ptiCurrent);
 /*
         if (IsListEmpty(&ptiCurrent->WindowListHead))
         {
@@ -553,9 +554,10 @@ UserDestroyThreadInfo(struct _ETHREAD *Thread)
 */
         co_DestroyThreadWindows(Thread);
 
-        if (ppiCurrent && ppiCurrent->ptiList == ptiCurrent && !ptiCurrent->ptiSibling)
+        if (ppiCurrent && ppiCurrent->ptiList == ptiCurrent && !ptiCurrent->ptiSibling &&
+            ppiCurrent->W32PF_flags & W32PF_CLASSESREGISTERED)
         {
-           //ERR_CH(UserThread,"DestroyProcessClasses\n");
+           TRACE_CH(UserThread,"DestroyProcessClasses\n");
           /* no process windows should exist at this point, or the function will assert! */
            DestroyProcessClasses(ppiCurrent);
            ppiCurrent->W32PF_flags &= ~W32PF_CLASSESREGISTERED;
@@ -592,8 +594,24 @@ UserDestroyThreadInfo(struct _ETHREAD *Thread)
     if (ptiCurrent->KeyboardLayout)
         UserDereferenceObject(ptiCurrent->KeyboardLayout);
 
-    IntSetThreadDesktop(NULL, TRUE);
+    if (gptiForeground == ptiCurrent)
+    {
+//       IntNotifyWinEvent(EVENT_OBJECT_FOCUS, NULL, OBJID_CLIENT, CHILDID_SELF, 0);
+//       IntNotifyWinEvent(EVENT_SYSTEM_FOREGROUND, NULL, OBJID_WINDOW, CHILDID_SELF, 0);
 
+       gptiForeground = NULL;
+    }
+
+    // Fixes CORE-6384 & CORE-7030.
+/*    if (ptiLastInput == ptiCurrent)
+    {
+       if (!ppiCurrent->ptiList)
+          ptiLastInput = gptiForeground;
+       else
+          ptiLastInput = ppiCurrent->ptiList;
+       ERR_CH(UserThread,"DTI: ptiLastInput is Cleared!!\n");
+    }
+*/
     TRACE_CH(UserThread,"Freeing pti 0x%p\n", ptiCurrent);
 
     /* Free the THREADINFO */

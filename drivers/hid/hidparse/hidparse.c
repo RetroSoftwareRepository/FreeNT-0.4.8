@@ -10,6 +10,9 @@
 
 #include "hidparse.h"
 
+#define NDEBUG
+#include <debug.h>
+
 PVOID
 NTAPI
 AllocFunction(
@@ -71,7 +74,7 @@ NTAPI
 DebugFunction(
     IN LPCSTR FormatStr, ...)
 {
-
+#if HID_DBG
     va_list args;
     char printbuffer[1024];
 
@@ -80,6 +83,7 @@ DebugFunction(
     va_end(args);
 
     DbgPrint(printbuffer);
+#endif
 }
 
 VOID

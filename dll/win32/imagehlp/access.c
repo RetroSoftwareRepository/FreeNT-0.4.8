@@ -18,26 +18,15 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
+#include "precomp.h"
 
-#include <stdarg.h>
-//#include <string.h>
-#include <windef.h>
-#include <winbase.h>
-//#include "winnt.h"
 #include <winternl.h>
-//#include "winerror.h"
-#include <wine/debug.h>
-#include <imagehlp.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(imagehlp);
 
 /***********************************************************************
  *           Data
  */
 
 static PLOADED_IMAGE IMAGEHLP_pFirstLoadedImage=NULL;
-static PLOADED_IMAGE IMAGEHLP_pLastLoadedImage=NULL;
 
 static LOADED_IMAGE IMAGEHLP_EmptyLoadedImage = {
   NULL,       /* ModuleName */
@@ -138,9 +127,6 @@ BOOL WINAPI ImageUnload(PLOADED_IMAGE pLoadedImage)
 
   if(pCurrent->Flink)
     pCurrent->Flink->Blink = pCurrent->Blink;
-  else
-    IMAGEHLP_pLastLoadedImage = pCurrent->Blink?CONTAINING_RECORD(
-      pCurrent->Blink, LOADED_IMAGE, Links):NULL;
 
   return FALSE;
 }

@@ -211,7 +211,7 @@ CallNextHookEx(
   PHOOK pHook, phkNext;
   LRESULT lResult = 0;
 
-  GetConnected();
+  //GetConnected();
 
   ClientInfo = GetWin32ClientInfo();
 
@@ -567,12 +567,38 @@ User32CallHookProcFromKernel(PVOID Arguments, ULONG ArgumentLength)
   CWPRETSTRUCT *pCWPR;
   PRECTL prl;
   LPCBTACTIVATESTRUCT pcbtas;
+  HOOKPROC Proc;
   WPARAM wParam = 0;
   LPARAM lParam = 0;
   LRESULT Result = 0;
-  BOOL Hit = FALSE;
+  BOOL Hit = FALSE, Loaded = FALSE;
+  HMODULE mod = NULL;
+  NTSTATUS Status = STATUS_SUCCESS;
 
   Common = (PHOOKPROC_CALLBACK_ARGUMENTS) Arguments;
+
+  Proc = Common->Proc;
+  // HookProc Justin Case module is from another process.
+  if (Common->offPfn && Common->Mod)
+  {
+     if (!(mod = GetModuleHandleW((LPCWSTR)Common->ModuleName)))
+     {
+        TRACE("Reloading Hook Module.\n");
+        if (!(mod = LoadLibraryExW((LPCWSTR)Common->ModuleName, NULL, LOAD_WITH_ALTERED_SEARCH_PATH)))
+        {
+           ERR("Failed to load Hook Module.\n");
+        }
+        else
+        {
+           Loaded = TRUE; // Free it only when loaded.
+        }
+     }
+     if (mod)
+     {
+        TRACE("Loading Hook Module. %S\n",Common->ModuleName);
+        Proc = (HOOKPROC)((char *)mod + Common->offPfn);
+     }
+  }
 
   switch(Common->HookId)
   {
@@ -613,15 +639,16 @@ User32CallHookProcFromKernel(PVOID Arguments, ULONG ArgumentLength)
             lParam = Common->lParam;
             break;
         default:
+          if (Loaded) FreeLibrary(mod);
           ERR("HCBT_ not supported = %d\n", Common->Code);
           return ZwCallbackReturn(NULL, 0, STATUS_NOT_SUPPORTED);
       }
 
-      if (Common->Proc)
+      if (Proc)
       {
          _SEH2_TRY
          {
-            Result = Common->Proc(Common->Code, wParam, lParam);
+            Result = Proc(Common->Code, wParam, lParam);
          }
          _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
          {
@@ -631,7 +658,7 @@ User32CallHookProcFromKernel(PVOID Arguments, ULONG ArgumentLength)
       }
       else
       {
-         ERR("Null Proc! Common = 0x%x, Proc = 0x%x\n",Common,Common->Proc);
+         ERR("Null Proc! Common = 0x%x, Proc = 0x%x\n",Common,Proc);
       }
       switch(Common->Code)
       {
@@ -649,19 +676,19 @@ User32CallHookProcFromKernel(PVOID Arguments, ULONG ArgumentLength)
       //ERR("WH_KEYBOARD_LL: Code %d, wParam %d\n",Common->Code,Common->wParam);
       pKeyboardLlData = (PKBDLLHOOKSTRUCT)((PCHAR) Common + Common->lParam);
       RtlCopyMemory(&KeyboardLlData, pKeyboardLlData, sizeof(KBDLLHOOKSTRUCT));
-      Result = Common->Proc(Common->Code, Common->wParam, (LPARAM) &KeyboardLlData);
+      Result = Proc(Common->Code, Common->wParam, (LPARAM) &KeyboardLlData);
       break;
     case WH_MOUSE_LL:
       //ERR("WH_MOUSE_LL: Code %d, wParam %d\n",Common->Code,Common->wParam);
       pMouseLlData = (PMSLLHOOKSTRUCT)((PCHAR) Common + Common->lParam);
       RtlCopyMemory(&MouseLlData, pMouseLlData, sizeof(MSLLHOOKSTRUCT));
-      Result = Common->Proc(Common->Code, Common->wParam, (LPARAM) &MouseLlData);
+      Result = Proc(Common->Code, Common->wParam, (LPARAM) &MouseLlData);
       break;
     case WH_MOUSE: /* SEH support */
       pMHook = (PMOUSEHOOKSTRUCT)((PCHAR) Common + Common->lParam);
       _SEH2_TRY
       {
-         Result = Common->Proc(Common->Code, Common->wParam, (LPARAM) pMHook);
+         Result = Proc(Common->Code, Common->wParam, (LPARAM) pMHook);
       }
       _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
       {
@@ -683,7 +710,7 @@ User32CallHookProcFromKernel(PVOID Arguments, ULONG ArgumentLength)
             pCWP->lParam);
          pCWP->lParam = (LPARAM)((PCHAR)pCWP + sizeof(CWPSTRUCT));
       }
-      Result = Common->Proc(Common->Code, Common->wParam, (LPARAM) pCWP);
+      Result = Proc(Common->Code, Common->wParam, (LPARAM) pCWP);
       HeapFree(GetProcessHeap(), 0, pCWP);
       break;
     case WH_CALLWNDPROCRET:
@@ -697,7 +724,7 @@ User32CallHookProcFromKernel(PVOID Arguments, ULONG ArgumentLength)
             pCWPR->lParam);
          pCWPR->lParam = (LPARAM)((PCHAR)pCWPR + sizeof(CWPRETSTRUCT));
       }
-      Result = Common->Proc(Common->Code, Common->wParam, (LPARAM) pCWPR);
+      Result = Proc(Common->Code, Common->wParam, (LPARAM) pCWPR);
       HeapFree(GetProcessHeap(), 0, pCWPR);
       break;
     case WH_MSGFILTER: /* All SEH support */
@@ -709,7 +736,7 @@ User32CallHookProcFromKernel(PVOID Arguments, ULONG ArgumentLength)
 //      ERR("pMsg %d  pcMsg %d\n",pMsg->message, pcMsg->message);
       _SEH2_TRY
       {
-         Result = Common->Proc(Common->Code, Common->wParam, (LPARAM) pcMsg);
+         Result = Proc(Common->Code, Common->wParam, (LPARAM) pcMsg);
       }
       _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
       {
@@ -722,12 +749,12 @@ User32CallHookProcFromKernel(PVOID Arguments, ULONG ArgumentLength)
       break;
     case WH_KEYBOARD:
     case WH_SHELL:
-      Result = Common->Proc(Common->Code, Common->wParam, Common->lParam);
+      Result = Proc(Common->Code, Common->wParam, Common->lParam);
       break;
     case WH_FOREGROUNDIDLE: /* <-- SEH support */
       _SEH2_TRY
       {
-         Result = Common->Proc(Common->Code, Common->wParam, Common->lParam);
+         Result = Proc(Common->Code, Common->wParam, Common->lParam);
       }
       _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
       {
@@ -736,13 +763,18 @@ User32CallHookProcFromKernel(PVOID Arguments, ULONG ArgumentLength)
       _SEH2_END;
       break;
     default:
+      if (Loaded) FreeLibrary(mod);
+      ERR("WH_ not supported = %d\n", Common->HookId);
       return ZwCallbackReturn(NULL, 0, STATUS_NOT_SUPPORTED);
   }
   if (Hit)
   {
-     ERR("Hook Exception! Id: %d, Code %d, Proc 0x%x\n",Common->HookId,Common->Code,Common->Proc);
+     ERR("Hook Exception! Id: %d, Code %d, Proc 0x%x\n",Common->HookId,Common->Code,Proc);
+     Status = STATUS_UNSUCCESSFUL;
   }
-  return ZwCallbackReturn(&Result, sizeof(LRESULT), STATUS_SUCCESS);
+  if (Loaded) FreeLibrary(mod);
+  Common->Result = Result;
+  return ZwCallbackReturn(Arguments, ArgumentLength, Status);
 }
 
 NTSTATUS WINAPI

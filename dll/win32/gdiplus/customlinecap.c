@@ -16,19 +16,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-//#include <stdarg.h>
-
-//#include "windef.h"
-//#include "winbase.h"
-//#include "wingdi.h"
-
-//#include "objbase.h"
-
-//#include "gdiplus.h"
 #include "gdiplus_private.h"
-#include <wine/debug.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(gdiplus);
 
 GpStatus WINGDIPAPI GdipCloneCustomLineCap(GpCustomLineCap* from,
     GpCustomLineCap** to)
@@ -221,17 +209,16 @@ GpStatus WINGDIPAPI GdipSetCustomLineCapStrokeJoin(GpCustomLineCap* custom,
     return Ok;
 }
 
-GpStatus WINGDIPAPI GdipSetCustomLineCapWidthScale(GpCustomLineCap* custom,
-    REAL width)
+GpStatus WINGDIPAPI GdipSetCustomLineCapWidthScale(GpCustomLineCap* custom, REAL width)
 {
-    static int calls;
-
     TRACE("(%p,%0.2f)\n", custom, width);
 
-    if(!(calls++))
-        FIXME("not implemented\n");
+    if(!custom)
+        return InvalidParameter;
 
-    return NotImplemented;
+    custom->scale = width;
+
+    return Ok;
 }
 
 GpStatus WINGDIPAPI GdipGetCustomLineCapBaseCap(GpCustomLineCap *customCap, GpLineCap *baseCap)

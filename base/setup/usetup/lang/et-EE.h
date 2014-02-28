@@ -1350,7 +1350,7 @@ MUI_ERROR etEEErrorEntries[] =
           "\n"
           "Partitsioonide loomine väi kustutamine väib vigastada partitsioonitabelit.\n"
           "\n"
-          "  \x07  Vajuta F3, et v„ljuda paigaldusest.."
+          "  \x07  Vajuta F3, et v„ljuda paigaldusest..\n"
           "  \x07  Vajuta ENTER, et j„tkata.",
           "F3= V„lju  ENTER = J„tka"
     },
@@ -1643,11 +1643,11 @@ MUI_STRING etEEStrings[] =
     {STRING_REBOOTCOMPUTER2,
     "   ENTER = Taask„ivita arvuti"},
     {STRING_CONSOLEFAIL1,
-    "Konsooli ei ännestunud avada\n\n"},
+    "Konsooli ei ännestunud avada\r\n\r\n"},
     {STRING_CONSOLEFAIL2,
-    "Täen„oliselt on probleem USB klaviatuuri kasutamises\n"},
+    "Täen„oliselt on probleem USB klaviatuuri kasutamises\r\n"},
     {STRING_CONSOLEFAIL3,
-    "USB klaviatuurid ei ole veel toetatud\n"},
+    "USB klaviatuurid ei ole veel toetatud\r\n"},
     {STRING_FORMATTINGDISK,
     "Kävaketta vormindamine"},
     {STRING_CHECKINGDISK,

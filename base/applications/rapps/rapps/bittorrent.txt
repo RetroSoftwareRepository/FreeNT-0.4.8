@@ -5,7 +5,7 @@ Name = BitTorrent
 Version = 7.8
 Licence = Freeware for non-commercial uses
 Description = The Original BitTorrent Client.
-Size = 1.07KB
+Size = 1.07 MB
 Category = 5
 URLSite = http://www.bittorrent.com/
 URLDownload = http://download-new.utorrent.com/endpoint/bittorrent/os/windows/track/stable/BitTorrent.exe
@@ -26,3 +26,8 @@ Description = Oryginalny klient BitTorrent.
 Licence = Gratuită pentru uz necomercial
 Description = Originalul client BitTorrent.
 Size = 1,07 Mo
+
+[Section.041f]
+Licence = Ticârî olmayan kullanımlarda ücretsiz.
+Description = Özgün BitTorrent istemcisi.
+Size = 1,07 MB

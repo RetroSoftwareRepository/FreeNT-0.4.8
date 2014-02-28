@@ -8,6 +8,9 @@
  *                  Hervé Poussineau (hpoussin@reactos.org)
  */
 
+#ifndef _FMIFS_PCH_
+#define _FMIFS_PCH_
+
 /* INCLUDES ******************************************************************/
 
 #define WIN32_NO_STATUS
@@ -20,16 +23,10 @@
 /* PSDK/NDK Headers */
 #include <windef.h>
 #include <winbase.h>
-#include <winreg.h>
-#include <ndk/cmfuncs.h>
-#include <ndk/obfuncs.h>
 #include <ndk/rtlfuncs.h>
 
 /* FMIFS Public Header */
 #include <fmifs/fmifs.h>
-
-/* VFATLIB Public Header */
-//#include <fslib/vfatlib.h>
 
 extern LIST_ENTRY ProviderListHead;
 
@@ -49,4 +46,4 @@ PIFS_PROVIDER
 GetProvider(
 	IN PWCHAR FileSytem);
 
-/* EOF */
+#endif /* _FMIFS_PCH_ */

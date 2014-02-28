@@ -28,10 +28,7 @@
 
 #include <precomp.h>
 
-#include "../resource.h"
-
 #include "traynotify.h"
-
 
 #include "../notifyhook/notifyhook.h"
 
@@ -133,7 +130,6 @@ bool NotifyInfo::modify(NOTIFYICONDATA* pnid)
 		changes = true;	///@todo compare icon
 	}
 
-#ifdef NIF_STATE	// as of 21.08.2003 missing in MinGW headers
 	if (pnid->uFlags & NIF_STATE) {
 		DWORD new_state = (_dwState&~pnid->dwStateMask) | (pnid->dwState&pnid->dwStateMask);
 
@@ -142,7 +138,6 @@ bool NotifyInfo::modify(NOTIFYICONDATA* pnid)
 			changes = true;
 		}
 	}
-#endif
 
 	 // store tool tip text
 	if (pnid->uFlags & NIF_TIP) {
@@ -252,9 +247,7 @@ void NotifyArea::read_config()
 	 // read notification icon settings from XML configuration
 	XMLPos cfg_pos = g_Globals.get_cfg();
 
-#ifndef __MINGW32__	// SHRestricted() missing in MinGW (as of 29.10.2003)
 	if (!g_Globals._SHRestricted || !SHRestricted(REST_HIDECLOCK))
-#endif
 	{
 		if (cfg_pos.go_down("desktopbar")) {
 			clock_visible = XMLBoolRef(XMLPos(cfg_pos,"options"), "show-clock", !get_hide_clock_from_registry());
@@ -609,12 +602,10 @@ LRESULT NotifyArea::ProcessTrayNotification(int notify_code, NOTIFYICONDATA* pni
 		*/
 			bool changes = entry.modify(pnid);
 
-#if NOTIFYICON_VERSION>=3	// as of 21.08.2003 missing in MinGW headers
 			if (DetermineHideState(entry) && entry._mode==NIM_HIDE) {
 				entry._dwState |= NIS_HIDDEN;
 				changes = true;
 			}
-#endif
 
 			if (changes)
 				UpdateIcons();	///@todo call only if really changes occurred
@@ -635,7 +626,6 @@ LRESULT NotifyArea::ProcessTrayNotification(int notify_code, NOTIFYICONDATA* pni
 		}
 		break;}
 
-#if NOTIFYICON_VERSION>=3	// as of 21.08.2003 missing in MinGW headers
 	  case NIM_SETFOCUS:
 		SetForegroundWindow(_hwnd);
 		return TRUE;
@@ -648,7 +638,6 @@ LRESULT NotifyArea::ProcessTrayNotification(int notify_code, NOTIFYICONDATA* pni
 			return TRUE;
 		} else
 			return FALSE;
-#endif
 	}
 
 	return FALSE;
@@ -662,9 +651,7 @@ void NotifyArea::UpdateIcons()
 	for(NotifyIconMap::const_iterator it=_icon_map.begin(); it!=_icon_map.end(); ++it) {
 		const NotifyInfo& entry = it->second;
 
-#ifdef NIF_STATE	// as of 21.08.2003 missing in MinGW headers
 		if (_show_hidden || !(entry._dwState & NIS_HIDDEN))
-#endif
 			_sorted_icons.insert(entry);
 	}
 
@@ -830,8 +817,6 @@ void NotifyIconConfig::create_name()
 }
 
 
-#if NOTIFYICON_VERSION>=3	// as of 21.08.2003 missing in MinGW headers
-
 bool NotifyIconConfig::match(const NotifyIconConfig& props) const
 {
 	if (!_tipText.empty() && !props._tipText.empty())
@@ -873,7 +858,6 @@ bool NotifyArea::DetermineHideState(NotifyInfo& entry)
 	return false;
 }
 
-#endif
 
 
 String string_from_mode(NOTIFYICONMODE mode)

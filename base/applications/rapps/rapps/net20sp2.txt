@@ -5,7 +5,7 @@ Name = Microsoft .NET Framework Version 2.0 Service Pack 2
 Version = 2.0SP2
 Licence = Unknown
 Description = Microsoft .NET Framework Version 2.0 Service Pack 2.
-Size = 23.84MB
+Size = 23.84 MB
 Category = 14
 URLSite = http://www.microsoft.com/en-us/download/details.aspx?id=1639
 URLDownload = http://download.microsoft.com/download/c/6/e/c6e88215-0178-4c6c-b5f3-158ff77b1f38/NetFx20SP2_x86.exe
@@ -28,3 +28,9 @@ Description = Microsoft .NET Framework Wersja 2.0 Service Pack 2.
 Licence = Nespecificată
 Description = Platforma Microsoft .NET versiunea 2.0 - Service Pack 2.
 Size = 23,84 Mo
+
+[Section.041f]
+Name = Mikroyazılım .NET Çatısı Sürüm 2.0 Hizmet Paketi 2
+Licence = Bilinmiyor
+Description = Mikroyazılım .NET Çatısı Sürüm 2.0 - Hizmet Paketi 2
+Size = 23,84 MB

@@ -21,39 +21,18 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-//#include "config.h"
-//#include "wine/port.h"
+#include <k32.h>
 
-#include <assert.h>
-#include <locale.h>
-#include <string.h>
-#include <stdarg.h>
-#include <stdio.h>
-#include <ctype.h>
-#include <stdlib.h>
-
-#include "ntstatus.h"
-#define WIN32_NO_STATUS
-#include "windef.h"
-#include "winbase.h"
-#include "winuser.h"  /* for RT_STRINGW */
-#include "winternl.h"
-#include "wine/unicode.h"
-#include "winnls.h"
-#include "winerror.h"
-#include "winver.h"
-#include "wine/debug.h"
+#define NDEBUG
+#include <debug.h>
+DEBUG_CHANNEL(nls);
 
 #include "lcformat_private.h"
+
 #define REG_SZ 1
 extern int wine_fold_string(int flags, const WCHAR *src, int srclen, WCHAR *dst, int dstlen);
 extern int wine_get_sortkey(int flags, const WCHAR *src, int srclen, char *dst, int dstlen);
 extern int wine_compare_string(int flags, const WCHAR *str1, int len1, const WCHAR *str2, int len2);
-
-#define HeapAlloc RtlAllocateHeap
-#define HeapReAlloc RtlReAllocateHeap
-#define HeapFree RtlFreeHeap
-WINE_DEFAULT_DEBUG_CHANNEL(nls);
 
 extern HMODULE kernel32_handle;
 
@@ -754,6 +733,10 @@ INT WINAPI GetLocaleInfoA( LCID lcid, LCTYPE lctype, LPSTR buffer, INT len )
     return ret;
 }
 
+static int get_value_base_by_lctype( LCTYPE lctype )
+{
+    return lctype == LOCALE_ILANGUAGE || lctype == LOCALE_IDEFAULTLANGUAGE ? 16 : 10;
+}
 
 /******************************************************************************
  *		GetLocaleInfoW (KERNEL32.@)
@@ -807,7 +790,7 @@ INT WINAPI GetLocaleInfoW( LCID lcid, LCTYPE lctype, LPWSTR buffer, INT len )
                 if (ret > 0)
                 {
                     WCHAR *end;
-                    UINT number = strtolW( tmp, &end, 10 );
+                    UINT number = strtolW( tmp, &end, get_value_base_by_lctype( lctype ) );
                     if (*end)  /* invalid number */
                     {
                         SetLastError( ERROR_INVALID_FLAGS );
@@ -880,7 +863,7 @@ INT WINAPI GetLocaleInfoW( LCID lcid, LCTYPE lctype, LPWSTR buffer, INT len )
         if (!tmp) return 0;
         memcpy( tmp, p + 1, *p * sizeof(WCHAR) );
         tmp[*p] = 0;
-        number = strtolW( tmp, &end, 10 );
+        number = strtolW( tmp, &end, get_value_base_by_lctype( lctype ) );
         if (!*end)
             memcpy( buffer, &number, sizeof(number) );
         else  /* invalid number */
@@ -993,7 +976,7 @@ BOOL WINAPI SetLocaleInfoW( LCID lcid, LCTYPE lctype, LPCWSTR data )
 
     if (!(hkey = create_registry_key())) return FALSE;
     RtlInitUnicodeString( &valueW, value );
-    status = NtSetValueKey( hkey, &valueW, 0, REG_SZ, data, (strlenW(data)+1)*sizeof(WCHAR) );
+    status = NtSetValueKey( hkey, &valueW, 0, REG_SZ, (PVOID)data, (strlenW(data)+1)*sizeof(WCHAR) );
 
     if (lctype == LOCALE_SSHORTDATE || lctype == LOCALE_SLONGDATE)
     {
@@ -1784,13 +1767,13 @@ INT WINAPI CompareStringW(LCID lcid, DWORD style,
  *           str1 is less than, equal to or greater than str2 respectively.
  *  Failure: FALSE. Use GetLastError() to determine the cause.
  */
-INT WINAPI CompareStringA(LCID lcid, DWORD style,
+INT WINAPI CompareStringA(LCID lcid, DWORD flags,
                           LPCSTR str1, INT len1, LPCSTR str2, INT len2)
 {
     WCHAR *buf1W = NtCurrentTeb()->StaticUnicodeBuffer;
     WCHAR *buf2W = buf1W + 130;
     LPWSTR str1W, str2W;
-    INT len1W, len2W, ret;
+    INT len1W = 0, len2W = 0, ret;
     UINT locale_cp = CP_ACP;
 
     if (!str1 || !str2)
@@ -1801,39 +1784,56 @@ INT WINAPI CompareStringA(LCID lcid, DWORD style,
     if (len1 < 0) len1 = strlen(str1);
     if (len2 < 0) len2 = strlen(str2);
 
-    if (!(style & LOCALE_USE_CP_ACP)) locale_cp = get_lcid_codepage( lcid );
+    if (!(flags & LOCALE_USE_CP_ACP)) locale_cp = get_lcid_codepage( lcid );
 
-    len1W = MultiByteToWideChar(locale_cp, 0, str1, len1, buf1W, 130);
-    if (len1W)
+    if (len1)
+    {
+        if (len1 <= 130) len1W = MultiByteToWideChar(locale_cp, 0, str1, len1, buf1W, 130);
+        if (len1W)
+            str1W = buf1W;
+        else
+        {
+            len1W = MultiByteToWideChar(locale_cp, 0, str1, len1, NULL, 0);
+            str1W = HeapAlloc(GetProcessHeap(), 0, len1W * sizeof(WCHAR));
+            if (!str1W)
+            {
+                SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+                return 0;
+            }
+            MultiByteToWideChar(locale_cp, 0, str1, len1, str1W, len1W);
+        }
+    }
+    else
+    {
+        len1W = 0;
         str1W = buf1W;
-    else
-    {
-        len1W = MultiByteToWideChar(locale_cp, 0, str1, len1, NULL, 0);
-        str1W = HeapAlloc(GetProcessHeap(), 0, len1W * sizeof(WCHAR));
-        if (!str1W)
-        {
-            SetLastError(ERROR_NOT_ENOUGH_MEMORY);
-            return 0;
-        }
-        MultiByteToWideChar(locale_cp, 0, str1, len1, str1W, len1W);
-    }
-    len2W = MultiByteToWideChar(locale_cp, 0, str2, len2, buf2W, 130);
-    if (len2W)
-        str2W = buf2W;
-    else
-    {
-        len2W = MultiByteToWideChar(locale_cp, 0, str2, len2, NULL, 0);
-        str2W = HeapAlloc(GetProcessHeap(), 0, len2W * sizeof(WCHAR));
-        if (!str2W)
-        {
-            if (str1W != buf1W) HeapFree(GetProcessHeap(), 0, str1W);
-            SetLastError(ERROR_NOT_ENOUGH_MEMORY);
-            return 0;
-        }
-        MultiByteToWideChar(locale_cp, 0, str2, len2, str2W, len2W);
     }
 
-    ret = CompareStringW(lcid, style, str1W, len1W, str2W, len2W);
+    if (len2)
+    {
+        if (len2 <= 130) len2W = MultiByteToWideChar(locale_cp, 0, str2, len2, buf2W, 130);
+        if (len2W)
+            str2W = buf2W;
+        else
+        {
+            len2W = MultiByteToWideChar(locale_cp, 0, str2, len2, NULL, 0);
+            str2W = HeapAlloc(GetProcessHeap(), 0, len2W * sizeof(WCHAR));
+            if (!str2W)
+            {
+                if (str1W != buf1W) HeapFree(GetProcessHeap(), 0, str1W);
+                SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+                return 0;
+            }
+            MultiByteToWideChar(locale_cp, 0, str2, len2, str2W, len2W);
+        }
+    }
+    else
+    {
+        len2W = 0;
+        str2W = buf2W;
+    }
+
+    ret = CompareStringW(lcid, flags, str1W, len1W, str2W, len2W);
 
     if (str1W != buf1W) HeapFree(GetProcessHeap(), 0, str1W);
     if (str2W != buf2W) HeapFree(GetProcessHeap(), 0, str2W);
@@ -2698,7 +2698,7 @@ NLS_GetGeoFriendlyName(GEOID Location, LPWSTR szFriendlyName, int cchData)
     NTSTATUS Status;
     int Ret;
 
-    swprintf(szPath, L"\\REGISTRY\\Machine\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Telephony\\Country List\\%d", Location);
+    swprintf(szPath, L"\\REGISTRY\\Machine\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Telephony\\Country List\\%lu", Location);
 
     hKey = NLS_RegOpenKey(0, szPath);
     if (!hKey)

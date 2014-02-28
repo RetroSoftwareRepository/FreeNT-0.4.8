@@ -18,21 +18,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <config.h>
-//#include "wine/port.h"
-
-#define NONAMELESSSTRUCT
-#define NONAMELESSUNION
-#define COBJMACROS
-
 #include "editor.h"
-//#include "ole2.h"
-//#include "oleauto.h"
-//#include "richole.h"
-//#include "imm.h"
-//#include "textserv.h"
-//#include "wine/debug.h"
-//#include "editstr.h"
 
 #ifdef __i386__  /* thiscall functions are i386-specific */
 
@@ -77,7 +63,7 @@ static HRESULT WINAPI ITextServicesImpl_QueryInterface(IUnknown *iface, REFIID r
 
    if (IsEqualIID(riid, &IID_IUnknown))
       *ppv = &This->IUnknown_inner;
-   else if IsEqualIID(riid, &IID_ITextServices)
+   else if (IsEqualIID(riid, &IID_ITextServices))
       *ppv = &This->ITextServices_iface;
    else {
       *ppv = NULL;

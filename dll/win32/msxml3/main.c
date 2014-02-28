@@ -19,18 +19,11 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
+#include "precomp.h"
 
-#include <config.h>
 #include <wine/port.h>
 
-#define COBJMACROS
-
-//#include <stdarg.h>
 #ifdef HAVE_LIBXML2
-//# include <libxml/parser.h>
-//# include <libxml/xmlerror.h>
 # ifdef SONAME_LIBXSLT
 #  ifdef HAVE_LIBXSLT_PATTERN_H
 #   include <libxslt/pattern.h>
@@ -43,21 +36,9 @@
 # endif
 #endif
 
-#include <windef.h>
-#include <winbase.h>
-//#include "winuser.h"
-#include <ole2.h>
 #include <rpcproxy.h>
-//#include "msxml.h"
-#include <msxml6.h>
 
-//#include "wine/unicode.h"
-#include <wine/debug.h>
 #include <wine/library.h>
-
-#include "msxml_private.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(msxml);
 
 HINSTANCE MSXML_hInstance = NULL;
 
@@ -212,7 +193,7 @@ static void init_libxslt(void)
 #endif
 }
 
-BOOL WINAPI DllMain(HINSTANCE hInstDLL, DWORD fdwReason, LPVOID lpv)
+BOOL WINAPI DllMain(HINSTANCE hInstDLL, DWORD fdwReason, LPVOID reserved)
 {
     MSXML_hInstance = hInstDLL;
 
@@ -243,7 +224,6 @@ BOOL WINAPI DllMain(HINSTANCE hInstDLL, DWORD fdwReason, LPVOID lpv)
         {
             pxsltCleanupGlobals();
             wine_dlclose(libxslt_handle, NULL, 0);
-            libxslt_handle = NULL;
         }
 #endif
 #ifdef HAVE_LIBXML2

@@ -700,7 +700,7 @@ NtUserGetMonitorInfo(
     pMonitor = UserGetMonitorObject(hMonitor);
     if (!pMonitor)
     {
-        TRACE("Couldnt find monitor 0x%lx\n", hMonitor);
+        TRACE("Couldnt find monitor %p\n", hMonitor);
         goto cleanup;
     }
 
@@ -786,7 +786,6 @@ NtUserMonitorFromPoint(
     IN POINT pt,
     IN DWORD dwFlags)
 {
-    INT cMonitors;
     RECTL rc;
     HMONITOR hMonitor = NULL;
 
@@ -808,7 +807,7 @@ NtUserMonitorFromPoint(
     UserEnterShared();
 
     /* Find intersecting monitor */
-    cMonitors = IntGetMonitorsFromRect(&rc, &hMonitor, NULL, 1, dwFlags);
+    IntGetMonitorsFromRect(&rc, &hMonitor, NULL, 1, dwFlags);
 
     UserLeave();
     return hMonitor;

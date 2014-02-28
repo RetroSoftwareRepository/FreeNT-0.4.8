@@ -828,9 +828,9 @@ MmFreeMemoryArea(
             Address < (ULONG_PTR)EndAddress;
             Address += PAGE_SIZE)
        {
-            BOOLEAN Dirty = FALSE;
-            SWAPENTRY SwapEntry = 0;
-            PFN_NUMBER Page = 0;
+             BOOLEAN Dirty = FALSE;
+             SWAPENTRY SwapEntry = 0;
+             PFN_NUMBER Page = 0;
 
              if (MmIsPageSwapEntry(Process, (PVOID)Address))
              {
@@ -848,10 +848,10 @@ MmFreeMemoryArea(
 #if (_MI_PAGING_LEVELS == 2)
             /* Remove page table reference */
             ASSERT(KeGetCurrentIrql() <= APC_LEVEL);
-            if((SwapEntry || Page) && ((PVOID)Address < MmSystemRangeStart))
+            if ((SwapEntry || Page) && ((PVOID)Address < MmSystemRangeStart))
             {
                 ASSERT(AddressSpace != MmGetKernelAddressSpace());
-                if(MmWorkingSetList->UsedPageTableEntries[MiGetPdeOffset(Address)] == 0)
+                if (MiQueryPageTableReferences((PVOID)Address) == 0)
                 {
                     /* No PTE relies on this PDE. Release it */
                     KIRQL OldIrql = KeAcquireQueuedSpinLock(LockQueuePfnLock);
@@ -984,10 +984,8 @@ MmCreateMemoryArea(PMMSUPPORT AddressSpace,
                    PMEMORY_AREA *Result,
                    BOOLEAN FixedAddress,
                    ULONG AllocationFlags,
-                   PHYSICAL_ADDRESS BoundaryAddressMultiple)
+                   ULONG Granularity)
 {
-   PVOID EndAddress;
-   ULONG Granularity;
    ULONG_PTR tmpLength;
    PMEMORY_AREA MemoryArea;
 
@@ -997,7 +995,6 @@ MmCreateMemoryArea(PMMSUPPORT AddressSpace,
           Type, BaseAddress, *BaseAddress, Length, AllocationFlags,
           FixedAddress, Result);
 
-   Granularity = PAGE_SIZE;
    if ((*BaseAddress) == 0 && !FixedAddress)
    {
       tmpLength = (ULONG_PTR)MM_ROUND_UP(Length, Granularity);
@@ -1028,12 +1025,6 @@ MmCreateMemoryArea(PMMSUPPORT AddressSpace,
       {
          DPRINT("Memory area for user mode address space exceeds MmSystemRangeStart\n");
          return STATUS_ACCESS_VIOLATION;
-      }
-
-      if (BoundaryAddressMultiple.QuadPart != 0)
-      {
-         EndAddress = ((char*)(*BaseAddress)) + tmpLength-1;
-         ASSERT(((ULONG_PTR)*BaseAddress/BoundaryAddressMultiple.QuadPart) == ((DWORD_PTR)EndAddress/BoundaryAddressMultiple.QuadPart));
       }
 
       if (MmLocateMemoryAreaByRegion(AddressSpace,
@@ -1067,7 +1058,11 @@ MmCreateMemoryArea(PMMSUPPORT AddressSpace,
                                            TAG_MAREA);
     }
 
-    if (!MemoryArea) return STATUS_NO_MEMORY;
+   if (!MemoryArea)
+   {
+      DPRINT1("Not enough memory.\n");
+      return STATUS_NO_MEMORY;
+   }
 
    RtlZeroMemory(MemoryArea, sizeof(MEMORY_AREA));
    MemoryArea->Type = Type;
@@ -1132,7 +1127,7 @@ MmDeleteProcessAddressSpace(PEPROCESS Process)
    PVOID Address;
    PMEMORY_AREA MemoryArea;
 
-   DPRINT("MmDeleteProcessAddressSpace(Process %x (%s))\n", Process,
+   DPRINT("MmDeleteProcessAddressSpace(Process %p (%s))\n", Process,
           Process->ImageFileName);
 
 #ifndef _M_AMD64
@@ -1180,16 +1175,23 @@ MmDeleteProcessAddressSpace(PEPROCESS Process)
         /* Acquire PFN lock */
         OldIrql = KeAcquireQueuedSpinLock(LockQueuePfnLock);
 
-        for(Address = MI_LOWEST_VAD_ADDRESS;
-            Address < MM_HIGHEST_VAD_ADDRESS;
-            Address =(PVOID)((ULONG_PTR)Address + (PAGE_SIZE * PTE_COUNT)))
+        for (Address = MI_LOWEST_VAD_ADDRESS;
+             Address < MM_HIGHEST_VAD_ADDRESS;
+             Address =(PVOID)((ULONG_PTR)Address + (PAGE_SIZE * PTE_COUNT)))
         {
             /* At this point all references should be dead */
-            ASSERT(MmWorkingSetList->UsedPageTableEntries[MiGetPdeOffset(Address)] == 0);
+            if (MiQueryPageTableReferences(Address) != 0)
+            {
+                DPRINT1("Process %p, Address %p, UsedPageTableEntries %lu\n",
+                        Process,
+                        Address,
+                        MiQueryPageTableReferences(Address));
+                ASSERT(MiQueryPageTableReferences(Address) == 0);
+            }
             pointerPde = MiAddressToPde(Address);
             /* Unlike in ARM3, we don't necesarrily free the PDE page as soon as reference reaches 0,
              * so we must clean up a bit when process closes */
-            if(pointerPde->u.Hard.Valid)
+            if (pointerPde->u.Hard.Valid)
                 MiDeletePte(pointerPde, MiPdeToPte(pointerPde), Process, NULL);
             ASSERT(pointerPde->u.Hard.Valid == 0);
         }

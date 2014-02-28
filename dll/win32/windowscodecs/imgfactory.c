@@ -17,30 +17,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-#define COM_NO_WINDOWS_H
-
-#include <config.h>
-
-#include <stdarg.h>
-
-#define COBJMACROS
-
-#include <windef.h>
-#include <winbase.h>
-#include <wingdi.h>
-//#include "winreg.h"
-#include <objbase.h>
-//#include "shellapi.h"
-//#include "wincodec.h"
-#include <wincodecsdk.h>
-
 #include "wincodecs_private.h"
-
-#include <wine/debug.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(wincodecs);
 
 typedef struct {
     IWICComponentFactory IWICComponentFactory_iface;
@@ -442,8 +419,8 @@ static HRESULT WINAPI ComponentFactory_CreateBitmapScaler(IWICComponentFactory *
 static HRESULT WINAPI ComponentFactory_CreateBitmapClipper(IWICComponentFactory *iface,
     IWICBitmapClipper **ppIBitmapClipper)
 {
-    FIXME("(%p,%p): stub\n", iface, ppIBitmapClipper);
-    return E_NOTIMPL;
+    TRACE("(%p,%p)\n", iface, ppIBitmapClipper);
+    return BitmapClipper_Create(ppIBitmapClipper);
 }
 
 static HRESULT WINAPI ComponentFactory_CreateBitmapFlipRotator(IWICComponentFactory *iface,

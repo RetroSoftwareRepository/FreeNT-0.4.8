@@ -11,6 +11,7 @@
 /* INCLUDES ******************************************************************/
 
 #include <k32.h>
+
 #define NDEBUG
 #include <debug.h>
 #include <dbt.h>
@@ -157,7 +158,7 @@ DefineDosDeviceW(
     }
     else
     {
-        DefineDosDeviceRequest->dwFlags = dwFlags;
+        DefineDosDeviceRequest->Flags = dwFlags;
 
         CsrCaptureMessageBuffer(CaptureBuffer,
                                 (PVOID)DeviceUpcaseNameU.Buffer,
@@ -174,11 +175,11 @@ DefineDosDeviceW(
             CsrCaptureMessageBuffer(CaptureBuffer,
                                     (PVOID)NtTargetPathU.Buffer,
                                     NtTargetPathU.Length,
-                                    (PVOID*)&DefineDosDeviceRequest->TargetName.Buffer);
+                                    (PVOID*)&DefineDosDeviceRequest->TargetPath.Buffer);
         }
-        DefineDosDeviceRequest->TargetName.Length =
+        DefineDosDeviceRequest->TargetPath.Length =
             NtTargetPathU.Length;
-        DefineDosDeviceRequest->TargetName.MaximumLength =
+        DefineDosDeviceRequest->TargetPath.MaximumLength =
             NtTargetPathU.Length;
 
         Status = CsrClientCallServer((PCSR_API_MESSAGE)&ApiMessage,

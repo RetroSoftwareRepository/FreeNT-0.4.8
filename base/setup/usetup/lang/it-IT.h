@@ -1351,7 +1351,7 @@ MUI_ERROR itITErrorEntries[] =
         "\n"
         "Il creare o cancellare partizioni pu• distruggere la tabella delle partizioni.\n"
         "\n"
-        "  \x07  Premere F3 per uscire dal Setup."
+        "  \x07  Premere F3 per uscire dal Setup.\n"
         "  \x07  Premere INVIO per continuare.",
         "F3= Uscire  INVIO = Continuare"
     },
@@ -1647,11 +1647,11 @@ MUI_STRING itITStrings[] =
     {STRING_REBOOTCOMPUTER2,
     "   INVIO = Riavvia il computer"},
     {STRING_CONSOLEFAIL1,
-    "Impossibile aprire la console\n\n"},
+    "Impossibile aprire la console\r\n\r\n"},
     {STRING_CONSOLEFAIL2,
-    "La causa pi— frequente di questo Š l'uso di una tastiera USB\n"},
+    "La causa pi— frequente di questo Š l'uso di una tastiera USB\r\n"},
     {STRING_CONSOLEFAIL3,
-    "le tastiere USB non sono ancora completamente supportate\n"},
+    "le tastiere USB non sono ancora completamente supportate\r\n"},
     {STRING_FORMATTINGDISK,
     "Setup sta formattando il disco"},
     {STRING_CHECKINGDISK,

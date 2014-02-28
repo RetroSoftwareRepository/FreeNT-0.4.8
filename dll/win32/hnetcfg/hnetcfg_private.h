@@ -16,6 +16,39 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#ifndef _HNETCFG_PRIVATE_H_
+#define _HNETCFG_PRIVATE_H_
+
+#include <wine/config.h>
+
+#include <stdarg.h>
+
+#define WIN32_NO_STATUS
+#define _INC_WINDOWS
+#define COM_NO_WINDOWS_H
+
+#define COBJMACROS
+
+#include <windef.h>
+#include <winbase.h>
+#include <objbase.h>
+#include <netfw.h>
+
+#include <wine/debug.h>
+WINE_DEFAULT_DEBUG_CHANNEL(hnetcfg);
+
+enum type_id
+{
+    INetFwAuthorizedApplication_tid,
+    INetFwAuthorizedApplications_tid,
+    INetFwMgr_tid,
+    INetFwPolicy_tid,
+    INetFwProfile_tid,
+    last_tid
+};
+
+HRESULT get_typeinfo(enum type_id, ITypeInfo **) DECLSPEC_HIDDEN;
+
 HRESULT NetFwMgr_create(IUnknown *, LPVOID *) DECLSPEC_HIDDEN;
 HRESULT NetFwPolicy_create(IUnknown *, LPVOID *) DECLSPEC_HIDDEN;
 HRESULT NetFwProfile_create(IUnknown *, LPVOID *) DECLSPEC_HIDDEN;
@@ -23,3 +56,5 @@ HRESULT NetFwAuthorizedApplication_create(IUnknown *, LPVOID *) DECLSPEC_HIDDEN;
 HRESULT NetFwAuthorizedApplications_create(IUnknown *, LPVOID *) DECLSPEC_HIDDEN;
 HRESULT NetFwOpenPorts_create(IUnknown *, LPVOID *) DECLSPEC_HIDDEN;
 HRESULT NetFwServices_create(IUnknown *, LPVOID *) DECLSPEC_HIDDEN;
+
+#endif /* _HNETCFG_PRIVATE_H_ */

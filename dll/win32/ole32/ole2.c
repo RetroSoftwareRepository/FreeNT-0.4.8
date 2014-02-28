@@ -23,36 +23,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-
-#include <config.h>
-
-//#include <assert.h>
-//#include <stdlib.h>
-#include <stdarg.h>
-//#include <stdio.h>
-//#include <string.h>
-
-#define COBJMACROS
-#define NONAMELESSUNION
-#define NONAMELESSSTRUCT
-
-#include <windef.h>
-#include <winbase.h>
-//#include "winerror.h"
-#include <wingdi.h>
-//#include "winuser.h"
-//#include "winnls.h"
-//#include "winreg.h"
-#include <ole2.h>
-#include <ole2ver.h>
-
-#include <wine/unicode.h>
-#include "compobj_private.h"
-//#include "wine/list.h"
-
-#include <wine/debug.h>
+#include "precomp.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(ole);
 WINE_DECLARE_DEBUG_CHANNEL(accel);
@@ -885,11 +856,6 @@ HRESULT WINAPI OleRegGetMiscStatus(
   LONG    result;
 
   /*
-   * Initialize the out parameter.
-   */
-  *pdwStatus = 0;
-
-  /*
    * Build the key name we're looking for
    */
   sprintfW( keyName, clsidfmtW,
@@ -898,6 +864,10 @@ HRESULT WINAPI OleRegGetMiscStatus(
             clsid->Data4[4], clsid->Data4[5], clsid->Data4[6], clsid->Data4[7] );
 
   TRACE("(%s, %d, %p)\n", debugstr_w(keyName), dwAspect, pdwStatus);
+
+  if (!pdwStatus) return E_INVALIDARG;
+
+  *pdwStatus = 0;
 
   /*
    * Open the class id Key
@@ -913,7 +883,7 @@ HRESULT WINAPI OleRegGetMiscStatus(
   if (result != ERROR_SUCCESS)
   {
     RegCloseKey(clsidKey);
-    return REGDB_E_READREGDB;
+    return S_OK;
   }
 
   /*

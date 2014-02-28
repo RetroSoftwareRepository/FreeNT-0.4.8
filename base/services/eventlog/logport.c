@@ -11,6 +11,11 @@
 
 #include "eventlog.h"
 
+#include <ndk/lpcfuncs.h>
+
+#define NDEBUG
+#include <debug.h>
+
 /* GLOBALS ******************************************************************/
 
 HANDLE ConnectPortHandle = NULL;

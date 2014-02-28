@@ -1,7 +1,13 @@
+#ifndef _RAPPS_H
+#define _RAPPS_H
+
+#include <stdarg.h>
+
 #define WIN32_NO_STATUS
 #define _INC_WINDOWS
 #define COM_NO_WINDOWS_H
-#include <stdarg.h>
+#define COBJMACROS
+
 #include <windef.h>
 #include <winbase.h>
 #include <winreg.h>
@@ -10,10 +16,9 @@
 #include <winuser.h>
 #include <wincon.h>
 #include <richedit.h>
-#include <shellapi.h>
-#include <shlwapi.h>
 #include <shlobj.h>
 #include <stdio.h>
+#include <strsafe.h>
 
 #include <rappsmsg.h>
 
@@ -147,8 +152,9 @@ int GetClientWindowWidth(HWND hwnd);
 int GetClientWindowHeight(HWND hwnd);
 VOID CopyTextToClipboard(LPCWSTR lpszText);
 VOID SetWelcomeText(VOID);
-VOID ShowPopupMenu(HWND hwnd, UINT MenuID);
+VOID ShowPopupMenu(HWND hwnd, UINT MenuID, UINT DefaultItem);
 BOOL StartProcess(LPWSTR lpPath, BOOL Wait);
+BOOL GetStorageDirectory(PWCHAR lpDirectory, DWORD cch);
 BOOL ExtractFilesFromCab(LPWSTR lpCabName, LPWSTR lpOutputPath);
 VOID InitLogs(VOID);
 VOID FreeLogs(VOID);
@@ -192,3 +198,5 @@ VOID ToolBarOnGetDispInfo(LPTOOLTIPTEXT lpttt);
 extern HWND hTreeView;
 BOOL CreateTreeView(HWND hwnd);
 HTREEITEM TreeViewAddItem(HTREEITEM hParent, LPWSTR lpText, INT Image, INT SelectedImage, LPARAM lParam);
+
+#endif /* _RAPPS_H */

@@ -20,8 +20,8 @@ BOOLEAN KiTimeAdjustmentEnabled = FALSE;
 
 /* FUNCTIONS ******************************************************************/
 
-VOID
 FORCEINLINE
+VOID
 KiWriteSystemTime(volatile KSYSTEM_TIME *SystemTime, ULARGE_INTEGER NewTime)
 {
 #ifdef _WIN64
@@ -35,8 +35,8 @@ KiWriteSystemTime(volatile KSYSTEM_TIME *SystemTime, ULARGE_INTEGER NewTime)
 #endif
 }
 
-VOID
 FORCEINLINE
+VOID
 KiCheckForTimerExpiration(
     PKPRCB Prcb,
     PKTRAP_FRAME TrapFrame,
@@ -153,7 +153,7 @@ KeUpdateRunTime(IN PKTRAP_FRAME TrapFrame,
 
     /* Check if we came from user mode */
 #ifndef _M_ARM
-    if ((TrapFrame->SegCs & MODE_MASK) || (TrapFrame->EFlags & EFLAGS_V86_MASK))
+    if (KiUserTrap(TrapFrame) || (TrapFrame->EFlags & EFLAGS_V86_MASK))
 #else
     if (TrapFrame->PreviousMode == UserMode)
 #endif

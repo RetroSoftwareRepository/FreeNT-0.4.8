@@ -143,10 +143,8 @@ WinLdrInitializePhase1(PLOADER_PARAMETER_BLOCK LoaderBlock,
 	{
 		PARC_DISK_SIGNATURE_EX ArcDiskSig;
 
-		/* Allocate the ARC structure */
-		ArcDiskSig = HeapAllocate(FrLdrDefaultHeap,
-		                          sizeof(ARC_DISK_SIGNATURE_EX),
-		                          'giSD');
+        /* Allocate the ARC structure */
+        ArcDiskSig = FrLdrHeapAlloc(sizeof(ARC_DISK_SIGNATURE_EX), 'giSD');
 
 		/* Copy the data over */
 		ArcDiskSig->DiskSignature.Signature = reactos_arc_disk_info[i].Signature;
@@ -323,13 +321,14 @@ WinLdrLoadBootDrivers(PLOADER_PARAMETER_BLOCK LoaderBlock,
 		                                0,
 		                                &BootDriver->LdrEntry);
 
-		// If loading failed - cry loudly
-		//FIXME: Maybe remove it from the list and try to continue?
-		if (!Status)
-		{
-			UiMessageBox("Can't load boot driver!");
-			return FALSE;
-		}
+        // If loading failed - cry loudly
+        //FIXME: Maybe remove it from the list and try to continue?
+        if (!Status)
+        {
+            ERR("Can't load boot driver '%wZ'!", &BootDriver->FilePath);
+            UiMessageBox("Can't load boot driver '%wZ'!", &BootDriver->FilePath);
+            return FALSE;
+        }
 
 		// Convert the RegistryPath and DTE addresses to VA since we are not going to use it anymore
 		BootDriver->RegistryPath.Buffer = PaToVa(BootDriver->RegistryPath.Buffer);
@@ -673,11 +672,6 @@ LoadAndBootWindows(IN OperatingSystemItem* OperatingSystem,
 	/* Allocate and minimalistic-initialize LPB */
 	AllocateAndInitLPB(&LoaderBlock);
 
-#ifdef _M_IX86
-	/* Setup redirection support */
-	WinLdrSetupEms(BootOptions);
-#endif
-
 	/* Load Hive */
 	UiDrawBackdrop();
 	UiDrawProgressBarCenter(15, 100, "Loading system hive...");
@@ -711,8 +705,13 @@ LoadAndBootWindowsCommon(
 	LPCSTR SystemRoot;
 	TRACE("LoadAndBootWindowsCommon()\n");
 
-	/* Convert BootPath to SystemRoot */
-	SystemRoot = strstr(BootPath, "\\");
+#ifdef _M_IX86
+    /* Setup redirection support */
+    WinLdrSetupEms((PCHAR)BootOptions);
+#endif
+
+    /* Convert BootPath to SystemRoot */
+    SystemRoot = strstr(BootPath, "\\");
 
 	/* Detect hardware */
 	LoaderBlock->ConfigurationRoot = MachHwDetect();
@@ -752,8 +751,11 @@ LoadAndBootWindowsCommon(
 	/* "Stop all motors", change videomode */
 	MachPrepareForReactOS(Setup);
 
-	/* Debugging... */
-	//DumpMemoryAllocMap();
+    /* Cleanup ini file */
+    IniCleanup();
+
+    /* Debugging... */
+    //DumpMemoryAllocMap();
 
 	/* Do the machine specific initialization */
 	WinLdrSetupMachineDependent(LoaderBlock);

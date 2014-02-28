@@ -5,7 +5,7 @@ Name = Simple Direct Media Layer (SDL) Mixer
 Version = 1.2.12
 Licence = LGPL
 Description = Needed for some Open Source Games to run. You need 7-Zip or a similar Utility to extract it.
-Size = 548.02kB
+Size = 548.02 kB
 Category = 14
 URLSite = http://www.libsdl.org/projects/SDL_mixer/
 URLDownload = http://www.libsdl.org/projects/SDL_mixer/release/SDL_mixer-1.2.12-win32.zip
@@ -36,6 +36,11 @@ Description = Biblioteka wymagana przez niektóre gry (zwłaszcza te o otwartym 
 [Section.0418]
 Description = Necesar pentru execuția unor jocuri (open-source). Dezarhivați cu 7-Zip sau cu un utilitar asemănător.
 Size = 548,02 ko
+
+[Section.041f]
+Name = Bayağı Doğrudan Ortam Katmanı (SDL) Karıştırıcısı
+Description = Birtakım açık kaynak uygulamalar için gereklidir. Bunu çıkartmak için 7-Zip ya da 7-Zip benzeri bir yazılım kullanmanız gerekir.
+Size = 548,02 KB
 
 [Section.0422]
 Description = Необхідний для роботи декотрих відкритих ігор. Вам потрібен 7-Zip або подібна утиліта щоб розпакувати його.

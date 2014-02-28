@@ -16,14 +16,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <assert.h>
-
 #include "jscript.h"
-#include "engine.h"
-
-#include <wine/debug.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(jscript);
 
 typedef struct {
     jsdisp_t dispex;
@@ -318,15 +311,16 @@ static HRESULT function_to_string(FunctionInstance *function, jsstr_t **ret)
 
     if(function->value_proc) {
         DWORD name_len;
+        WCHAR *ptr;
 
         name_len = strlenW(function->name);
-        str = jsstr_alloc_buf((sizeof(native_prefixW)+sizeof(native_suffixW))/sizeof(WCHAR) + name_len);
-        if(!str)
+        ptr = jsstr_alloc_buf((sizeof(native_prefixW)+sizeof(native_suffixW))/sizeof(WCHAR) + name_len, &str);
+        if(!ptr)
             return E_OUTOFMEMORY;
 
-        memcpy(str->str, native_prefixW, sizeof(native_prefixW));
-        memcpy(str->str + sizeof(native_prefixW)/sizeof(WCHAR), function->name, name_len*sizeof(WCHAR));
-        memcpy(str->str + sizeof(native_prefixW)/sizeof(WCHAR) + name_len, native_suffixW, sizeof(native_suffixW));
+        memcpy(ptr, native_prefixW, sizeof(native_prefixW));
+        memcpy(ptr += sizeof(native_prefixW)/sizeof(WCHAR), function->name, name_len*sizeof(WCHAR));
+        memcpy(ptr + name_len, native_suffixW, sizeof(native_suffixW));
     }else {
         str = jsstr_alloc_len(function->func_code->source, function->func_code->source_len);
         if(!str)

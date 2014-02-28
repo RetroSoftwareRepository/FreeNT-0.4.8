@@ -11,6 +11,9 @@
 
 #include "precomp.h"
 
+#include <datagram.h>
+#include <pseh/pseh2.h>
+
 NTSTATUS IRPFinish( PIRP Irp, NTSTATUS Status ) {
     KIRQL OldIrql;
 
@@ -618,9 +621,11 @@ NTSTATUS DispTdiListen(
 			      Connection->AddressFile->Protocol );
       }
 
-      if( NT_SUCCESS(Status) )
+      if( NT_SUCCESS(Status) ) {
+	  ReferenceObject(Connection->AddressFile->Listener);
 	  Status = TCPListen( Connection->AddressFile->Listener, 1024 );
 	  /* BACKLOG */
+      }
   }
 
   if( NT_SUCCESS(Status) ) {

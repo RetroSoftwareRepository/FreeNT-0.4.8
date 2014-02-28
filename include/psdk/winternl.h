@@ -838,6 +838,11 @@ typedef enum _MEMORY_INFORMATION_CLASS {
     MemoryBasicVlmInformation
 } MEMORY_INFORMATION_CLASS;
 
+typedef struct _MEMORY_SECTION_NAME
+{
+    UNICODE_STRING SectionFileName;
+} MEMORY_SECTION_NAME, *PMEMORY_SECTION_NAME;
+
 typedef enum _MUTANT_INFORMATION_CLASS
 {
     MutantBasicInformation
@@ -1084,19 +1089,17 @@ typedef struct _RTL_RWLOCK {
 
 typedef struct _SYSTEM_BASIC_INFORMATION {
 #ifdef __WINESRC__
-    DWORD dwUnknown1;
-    ULONG uKeMaximumIncrement;
-    ULONG uPageSize;
-    ULONG uMmNumberOfPhysicalPages;
-    ULONG uMmLowestPhysicalPage;
-    ULONG uMmHighestPhysicalPage;
-    ULONG uAllocationGranularity;
-    PVOID pLowestUserAddress;
-    PVOID pMmHighestUserAddress;
-    ULONG uKeActiveProcessors;
-    BYTE bKeNumberProcessors;
-    BYTE bUnknown2;
-    WORD wUnknown3;
+    DWORD     unknown;
+    ULONG     KeMaximumIncrement;
+    ULONG     PageSize;
+    ULONG     MmNumberOfPhysicalPages;
+    ULONG     MmLowestPhysicalPage;
+    ULONG     MmHighestPhysicalPage;
+    ULONG_PTR AllocationGranularity;
+    PVOID     LowestUserAddress;
+    PVOID     HighestUserAddress;
+    ULONG_PTR ActiveProcessorsAffinityMask;
+    BYTE      NumberOfProcessors;
 #else
     BYTE Reserved1[24];
     PVOID Reserved2[4];
@@ -2515,14 +2518,7 @@ static __inline PLIST_ENTRY RemoveTailList(PLIST_ENTRY le)
     return e;
 }
 
-typedef struct _FILE_FS_VOLUME_INFORMATION
-{
-    LARGE_INTEGER VolumeCreationTime;
-    ULONG VolumeSerialNumber;
-    ULONG VolumeLabelLength;
-    BOOLEAN SupportsObjects;
-    WCHAR VolumeLabel[1];
-} FILE_FS_VOLUME_INFORMATION, *PFILE_FS_VOLUME_INFORMATION;
+
 #define FSCTL_PIPE_LISTEN CTL_CODE(FILE_DEVICE_NAMED_PIPE, 2, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 #ifdef __cplusplus

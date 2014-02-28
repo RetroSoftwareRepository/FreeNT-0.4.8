@@ -17,17 +17,15 @@
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-/* INCLUDES *****************************************************************/
-
 #include "samsrv.h"
 
-WINE_DEFAULT_DEBUG_CHANNEL(samsrv);
-
+#include <samsrv/samsrv.h>
 
 /* GLOBALS *******************************************************************/
 
 ENCRYPTED_NT_OWF_PASSWORD EmptyNtHash;
 ENCRYPTED_LM_OWF_PASSWORD EmptyLmHash;
+RTL_RESOURCE SampResource;
 
 
 /* FUNCTIONS *****************************************************************/
@@ -117,6 +115,8 @@ SamIInitialize(VOID)
             return Status;
     }
 
+    RtlInitializeResource(&SampResource);
+
     /* Initialize the SAM database */
     Status = SampInitDatabase();
     if (!NT_SUCCESS(Status))
@@ -138,6 +138,14 @@ SampInitializeRegistry(VOID)
     SampInitializeSAM();
 
     return STATUS_SUCCESS;
+}
+
+
+VOID
+NTAPI
+SamIFreeVoid(PVOID Ptr)
+{
+    MIDL_user_free(Ptr);
 }
 
 
@@ -181,6 +189,23 @@ SamIFree_SAMPR_GET_GROUPS_BUFFER(PSAMPR_GET_GROUPS_BUFFER Ptr)
 
 VOID
 NTAPI
+SamIFree_SAMPR_GET_MEMBERS_BUFFER(PSAMPR_GET_MEMBERS_BUFFER Ptr)
+{
+    if (Ptr != NULL)
+    {
+        if (Ptr->Members != NULL)
+            MIDL_user_free(Ptr->Members);
+
+        if (Ptr->Attributes != NULL)
+            MIDL_user_free(Ptr->Attributes);
+
+        MIDL_user_free(Ptr);
+    }
+}
+
+
+VOID
+NTAPI
 SamIFree_SAMPR_PSID_ARRAY(PSAMPR_PSID_ARRAY Ptr)
 {
     if (Ptr != NULL)
@@ -213,6 +238,20 @@ SamIFree_SAMPR_RETURNED_USTRING_ARRAY(PSAMPR_RETURNED_USTRING_ARRAY Ptr)
             Ptr->Element = NULL;
             Ptr->Count = 0;
         }
+    }
+}
+
+
+VOID
+NTAPI
+SamIFree_SAMPR_SR_SECURITY_DESCRIPTOR(PSAMPR_SR_SECURITY_DESCRIPTOR Ptr)
+{
+    if (Ptr != NULL)
+    {
+        if (Ptr->SecurityDescriptor != NULL)
+            MIDL_user_free(Ptr->SecurityDescriptor);
+
+        MIDL_user_free(Ptr);
     }
 }
 

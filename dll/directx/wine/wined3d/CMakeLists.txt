@@ -9,10 +9,11 @@ include_directories(BEFORE ${REACTOS_SOURCE_DIR}/include/reactos/wine)
 spec2def(wined3d.dll wined3d.spec ADD_IMPORTLIB)
 
 list(APPEND SOURCE
-    ati_fragment_shader.c
     arb_program_shader.c
+    ati_fragment_shader.c
     buffer.c
     context.c
+    cs.c
     device.c
     directx.c
     drawprim.c
@@ -36,30 +37,15 @@ list(APPEND SOURCE
     view.c
     volume.c
     wined3d_main.c
-    ${CMAKE_CURRENT_BINARY_DIR}/wined3d.def)
+    wined3d_private.h)
 
 add_library(wined3d SHARED
     ${SOURCE}
-    version.rc)
+    version.rc
+    ${CMAKE_CURRENT_BINARY_DIR}/wined3d.def)
+
 set_module_type(wined3d win32dll)
-
 target_link_libraries(wined3d wine)
-
-add_importlibs(wined3d
-    user32
-    opengl32
-    gdi32
-    advapi32
-    msvcrt
-    kernel32
-    ntdll)
-
-add_dependencies(wined3d wineheaders)
-add_pch(wined3d wined3d_private.h)
+add_importlibs(wined3d user32 opengl32 gdi32 advapi32 msvcrt kernel32 ntdll)
+add_pch(wined3d wined3d_private.h SOURCE)
 add_cd_file(TARGET wined3d DESTINATION reactos/system32 FOR all)
-
-if(NOT MSVC)
-    # FIXME: http://www.cmake.org/Bug/view.php?id=12998
-    #allow_warnings(wined3d)
-    set_source_files_properties(${SOURCE} PROPERTIES COMPILE_FLAGS "-Wno-error")
-endif()

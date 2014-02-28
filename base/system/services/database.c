@@ -14,6 +14,8 @@
 
 #include "services.h"
 
+#include <winuser.h>
+
 #define NDEBUG
 #include <debug.h>
 
@@ -893,7 +895,7 @@ ScmControlService(PSERVICE Service,
     DWORD dwError = ERROR_SUCCESS;
     BOOL bResult;
 #ifdef USE_ASYNCHRONOUS_IO
-    OVERLAPPED Overlapped = {0, 0, 0, 0, 0};
+    OVERLAPPED Overlapped = {0};
 #endif
 
     DPRINT("ScmControlService() called\n");
@@ -956,7 +958,7 @@ ScmControlService(PSERVICE Service,
                 dwError = ERROR_SERVICE_REQUEST_TIMEOUT;
                 goto Done;
             }
-            else if (dwError == ERROR_SUCCESS)
+            else if (dwError == WAIT_OBJECT_0)
             {
                 bResult = GetOverlappedResult(Service->lpImage->hControlPipe,
                                               &Overlapped,
@@ -1010,7 +1012,7 @@ ScmControlService(PSERVICE Service,
                 dwError = ERROR_SERVICE_REQUEST_TIMEOUT;
                 goto Done;
             }
-            else if (dwError == ERROR_SUCCESS)
+            else if (dwError == WAIT_OBJECT_0)
             {
                 bResult = GetOverlappedResult(Service->lpImage->hControlPipe,
                                               &Overlapped,
@@ -1111,7 +1113,7 @@ ScmSendStartCommand(PSERVICE Service,
     PWSTR pArgPtr;
     BOOL bResult;
 #ifdef USE_ASYNCHRONOUS_IO
-    OVERLAPPED Overlapped = {0, 0, 0, 0, 0};
+    OVERLAPPED Overlapped = {0};
 #endif
 
     DPRINT("ScmSendStartCommand() called\n");
@@ -1207,7 +1209,7 @@ ScmSendStartCommand(PSERVICE Service,
                 dwError = ERROR_SERVICE_REQUEST_TIMEOUT;
                 goto Done;
             }
-            else if (dwError == ERROR_SUCCESS)
+            else if (dwError == WAIT_OBJECT_0)
             {
                 bResult = GetOverlappedResult(Service->lpImage->hControlPipe,
                                               &Overlapped,
@@ -1261,7 +1263,7 @@ ScmSendStartCommand(PSERVICE Service,
                 dwError = ERROR_SERVICE_REQUEST_TIMEOUT;
                 goto Done;
             }
-            else if (dwError == ERROR_SUCCESS)
+            else if (dwError == WAIT_OBJECT_0)
             {
                 bResult = GetOverlappedResult(Service->lpImage->hControlPipe,
                                               &Overlapped,
@@ -1335,7 +1337,7 @@ ScmWaitForServiceConnect(PSERVICE Service)
     DWORD dwError = ERROR_SUCCESS;
     BOOL bResult;
 #ifdef USE_ASYNCHRONOUS_IO
-    OVERLAPPED Overlapped = {0, 0, 0, 0, 0};
+    OVERLAPPED Overlapped = {0};
 #endif
 
     DPRINT("ScmWaitForServiceConnect()\n");
@@ -1425,9 +1427,9 @@ ScmWaitForServiceConnect(PSERVICE Service)
 
                 return ERROR_SERVICE_REQUEST_TIMEOUT;
             }
-            else if (dwError == ERROR_SUCCESS)
+            else if (dwError == WAIT_OBJECT_0)
             {
-                DPRINT("WaitForSingleObject() returned ERROR_SUCCESS\n");
+                DPRINT("WaitForSingleObject() returned WAIT_OBJECT_0\n");
 
                 DPRINT("Process Id: %lu\n", dwProcessId);
 

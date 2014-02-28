@@ -17,10 +17,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <config.h>
 #include "d3d8_private.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(d3d8);
 
 static void STDMETHODCALLTYPE d3d8_vertexshader_wined3d_object_destroyed(void *parent)
 {
@@ -95,7 +92,7 @@ HRESULT d3d8_vertex_shader_init(struct d3d8_vertex_shader *shader, struct d3d8_d
 
             if (reg == D3DVSDE_NORMAL && type != D3DVSDT_FLOAT3 && !byte_code)
             {
-                WARN("Attempt to use a non-FLOAT3 normal with the fixed function function\n");
+                WARN("Attempt to use a non-FLOAT3 normal with the fixed-function function\n");
                 return D3DERR_INVALIDCALL;
             }
         }

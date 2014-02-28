@@ -9,8 +9,29 @@
 /* INCLUDES *********************************************************/
 
 #include "precomp.h"
+#include "palette.h"
 
 /* FUNCTIONS ********************************************************/
+
+void
+RegisterWclPal()
+{
+    WNDCLASSEX wclPal;
+    /* initializing and registering the window class used for the palette window */
+    wclPal.hInstance        = hProgInstance;
+    wclPal.lpszClassName    = _T("Palette");
+    wclPal.lpfnWndProc      = PalWinProc;
+    wclPal.style            = CS_DBLCLKS;
+    wclPal.cbSize           = sizeof(WNDCLASSEX);
+    wclPal.hIcon            = NULL;
+    wclPal.hIconSm          = NULL;
+    wclPal.hCursor          = LoadCursor(NULL, IDC_ARROW);
+    wclPal.lpszMenuName     = NULL;
+    wclPal.cbClsExtra       = 0;
+    wclPal.cbWndExtra       = 0;
+    wclPal.hbrBackground    = GetSysColorBrush(COLOR_BTNFACE);
+    RegisterClassEx (&wclPal);
+}
 
 LRESULT CALLBACK
 PalWinProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
@@ -63,37 +84,45 @@ PalWinProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
             break;
         }
         case WM_LBUTTONDOWN:
-            if (LOWORD(lParam) >= 31)
+            if (GET_X_LPARAM(lParam) >= 31)
             {
-                fgColor = palColors[(LOWORD(lParam) - 31) / 16 + (HIWORD(lParam) / 16) * 14];
-                SendMessage(hwnd, WM_PAINT, 0, 0);
+                fgColor = palColors[(GET_X_LPARAM(lParam) - 31) / 16 + (GET_Y_LPARAM(lParam) / 16) * 14];
+                InvalidateRect(hwnd, NULL, FALSE);
+                if (activeTool == 10)
+                    ForceRefreshSelectionContents();
             }
             break;
         case WM_RBUTTONDOWN:
-            if (LOWORD(lParam) >= 31)
+            if (GET_X_LPARAM(lParam) >= 31)
             {
-                bgColor = palColors[(LOWORD(lParam) - 31) / 16 + (HIWORD(lParam) / 16) * 14];
-                SendMessage(hwnd, WM_PAINT, 0, 0);
+                bgColor = palColors[(GET_X_LPARAM(lParam) - 31) / 16 + (GET_Y_LPARAM(lParam) / 16) * 14];
+                InvalidateRect(hwnd, NULL, FALSE);
+                if (activeTool == 10)
+                    ForceRefreshSelectionContents();
             }
             break;
         case WM_LBUTTONDBLCLK:
-            if (LOWORD(lParam) >= 31)
+            if (GET_X_LPARAM(lParam) >= 31)
                 if (ChooseColor(&choosecolor))
                 {
-                    palColors[(LOWORD(lParam) - 31) / 16 + (HIWORD(lParam) / 16) * 14] =
+                    palColors[(GET_X_LPARAM(lParam) - 31) / 16 + (GET_Y_LPARAM(lParam) / 16) * 14] =
                         choosecolor.rgbResult;
                     fgColor = choosecolor.rgbResult;
-                    SendMessage(hwnd, WM_PAINT, 0, 0);
+                    InvalidateRect(hwnd, NULL, FALSE);
+                    if (activeTool == 10)
+                        ForceRefreshSelectionContents();
                 }
             break;
         case WM_RBUTTONDBLCLK:
-            if (LOWORD(lParam) >= 31)
+            if (GET_X_LPARAM(lParam) >= 31)
                 if (ChooseColor(&choosecolor))
                 {
-                    palColors[(LOWORD(lParam) - 31) / 16 + (HIWORD(lParam) / 16) * 14] =
+                    palColors[(GET_X_LPARAM(lParam) - 31) / 16 + (GET_Y_LPARAM(lParam) / 16) * 14] =
                         choosecolor.rgbResult;
                     bgColor = choosecolor.rgbResult;
-                    SendMessage(hwnd, WM_PAINT, 0, 0);
+                    InvalidateRect(hwnd, NULL, FALSE);
+                    if (activeTool == 10)
+                        ForceRefreshSelectionContents();
                 }
             break;
 

@@ -43,11 +43,7 @@
  *     role of rpcss.exe in wine.
  */
 
-#define NONAMELESSUNION
-#define NONAMELESSSTRUCT
 #include "rpcss.h"
-#include <irot_s.h>
-#include <epm_s.h>
 
 #include <wine/debug.h>
 
@@ -122,7 +118,7 @@ BOOL RPCSS_Shutdown(void)
   return TRUE;
 }
 
-#if 0
+#ifndef __REACTOS__
 int main( int argc, char **argv )
 {
   /* 

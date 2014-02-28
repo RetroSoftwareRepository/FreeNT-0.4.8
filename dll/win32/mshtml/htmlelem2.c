@@ -16,27 +16,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-
-#include <stdarg.h>
-#include <assert.h>
-#include <math.h>
-
-#define COBJMACROS
-
-#include <windef.h>
-#include <winbase.h>
-//#include "winuser.h"
-#include <ole2.h>
-
-#include <wine/debug.h>
-
 #include "mshtml_private.h"
-#include "htmlevent.h"
-#include "htmlstyle.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(mshtml);
 
 typedef struct {
     DispatchEx dispex;
@@ -985,6 +965,7 @@ static HRESULT WINAPI HTMLElement2_get_dir(IHTMLElement2 *iface, BSTR *p)
         return S_OK;
     }
 
+    nsAString_Init(&dir_str, NULL);
     nsres = nsIDOMHTMLElement_GetDir(This->nselem, &dir_str);
     return return_nsstr(nsres, &dir_str, p);
 }
@@ -1256,22 +1237,22 @@ static HRESULT WINAPI HTMLElement2_getElementsByTagName(IHTMLElement2 *iface, BS
                                                        IHTMLElementCollection **pelColl)
 {
     HTMLElement *This = impl_from_IHTMLElement2(iface);
-    nsIDOMNodeList *nslist;
+    nsIDOMHTMLCollection *nscol;
     nsAString tag_str;
     nsresult nsres;
 
     TRACE("(%p)->(%s %p)\n", This, debugstr_w(v), pelColl);
 
     nsAString_InitDepend(&tag_str, v);
-    nsres = nsIDOMHTMLElement_GetElementsByTagName(This->nselem, &tag_str, &nslist);
+    nsres = nsIDOMHTMLElement_GetElementsByTagName(This->nselem, &tag_str, &nscol);
     nsAString_Finish(&tag_str);
     if(NS_FAILED(nsres)) {
         ERR("GetElementByTagName failed: %08x\n", nsres);
         return E_FAIL;
     }
 
-    *pelColl = create_collection_from_nodelist(This->node.doc, nslist);
-    nsIDOMNodeList_Release(nslist);
+    *pelColl = create_collection_from_htmlcol(This->node.doc, nscol);
+    nsIDOMHTMLCollection_Release(nscol);
     return S_OK;
 }
 

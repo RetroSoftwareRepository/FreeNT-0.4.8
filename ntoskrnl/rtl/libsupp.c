@@ -229,11 +229,22 @@ CHECK_PAGED_CODE_RTL(char *file, int line)
 {
   if(KeGetCurrentIrql() > APC_LEVEL)
   {
-    DbgPrint("%s:%i: Pagable code called at IRQL > APC_LEVEL (%d)\n", file, line, KeGetCurrentIrql());
+    DbgPrint("%s:%i: Pagable code called at IRQL > APC_LEVEL (%u)\n", file, line, KeGetCurrentIrql());
     ASSERT(FALSE);
   }
 }
 #endif
+
+VOID
+NTAPI
+RtlpSetHeapParameters(IN PRTL_HEAP_PARAMETERS Parameters)
+{
+    /* Apply defaults for non-set parameters */
+    if (!Parameters->SegmentCommit) Parameters->SegmentCommit = MmHeapSegmentCommit;
+    if (!Parameters->SegmentReserve) Parameters->SegmentReserve = MmHeapSegmentReserve;
+    if (!Parameters->DeCommitFreeBlockThreshold) Parameters->DeCommitFreeBlockThreshold = MmHeapDeCommitFreeBlockThreshold;
+    if (!Parameters->DeCommitTotalFreeThreshold) Parameters->DeCommitTotalFreeThreshold = MmHeapDeCommitTotalFreeThreshold;
+}
 
 VOID
 NTAPI
@@ -407,7 +418,7 @@ RtlWalkFrameChain(OUT PVOID *Callers,
 #endif
 
             /* Validate them */
-            if (StackEnd <= StackBegin) return 0;
+            if (StackEnd <= StackBegin) _SEH2_YIELD(return 0);
             ProbeForRead((PVOID)StackBegin,
                          StackEnd - StackBegin,
                          sizeof(CHAR));
@@ -524,14 +535,25 @@ RtlpCreateAtomHandleTable(PRTL_ATOM_TABLE AtomTable)
    return (AtomTable->ExHandleTable != NULL);
 }
 
+BOOLEAN
+NTAPI
+RtlpCloseHandleCallback(
+    IN PHANDLE_TABLE_ENTRY HandleTableEntry,
+    IN HANDLE Handle,
+    IN PVOID HandleTable)
+{
+    /* Destroy and unlock the handle entry */
+    return ExDestroyHandle(HandleTable, Handle, HandleTableEntry);
+}
+
 VOID
 RtlpDestroyAtomHandleTable(PRTL_ATOM_TABLE AtomTable)
 {
    if (AtomTable->ExHandleTable)
    {
       ExSweepHandleTable(AtomTable->ExHandleTable,
-                         NULL,
-                         NULL);
+                         RtlpCloseHandleCallback,
+                         AtomTable->ExHandleTable);
       ExDestroyHandleTable(AtomTable->ExHandleTable, NULL);
       AtomTable->ExHandleTable = NULL;
    }

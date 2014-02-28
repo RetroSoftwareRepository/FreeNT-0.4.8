@@ -117,42 +117,72 @@ VOID    MmFreeMemory(PVOID MemoryPointer);
 PVOID    MmAllocateMemoryAtAddress(SIZE_T MemorySize, PVOID DesiredAddress, TYPE_OF_MEMORY MemoryType);
 PVOID    MmAllocateHighestMemoryBelowAddress(SIZE_T MemorySize, PVOID DesiredAddress, TYPE_OF_MEMORY MemoryType);
 
-PVOID    MmHeapAlloc(SIZE_T MemorySize);
-VOID    MmHeapFree(PVOID MemoryPointer);
-
 /* Heap */
+#define DEFAULT_HEAP_SIZE (1024 * 1024)
+#define TEMP_HEAP_SIZE (32 * 1024 * 1024)
+
 extern PVOID FrLdrDefaultHeap;
 extern PVOID FrLdrTempHeap;
 
 PVOID
-HeapCreate(
+FrLdrHeapCreate(
     SIZE_T MaximumSize,
     TYPE_OF_MEMORY MemoryType);
 
 VOID
-HeapDestroy(
+FrLdrHeapDestroy(
     PVOID HeapHandle);
 
 VOID
-HeapRelease(
+FrLdrHeapRelease(
     PVOID HeapHandle);
 
 VOID
-HeapVerify(
+FrLdrHeapVerify(
     PVOID HeapHandle);
 
 VOID
-HeapCleanupAll(VOID);
+FrLdrHeapCleanupAll(VOID);
 
 PVOID
-HeapAllocate(
+FrLdrHeapAllocateEx(
     PVOID HeapHandle,
     SIZE_T ByteSize,
     ULONG Tag);
 
 VOID
-HeapFree(
+FrLdrHeapFreeEx(
     PVOID HeapHandle,
     PVOID Pointer,
     ULONG Tag);
+
+FORCEINLINE
+PVOID
+FrLdrHeapAlloc(SIZE_T MemorySize, ULONG Tag)
+{
+    return FrLdrHeapAllocateEx(FrLdrDefaultHeap, MemorySize, Tag);
+}
+
+FORCEINLINE
+VOID
+FrLdrHeapFree(PVOID MemoryPointer, ULONG Tag)
+{
+    FrLdrHeapFreeEx(FrLdrDefaultHeap, MemoryPointer, Tag);
+}
+
+PVOID
+FORCEINLINE
+FrLdrTempAlloc(
+    ULONG Size, ULONG Tag)
+{
+    return FrLdrHeapAllocateEx(FrLdrTempHeap, Size, Tag);
+}
+
+VOID
+FORCEINLINE
+FrLdrTempFree(
+    PVOID Allocation, ULONG Tag)
+{
+    FrLdrHeapFreeEx(FrLdrTempHeap, Allocation, Tag);
+}
 

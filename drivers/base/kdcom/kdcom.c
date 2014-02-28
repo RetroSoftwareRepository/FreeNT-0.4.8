@@ -7,9 +7,14 @@
  */
 
 #include "kddll.h"
-#include <cportlib/cportlib.h>
-#include <stdlib.h>
 
+#include <cportlib/cportlib.h>
+#include <arc/arc.h>
+#include <stdlib.h>
+#include <ndk/halfuncs.h>
+
+#define NDEBUG
+#include <debug.h>
 
 /* Serial debug connection */
 #define DEFAULT_DEBUG_PORT      2 /* COM2 */
@@ -222,7 +227,7 @@ NTAPI
 KdpPollByte(OUT PUCHAR OutByte)
 {
     /* Poll the byte */
-    if (CpGetByte(&KdDebugComPort, OutByte, FALSE) == CP_GET_SUCCESS)
+    if (CpGetByte(&KdDebugComPort, OutByte, FALSE, FALSE) == CP_GET_SUCCESS)
     {
         return KDP_PACKET_RECEIVED;
     }
@@ -237,7 +242,7 @@ NTAPI
 KdpReceiveByte(OUT PUCHAR OutByte)
 {
     /* Get the byte */
-    if (CpGetByte(&KdDebugComPort, OutByte, TRUE) == CP_GET_SUCCESS)
+    if (CpGetByte(&KdDebugComPort, OutByte, TRUE, FALSE) == CP_GET_SUCCESS)
     {
         return KDP_PACKET_RECEIVED;
     }

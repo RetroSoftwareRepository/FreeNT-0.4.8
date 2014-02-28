@@ -1,12 +1,5 @@
 
-set_cpp()
-
-add_definitions(
-    -D__WINESRC__)
-
-if (MSVC)
-    add_compile_flags("/EHa-")
-endif()
+set_cpp(WITH_RUNTIME)
 
 remove_definitions(-D_WIN32_WINNT=0x502)
 add_definitions(-D_WIN32_WINNT=0x600)
@@ -35,18 +28,13 @@ list(APPEND SOURCE
     toolsband.cpp
     travellog.cpp
     utility.cpp
-    dllinstall.c
-    ${CMAKE_CURRENT_BINARY_DIR}/browseui.def)
+    precomp.h)
 
 add_library(browseui SHARED
     ${SOURCE}
-    browseui.rc)
-
-if(NOT MSVC)
-    # FIXME: http://www.cmake.org/Bug/view.php?id=12998
-    #allow_warnings(browseui)
-    set_source_files_properties(${SOURCE} PROPERTIES COMPILE_FLAGS "-Wno-error")
-endif()
+    dllinstall.c
+    browseui.rc
+    ${CMAKE_CURRENT_BINARY_DIR}/browseui.def)
 
 set_module_type(browseui win32dll UNICODE)
 
@@ -68,6 +56,5 @@ add_importlibs(browseui
     kernel32
     ntdll)
 
-add_pch(browseui precomp.h)
+add_pch(browseui precomp.h SOURCE)
 add_cd_file(TARGET browseui DESTINATION reactos/system32 FOR all)
-

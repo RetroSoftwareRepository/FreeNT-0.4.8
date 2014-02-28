@@ -1,6 +1,6 @@
 #include "precomp.h"
 
-WINE_DEFAULT_DEBUG_CHANNEL (shell);
+#include <olectl.h>
 
 HINSTANCE netshell_hInstance;
 const GUID CLSID_LANConnectUI            = {0x7007ACC5, 0x3202, 0x11D1, {0xAA, 0xD2, 0x00, 0x80, 0x5F, 0xC1, 0x27, 0x0E}};

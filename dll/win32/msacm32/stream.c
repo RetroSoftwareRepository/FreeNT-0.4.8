@@ -28,22 +28,7 @@
  *	+ properly close ACM streams
  */
 
-#define WIN32_NO_STATUS
-
-//#include <stdarg.h>
-//#include <string.h>
-//#include "windef.h"
-//#include "winbase.h"
-//#include "winerror.h"
-#include <wine/debug.h>
-//#include "mmsystem.h"
-#define NOBITMAP
-//#include "mmreg.h"
-//#include "msacm.h"
-#include <msacmdrv.h>
 #include "wineacm.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(msacm);
 
 static PWINE_ACMSTREAM	ACM_GetStream(HACMSTREAM has)
 {
@@ -259,6 +244,7 @@ MMRESULT WINAPI acmStreamOpen(PHACMSTREAM phas, HACMDRIVER had,
 		TRACE("%s => %08x\n", debugstr_w(wadi->pszDriverAlias), ret);
 		if (ret == MMSYSERR_NOERROR) {
 		    if (fdwOpen & ACM_STREAMOPENF_QUERY) {
+			MSACM_Message((HACMDRIVER)wad, ACMDM_STREAM_CLOSE, (LPARAM)&was->drvInst, 0);
 			acmDriverClose(had, 0L);
 		    }
 		    break;

@@ -19,6 +19,33 @@
 #ifndef WINCODECS_PRIVATE_H
 #define WINCODECS_PRIVATE_H
 
+#include <wine/config.h>
+#include <wine/port.h>
+
+#include <stdarg.h>
+
+#define WIN32_NO_STATUS
+#define _INC_WINDOWS
+#define COM_NO_WINDOWS_H
+
+#define COBJMACROS
+#define NONAMELESSUNION
+#define NONAMELESSSTRUCT
+
+#include <windef.h>
+#include <winbase.h>
+#include <wingdi.h>
+#include <winreg.h>
+#include <objbase.h>
+#include <oleauto.h>
+#include <wincodecsdk.h>
+
+#include <wine/debug.h>
+#include <wine/library.h>
+#include <wine/unicode.h>
+
+WINE_DEFAULT_DEBUG_CHANNEL(wincodecs);
+
 DEFINE_GUID(CLSID_WineTgaDecoder, 0xb11fc79a,0x67cc,0x43e6,0xa9,0xce,0xe3,0xd5,0x49,0x45,0xd3,0x04);
 
 DEFINE_GUID(CLSID_WICIcnsEncoder, 0x312fb6f1,0xb767,0x409d,0x8a,0x6d,0x0f,0xc1,0x54,0xd4,0xf0,0x5c);
@@ -54,6 +81,7 @@ extern HRESULT PaletteImpl_Create(IWICPalette **palette) DECLSPEC_HIDDEN;
 extern HRESULT StreamImpl_Create(IWICStream **stream) DECLSPEC_HIDDEN;
 extern HRESULT ColorContext_Create(IWICColorContext **context) DECLSPEC_HIDDEN;
 extern HRESULT ColorTransform_Create(IWICColorTransform **transform) DECLSPEC_HIDDEN;
+extern HRESULT BitmapClipper_Create(IWICBitmapClipper **clipper) DECLSPEC_HIDDEN;
 
 extern HRESULT copy_pixels(UINT bpp, const BYTE *srcbuffer,
     UINT srcwidth, UINT srcheight, INT srcstride,

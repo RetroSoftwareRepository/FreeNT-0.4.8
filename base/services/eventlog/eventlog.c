@@ -11,6 +11,12 @@
 
 #include "eventlog.h"
 
+#include <stdio.h>
+#include <netevent.h>
+
+#define NDEBUG
+#include <debug.h>
+
 /* GLOBALS ******************************************************************/
 
 static VOID CALLBACK ServiceMain(DWORD, LPWSTR *);

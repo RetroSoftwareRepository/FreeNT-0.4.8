@@ -1,7 +1,7 @@
 /*
  * provides new shell item service
  *
- * Copyright 2007 Johannes Anderwald (janderwald@reactos.org)
+ * Copyright 2007 Johannes Anderwald (johannes.anderwald@reactos.org)
  * Copyright 2009 Andrew Hill
  * Copyright 2012 Rafal Harabien
  *
@@ -99,4 +99,4 @@ BEGIN_COM_MAP(CNewMenu)
 END_COM_MAP()
 };
 
-#endif // _SHV_ITEM_NEW_H_
+#endif /* _SHV_ITEM_NEW_H_ */

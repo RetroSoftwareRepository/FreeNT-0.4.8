@@ -29,42 +29,17 @@
  *     available (hopefully) from http://sources.redhat.com/gdb/onlinedocs
  */
 
-#include <config.h>
-//#include "wine/port.h"
-
-//#include <sys/types.h>
-//#include <fcntl.h>
-#ifdef HAVE_SYS_STAT_H
-# include <sys/stat.h>
-#endif
-#ifdef HAVE_SYS_MMAN_H
-#include <sys/mman.h>
-#endif
-//#include <limits.h>
-//#include <stdlib.h>
-//#include <string.h>
-#ifdef HAVE_UNISTD_H
-# include <unistd.h>
-#endif
-//#include <stdio.h>
-#include <assert.h>
-//#include <stdarg.h>
+#include "dbghelp_private.h"
 
 #ifdef HAVE_MACH_O_NLIST_H
 # include <mach-o/nlist.h>
 #endif
 
-//#include "windef.h"
-//#include "winbase.h"
-//#include "winnls.h"
-
-#include "dbghelp_private.h"
-
-#include <wine/debug.h>
-
 WINE_DEFAULT_DEBUG_CHANNEL(dbghelp_stabs);
 
+#ifndef DBGHELP_STATIC_LIB
 #define strtoull _strtoui64
+#endif
 
 /* Masks for n_type field */
 #ifndef N_STAB
@@ -1679,6 +1654,7 @@ done:
     stabs_free_includes();
     HeapFree(GetProcessHeap(), 0, pending_block.objs);
     HeapFree(GetProcessHeap(), 0, pending_func.objs);
+    HeapFree(GetProcessHeap(), 0, srcpath);
 
     return ret;
 }

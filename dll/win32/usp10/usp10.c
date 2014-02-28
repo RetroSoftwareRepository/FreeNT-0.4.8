@@ -24,21 +24,10 @@
  * and filtering characters and bi-directional text with custom line breaks.
  */
 
-#include <stdarg.h>
-//#include <stdlib.h>
-
-#include <windef.h>
-//#include "winbase.h"
-#include <wingdi.h>
-#include <winuser.h>
-//#include "winnls.h"
-#include <winreg.h>
-#include <usp10.h>
-
 #include "usp10_internal.h"
 
-#include <wine/debug.h>
-#include <wine/unicode.h>
+#include <winuser.h>
+#include <winreg.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(uniscribe);
 
@@ -1341,7 +1330,7 @@ static HRESULT _ItemizeInternal(const WCHAR *pwcInChars, int cInChars,
                         if (original == Script_Punctuation2)
                             break;
                     }
-                    if (scriptInformation[scripts[j]].props.fComplex || asian)
+                    if (j >= 0 && (scriptInformation[scripts[j]].props.fComplex || asian))
                         scripts[i] = scripts[j];
                 }
             }

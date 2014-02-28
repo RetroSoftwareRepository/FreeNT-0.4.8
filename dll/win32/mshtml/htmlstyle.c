@@ -16,27 +16,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-
-#include <stdarg.h>
-#include <assert.h>
-#include <math.h>
-
-#define COBJMACROS
-
-#include <windef.h>
-#include <winbase.h>
-//#include "winuser.h"
-#include <ole2.h>
-#include <mshtmdid.h>
-
 #include "mshtml_private.h"
-#include "htmlstyle.h"
-
-#include <wine/debug.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(mshtml);
 
 static const WCHAR attrBackground[] =
     {'b','a','c','k','g','r','o','u','n','d',0};
@@ -174,6 +154,8 @@ static const WCHAR attrVerticalAlign[] =
     {'v','e','r','t','i','c','a','l','-','a','l','i','g','n',0};
 static const WCHAR attrVisibility[] =
     {'v','i','s','i','b','i','l','i','t','y',0};
+static const WCHAR attrWhiteSpace[] =
+    {'w','h','i','t','e','-','s','p','a','c','e',0};
 static const WCHAR attrWidth[] =
     {'w','i','d','t','h',0};
 static const WCHAR attrWordSpacing[] =
@@ -260,6 +242,7 @@ static const style_tbl_entry_t style_tbl[] = {
     {attrTop,                  DISPID_IHTMLSTYLE_TOP},
     {attrVerticalAlign,        DISPID_IHTMLSTYLE_VERTICALALIGN},
     {attrVisibility,           DISPID_IHTMLSTYLE_VISIBILITY},
+    {attrWhiteSpace,           DISPID_IHTMLSTYLE_WHITESPACE},
     {attrWidth,                DISPID_IHTMLSTYLE_WIDTH},
     {attrWordSpacing,          DISPID_IHTMLSTYLE_WORDSPACING},
     {attrWordWrap,             DISPID_IHTMLSTYLE3_WORDWRAP},
@@ -2217,15 +2200,19 @@ static HRESULT WINAPI HTMLStyle_get_listStyle(IHTMLStyle *iface, BSTR *p)
 static HRESULT WINAPI HTMLStyle_put_whiteSpace(IHTMLStyle *iface, BSTR v)
 {
     HTMLStyle *This = impl_from_IHTMLStyle(iface);
-    FIXME("(%p)->(%s)\n", This, debugstr_w(v));
-    return E_NOTIMPL;
+
+    TRACE("(%p)->(%s)\n", This, debugstr_w(v));
+
+    return set_nsstyle_attr(This->nsstyle, STYLEID_WHITE_SPACE, v, 0);
 }
 
 static HRESULT WINAPI HTMLStyle_get_whiteSpace(IHTMLStyle *iface, BSTR *p)
 {
     HTMLStyle *This = impl_from_IHTMLStyle(iface);
-    FIXME("(%p)->(%p)\n", This, p);
-    return E_NOTIMPL;
+
+    TRACE("(%p)->(%p)\n", This, p);
+
+    return get_nsstyle_attr(This->nsstyle, STYLEID_WHITE_SPACE, p, 0);
 }
 
 static HRESULT WINAPI HTMLStyle_put_top(IHTMLStyle *iface, VARIANT v)

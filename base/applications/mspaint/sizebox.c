@@ -9,12 +9,33 @@
 /* INCLUDES *********************************************************/
 
 #include "precomp.h"
+#include "sizebox.h"
 
 /* FUNCTIONS ********************************************************/
 
 BOOL resizing = FALSE;
 short xOrig;
 short yOrig;
+
+void
+RegisterWclSizebox()
+{
+    WNDCLASSEX wclSizebox;
+    /* initializing and registering the window class for the size boxes */
+    wclSizebox.hInstance       = hProgInstance;
+    wclSizebox.lpszClassName   = _T("Sizebox");
+    wclSizebox.lpfnWndProc     = SizeboxWinProc;
+    wclSizebox.style           = CS_DBLCLKS;
+    wclSizebox.cbSize          = sizeof(WNDCLASSEX);
+    wclSizebox.hIcon           = NULL;
+    wclSizebox.hIconSm         = NULL;
+    wclSizebox.hCursor         = LoadCursor(NULL, IDC_ARROW);
+    wclSizebox.lpszMenuName    = NULL;
+    wclSizebox.cbClsExtra      = 0;
+    wclSizebox.cbWndExtra      = 0;
+    wclSizebox.hbrBackground   = GetSysColorBrush(COLOR_HIGHLIGHT);
+    RegisterClassEx (&wclSizebox);
+}
 
 LRESULT CALLBACK
 SizeboxWinProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
@@ -33,8 +54,8 @@ SizeboxWinProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
             break;
         case WM_LBUTTONDOWN:
             resizing = TRUE;
-            xOrig = LOWORD(lParam);
-            yOrig = HIWORD(lParam);
+            xOrig = GET_X_LPARAM(lParam);
+            yOrig = GET_Y_LPARAM(lParam);
             SetCapture(hwnd);
             break;
         case WM_MOUSEMOVE:
@@ -43,8 +64,8 @@ SizeboxWinProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
                 TCHAR sizeStr[100];
                 short xRel;
                 short yRel;
-                xRel = ((short)LOWORD(lParam) - xOrig) * 1000 / zoom;
-                yRel = ((short)HIWORD(lParam) - yOrig) * 1000 / zoom;
+                xRel = (GET_X_LPARAM(lParam) - xOrig) * 1000 / zoom;
+                yRel = (GET_Y_LPARAM(lParam) - yOrig) * 1000 / zoom;
                 if (hwnd == hSizeboxLeftTop)
                     _stprintf(sizeStr, _T("%d x %d"), imgXRes - xRel, imgYRes - yRel);
                 if (hwnd == hSizeboxCenterTop)
@@ -71,8 +92,8 @@ SizeboxWinProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
                 short yRel;
                 ReleaseCapture();
                 resizing = FALSE;
-                xRel = ((short)LOWORD(lParam) - xOrig) * 1000 / zoom;
-                yRel = ((short)HIWORD(lParam) - yOrig) * 1000 / zoom;
+                xRel = (GET_X_LPARAM(lParam) - xOrig) * 1000 / zoom;
+                yRel = (GET_Y_LPARAM(lParam) - yOrig) * 1000 / zoom;
                 if (hwnd == hSizeboxLeftTop)
                     cropReversible(imgXRes - xRel, imgYRes - yRel, xRel, yRel);
                 if (hwnd == hSizeboxCenterTop)

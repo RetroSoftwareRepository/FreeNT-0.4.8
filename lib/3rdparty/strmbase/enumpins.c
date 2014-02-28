@@ -19,13 +19,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define COBJMACROS
-
-#include "dshow.h"
-#include "wine/strmbase.h"
-#include "wine/debug.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(strmbase);
+#include "strmbase_private.h"
 
 typedef struct IEnumPinsImpl
 {
@@ -76,7 +70,7 @@ HRESULT WINAPI EnumPins_Construct(BaseFilter *base,  BaseFilter_GetPin receive_p
 
 static HRESULT WINAPI IEnumPinsImpl_QueryInterface(IEnumPins * iface, REFIID riid, LPVOID * ppv)
 {
-    TRACE("(%s, %p)\n", debugstr_guid(riid), ppv);
+    TRACE("(%p)->(%s, %p)\n", iface, debugstr_guid(riid), ppv);
 
     *ppv = NULL;
 
@@ -99,28 +93,27 @@ static HRESULT WINAPI IEnumPinsImpl_QueryInterface(IEnumPins * iface, REFIID rii
 static ULONG WINAPI IEnumPinsImpl_AddRef(IEnumPins * iface)
 {
     IEnumPinsImpl *This = impl_from_IEnumPins(iface);
-    ULONG refCount = InterlockedIncrement(&This->refCount);
+    ULONG ref = InterlockedIncrement(&This->refCount);
 
-    TRACE("(%p)->() AddRef from %d\n", This, refCount - 1);
+    TRACE("(%p)->(): new ref =  %u\n", iface, ref);
 
-    return refCount;
+    return ref;
 }
 
 static ULONG WINAPI IEnumPinsImpl_Release(IEnumPins * iface)
 {
     IEnumPinsImpl *This = impl_from_IEnumPins(iface);
-    ULONG refCount = InterlockedDecrement(&This->refCount);
+    ULONG ref = InterlockedDecrement(&This->refCount);
 
-    TRACE("(%p)->() Release from %d\n", This, refCount + 1);
+    TRACE("(%p)->(): new ref = %u\n", iface, ref);
 
-    if (!refCount)
+    if (!ref)
     {
         IBaseFilter_Release(&This->base->IBaseFilter_iface);
         CoTaskMemFree(This);
-        return 0;
     }
-    else
-        return refCount;
+
+    return ref;
 }
 
 static HRESULT WINAPI IEnumPinsImpl_Next(IEnumPins * iface, ULONG cPins, IPin ** ppPins, ULONG * pcFetched)
@@ -129,7 +122,7 @@ static HRESULT WINAPI IEnumPinsImpl_Next(IEnumPins * iface, ULONG cPins, IPin **
     HRESULT hr = S_OK;
     ULONG i = 0;
 
-    TRACE("(%u, %p, %p)\n", cPins, ppPins, pcFetched);
+    TRACE("(%p)->(%u, %p, %p)\n", iface, cPins, ppPins, pcFetched);
 
     if (!ppPins)
         return E_POINTER;
@@ -168,7 +161,7 @@ static HRESULT WINAPI IEnumPinsImpl_Skip(IEnumPins * iface, ULONG cPins)
 {
     IEnumPinsImpl *This = impl_from_IEnumPins(iface);
 
-    TRACE("(%u)\n", cPins);
+    TRACE("(%p)->(%u)\n", iface, cPins);
 
     if (This->Version != This->receive_version(This->base))
         return VFW_E_ENUM_OUT_OF_SYNC;
@@ -184,7 +177,8 @@ static HRESULT WINAPI IEnumPinsImpl_Reset(IEnumPins * iface)
 {
     IEnumPinsImpl *This = impl_from_IEnumPins(iface);
 
-    TRACE("IEnumPinsImpl::Reset()\n");
+    TRACE("(%p)->()\n", iface);
+
     This->Version = This->receive_version(This->base);
 
     This->uIndex = 0;
@@ -196,7 +190,7 @@ static HRESULT WINAPI IEnumPinsImpl_Clone(IEnumPins * iface, IEnumPins ** ppEnum
     HRESULT hr;
     IEnumPinsImpl *This = impl_from_IEnumPins(iface);
 
-    TRACE("(%p)\n", ppEnum);
+    TRACE("(%p)->(%p)\n", iface, ppEnum);
 
     hr = EnumPins_Construct(This->base, This->receive_pin, This->receive_pincount, This->receive_version, ppEnum);
     if (FAILED(hr))

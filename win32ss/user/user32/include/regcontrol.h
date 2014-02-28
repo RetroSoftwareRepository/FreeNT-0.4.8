@@ -7,6 +7,7 @@
  * REVISION HISTORY: 2003/06/16 GvG Created
  * NOTES:
  */
+
 #pragma once
 
 /* Built-in class descriptor */
@@ -39,3 +40,4 @@ extern const struct builtin_class_descr SCROLL_builtin_class;
 extern const struct builtin_class_descr STATIC_builtin_class;
 
 ATOM WINAPI RegisterClassExWOWW(WNDCLASSEXW *,LPDWORD,WORD,DWORD,BOOL);
+BOOL FASTCALL VersionRegisterClass(PCWSTR,LPCWSTR,HANDLE,HMODULE *);

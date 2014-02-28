@@ -16,22 +16,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-#define COM_NO_WINDOWS_H
-
-#define COBJMACROS
-
-#include <stdarg.h>
-#include <windef.h>
-#include <winbase.h>
-#include <winreg.h>
-#include <objbase.h>
-
-#include <atlbase.h>
-
-#include <wine/debug.h>
-#include <wine/unicode.h>
+#include "precomp.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(atl);
 
@@ -711,4 +696,49 @@ HRESULT WINAPI AtlCreateRegistrar(IRegistrar **ret)
 
     *ret = &registrar->IRegistrar_iface;
     return S_OK;
+}
+
+/***********************************************************************
+ *           AtlUpdateRegistryFromResourceD         [atl100.@]
+ */
+HRESULT WINAPI AtlUpdateRegistryFromResourceD(HINSTANCE inst, LPCOLESTR res,
+        BOOL bRegister, struct _ATL_REGMAP_ENTRY *pMapEntries, IRegistrar *pReg)
+{
+    const struct _ATL_REGMAP_ENTRY *iter;
+    WCHAR module_name[MAX_PATH];
+    IRegistrar *registrar;
+    HRESULT hres;
+
+    static const WCHAR moduleW[] = {'M','O','D','U','L','E',0};
+    static const WCHAR registryW[] = {'R','E','G','I','S','T','R','Y',0};
+
+    if(!GetModuleFileNameW(inst, module_name, MAX_PATH)) {
+        FIXME("hinst %p: did not get module name\n", inst);
+        return E_FAIL;
+    }
+
+    TRACE("%p (%s), %s, %d, %p, %p\n", inst, debugstr_w(module_name),
+	debugstr_w(res), bRegister, pMapEntries, pReg);
+
+    if(pReg) {
+        registrar = pReg;
+    }else {
+        hres = AtlCreateRegistrar(&registrar);
+        if(FAILED(hres))
+            return hres;
+    }
+
+    IRegistrar_AddReplacement(registrar, moduleW, module_name);
+
+    for (iter = pMapEntries; iter && iter->szKey; iter++)
+        IRegistrar_AddReplacement(registrar, iter->szKey, iter->szData);
+
+    if(bRegister)
+        hres = IRegistrar_ResourceRegisterSz(registrar, module_name, res, registryW);
+    else
+        hres = IRegistrar_ResourceUnregisterSz(registrar, module_name, res, registryW);
+
+    if(registrar != pReg)
+        IRegistrar_Release(registrar);
+    return hres;
 }

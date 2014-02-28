@@ -17,19 +17,11 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-#define COM_NO_WINDOWS_H
+#include "winhttp_private.h"
 
-#include <config.h>
-//#include <wine/port.h>
-
-//#include <stdarg.h>
-//#include <stdio.h>
-//#include <errno.h>
 #include <assert.h>
+#include <schannel.h>
 
-//#include <sys/types.h>
 #ifdef HAVE_SYS_SOCKET_H
 # include <sys/socket.h>
 #endif
@@ -42,25 +34,6 @@
 #ifdef HAVE_POLL_H
 # include <poll.h>
 #endif
-
-#define NONAMELESSUNION
-
-#include <wine/debug.h>
-#include <wine/library.h>
-
-//#include "windef.h"
-//#include "winbase.h"
-#include <winhttp.h>
-//#include "wincrypt.h"
-#include <schannel.h>
-
-#include "winhttp_private.h"
-
-/* to avoid conflicts with the Unix socket headers */
-#define USE_WS_PREFIX
-//#include "winsock2.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(winhttp);
 
 #ifndef HAVE_GETADDRINFO
 
@@ -426,7 +399,7 @@ BOOL netconn_secure_connect( netconn_t *conn, WCHAR *hostname )
             size = send(conn->socket, out_buf.pvBuffer, out_buf.cbBuffer, 0);
             if(size != out_buf.cbBuffer) {
                 ERR("send failed\n");
-                status = ERROR_WINHTTP_SECURE_CHANNEL_ERROR;
+                res = ERROR_WINHTTP_SECURE_CHANNEL_ERROR;
                 break;
             }
 
@@ -551,15 +524,13 @@ static BOOL send_ssl_chunk(netconn_t *conn, const void *msg, size_t size)
     return TRUE;
 }
 
-BOOL netconn_send( netconn_t *conn, const void *msg, size_t len, int flags, int *sent )
+BOOL netconn_send( netconn_t *conn, const void *msg, size_t len, int *sent )
 {
     if (!netconn_connected( conn )) return FALSE;
     if (conn->secure)
     {
         const BYTE *ptr = msg;
         size_t chunk_size;
-
-        if (flags) FIXME("flags %08x not supported in SSL\n", flags);
 
         *sent = 0;
 
@@ -575,7 +546,7 @@ BOOL netconn_send( netconn_t *conn, const void *msg, size_t len, int flags, int 
 
         return TRUE;
     }
-    if ((*sent = send( conn->socket, msg, len, flags )) == -1)
+    if ((*sent = send( conn->socket, msg, len, 0 )) == -1)
     {
         set_last_error( sock_get_error( errno ) );
         return FALSE;
@@ -687,17 +658,7 @@ BOOL netconn_recv( netconn_t *conn, void *buf, size_t len, int flags, int *recvd
         SIZE_T size, cread;
         BOOL res, eof;
 
-        if (flags & ~(MSG_PEEK | MSG_WAITALL))
-            FIXME("SSL_read does not support the following flags: %08x\n", flags);
-
-        if (flags & MSG_PEEK && conn->peek_msg)
-        {
-            if (len < conn->peek_len) FIXME("buffer isn't big enough, should we wrap?\n");
-            *recvd = min( len, conn->peek_len );
-            memcpy( buf, conn->peek_msg, *recvd );
-            return TRUE;
-        }
-        else if (conn->peek_msg)
+        if (conn->peek_msg)
         {
             *recvd = min( len, conn->peek_len );
             memcpy( buf, conn->peek_msg, *recvd );
@@ -711,7 +672,7 @@ BOOL netconn_recv( netconn_t *conn, void *buf, size_t len, int flags, int *recvd
                 conn->peek_msg = NULL;
             }
             /* check if we have enough data from the peek buffer */
-            if (!(flags & MSG_WAITALL) || (*recvd == len)) return TRUE;
+            if (!(flags & MSG_WAITALL) || *recvd == len) return TRUE;
         }
         size = *recvd;
 
@@ -731,14 +692,6 @@ BOOL netconn_recv( netconn_t *conn, void *buf, size_t len, int flags, int *recvd
 
             size += cread;
         }while(!size || ((flags & MSG_WAITALL) && size < len));
-
-        if(size && (flags & MSG_PEEK)) {
-            conn->peek_msg_mem = conn->peek_msg = heap_alloc(size);
-            if(!conn->peek_msg)
-                return FALSE;
-
-            memcpy(conn->peek_msg, buf, size);
-        }
 
         TRACE("received %ld bytes\n", size);
         *recvd = size;
@@ -770,84 +723,6 @@ BOOL netconn_query_data_available( netconn_t *conn, DWORD *available )
     if (!(ret = ioctlsocket( conn->socket, FIONREAD, &unread ))) *available = unread;
 #endif
     return TRUE;
-}
-
-BOOL netconn_get_next_line( netconn_t *conn, char *buffer, DWORD *buflen )
-{
-    // ReactOS: use select instead of poll
-    fd_set infd;
-    BOOL ret = FALSE;
-    DWORD recvd = 0;
-
-    if (!netconn_connected( conn )) return FALSE;
-
-    if (conn->secure)
-    {
-        while (recvd < *buflen)
-        {
-            int dummy;
-            if (!netconn_recv( conn, &buffer[recvd], 1, 0, &dummy ))
-            {
-                set_last_error( ERROR_CONNECTION_ABORTED );
-                break;
-            }
-            if (buffer[recvd] == '\n')
-            {
-                ret = TRUE;
-                break;
-            }
-            if (buffer[recvd] != '\r') recvd++;
-        }
-        if (ret)
-        {
-            buffer[recvd++] = 0;
-            *buflen = recvd;
-            TRACE("received line %s\n", debugstr_a(buffer));
-        }
-        return ret;
-    }
-
-    FD_ZERO(&infd);
-    FD_SET(conn->socket, &infd);
-
-    while (recvd < *buflen)
-    {
-        int res;
-        struct timeval tv, *ptv;
-        socklen_t len = sizeof(tv);
-
-        if ((res = getsockopt( conn->socket, SOL_SOCKET, SO_RCVTIMEO, (void*)&tv, &len ) != -1))
-            ptv = &tv;
-        else
-            ptv = NULL;
-
-        if (select( 0, &infd, NULL, NULL, ptv ) > 0)
-        {
-            if ((res = recv( conn->socket, &buffer[recvd], 1, 0 )) <= 0)
-            {
-                if (res == -1) set_last_error( sock_get_error( errno ) );
-                break;
-            }
-            if (buffer[recvd] == '\n')
-            {
-                ret = TRUE;
-                break;
-            }
-            if (buffer[recvd] != '\r') recvd++;
-        }
-        else
-        {
-            set_last_error( ERROR_WINHTTP_TIMEOUT );
-            break;
-        }
-    }
-    if (ret)
-    {
-        buffer[recvd++] = 0;
-        *buflen = recvd;
-        TRACE("received line %s\n", debugstr_a(buffer));
-    }
-    return ret;
 }
 
 DWORD netconn_set_timeout( netconn_t *netconn, BOOL send, int value )

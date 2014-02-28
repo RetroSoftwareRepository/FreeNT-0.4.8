@@ -39,23 +39,7 @@
  *    -- search for FIXME
  */
 
-//#include <math.h>
-//#include <stdarg.h>
-//#include <stdio.h>
-//#include <stdlib.h>
-//#include <string.h>
-
-//#include "windef.h"
-//#include "winbase.h"
-//#include "wingdi.h"
-//#include "winuser.h"
-//#include "winnls.h"
-//#include "commctrl.h"
 #include "comctl32.h"
-#include <uxtheme.h>
-#include <vssym32.h>
-#include <wine/unicode.h>
-#include <wine/debug.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(monthcal);
 
@@ -123,7 +107,6 @@ typedef struct
     int		width_increment;
     INT		delta;	/* scroll rate; # of months that the */
                         /* control moves when user clicks a scroll button */
-    int		visible;	/* # of months visible */
     int		firstDay;	/* Start month calendar with firstDay's day,
 				   stored in SYSTEMTIME format */
     BOOL	firstDaySet;    /* first week day differs from locale defined */
@@ -1302,8 +1285,8 @@ MONTHCAL_GetMonthDelta(const MONTHCAL_INFO *infoPtr)
 
   if(infoPtr->delta)
     return infoPtr->delta;
-  else
-    return infoPtr->visible;
+
+  return MONTHCAL_GetMonthRange(infoPtr, GMR_VISIBLE, NULL);
 }
 
 

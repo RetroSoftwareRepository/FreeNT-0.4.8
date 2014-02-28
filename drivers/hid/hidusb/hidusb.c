@@ -1365,6 +1365,81 @@ Hid_SetIdle(
     IN PDEVICE_OBJECT DeviceObject)
 {
     PURB Urb;
+
+    //
+    // build urb
+    //
+    Urb = ExAllocatePoolWithTag(NonPagedPool,
+                                sizeof(struct _URB_SELECT_CONFIGURATION),
+                                HIDUSB_URB_TAG);
+    if (!Urb)
+    {
+        //
+        // no memory
+        //
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    //
+    // format urb
+    //
+    UsbBuildSelectConfigurationRequest(Urb,
+                                       sizeof(struct _URB_SELECT_CONFIGURATION),
+                                       NULL);
+
+    //
+    // dispatch request
+    //
+    Status = Hid_DispatchUrb(DeviceObject, Urb);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("[HIDUSB] Dispatching unconfigure URB failed with %lx\n", Status);
+    }
+    else if (!USBD_SUCCESS(Urb->UrbHeader.Status))
+    {
+        DPRINT("[HIDUSB] Unconfigure URB failed with %lx\n", Status);
+    }
+
+    //
+    // free urb
+    //
+    ExFreePoolWithTag(Urb, HIDUSB_URB_TAG);
+
+    //
+    // free resources
+    //
+    HidDeviceExtension->ConfigurationHandle = NULL;
+
+    if (HidDeviceExtension->InterfaceInfo)
+    {
+        ExFreePoolWithTag(HidDeviceExtension->InterfaceInfo, HIDUSB_TAG);
+        HidDeviceExtension->InterfaceInfo = NULL;
+    }
+
+    if (HidDeviceExtension->ConfigurationDescriptor)
+    {
+        ExFreePoolWithTag(HidDeviceExtension->ConfigurationDescriptor, HIDUSB_TAG);
+        HidDeviceExtension->ConfigurationDescriptor = NULL;
+        HidDeviceExtension->HidDescriptor = NULL;
+    }
+
+    if (HidDeviceExtension->DeviceDescriptor)
+    {
+        ExFreePoolWithTag(HidDeviceExtension->DeviceDescriptor, HIDUSB_TAG);
+        HidDeviceExtension->DeviceDescriptor = NULL;
+    }
+
+    //
+    // done
+    //
+    return Status;
+}
+
+NTSTATUS
+Hid_SetIdle(
+    IN PDEVICE_OBJECT DeviceObject)
+{
+    PURB Urb;
     NTSTATUS Status;
 
     //
@@ -1649,7 +1724,7 @@ Hid_PnpStart(
         //
         // done
         //
-        DPRINT1("[HIDUSB] SelectConfiguration %x\n", Status);
+        DPRINT("[HIDUSB] SelectConfiguration %x\n", Status);
 
         if (NT_SUCCESS(Status))
         {

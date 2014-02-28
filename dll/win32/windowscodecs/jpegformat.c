@@ -16,20 +16,11 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-#define COM_NO_WINDOWS_H
-
-#include <config.h>
-#include <wine/port.h>
+#include "wincodecs_private.h"
 
 #ifdef HAVE_UNISTD_H
 # include <unistd.h>
 #endif
-//#include <stdarg.h>
-#include <stdio.h>
-//#include <string.h>
-#include <setjmp.h>
 
 #ifdef SONAME_LIBJPEG
 /* This is a hack, so jpeglib.h does not redefine INT32 and the like*/
@@ -45,20 +36,6 @@
 #undef UINT16
 #undef boolean
 #endif
-
-#define COBJMACROS
-
-#include <windef.h>
-#include <winbase.h>
-#include <objbase.h>
-#include <wincodec.h>
-
-#include "wincodecs_private.h"
-
-#include <wine/debug.h>
-#include <wine/library.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(wincodecs);
 
 #ifdef SONAME_LIBJPEG
 WINE_DECLARE_DEBUG_CHANNEL(jpeg);
@@ -552,16 +529,23 @@ static HRESULT WINAPI JpegDecoder_Frame_GetResolution(IWICBitmapFrameDecode *ifa
 
     EnterCriticalSection(&This->lock);
 
-    if (This->cinfo.density_unit == 2) /* pixels per centimeter */
+    switch (This->cinfo.density_unit)
     {
+    case 2: /* pixels per centimeter */
         *pDpiX = This->cinfo.X_density * 2.54;
         *pDpiY = This->cinfo.Y_density * 2.54;
-    }
-    else
-    {
-        /* 1 = pixels per inch, 0 = unknown */
+        break;
+
+    case 1: /* pixels per inch */
         *pDpiX = This->cinfo.X_density;
         *pDpiY = This->cinfo.Y_density;
+        break;
+
+    case 0: /* unknown */
+    default:
+        *pDpiX = 96.0;
+        *pDpiY = 96.0;
+        break;
     }
 
     LeaveCriticalSection(&This->lock);

@@ -72,16 +72,37 @@ extern "C" {
 #define RTL_RANGE_CONFLICT                                  0x02
 
 //
-// Activation Context Frame Flags
+// Flags in RTL_ACTIVATION_CONTEXT_STACK_FRAME (from Checked NTDLL)
 //
-#define RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME_FORMAT_WHISTLER \
-                                                            0x1
+#define RTL_ACTIVATION_CONTEXT_STACK_FRAME_FLAG_NO_DEACTIVATE                   0x02
+#define RTL_ACTIVATION_CONTEXT_STACK_FRAME_FLAG_ON_FREE_LIST                    0x04
+#define RTL_ACTIVATION_CONTEXT_STACK_FRAME_FLAG_HEAP_ALLOCATED                  0x08
+#define RTL_ACTIVATION_CONTEXT_STACK_FRAME_FLAG_NOT_REALLY_ACTIVATED            0x10
+#define RTL_ACTIVATION_CONTEXT_STACK_FRAME_FLAG_ACTIVATED                       0x20
+#define RTL_ACTIVATION_CONTEXT_STACK_FRAME_FLAG_DEACTIVATED                     0x40
 
 //
-// RtlActivateActivationContextEx Flags
+// Activation Context Frame Flags (from Checked NTDLL)
 //
-#define RTL_ACTIVATE_ACTIVATION_CONTEXT_EX_FLAG_RELEASE_ON_STACK_DEALLOCATION \
-                                                            0x1
+#define RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME_FORMAT_WHISTLER     0x01
+
+//
+// RtlActivateActivationContextEx Flags (from Checked NTDLL)
+//
+#define RTL_ACTIVATE_ACTIVATION_CONTEXT_EX_FLAG_RELEASE_ON_STACK_DEALLOCATION   0x01
+
+//
+// RtlDeactivateActivationContext Flags (based on Win32 flag and name of above)
+//
+#define RTL_DEACTIVATE_ACTIVATION_CONTEXT_FLAG_FORCE_EARLY_DEACTIVATION         0x01
+
+//
+// RtlQueryActivationContext Flags (based on Win32 flag and name of above)
+//
+#define RTL_QUERY_ACTIVATION_CONTEXT_FLAG_USE_ACTIVE_ACTIVATION_CONTEXT         0x01
+#define RTL_QUERY_ACTIVATION_CONTEXT_FLAG_IS_HMODULE                            0x02
+#define RTL_QUERY_ACTIVATION_CONTEXT_FLAG_IS_ADDRESS                            0x04
+#define RTL_QUERY_ACTIVATION_CONTEXT_FLAG_NO_ADDREF                             0x80000000
 
 //
 // Public Heap Flags
@@ -882,6 +903,18 @@ typedef struct _ACTIVATION_CONTEXT_STACK
 } ACTIVATION_CONTEXT_STACK, *PACTIVATION_CONTEXT_STACK;
 #endif
 
+typedef struct _ACTIVATION_CONTEXT_DATA
+{
+    ULONG Magic;
+    ULONG HeaderSize;
+    ULONG FormatVersion;
+    ULONG TotalSize;
+    ULONG DefaultTocOffset;
+    ULONG ExtendedTocOffset;
+    ULONG AssemblyRosterOffset;
+    ULONG Flags;
+} ACTIVATION_CONTEXT_DATA, *PACTIVATION_CONTEXT_DATA;
+
 #endif /* NTOS_MODE_USER */
 
 //
@@ -1525,6 +1558,44 @@ typedef struct _MESSAGE_RESOURCE_DATA
 } MESSAGE_RESOURCE_DATA, *PMESSAGE_RESOURCE_DATA;
 
 #endif /* !NTOS_MODE_USER */
+
+#ifdef NTOS_MODE_USER
+
+//
+// Memory Stream
+//
+#ifndef CONST_VTBL
+#ifdef CONST_VTABLE
+#define CONST_VTBL const
+#else
+#define CONST_VTBL
+#endif
+#endif
+
+struct IStreamVtbl;
+struct IStream;
+struct tagSTATSTG;
+
+typedef struct _RTL_MEMORY_STREAM RTL_MEMORY_STREAM, *PRTL_MEMORY_STREAM;
+
+typedef VOID 
+(NTAPI *PRTL_MEMORY_STREAM_FINAL_RELEASE_ROUTINE)(
+    _In_ PRTL_MEMORY_STREAM Stream
+);
+
+struct _RTL_MEMORY_STREAM
+{
+    CONST_VTBL struct IStreamVtbl *Vtbl;
+    LONG RefCount;
+    ULONG Unk1;
+    PVOID Current;
+    PVOID Start;
+    PVOID End;
+    PRTL_MEMORY_STREAM_FINAL_RELEASE_ROUTINE FinalRelease;
+    HANDLE ProcessHandle;
+};
+
+#endif /* NTOS_MODE_USER */
 
 #ifdef __cplusplus
 }

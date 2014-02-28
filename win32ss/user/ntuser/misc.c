@@ -273,7 +273,7 @@ NtUserGetThreadState(
          break;
    }
 
-   TRACE("Leave NtUserGetThreadState, ret=%i\n", ret);
+   TRACE("Leave NtUserGetThreadState, ret=%lu\n", ret);
    UserLeave();
 
    return ret;
@@ -318,7 +318,7 @@ NtUserGetDoubleClickTime(VOID)
    // FIXME: Check if this works on non-interactive winsta
    Result = gspv.iDblClickTime;
 
-   TRACE("Leave NtUserGetDoubleClickTime, ret=%i\n", Result);
+   TRACE("Leave NtUserGetDoubleClickTime, ret=%u\n", Result);
    UserLeave();
    return Result;
 }
@@ -425,7 +425,7 @@ NtUserGetGUIThreadInfo(
    RETURN( TRUE);
 
 CLEANUP:
-   TRACE("Leave NtUserGetGUIThreadInfo, ret=%i\n",_ret_);
+   TRACE("Leave NtUserGetGUIThreadInfo, ret=%u\n",_ret_);
    UserLeave();
    END_CLEANUP;
 }
@@ -491,7 +491,7 @@ NtUserGetGuiResources(
    RETURN( Ret);
 
 CLEANUP:
-   TRACE("Leave NtUserGetGuiResources, ret=%i\n",_ret_);
+   TRACE("Leave NtUserGetGuiResources, ret=%lu\n",_ret_);
    UserLeave();
    END_CLEANUP;
 }
@@ -662,8 +662,11 @@ void UserDbgAssertThreadInfo(BOOL showCaller)
         ASSERT(pti->pDeskInfo == pti->rpdesk->pDeskInfo);
 
     /*too bad we still get this assertion*/
+
+    // Why? Not all flags are passed to the user and doing so could crash the system........
+
     /* ASSERT(pci->dwTIFlags == pti->TIF_flags); */
-    if(pci->dwTIFlags != pti->TIF_flags)
+/*    if(pci->dwTIFlags != pti->TIF_flags)
     {
         ERR("pci->dwTIFlags(0x%x) doesn't match pti->TIF_flags(0x%x)\n", pci->dwTIFlags, pti->TIF_flags);
         if(showCaller)
@@ -673,6 +676,7 @@ void UserDbgAssertThreadInfo(BOOL showCaller)
         }
         pci->dwTIFlags = pti->TIF_flags;
     }
+*/
 }
 
 void

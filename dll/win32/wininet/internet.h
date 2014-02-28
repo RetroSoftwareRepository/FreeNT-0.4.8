@@ -23,14 +23,34 @@
 #ifndef _WINE_INTERNET_H_
 #define _WINE_INTERNET_H_
 
-#ifndef __WINE_CONFIG_H
-# error You must include config.h to use this header
+#include <wine/config.h>
+
+#include <assert.h>
+#include <stdio.h>
+
+#define _INC_WINDOWS
+#define COM_NO_WINDOWS_H
+
+#define NONAMELESSUNION
+#define NONAMELESSSTRUCT
+
+#include <windef.h>
+#include <winbase.h>
+#include <winreg.h>
+#include <winuser.h>
+#include <wininet.h>
+#define NO_SHLWAPI_STREAM
+#define NO_SHLWAPI_REG
+#define NO_SHLWAPI_GDI
+#include <shlwapi.h>
+
+#include <wine/list.h>
+#include <wine/debug.h>
+#include <wine/unicode.h>
+
+#ifdef HAVE_ARPA_INET_H
+# include <arpa/inet.h>
 #endif
-
-#include "wine/unicode.h"
-#include "wine/list.h"
-
-#include <time.h>
 #ifdef HAVE_NETDB_H
 # include <netdb.h>
 #endif
@@ -38,16 +58,34 @@
 # include <sys/types.h>
 # include <netinet/in.h>
 #endif
+#ifdef HAVE_SYS_IOCTL_H
+# include <sys/ioctl.h>
+#endif
+#ifdef HAVE_SYS_POLL_H
+# include <sys/poll.h>
+#endif
 #ifdef HAVE_SYS_SOCKET_H
 # include <sys/socket.h>
 #endif
+#ifdef HAVE_SYS_TIME_H
+# include <sys/time.h>
+#endif
+#ifdef HAVE_UNISTD_H
+# include <unistd.h>
+#endif
 
-#if !defined(__MINGW32__) && !defined(_MSC_VER)
+#if defined(__MINGW32__) || defined (_MSC_VER)
+#include <ws2tcpip.h>
+#else
 #define closesocket close
 #define ioctlsocket ioctl
 #endif /* __MINGW32__ */
 
 #include <winineti.h>
+
+#include "resource.h"
+
+WINE_DEFAULT_DEBUG_CHANNEL(wininet);
 
 extern HMODULE WININET_hModule DECLSPEC_HIDDEN;
 
@@ -91,8 +129,15 @@ typedef struct
 {
     int socket;
     BOOL secure;
-    void *ssl_s;
+    CtxtHandle ssl_ctx;
+    SecPkgContext_StreamSizes ssl_sizes;
     server_t *server;
+    char *ssl_buf;
+    char *extra_buf;
+    size_t extra_len;
+    char *peek_msg;
+    char *peek_msg_mem;
+    size_t peek_len;
     DWORD security_flags;
     BOOL mask_errors;
 
@@ -134,6 +179,21 @@ static inline LPWSTR heap_strdupW(LPCWSTR str)
         DWORD size;
 
         size = (strlenW(str)+1)*sizeof(WCHAR);
+        ret = heap_alloc(size);
+        if(ret)
+            memcpy(ret, str, size);
+    }
+
+    return ret;
+}
+
+static inline char *heap_strdupA(const char *str)
+{
+    char *ret = NULL;
+
+    if(str) {
+        DWORD size = strlen(str)+1;
+
         ret = heap_alloc(size);
         if(ret)
             memcpy(ret, str, size);
@@ -321,7 +381,6 @@ typedef struct
     server_t *proxy;
     LPWSTR path;
     LPWSTR verb;
-    LPWSTR rawHeaders;
     netconn_t *netconn;
     DWORD security_flags;
     DWORD connect_timeout;

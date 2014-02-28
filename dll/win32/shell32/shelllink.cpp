@@ -36,6 +36,8 @@
 
 #include "precomp.h"
 
+#include <appmgmt.h>
+
 WINE_DEFAULT_DEBUG_CHANNEL(shell);
 
 #define SHLINK_LOCAL  0
@@ -73,6 +75,43 @@ struct volume_info
 };
 
 #include "poppack.h"
+
+/**************************************************************************
+* SH_GetTargetTypeByPath
+*
+* Function to get target type by passing full path to it
+*/
+LPWSTR SH_GetTargetTypeByPath(LPCWSTR lpcwFullPath)
+{
+    LPCWSTR pwszExt;
+    static WCHAR wszBuf[MAX_PATH];
+
+    /* Get file information */
+    SHFILEINFO fi;
+    if (!SHGetFileInfoW(lpcwFullPath, 0, &fi, sizeof(fi), SHGFI_TYPENAME | SHGFI_USEFILEATTRIBUTES ))
+    {
+        ERR("SHGetFileInfoW failed for %ls (%lu)\n", lpcwFullPath, GetLastError());
+        fi.szTypeName[0] = L'\0';
+        fi.hIcon = NULL;
+    }
+
+    pwszExt = PathFindExtensionW(lpcwFullPath);
+    if (pwszExt[0])
+    {
+        if (!fi.szTypeName[0])
+        {
+            /* The file type is unknown, so default to string "FileExtension File" */
+            size_t cchRemaining = 0;
+            LPWSTR pwszEnd = NULL;
+
+            StringCchPrintfExW(wszBuf, _countof(wszBuf), &pwszEnd, &cchRemaining, 0, L"%s ", pwszExt + 1);
+        }
+        else
+            StringCbPrintfW(wszBuf, sizeof(wszBuf), L"%s (%s)", fi.szTypeName, pwszExt); /* Update file type */
+    }
+
+    return wszBuf;
+}
 
 /* IShellLink Implementation */
 
@@ -221,7 +260,7 @@ HRESULT WINAPI CShellLink::Save(LPCOLESTR pszFileName, BOOL fRemember)
 HRESULT WINAPI CShellLink::SaveCompleted(LPCOLESTR pszFileName)
 {
     FIXME("(%p)->(%s)\n", this, debugstr_w(pszFileName));
-    return NOERROR;
+    return S_OK;
 }
 
 HRESULT WINAPI CShellLink::GetCurFile(LPOLESTR *ppszFileName)
@@ -244,7 +283,7 @@ HRESULT WINAPI CShellLink::GetCurFile(LPOLESTR *ppszFileName)
     /* copy last saved filename */
     wcscpy(*ppszFileName, sLinkPath);
 
-    return NOERROR;
+    return S_OK;
 }
 
 /************************************************************************
@@ -1087,7 +1126,7 @@ HRESULT WINAPI CShellLink::SetShowCmd(INT iShowCmd)
     this->iShowCmd = iShowCmd;
     bDirty = TRUE;
 
-    return NOERROR;
+    return S_OK;
 }
 
 static HRESULT SHELL_PidlGeticonLocationA(IShellFolder* psf, LPCITEMIDLIST pidl,
@@ -1095,7 +1134,7 @@ static HRESULT SHELL_PidlGeticonLocationA(IShellFolder* psf, LPCITEMIDLIST pidl,
 {
     LPCITEMIDLIST pidlLast;
 
-    HRESULT hr = SHBindToParent(pidl, IID_IShellFolder, (LPVOID*)&psf, &pidlLast);
+    HRESULT hr = SHBindToParent(pidl, IID_PPV_ARG(IShellFolder, &psf), &pidlLast);
 
     if (SUCCEEDED(hr))
     {
@@ -1340,7 +1379,7 @@ HRESULT WINAPI CShellLink::GetArguments(LPWSTR pszArgs, INT cchMaxPath)
     if (sArgs)
         lstrcpynW(pszArgs, sArgs, cchMaxPath);
 
-    return NOERROR;
+    return S_OK;
 }
 
 HRESULT WINAPI CShellLink::SetArguments(LPCWSTR pszArgs)
@@ -1365,7 +1404,7 @@ static HRESULT SHELL_PidlGeticonLocationW(IShellFolder* psf, LPCITEMIDLIST pidl,
     LPCITEMIDLIST pidlLast;
     UINT wFlags;
 
-    HRESULT hr = SHBindToParent(pidl, IID_IShellFolder, (LPVOID*)&psf, &pidlLast);
+    HRESULT hr = SHBindToParent(pidl, IID_PPV_ARG(IShellFolder, &psf), &pidlLast);
 
     if (SUCCEEDED(hr))
     {
@@ -1947,14 +1986,30 @@ INT_PTR CALLBACK CShellLink::SH_ShellLinkDlgProc(HWND hwndDlg, UINT uMsg, WPARAM
             else
                 ERR("ExtractIconW failed %ls %u\n", pThis->sIcoPath, pThis->iIcoNdx);
 
+            /* target type */
+            if (pThis->sPath)
+                SetDlgItemTextW(hwndDlg, 14005, SH_GetTargetTypeByPath(pThis->sPath));
+
             /* target location */
             if (pThis->sWorkDir)
                 SetDlgItemTextW(hwndDlg, 14007, PathFindFileName(pThis->sWorkDir));
 
             /* target path */
             if (pThis->sPath)
-                SetDlgItemTextW(hwndDlg, 14009, pThis->sPath);
-
+            {
+                WCHAR newpath[2*MAX_PATH] = L"\0";
+                if (wcschr(pThis->sPath, ' '))
+                    StringCchPrintfExW(newpath, 2*MAX_PATH, NULL, NULL, 0, L"\"%ls\"", pThis->sPath);
+                else 
+                    StringCchCopyExW(newpath, 2*MAX_PATH, pThis->sPath, NULL, NULL, 0);
+                
+                if (pThis->sArgs && pThis->sArgs[0])
+                {
+                    StringCchCatW(newpath, 2*MAX_PATH, L" ");
+                    StringCchCatW(newpath, 2*MAX_PATH, pThis->sArgs);
+                }
+                SetDlgItemTextW(hwndDlg, 14009, newpath);
+            }
             /* working dir */
             if (pThis->sWorkDir)
                 SetDlgItemTextW(hwndDlg, 14011, pThis->sWorkDir);
@@ -1971,21 +2026,25 @@ INT_PTR CALLBACK CShellLink::SH_ShellLinkDlgProc(HWND hwndDlg, UINT uMsg, WPARAM
             if (lppsn->hdr.code == PSN_APPLY)
             {
                 WCHAR wszBuf[MAX_PATH];
-
                 /* set working directory */
                 GetDlgItemTextW(hwndDlg, 14011, wszBuf, MAX_PATH);
                 pThis->SetWorkingDirectory(wszBuf);
                 /* set link destination */
                 GetDlgItemTextW(hwndDlg, 14009, wszBuf, MAX_PATH);
-                if (!PathFileExistsW(wszBuf))
+                LPWSTR lpszArgs = NULL;
+                LPWSTR unquoted = strdupW(wszBuf);
+                StrTrimW(unquoted, L" ");
+                if (!PathFileExistsW(unquoted)) 
                 {
-                    //FIXME load localized error msg
-                    MessageBoxW(hwndDlg, L"file not existing", wszBuf, MB_OK);
-                    SetWindowLongPtr(hwndDlg, DWL_MSGRESULT, PSNRET_INVALID_NOCHANGEPAGE);
-                    return TRUE;
+                    lpszArgs = PathGetArgsW(unquoted);
+                    PathRemoveArgsW(unquoted);
+                    StrTrimW(lpszArgs, L" ");
                 }
+                if (unquoted[0] == '"' && unquoted[wcslen(unquoted)-1] == '"')
+                    PathUnquoteSpacesW(unquoted);
 
-                WCHAR *pwszExt = PathFindExtensionW(wszBuf);
+
+                WCHAR *pwszExt = PathFindExtensionW(unquoted);
                 if (!wcsicmp(pwszExt, L".lnk"))
                 {
                     // FIXME load localized error msg
@@ -1994,12 +2053,25 @@ INT_PTR CALLBACK CShellLink::SH_ShellLinkDlgProc(HWND hwndDlg, UINT uMsg, WPARAM
                     return TRUE;
                 }
 
-                pThis->SetPath(wszBuf);
+                if (!PathFileExistsW(unquoted))
+                {
+                    //FIXME load localized error msg
+                    MessageBoxW(hwndDlg, L"The specified file name in the target box is invalid", L"Error", MB_ICONERROR);
+                    SetWindowLongPtr(hwndDlg, DWL_MSGRESULT, PSNRET_INVALID_NOCHANGEPAGE);
+                    return TRUE;
+                }
+                
+                pThis->SetPath(unquoted);
+                if (lpszArgs)
+                    pThis->SetArguments(lpszArgs);
+                else 
+                    pThis->SetArguments(L"\0");
+
+                HeapFree(GetProcessHeap(), 0, unquoted);
 
                 TRACE("This %p sLinkPath %S\n", pThis, pThis->sLinkPath);
                 pThis->Save(pThis->sLinkPath, TRUE);
-                SetWindowLongPtr(hwndDlg, DWL_MSGRESULT, PSNRET_NOERROR);
-                return TRUE;
+                SetWindowLongPtr(hwndDlg, DWL_MSGRESULT, PSNRET_NOERROR);                return TRUE;
             }
             break;
         }
@@ -2111,7 +2183,7 @@ HRESULT WINAPI IShellLink_ConstructFromFile(IUnknown *pUnkOuter, REFIID riid, LP
 
         *ppv = NULL;
 
-        hr = psl->QueryInterface(IID_IPersistFile, (LPVOID*)&ppf);
+        hr = psl->QueryInterface(IID_PPV_ARG(IPersistFile, &ppf));
 
         if (SUCCEEDED(hr))
         {

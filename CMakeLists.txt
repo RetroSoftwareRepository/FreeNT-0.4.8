@@ -25,6 +25,11 @@ set(CMAKE_SKIP_PREPROCESSED_SOURCE_RULES TRUE)
 set(CMAKE_SKIP_ASSEMBLY_SOURCE_RULES TRUE)
 set(CMAKE_COLOR_MAKEFILE OFF)
 #set_property(GLOBAL PROPERTY RULE_MESSAGES OFF)
+set(CMAKE_SKIP_INSTALL_RULES ON)
+
+if(NOT CMAKE_VERSION STREQUAL "2.8.12.1-ReactOS")
+    set(CMAKE_DISABLE_NINJA_DEPSLOG TRUE)
+endif()
 
 if(NOT ARCH)
     set(ARCH i386)
@@ -65,6 +70,9 @@ if(NOT CMAKE_CROSSCOMPILING)
 
     include_directories(include/host)
 
+    if(NOT MSVC)
+        add_subdirectory(dll/win32/dbghelp)
+    endif()
     add_subdirectory(tools)
     add_subdirectory(lib)
 
@@ -92,7 +100,7 @@ else()
     endif()
 
     # Default to Debug for the build type
-    set(CMAKE_BUILD_TYPE "Debug" CACHE STRING 
+    set(CMAKE_BUILD_TYPE "Debug" CACHE STRING
 "Choose the type of build, options are: None(CMAKE_CXX_FLAGS or CMAKE_C_FLAGS used) Debug Release RelWithDebInfo MinSizeRel." FORCE)
 
     # Do some cleanup
@@ -126,8 +134,10 @@ else()
         add_definitions(-D_WINKD_=1)
     endif()
 
-    if(USE_PSEH3)
-        add_definitions(-D_USE_PSEH3=1)
+    if((NOT DEFINED PCH) AND (CMAKE_VERSION STREQUAL "2.8.12.1-ReactOS"))
+        set(PCH 1)
+    else()
+        set(PCH 0)
     endif()
 
     # Version Options
@@ -139,7 +149,7 @@ else()
 
     # Arch Options
     if(ARCH STREQUAL "i386")
-        add_definitions(-D_M_IX86 -D_X86_ -D__i386__)
+        add_definitions(-D_M_IX86 -D_X86_ -D__i386__ -Di386)
     elseif(ARCH STREQUAL "amd64")
         add_definitions(-D_M_AMD64 -D_AMD64_ -D__x86_64__ -D_WIN64)
     elseif(ARCH STREQUAL "arm")
@@ -182,45 +192,22 @@ else()
     # We're using widl now for both MSVC and GCC builds
     include(cmake/widl-support.cmake)
 
-    if(MSVC AND USE_WDK_HEADERS)
-        include_directories(
-            include
-            $ENV{SDK_INC_PATH}
-            include/dxsdk
-            ${REACTOS_BINARY_DIR}/include
-            ${REACTOS_BINARY_DIR}/include/dxsdk
-            ${REACTOS_BINARY_DIR}/include/psdk
-            ${REACTOS_BINARY_DIR}/include/reactos
-            $ENV{CRT_INC_PATH}
-            $ENV{DDK_INC_PATH}
-            include/ndk
-            include/reactos
-            include/reactos/libs)
-    else()
-        include_directories(
-            include
-            include/psdk
-            include/dxsdk
-            ${REACTOS_BINARY_DIR}/include
-            ${REACTOS_BINARY_DIR}/include/psdk
-			${REACTOS_BINARY_DIR}/include/dxsdk
-            ${REACTOS_BINARY_DIR}/include/reactos
-            include/crt
-            include/ddk
-            include/ndk
-            include/reactos
-            include/reactos/libs)
-    endif()
-
+    include_directories(
+        include
+        include/psdk
+        include/dxsdk
+        ${REACTOS_BINARY_DIR}/include
+        ${REACTOS_BINARY_DIR}/include/psdk
+        ${REACTOS_BINARY_DIR}/include/dxsdk
+        ${REACTOS_BINARY_DIR}/include/reactos
+        include/crt
+        include/ddk
+        include/ndk
+        include/reactos
+        include/reactos/libs)
 
     if(ARCH STREQUAL "arm")
         include_directories(${REACTOS_SOURCE_DIR}/include/reactos/arm)
-    endif()
-
-    if(MSVC)
-        include_directories(include/crt/msc)
-    else()
-        include_directories(include/crt/mingw32)
     endif()
 
     add_dependency_header()
@@ -232,7 +219,7 @@ else()
     add_subdirectory(include/asm)
 
     include(cmake/baseaddress.cmake)
-    
+
     # For MSVC builds, this puts all debug symbols file in the same directory.
     set(CMAKE_PDB_OUTPUT_DIRECTORY "${REACTOS_BINARY_DIR}/msvc_pdb")
 
@@ -247,7 +234,11 @@ else()
     add_subdirectory(modules)
     add_subdirectory(ntoskrnl)
     add_subdirectory(subsystems)
+    add_subdirectory(tools/wpp)
     add_subdirectory(win32ss)
+
+    # Create {bootcd, livecd, bootcdregtest}.lst
+    create_iso_lists()
 
     file(MAKE_DIRECTORY ${REACTOS_BINARY_DIR}/include/reactos)
 

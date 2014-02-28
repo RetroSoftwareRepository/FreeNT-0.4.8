@@ -16,28 +16,9 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-#define COM_NO_WINDOWS_H
-
-#include <config.h>
-
-#include <stdarg.h>
-
-#define COBJMACROS
-
-#include <windef.h>
-#include <winbase.h>
-//#include "winreg.h"
-#include <wingdi.h>
-#include <objbase.h>
-#include <wincodec.h>
-
 #include "wincodecs_private.h"
 
-#include <wine/debug.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(wincodecs);
+#include <wingdi.h>
 
 struct bmp_pixelformat {
     const WICPixelFormatGUID *guid;
@@ -364,7 +345,7 @@ static HRESULT WINAPI BmpFrameEncode_Commit(IWICBitmapFrameEncode *iface)
         bih.bV5GreenMask = This->format->greenmask;
         bih.bV5BlueMask = This->format->bluemask;
         bih.bV5AlphaMask = This->format->alphamask;
-        bih.bV5AlphaMask = LCS_DEVICE_RGB;
+        bih.bV5CSType = LCS_DEVICE_RGB;
     }
 
     bfh.bfSize = sizeof(BITMAPFILEHEADER) + info_size + bih.bV5SizeImage;

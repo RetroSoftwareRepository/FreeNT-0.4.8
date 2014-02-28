@@ -28,8 +28,6 @@
 
 #include <precomp.h>
 
-#include "../resource.h"
-
 #include "desktopbar.h"
 #include "taskbar.h"
 #include "startmenu.h"
@@ -114,9 +112,7 @@ LRESULT DesktopBar::Init(LPCREATESTRUCT pcs)
 	 // create task bar
 	_hwndTaskBar = TaskBar::Create(_hwnd);
 
-#ifndef __MINGW32__ // SHRestricted() missing in MinGW (as of 29.10.2003)
 	if (!g_Globals._SHRestricted || !SHRestricted(REST_NOTRAYITEMSDISPLAY))
-#endif
 		 // create tray notification area
 		_hwndNotify = NotifyArea::Create(_hwnd);
 

@@ -1,7 +1,7 @@
 /*
  *    Open With  Context Menu extension
  *
- * Copyright 2007 Johannes Anderwald <janderwald@reactos.org>
+ * Copyright 2007 Johannes Anderwald <johannes.anderwald@reactos.org>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -20,8 +20,8 @@
 
 #include "precomp.h"
 
-
 WINE_DEFAULT_DEBUG_CHANNEL (fprop);
+
 #define MAX_PROPERTY_SHEET_PAGE (32)
 
 /// Folder Options:

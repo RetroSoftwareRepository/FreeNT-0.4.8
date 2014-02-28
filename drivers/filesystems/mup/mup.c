@@ -31,9 +31,6 @@
 #define NDEBUG
 #include <debug.h>
 
-/* GLOBALS *****************************************************************/
-
-
 /* FUNCTIONS ****************************************************************/
 
 /*
@@ -50,6 +47,8 @@ DriverEntry(PDRIVER_OBJECT DriverObject,
     PDEVICE_OBJECT DeviceObject;
     NTSTATUS Status;
     UNICODE_STRING DeviceName;
+
+    UNREFERENCED_PARAMETER(RegistryPath);
 
     DPRINT("MUP 0.0.1\n");
 
@@ -98,4 +97,3 @@ DriverEntry(PDRIVER_OBJECT DriverObject,
 
     return STATUS_SUCCESS;
 }
-

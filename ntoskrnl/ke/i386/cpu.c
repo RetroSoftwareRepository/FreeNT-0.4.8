@@ -794,7 +794,7 @@ KiGetCacheInformation(VOID)
 
     /* Set the cache line */
     if (CacheLine > KeLargestCacheLine) KeLargestCacheLine = CacheLine;
-    DPRINT1("Prefetch Cache: %d bytes\tL2 Cache: %d bytes\tL2 Cache Line: %d bytes\tL2 Cache Associativity: %d\n",
+    DPRINT1("Prefetch Cache: %lu bytes\tL2 Cache: %lu bytes\tL2 Cache Line: %lu bytes\tL2 Cache Associativity: %lu\n",
             KePrefetchNTAGranularity,
             Pcr->SecondLevelCacheSize,
             KeLargestCacheLine,
@@ -1535,7 +1535,7 @@ KeFlushEntireTb(IN BOOLEAN Invalid,
     if (TargetAffinity)
     {
         /* Sanity check */
-        ASSERT(Prcb == (volatile PKPRCB)KeGetCurrentPrcb());
+        ASSERT(Prcb == KeGetCurrentPrcb());
 
         /* FIXME: TODO */
         ASSERTMSG("Not yet implemented\n", FALSE);

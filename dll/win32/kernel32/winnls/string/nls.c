@@ -14,6 +14,7 @@
 /* INCLUDES *******************************************************************/
 
 #include <k32.h>
+
 #define NDEBUG
 #include <debug.h>
 
@@ -551,10 +552,10 @@ IntMultiByteToWideCharCP(UINT CodePage,
 
 static
 INT
-WINAPI 
-IntMultiByteToWideCharSYMBOL(DWORD Flags, 
+WINAPI
+IntMultiByteToWideCharSYMBOL(DWORD Flags,
                              LPCSTR MultiByteString,
-                             INT MultiByteCount, 
+                             INT MultiByteCount,
                              LPWSTR WideCharString,
                              INT WideCharCount)
 {
@@ -569,7 +570,7 @@ IntMultiByteToWideCharSYMBOL(DWORD Flags,
         return 0;
     }
 
-    if (WideCharCount == 0) 
+    if (WideCharCount == 0)
     {
         return MultiByteCount;
     }
@@ -588,7 +589,7 @@ IntMultiByteToWideCharSYMBOL(DWORD Flags,
             WideCharString[Count] = Char + 0xf000;
         }
     }
-    if (MultiByteCount > WideCharMaxLen) 
+    if (MultiByteCount > WideCharMaxLen)
     {
         SetLastError(ERROR_INSUFFICIENT_BUFFER);
         return 0;
@@ -624,7 +625,7 @@ IntWideCharToMultiByteSYMBOL(DWORD Flags,
     }
 
 
-    if (MultiByteCount == 0) 
+    if (MultiByteCount == 0)
     {
         return WideCharCount;
     }
@@ -635,11 +636,11 @@ IntWideCharToMultiByteSYMBOL(DWORD Flags,
         Char = WideCharString[Count];
         if (Char < 0x20)
         {
-            MultiByteString[Count] = Char;
+            MultiByteString[Count] = (CHAR)Char;
         }
-        else 
+        else
         {
-            if ((Char>=0xf020)&&(Char<0xf100))
+            if ((Char >= 0xf020) && (Char < 0xf100))
             {
                 MultiByteString[Count] = Char - 0xf000;
             }
@@ -650,7 +651,8 @@ IntWideCharToMultiByteSYMBOL(DWORD Flags,
             }
         }
     }
-    if (WideCharCount > MaxLen) 
+
+    if (WideCharCount > MaxLen)
     {
         SetLastError(ERROR_INSUFFICIENT_BUFFER);
         return 0;
@@ -1013,7 +1015,7 @@ IntWideCharToMultiByteCP(UINT CodePage,
             if (DefaultChar)
                 DefChar = *DefaultChar;
             else
-                DefChar = CodePageTable->TransDefaultChar;
+                DefChar = (CHAR)CodePageTable->TransDefaultChar;
 
             /* Convert the WideCharString to the MultiByteString and verify if the mapping is valid */
             for (TempLength = MultiByteCount;
@@ -1259,16 +1261,16 @@ IsValidCodePage(UINT CodePage)
     return GetCPFileNameFromRegistry(CodePage, NULL, 0);
 }
 
-static const signed char 
-base64inv[] = 
+static const signed char
+base64inv[] =
 {
-    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 
     -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 62, -1, -1, -1, 63, 
-    52, 53, 54, 55, 56, 57, 58, 59, 60, 61, -1, -1, -1, -1, -1, -1, 
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 62, -1, -1, -1, 63,
+    52, 53, 54, 55, 56, 57, 58, 59, 60, 61, -1, -1, -1, -1, -1, -1,
     -1,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14,
     15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, -1, -1, -1, -1, -1,
-    -1, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 
+    -1, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,
     41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, -1, -1, -1, -1, -1
 };
 
@@ -1334,7 +1336,7 @@ static INT Utf7ToWideCharSize(LPCSTR pszUtf7, INT cchUtf7)
             }
             cchUtf7--;
             pch = pszUtf7;
-            while(cchUtf7 > 0 && (BYTE) *pszUtf7 < 0x80 && 
+            while(cchUtf7 > 0 && (BYTE) *pszUtf7 < 0x80 &&
                   base64inv[*pszUtf7] >= 0)
             {
                 cchUtf7--;
@@ -1390,7 +1392,7 @@ static INT Utf7ToWideChar(LPCSTR pszUtf7, INT cchUtf7, LPWSTR pszWide, INT cchWi
             }
             cchUtf7--;
             pch = pszUtf7;
-            while(cchUtf7 > 0 && (BYTE) *pszUtf7 < 0x80 && 
+            while(cchUtf7 > 0 && (BYTE) *pszUtf7 < 0x80 &&
                   base64inv[*pszUtf7] >= 0)
             {
                 cchUtf7--;
@@ -1465,6 +1467,7 @@ MultiByteToWideChar(UINT CodePage,
 {
     /* Check the parameters. */
     if (MultiByteString == NULL ||
+        MultiByteCount == 0 ||
         (WideCharString == NULL && WideCharCount > 0) ||
         (PVOID)MultiByteString == (PVOID)WideCharString)
     {
@@ -1712,7 +1715,7 @@ GetLocalisedText(DWORD dwResId, WCHAR *lpszDest)
         }
     }
 
-    DPRINT1("Could not get codepage name. dwResId = %ld\n", dwResId);
+    DPRINT1("Could not get codepage name. dwResId = %lu\n", dwResId);
     return FALSE;
 }
 
@@ -1746,6 +1749,7 @@ GetCPInfo(UINT CodePage,
                 return TRUE;
         }
 
+        DPRINT1("Invalid CP!: %lx\n", CodePage);
         SetLastError( ERROR_INVALID_PARAMETER );
         return FALSE;
     }
@@ -1899,6 +1903,7 @@ WideCharToMultiByte(UINT CodePage,
 {
     /* Check the parameters. */
     if (WideCharString == NULL ||
+        WideCharCount == 0 ||
         (MultiByteString == NULL && MultiByteCount > 0) ||
         (PVOID)WideCharString == (PVOID)MultiByteString ||
         MultiByteCount < 0)
@@ -1916,6 +1921,11 @@ WideCharToMultiByte(UINT CodePage,
     switch (CodePage)
     {
         case CP_UTF8:
+            if (DefaultChar != NULL || UsedDefaultChar != NULL)
+            {
+                SetLastError(ERROR_INVALID_PARAMETER);
+                return 0;
+            }
             return IntWideCharToMultiByteUTF8(CodePage,
                                               Flags,
                                               WideCharString,
@@ -2158,5 +2168,5 @@ GetNLSVersion(IN NLS_FUNCTION Function,
     STUB;
     return TRUE;
 }
-    
+
 /* EOF */

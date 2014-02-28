@@ -369,7 +369,7 @@ PspCreateProcess(OUT PHANDLE ProcessHandle,
             "ProcessHandle: %p Parent: %p\n", ProcessHandle, ParentProcess);
 
     /* Validate flags */
-    if (Flags & ~PS_ALL_FLAGS) return STATUS_INVALID_PARAMETER;
+    if (Flags & ~PROCESS_CREATE_FLAGS_LEGAL_MASK) return STATUS_INVALID_PARAMETER;
 
     /* Check for parent */
     if (ParentProcess)
@@ -508,7 +508,7 @@ PspCreateProcess(OUT PHANDLE ProcessHandle,
         Process->DebugPort = DebugObject;
 
         /* Check if the caller doesn't want the debug stuff inherited */
-        if (Flags & PS_NO_DEBUG_INHERIT)
+        if (Flags & PROCESS_CREATE_FLAGS_NO_DEBUG_INHERIT)
         {
             /* Set the process flag */
             InterlockedOr((PLONG)&Process->Flags, PSF_NO_DEBUG_INHERIT_BIT);
@@ -595,7 +595,8 @@ PspCreateProcess(OUT PHANDLE ProcessHandle,
         }
 
         /* Initialize object manager for the process */
-        Status = ObInitProcess(Flags & PS_INHERIT_HANDLES ? Parent : NULL,
+        Status = ObInitProcess(Flags & PROCESS_CREATE_FLAGS_INHERIT_HANDLES ?
+                               Parent : NULL,
                                Process);
         if (!NT_SUCCESS(Status)) goto CleanupWithRef;
     }
@@ -643,7 +644,7 @@ PspCreateProcess(OUT PHANDLE ProcessHandle,
         else
         {
             /* This is the initial system process */
-            Flags &= ~PS_LARGE_PAGES;
+            Flags &= ~PROCESS_CREATE_FLAGS_LARGE_PAGES;
             Status = MmInitializeProcessAddressSpace(Process,
                                                      NULL,
                                                      NULL,
@@ -655,7 +656,7 @@ PspCreateProcess(OUT PHANDLE ProcessHandle,
             Process->SeAuditProcessCreationInfo.ImageFileName =
                 ExAllocatePoolWithTag(PagedPool,
                                       sizeof(OBJECT_NAME_INFORMATION),
-                                      'aPeS');
+                                      TAG_SEPA);
             if (!Process->SeAuditProcessCreationInfo.ImageFileName)
             {
                 /* Fail */
@@ -838,6 +839,12 @@ PspCreateProcess(OUT PHANDLE ProcessHandle,
     /* Protect against bad user-mode pointer */
     _SEH2_TRY
     {
+        /* Hacky way of returning the PEB to the user-mode creator */
+        if ((Process->Peb) && (CurrentThread->Tcb.Teb))
+        {
+            CurrentThread->Tcb.Teb->NtTib.ArbitraryUserPointer = Process->Peb;
+        }
+
         /* Save the process handle */
        *ProcessHandle = hProcess;
     }
@@ -1140,11 +1147,21 @@ PsGetProcessSecurityPort(PEPROCESS Process)
 /*
  * @implemented
  */
-HANDLE
+ULONG
 NTAPI
-PsGetProcessSessionId(PEPROCESS Process)
+PsGetProcessSessionId(IN PEPROCESS Process)
 {
-    return (HANDLE)Process->Session;
+    return MmGetSessionId(Process);
+}
+
+/*
+ * @implemented
+ */
+ULONG
+NTAPI
+PsGetProcessSessionIdEx(IN PEPROCESS Process)
+{
+    return MmGetSessionIdEx(Process);
 }
 
 /*
@@ -1212,23 +1229,70 @@ PsSetProcessPriorityClass(PEPROCESS Process,
 /*
  * @implemented
  */
-VOID
+NTSTATUS
 NTAPI
 PsSetProcessSecurityPort(PEPROCESS Process,
                          PVOID SecurityPort)
 {
     Process->SecurityPort = SecurityPort;
+    return STATUS_SUCCESS;
 }
 
 /*
  * @implemented
  */
-VOID
+NTSTATUS
 NTAPI
-PsSetProcessWin32Process(PEPROCESS Process,
-                         PVOID Win32Process)
+PsSetProcessWin32Process(
+    _Inout_ PEPROCESS Process,
+    _In_opt_ PVOID Win32Process,
+    _In_opt_ PVOID OldWin32Process)
 {
-    Process->Win32Process = Win32Process;
+    NTSTATUS Status;
+
+    /* Assume success */
+    Status = STATUS_SUCCESS;
+
+    /* Lock the process */
+    KeEnterCriticalRegion();
+    ExAcquirePushLockExclusive(&Process->ProcessLock);
+
+    /* Check if we set a new win32 process */
+    if (Win32Process != NULL)
+    {
+        /* Check if the process is in the right state */
+        if (((Process->Flags & PSF_PROCESS_DELETE_BIT) == 0) &&
+            (Process->Win32Process == NULL))
+        {
+            /* Set the new win32 process */
+            Process->Win32Process = Win32Process;
+        }
+        else
+        {
+            /* Otherwise fail */
+            Status = STATUS_PROCESS_IS_TERMINATING;
+        }
+    }
+    else
+    {
+        /* Reset the win32 process, did the caller specify the correct old value? */
+        if (Process->Win32Process == OldWin32Process)
+        {
+            /* Yes, so reset the win32 process to NULL */
+            Process->Win32Process = 0;
+        }
+        else
+        {
+            /* Otherwise fail */
+            Status = STATUS_UNSUCCESSFUL;
+        }
+    }
+
+    /* Unlock the process */
+    ExReleasePushLockExclusive(&Process->ProcessLock);
+    KeLeaveCriticalRegion();
+
+    return Status;
 }
 
 /*
@@ -1341,9 +1405,9 @@ NtCreateProcess(OUT PHANDLE ProcessHandle,
             "Parent: %p Attributes: %p\n", ParentProcess, ObjectAttributes);
 
     /* Set new-style flags */
-    if ((ULONG)SectionHandle & 1) Flags = PS_REQUEST_BREAKAWAY;
-    if ((ULONG)DebugPort & 1) Flags |= PS_NO_DEBUG_INHERIT;
-    if (InheritObjectTable) Flags |= PS_INHERIT_HANDLES;
+    if ((ULONG)SectionHandle & 1) Flags |= PROCESS_CREATE_FLAGS_BREAKAWAY;
+    if ((ULONG)DebugPort & 1) Flags |= PROCESS_CREATE_FLAGS_NO_DEBUG_INHERIT;
+    if (InheritObjectTable) Flags |= PROCESS_CREATE_FLAGS_INHERIT_HANDLES;
 
     /* Call the new API */
     return NtCreateProcessEx(ProcessHandle,

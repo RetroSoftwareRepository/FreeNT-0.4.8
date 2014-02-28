@@ -11,6 +11,13 @@
 //#include <windows.h>
 //#include "definitions.h"
 
+/* TYPES ************************************************************/
+
+typedef struct tagSTRETCHSKEW {
+    POINT percentage;
+    POINT angle;
+} STRETCHSKEW;
+
 /* VARIABLES declared in main.c *************************************/
 
 extern HDC hDrawingDC;
@@ -20,16 +27,19 @@ extern BITMAPINFO bitmapinfo;
 extern int imgXRes;
 extern int imgYRes;
 
+extern int widthSetInDlg;
+extern int heightSetInDlg;
+
+extern STRETCHSKEW stretchSkew;
+
 extern HBITMAP hBms[HISTORYSIZE];
 extern int currInd;
 extern int undoSteps;
 extern int redoSteps;
 extern BOOL imageSaved;
 
-extern LONG startX;
-extern LONG startY;
-extern LONG lastX;
-extern LONG lastY;
+extern POINT start;
+extern POINT last;
 extern int lineWidth;
 extern int shapeStyle;
 extern int brushStyle;
@@ -38,14 +48,23 @@ extern int airBrushWidth;
 extern int rubberRadius;
 extern int transpBg;
 extern int zoom;
-extern int rectSel_src[4];
-extern int rectSel_dest[4];
+extern RECT rectSel_src;
+extern RECT rectSel_dest;
 extern HWND hSelection;
 extern HWND hImageArea;
 extern HBITMAP hSelBm;
 extern HBITMAP hSelMask;
+extern HWND hwndTextEdit;
+extern HWND hwndEditCtl;
+extern LOGFONT lfTextFont;
+extern HFONT hfontTextFont;
+extern LPTSTR textToolText;
+extern int textToolTextMaxLen;
 
 extern int palColors[28];
+extern int modernPalColors[28];
+extern int oldPalColors[28];
+extern int selectedPalette;
 
 extern int fgColor;
 extern int bgColor;

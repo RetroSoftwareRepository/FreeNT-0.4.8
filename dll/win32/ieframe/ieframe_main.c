@@ -19,12 +19,6 @@
 #include "ieframe.h"
 
 #include <rpcproxy.h>
-//#include "shlguid.h"
-//#include "isguids.h"
-
-#include <wine/debug.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(ieframe);
 
 LONG module_ref = 0;
 HINSTANCE ieframe_instance;
@@ -218,6 +212,7 @@ BOOL WINAPI DllMain(HINSTANCE hInstDLL, DWORD fdwReason, LPVOID lpv)
         DisableThreadLibraryCalls(ieframe_instance);
         break;
     case DLL_PROCESS_DETACH:
+        if (lpv) break;
         unregister_iewindow_class();
         release_typelib();
     }

@@ -24,6 +24,9 @@
  * PROGRAMMER:      Eric Kohl
  */
 
+#ifndef _USETUP_PCH_
+#define _USETUP_PCH_
+
 /* C Headers */
 #include <stdio.h>
 #include <stdlib.h>
@@ -41,7 +44,6 @@
 #include <ndk/exfuncs.h>
 #include <ndk/iofuncs.h>
 #include <ndk/kefuncs.h>
-#include <ndk/mmtypes.h>
 #include <ndk/mmfuncs.h>
 #include <ndk/obfuncs.h>
 #include <ndk/psfuncs.h>
@@ -50,9 +52,6 @@
 /* Filesystem headers */
 #include <fslib/ext2lib.h>
 #include <fslib/vfatlib.h>
-
-/* DDK Disk Headers */
-#include <ntddscsi.h>
 
 /* Internal Headers */
 #include "interface/consup.h"
@@ -64,25 +63,14 @@
 #include "infros.h"
 #include "filequeue.h"
 #endif
-#include "bootsup.h"
 #include "registry.h"
 #include "fslist.h"
-#include "chkdsk.h"
-#include "format.h"
 #include "cabinet.h"
 #include "filesup.h"
-#include "drivesup.h"
 #include "genlist.h"
-#include "settings.h"
 #include "host.h"
 #include "mui.h"
 #include "errorcode.h"
-
-#define INITGUID
-#include <guiddef.h>
-#include <libs/umpnpmgr/sysguid.h>
-
-#include <zlib.h>
 
 extern HANDLE ProcessHeap;
 extern UNICODE_STRING SourceRootPath;
@@ -187,4 +175,4 @@ typedef enum _PAGE_NUMBER
   InsertTailList(current, &((NewEntry)->ListEntryField));\
 }
 
-/* EOF */
+#endif /* _USETUP_PCH_ */

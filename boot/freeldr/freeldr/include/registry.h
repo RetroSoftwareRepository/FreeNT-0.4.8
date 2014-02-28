@@ -21,6 +21,11 @@
 #ifndef __REGISTRY_H
 #define __REGISTRY_H
 
+#define TAG_REG_NAME 'NgeR'
+#define TAG_REG_KEY 'KgeR'
+#define TAG_REG_KEY_DATA 'DgeR'
+#define TAG_REG_VALUE 'VgeR'
+
 typedef struct _REG_KEY
 {
   LIST_ENTRY KeyList;
@@ -73,10 +78,12 @@ RegDeleteKey(FRLDRHKEY Key,
          PCWSTR Name);
 
 LONG
-RegEnumKey(FRLDRHKEY Key,
-       ULONG Index,
-       PWCHAR Name,
-       ULONG* NameSize);
+RegEnumKey(
+    _In_ FRLDRHKEY Key,
+    _In_ ULONG Index,
+    _Out_ PWCHAR Name,
+    _Inout_ ULONG* NameSize,
+    _Out_opt_ FRLDRHKEY *SubKey);
 
 LONG
 RegOpenKey(FRLDRHKEY ParentKey,

@@ -1,12 +1,12 @@
-/* FILE:        subsystems/ntvdm/lang/cs-CZ.rc
- * TRANSLATOR:  Radek Liska aka Black_Fox (radekliska at gmail dot com)
- * UPDATED:     2008-06-24
+/* FILE:       subsystems/ntvdm/lang/cs-CZ.rc
+ * TRANSLATOR: Radek Liska aka Black_Fox (radekliska at gmail dot com)
+ * UPDATED:    2008-06-24
  */
 
 LANGUAGE LANG_CZECH, SUBLANG_DEFAULT
-STRINGTABLE DISCARDABLE
-BEGIN
 
-STRING_WelcomeMsg,      "ReactOS podpora virtu·lnÌho DOS stroje.\n"
-STRING_PromptMsg,       "Napiöte r<cr> pro spuötÏnÌ, s<cr> pro vypnutÌ nebo q<cr> pro ukonËenÌ."
+STRINGTABLE
+BEGIN
+    STRING_WelcomeMsg "ReactOS podpora virtu√°ln√≠ho DOS stroje.\n"
+    STRING_PromptMsg "Napi≈°te r<cr> pro spu≈°t√¨n√≠, s<cr> pro vypnut√≠ nebo q<cr> pro ukon√®en√≠."
 END

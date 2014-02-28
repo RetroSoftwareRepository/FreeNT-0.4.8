@@ -23,9 +23,9 @@
  * PROGRAMMER:       Pierre Schweitzer (pierre.schweitzer@reactos.org)
  */
 
-/* INCLUDES *****************************************************************/
-
 #include "mntmgr.h"
+
+#define MAX_DEVICES 0x3E8 /* Matches 1000 devices */
 
 #define NDEBUG
 #include <debug.h>
@@ -292,6 +292,8 @@ MountMgrCheckUnprocessedVolumes(IN PDEVICE_EXTENSION DeviceExtension,
     PDEVICE_INFORMATION DeviceInformation;
     NTSTATUS ArrivalStatus, Status = STATUS_SUCCESS;
 
+    UNREFERENCED_PARAMETER(Irp);
+
     /* No offline volumes, nothing more to do */
     if (IsListEmpty(&(DeviceExtension->OfflineDeviceListHead)))
     {
@@ -553,13 +555,21 @@ MountMgrNextDriveLetterWorker(IN PDEVICE_EXTENSION DeviceExtension,
     }
 
     /* Now everything is fine, start processing */
+
     if (RtlPrefixUnicodeString(&DeviceFloppy, &TargetDeviceName, TRUE))
     {
+        /* If the device is a floppy, start with letter A */
         DriveLetter = 'A';
+    }
+    else if (RtlPrefixUnicodeString(&DeviceCdRom, &TargetDeviceName, TRUE))
+    {
+        /* If the device is a CD-ROM, start with letter D */
+        DriveLetter = 'D';
     }
     else
     {
-        DriveLetter = 'C' + RtlPrefixUnicodeString(&DeviceCdRom, &TargetDeviceName, TRUE);
+        /* Finally, if it's a disk, use C */
+        DriveLetter = 'C';
     }
 
     /* We cannot set NO drive letter */
@@ -690,6 +700,10 @@ MountMgrQuerySystemVolumeNameQueryRoutine(IN PWSTR ValueName,
     UNICODE_STRING ValueString;
     PUNICODE_STRING SystemVolumeName;
 
+    UNREFERENCED_PARAMETER(ValueName);
+    UNREFERENCED_PARAMETER(ValueLength);
+    UNREFERENCED_PARAMETER(EntryContext);
+
     if (ValueType != REG_SZ)
     {
         return STATUS_SUCCESS;
@@ -819,13 +833,232 @@ NTSTATUS
 MountMgrQueryDosVolumePath(IN PDEVICE_EXTENSION DeviceExtension,
                            IN PIRP Irp)
 {
-    return STATUS_NOT_IMPLEMENTED;
+    NTSTATUS Status;
+    ULONG DevicesFound;
+    PIO_STACK_LOCATION Stack;
+    PLIST_ENTRY SymlinksEntry;
+    UNICODE_STRING SymbolicName;
+    PMOUNTMGR_TARGET_NAME Target;
+    PWSTR DeviceString, OldBuffer;
+    USHORT DeviceLength, OldLength;
+    PDEVICE_INFORMATION DeviceInformation;
+    PSYMLINK_INFORMATION SymlinkInformation;
+    PASSOCIATED_DEVICE_ENTRY AssociatedDevice;
+
+    Stack = IoGetNextIrpStackLocation(Irp);
+
+    /* Validate input size */
+    if (Stack->Parameters.DeviceIoControl.InputBufferLength < sizeof(MOUNTMGR_TARGET_NAME))
+    {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    /* Ensure we have received UNICODE_STRING */
+    Target = (PMOUNTMGR_TARGET_NAME)Irp->AssociatedIrp.SystemBuffer;
+    if (Target->DeviceNameLength & 1)
+    {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    /* Validate the entry structure size */
+    if (Target->DeviceNameLength + sizeof(UNICODE_NULL) > Stack->Parameters.DeviceIoControl.InputBufferLength)
+    {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    /* Ensure we can at least return needed size */
+    if (Stack->Parameters.DeviceIoControl.OutputBufferLength < sizeof(ULONG))
+    {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    /* Construct string for query */
+    SymbolicName.Length = Target->DeviceNameLength;
+    SymbolicName.MaximumLength = Target->DeviceNameLength + sizeof(UNICODE_NULL);
+    SymbolicName.Buffer = Target->DeviceName;
+
+    /* Find device with our info */
+    Status = FindDeviceInfo(DeviceExtension, &SymbolicName, FALSE, &DeviceInformation);
+    if (!NT_SUCCESS(Status))
+    {
+        return Status;
+    }
+
+    DeviceLength = 0;
+    DeviceString = NULL;
+    DevicesFound = 0;
+
+    /* Try to find associated device info */
+    while (TRUE)
+    {
+        for (SymlinksEntry = DeviceInformation->SymbolicLinksListHead.Flink;
+             SymlinksEntry != &(DeviceInformation->SymbolicLinksListHead);
+             SymlinksEntry = SymlinksEntry->Flink)
+        {
+            SymlinkInformation = CONTAINING_RECORD(SymlinksEntry, SYMLINK_INFORMATION, SymbolicLinksListEntry);
+
+            /* Try to find with drive letter */
+            if (MOUNTMGR_IS_DRIVE_LETTER(&SymlinkInformation->Name) && SymlinkInformation->Online)
+            {
+                break;
+            }
+        }
+
+        /* We didn't find, break */
+        if (SymlinksEntry == &(DeviceInformation->SymbolicLinksListHead))
+        {
+            break;
+        }
+
+        /* It doesn't have associated device, go to fallback method */
+        if (IsListEmpty(&DeviceInformation->AssociatedDevicesHead))
+        {
+            goto TryWithVolumeName;
+        }
+
+        /* Create a string with the information about the device */
+        AssociatedDevice = CONTAINING_RECORD(&(DeviceInformation->SymbolicLinksListHead), ASSOCIATED_DEVICE_ENTRY, AssociatedDevicesEntry);
+        OldLength = DeviceLength;
+        OldBuffer = DeviceString;
+        DeviceLength += AssociatedDevice->String.Length;
+        DeviceString = AllocatePool(DeviceLength);
+        if (!DeviceString)
+        {
+            if (OldBuffer)
+            {
+                FreePool(OldBuffer);
+            }
+
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        /* Store our info and previous if any */
+        RtlCopyMemory(DeviceString, AssociatedDevice->String.Buffer, AssociatedDevice->String.Length);
+        if (OldBuffer)
+        {
+            RtlCopyMemory(&DeviceString[AssociatedDevice->String.Length / sizeof(WCHAR)], OldBuffer, OldLength);
+            FreePool(OldBuffer);
+        }
+
+        /* Count and continue looking */
+        ++DevicesFound;
+        DeviceInformation = AssociatedDevice->DeviceInformation;
+
+        /* If too many devices, try another way */
+        if (DevicesFound > MAX_DEVICES) /*  1000 */
+        {
+            goto TryWithVolumeName;
+        }
+    }
+
+    /* Reallocate our string, so that we can prepend disk letter */
+    OldBuffer = DeviceString;
+    OldLength = DeviceLength;
+    DeviceLength += 2 * sizeof(WCHAR);
+    DeviceString = AllocatePool(DeviceLength);
+    if (!DeviceString)
+    {
+        if (OldBuffer)
+        {
+            FreePool(OldBuffer);
+        }
+
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    /* Get the letter */
+    DeviceString[0] = SymlinkInformation->Name.Buffer[12];
+    DeviceString[1] = L':';
+
+    /* And copy the rest */
+    if (OldBuffer)
+    {
+        RtlCopyMemory(&DeviceString[2], OldBuffer, OldLength);
+        FreePool(OldBuffer);
+    }
+
+TryWithVolumeName:
+    /* If we didn't find anything, try differently */
+    if (DeviceLength < 2 * sizeof(WCHAR) || DeviceString[1] != L':')
+    {
+        if (DeviceString)
+        {
+            FreePool(DeviceString);
+            DeviceLength = 0;
+        }
+
+        /* Try to find a volume name matching */
+        for (SymlinksEntry = DeviceInformation->SymbolicLinksListHead.Flink;
+             SymlinksEntry != &(DeviceInformation->SymbolicLinksListHead);
+             SymlinksEntry = SymlinksEntry->Flink)
+        {
+            SymlinkInformation = CONTAINING_RECORD(SymlinksEntry, SYMLINK_INFORMATION, SymbolicLinksListEntry);
+
+            if (MOUNTMGR_IS_VOLUME_NAME(&SymlinkInformation->Name))
+            {
+                break;
+            }
+        }
+
+        /* If found copy */
+        if (SymlinksEntry != &(DeviceInformation->SymbolicLinksListHead))
+        {
+            DeviceLength = SymlinkInformation->Name.Length;
+            DeviceString = AllocatePool(DeviceLength);
+            if (!DeviceString)
+            {
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
+            RtlCopyMemory(DeviceString, SymlinkInformation->Name.Buffer, DeviceLength);
+            /* Ensure we are in the right namespace; [1] can be ? */
+            DeviceString[1] = L'\\';
+        }
+    }
+
+    /* If we found something */
+    if (DeviceString)
+    {
+        /* At least, we will return our length */
+        ((PMOUNTMGR_VOLUME_PATHS)Irp->AssociatedIrp.SystemBuffer)->MultiSzLength = DeviceLength;
+        /* MOUNTMGR_VOLUME_PATHS is a string + a ULONG */
+        Irp->IoStatus.Information = DeviceLength + sizeof(ULONG);
+
+        /* If we have enough room for copying the string */
+        if (sizeof(ULONG) + DeviceLength <= Stack->Parameters.DeviceIoControl.OutputBufferLength)
+        {
+            /* Copy it */
+            if (DeviceLength)
+            {
+                RtlCopyMemory(((PMOUNTMGR_VOLUME_PATHS)Irp->AssociatedIrp.SystemBuffer)->MultiSz, DeviceString, DeviceLength);
+            }
+
+            /* And double zero at its end - this is needed in case of multiple paths which are separated by a single 0 */
+            FreePool(DeviceString);
+            ((PMOUNTMGR_VOLUME_PATHS)Irp->AssociatedIrp.SystemBuffer)->MultiSz[DeviceLength / sizeof(WCHAR)] = 0;
+            ((PMOUNTMGR_VOLUME_PATHS)Irp->AssociatedIrp.SystemBuffer)->MultiSz[DeviceLength / sizeof(WCHAR) + 1] = 0;
+
+            return STATUS_SUCCESS;
+        }
+        else
+        {
+            /* Just return appropriate size and leave */
+            FreePool(DeviceString);
+            Irp->IoStatus.Information = sizeof(ULONG);
+            return STATUS_BUFFER_OVERFLOW;
+        }
+    }
+
+    /* Fail */
+    return STATUS_NOT_FOUND;
 }
 
 NTSTATUS
 MountMgrQueryDosVolumePaths(IN PDEVICE_EXTENSION DeviceExtension,
                             IN PIRP Irp)
 {
+    UNREFERENCED_PARAMETER(DeviceExtension);
+    UNREFERENCED_PARAMETER(Irp);
     return STATUS_NOT_IMPLEMENTED;
 }
 
@@ -1460,6 +1693,9 @@ MountMgrVolumeMountPointCreated(IN PDEVICE_EXTENSION DeviceExtension,
                                 IN PIRP Irp,
                                 IN NTSTATUS LockStatus)
 {
+    UNREFERENCED_PARAMETER(DeviceExtension);
+    UNREFERENCED_PARAMETER(Irp);
+    UNREFERENCED_PARAMETER(LockStatus);
     return STATUS_NOT_IMPLEMENTED;
 }
 
@@ -1468,6 +1704,9 @@ MountMgrVolumeMountPointDeleted(IN PDEVICE_EXTENSION DeviceExtension,
                                 IN PIRP Irp,
                                 IN NTSTATUS LockStatus)
 {
+    UNREFERENCED_PARAMETER(DeviceExtension);
+    UNREFERENCED_PARAMETER(Irp);
+    UNREFERENCED_PARAMETER(LockStatus);
     return STATUS_NOT_IMPLEMENTED;
 }
 

@@ -18,31 +18,9 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-#define COM_NO_WINDOWS_H
+#include "msipriv.h"
 
-//#include <stdarg.h>
 #include <stdio.h>
-
-#define COBJMACROS
-#define NONAMELESSUNION
-
-//#include "windef.h"
-//#include "winbase.h"
-//#include "winreg.h"
-//#include "winnls.h"
-#include <wine/debug.h>
-#include <wine/unicode.h>
-//#include "msi.h"
-#include "msiquery.h"
-//#include "msipriv.h"
-//#include "objidl.h"
-#include <objbase.h>
-#include <msiserver.h>
-#include "query.h"
-
-//#include "initguid.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(msi);
 
@@ -1380,7 +1358,10 @@ static UINT merge_verify_colnames(MSIQUERY *dbview, MSIQUERY *mergeview)
 
     r = MSI_ViewGetColumnInfo(mergeview, MSICOLINFO_NAMES, &mergerec);
     if (r != ERROR_SUCCESS)
+    {
+        msiobj_release(&dbrec->hdr);
         return r;
+    }
 
     count = MSI_RecordGetFieldCount(dbrec);
     for (i = 1; i <= count; i++)
@@ -1405,7 +1386,10 @@ static UINT merge_verify_colnames(MSIQUERY *dbview, MSIQUERY *mergeview)
 
     r = MSI_ViewGetColumnInfo(mergeview, MSICOLINFO_TYPES, &mergerec);
     if (r != ERROR_SUCCESS)
+    {
+        msiobj_release(&dbrec->hdr);
         return r;
+    }
 
     count = MSI_RecordGetFieldCount(dbrec);
     for (i = 1; i <= count; i++)

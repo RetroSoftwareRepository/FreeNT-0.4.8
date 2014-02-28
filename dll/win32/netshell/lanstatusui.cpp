@@ -1,6 +1,6 @@
 #include "precomp.h"
 
-WINE_DEFAULT_DEBUG_CHANNEL (shell);
+#include <winsock.h>
 
 /// CLSID
 /// HKEY_LOCAL_MACHINE\SOFTWARE\Classes\CLSID\{7007ACCF-3202-11D1-AAD2-00805FC1270E}
@@ -34,7 +34,7 @@ typedef struct
     UINT Status;
 } LANSTATUSUI_CONTEXT;
 
-class CLanStatus:
+class CLanStatus :
     public IOleCommandTarget
 {
     public:

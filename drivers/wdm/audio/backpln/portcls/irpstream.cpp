@@ -8,6 +8,11 @@
 
 #include "private.hpp"
 
+#ifndef YDEBUG
+#define NDEBUG
+#endif
+
+#include <debug.h>
 
 class CIrpQueue : public IIrpQueue
 {
@@ -47,14 +52,10 @@ protected:
     ULONG m_MaxFrameSize;
     ULONG m_Alignment;
     ULONG m_TagSupportEnabled;
-    ULONG m_NumDataAvailable;
+    volatile ULONG m_NumDataAvailable;
     volatile ULONG m_CurrentOffset;
-
-    PIRP m_Irp;
-
-
-    LONG m_Ref;
-
+    volatile PIRP m_Irp;
+    volatile LONG m_Ref;
 };
 
 typedef struct
@@ -367,6 +368,8 @@ CIrpQueue::UpdateMapping(
     PKSSTREAM_DATA StreamData;
     ULONG Size;
     PIO_STACK_LOCATION IoStack;
+    ULONG Index;
+    PMDL Mdl;
 
     // sanity check
     ASSERT(m_Irp);
@@ -447,6 +450,13 @@ CIrpQueue::UpdateMapping(
 
             // done
             return;
+        }
+
+        Mdl = m_Irp->MdlAddress;
+        for(Index = 0; Index < StreamData->StreamHeaderCount; Index++)
+        {
+            MmUnmapLockedPages(StreamData->Data[Index], Mdl);
+            Mdl = Mdl->Next;
         }
 
         // free stream data array

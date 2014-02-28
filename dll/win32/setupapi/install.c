@@ -21,7 +21,8 @@
 
 #include "setupapi_private.h"
 
-WINE_DEFAULT_DEBUG_CHANNEL(setupapi);
+#include <winsvc.h>
+#include <ndk/cmfuncs.h>
 
 /* Unicode constants */
 static const WCHAR BackSlash[] = {'\\',0};
@@ -2282,8 +2283,6 @@ BOOL WINAPI SetupCopyOEMInfW(
     if (!SourceInfFileName)
         SetLastError(ERROR_INVALID_PARAMETER);
     else if (OEMSourceMediaType != SPOST_NONE && OEMSourceMediaType != SPOST_PATH && OEMSourceMediaType != SPOST_URL)
-        SetLastError(ERROR_INVALID_PARAMETER);
-    else if (OEMSourceMediaType != SPOST_NONE && !OEMSourceMediaLocation)
         SetLastError(ERROR_INVALID_PARAMETER);
     else if (CopyStyle & ~(SP_COPY_DELETESOURCE | SP_COPY_REPLACEONLY | SP_COPY_NOOVERWRITE | SP_COPY_OEMINF_CATALOG_ONLY))
     {

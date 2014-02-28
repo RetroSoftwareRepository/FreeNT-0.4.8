@@ -24,7 +24,6 @@ list(APPEND SOURCE
     dialog.c
     distinct.c
     drop.c
-    events.c
     files.c
     font.c
     format.c
@@ -52,22 +51,18 @@ list(APPEND SOURCE
     update.c
     upgrade.c
     where.c
-    msi.rc
+    msipriv.h
     ${CMAKE_CURRENT_BINARY_DIR}/msiserver_i.c
-    ${CMAKE_CURRENT_BINARY_DIR}/msi_stubs.c
+    ${CMAKE_CURRENT_BINARY_DIR}/msi_stubs.c)
+
+add_library(msi SHARED
+    ${SOURCE}
+    msi.rc
     ${CMAKE_CURRENT_BINARY_DIR}/msi.def)
-
-if(MSVC)
-    set_source_files_properties(custom.c PROPERTIES COMPILE_FLAGS /FImsvchelper.h)
-endif()
-
-add_library(msi SHARED ${SOURCE})
 
 add_idl_headers(msi_idlheader msiserver.idl)
 add_typelib(msiserver.idl)
-
 set_source_files_properties(msi.rc PROPERTIES OBJECT_DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/msiserver.tlb)
-
 set_module_type(msi win32dll)
 target_link_libraries(msi uuid ${PSEH_LIB} wine)
 add_dependencies(msi msi_idlheader)
@@ -91,5 +86,5 @@ add_importlibs(msi
     kernel32
     ntdll)
 
-add_pch(msi msipriv.h)
+add_pch(msi msipriv.h SOURCE)
 add_cd_file(TARGET msi DESTINATION reactos/system32 FOR all)

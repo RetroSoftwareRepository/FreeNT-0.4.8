@@ -18,31 +18,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-#define COM_NO_WINDOWS_H
-
-#include <config.h>
-
-//#include <stdarg.h>
-
-#define COBJMACROS
-
-#include <wine/debug.h>
-//#include "windef.h"
-#include <winbase.h>
-//#include "winreg.h"
-//#include "winuser.h"
-//#include "shlwapi.h"
-//#include "winerror.h"
-#include <objbase.h>
-
-//#include "wine/unicode.h"
-
-#include <msctf.h>
 #include "msctf_internal.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(msctf);
 
 typedef struct tagDocumentMgr {
     ITfDocumentMgr ITfDocumentMgr_iface;
@@ -76,7 +52,7 @@ static inline DocumentMgr *impl_from_ITfSource(ITfSource *iface)
     return CONTAINING_RECORD(iface, DocumentMgr, ITfSource_iface);
 }
 
-static inline EnumTfContext *impl_from_IEnumTfContexts(IEnumTfContexts *iface)\
+static inline EnumTfContext *impl_from_IEnumTfContexts(IEnumTfContexts *iface)
 {
     return CONTAINING_RECORD(iface, EnumTfContext, IEnumTfContexts_iface);
 }
@@ -117,7 +93,7 @@ static HRESULT WINAPI DocumentMgr_QueryInterface(ITfDocumentMgr *iface, REFIID i
 
     if (*ppvOut)
     {
-        IUnknown_AddRef(iface);
+        ITfDocumentMgr_AddRef(iface);
         return S_OK;
     }
 
@@ -165,7 +141,7 @@ static HRESULT WINAPI DocumentMgr_Push(ITfDocumentMgr *iface, ITfContext *pic)
     if (This->contextStack[1])  /* FUll */
         return TF_E_STACKFULL;
 
-    if (!pic || FAILED(IUnknown_QueryInterface(pic,&IID_ITfContext,(LPVOID*) &check)))
+    if (!pic || FAILED(ITfContext_QueryInterface(pic,&IID_ITfContext,(LPVOID*) &check)))
         return E_INVALIDARG;
 
     if (This->contextStack[0] == NULL)
@@ -190,14 +166,14 @@ static HRESULT WINAPI DocumentMgr_Pop(ITfDocumentMgr *iface, DWORD dwFlags)
         if (This->contextStack[0])
         {
             ITfThreadMgrEventSink_OnPopContext(This->ThreadMgrSink,This->contextStack[0]);
-            ITfContext_Release(This->contextStack[0]);
             Context_Uninitialize(This->contextStack[0]);
+            ITfContext_Release(This->contextStack[0]);
         }
         if (This->contextStack[1])
         {
             ITfThreadMgrEventSink_OnPopContext(This->ThreadMgrSink,This->contextStack[1]);
-            ITfContext_Release(This->contextStack[1]);
             Context_Uninitialize(This->contextStack[1]);
+            ITfContext_Release(This->contextStack[1]);
         }
         This->contextStack[0] = This->contextStack[1] = NULL;
         ITfThreadMgrEventSink_OnUninitDocumentMgr(This->ThreadMgrSink, iface);
@@ -211,8 +187,8 @@ static HRESULT WINAPI DocumentMgr_Pop(ITfDocumentMgr *iface, DWORD dwFlags)
         return E_FAIL;
 
     ITfThreadMgrEventSink_OnPopContext(This->ThreadMgrSink,This->contextStack[0]);
-    ITfContext_Release(This->contextStack[0]);
     Context_Uninitialize(This->contextStack[0]);
+    ITfContext_Release(This->contextStack[0]);
     This->contextStack[0] = This->contextStack[1];
     This->contextStack[1] = NULL;
 
@@ -368,7 +344,7 @@ static HRESULT WINAPI EnumTfContext_QueryInterface(IEnumTfContexts *iface, REFII
 
     if (*ppvOut)
     {
-        IUnknown_AddRef(iface);
+        IEnumTfContexts_AddRef(iface);
         return S_OK;
     }
 

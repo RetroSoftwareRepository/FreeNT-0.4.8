@@ -19,6 +19,9 @@
 #ifndef _M_ARM
 #include <freeldr.h>
 
+#define TAG_TUI_SCREENBUFFER 'SiuT'
+#define TAG_TAG_TUI_PALETTE 'PiuT'
+
 PVOID    TextVideoBuffer = NULL;
 
 /*
@@ -542,7 +545,8 @@ VOID TuiMessageBox(PCSTR MessageText)
     PVOID    ScreenBuffer;
 
     // Save the screen contents
-    ScreenBuffer = MmHeapAlloc(UiScreenWidth * UiScreenHeight * 2);
+    ScreenBuffer = FrLdrTempAlloc(UiScreenWidth * UiScreenHeight * 2,
+                                  TAG_TUI_SCREENBUFFER);
     TuiSaveScreen(ScreenBuffer);
 
     // Display the message box
@@ -550,7 +554,7 @@ VOID TuiMessageBox(PCSTR MessageText)
 
     // Restore the screen contents
     TuiRestoreScreen(ScreenBuffer);
-    MmHeapFree(ScreenBuffer);
+    FrLdrTempFree(ScreenBuffer, TAG_TUI_SCREENBUFFER);
 }
 
 VOID TuiMessageBoxCritical(PCSTR MessageText)
@@ -758,7 +762,8 @@ VOID TuiFadeInBackdrop(VOID)
 
     if (UiUseSpecialEffects && ! MachVideoIsPaletteFixed())
     {
-        TuiFadePalette = (PPALETTE_ENTRY)MmHeapAlloc(sizeof(PALETTE_ENTRY) * 64);
+        TuiFadePalette = (PPALETTE_ENTRY)FrLdrTempAlloc(sizeof(PALETTE_ENTRY) * 64,
+                                                        TAG_TAG_TUI_PALETTE);
 
         if (TuiFadePalette != NULL)
         {
@@ -773,7 +778,7 @@ VOID TuiFadeInBackdrop(VOID)
     if (UiUseSpecialEffects && ! MachVideoIsPaletteFixed() && TuiFadePalette != NULL)
     {
         VideoFadeIn(TuiFadePalette, 64);
-        MmHeapFree(TuiFadePalette);
+        FrLdrTempFree(TuiFadePalette, TAG_TAG_TUI_PALETTE);
     }
 }
 
@@ -783,7 +788,8 @@ VOID TuiFadeOut(VOID)
 
     if (UiUseSpecialEffects && ! MachVideoIsPaletteFixed())
     {
-        TuiFadePalette = (PPALETTE_ENTRY)MmHeapAlloc(sizeof(PALETTE_ENTRY) * 64);
+        TuiFadePalette = (PPALETTE_ENTRY)FrLdrTempAlloc(sizeof(PALETTE_ENTRY) * 64,
+                                                        TAG_TAG_TUI_PALETTE);
 
         if (TuiFadePalette != NULL)
         {
@@ -801,7 +807,7 @@ VOID TuiFadeOut(VOID)
     if (UiUseSpecialEffects && ! MachVideoIsPaletteFixed() && TuiFadePalette != NULL)
     {
         VideoRestorePaletteState(TuiFadePalette, 64);
-        MmHeapFree(TuiFadePalette);
+        FrLdrTempFree(TuiFadePalette, TAG_TAG_TUI_PALETTE);
     }
 
 }
@@ -826,7 +832,8 @@ BOOLEAN TuiEditBox(PCSTR MessageText, PCHAR EditTextBuffer, ULONG Length)
     PVOID    ScreenBuffer;
 
     // Save the screen contents
-    ScreenBuffer = MmHeapAlloc(UiScreenWidth * UiScreenHeight * 2);
+    ScreenBuffer = FrLdrTempAlloc(UiScreenWidth * UiScreenHeight * 2,
+                                  TAG_TUI_SCREENBUFFER);
     TuiSaveScreen(ScreenBuffer);
 
     // Find the height
@@ -952,29 +959,29 @@ BOOLEAN TuiEditBox(PCSTR MessageText, PCHAR EditTextBuffer, ULONG Length)
                     MachBeep();
                 }
             }
-            else if (key == KEY_HOME) // Go to the start of the buffer
+            else if (Extended && key == KEY_HOME) // Go to the start of the buffer
             {
                 EditBoxTextPosition = 0;
             }
-            else if (key == KEY_END) // Go to the end of the buffer
+            else if (Extended && key == KEY_END) // Go to the end of the buffer
             {
                 EditBoxTextPosition = EditBoxTextLength;
             }
-            else if (key == KEY_RIGHT) // Go right
+            else if (Extended && key == KEY_RIGHT) // Go right
             {
                 if (EditBoxTextPosition < EditBoxTextLength)
                     EditBoxTextPosition++;
                 else
                     MachBeep();
             }
-            else if (key == KEY_LEFT) // Go left
+            else if (Extended && key == KEY_LEFT) // Go left
             {
                 if (EditBoxTextPosition > 0)
                     EditBoxTextPosition--;
                 else
                     MachBeep();
             }
-            else // Add this key to the buffer
+            else if (!Extended) // Add this key to the buffer
             {
                 if ( (EditBoxTextLength   < Length - 1) &&
                      (EditBoxTextPosition < Length - 1) )
@@ -991,6 +998,10 @@ BOOLEAN TuiEditBox(PCSTR MessageText, PCHAR EditTextBuffer, ULONG Length)
                 {
                     MachBeep();
                 }
+            }
+            else
+            {
+                MachBeep();
             }
         }
 
@@ -1025,7 +1036,7 @@ BOOLEAN TuiEditBox(PCSTR MessageText, PCHAR EditTextBuffer, ULONG Length)
 
     // Restore the screen contents
     TuiRestoreScreen(ScreenBuffer);
-    MmHeapFree(ScreenBuffer);
+    FrLdrTempFree(ScreenBuffer, TAG_TUI_SCREENBUFFER);
 
     return ReturnCode;
 }

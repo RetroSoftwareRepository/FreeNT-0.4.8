@@ -2,11 +2,17 @@
  * PROJECT:         ReactOS crt library
  * LICENSE:         GPLv2+ - See COPYING in the top level directory
  * PURPOSE:         Compiler support for COM
- * PROGRAMMER:      Thomas Faber
+ * PROGRAMMER:      Thomas Faber (thomas.faber@reactos.org)
  */
 
+#include <stdarg.h>
+
+#define WIN32_NO_STATUS
+#define _INC_WINDOWS
+
+#include <windef.h>
+#include <winbase.h>
 #include <comdef.h>
-#include <comutil.h>
 
 /* comdef.h */
 typedef void WINAPI COM_ERROR_HANDLER(HRESULT, IErrorInfo *);

@@ -20,8 +20,6 @@
  *
  */
 
-#include "inetcpl.h"
-
 #pragma code_page(65001)
 
 LANGUAGE LANG_SERBIAN, SUBLANG_SERBIAN_CYRILLIC
@@ -102,7 +100,7 @@ BEGIN
 
 END
 
-STRINGTABLE DISCARDABLE
+STRINGTABLE
 BEGIN
     IDS_CPL_NAME        "Internet Settings"
     IDS_CPL_INFO        "Configure Wine Internet Browser and related settings"

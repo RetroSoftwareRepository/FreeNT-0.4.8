@@ -21,18 +21,7 @@
  *
  */
 
-#include "config.h"
-#include "wine/port.h"
-
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <assert.h>
-
 #include "dbghelp_private.h"
-#include "image_private.h"
-#include "winternl.h"
-#include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(dbghelp);
 
@@ -526,6 +515,7 @@ static BOOL pe_load_dwarf(struct module* module)
     return ret;
 }
 
+#ifndef DBGHELP_STATIC_LIB
 /******************************************************************
  *		pe_load_dbg_file
  *
@@ -625,6 +615,7 @@ done:
     pe_unmap_full(fmap);
     return ret;
 }
+#endif /* DBGHELP_STATIC_LIB */
 
 /***********************************************************************
  *			pe_load_export_debug_info
@@ -721,7 +712,9 @@ BOOL pe_load_debug_info(const struct process* pcs, struct module* module)
     {
         ret = pe_load_stabs(pcs, module);
         ret = pe_load_dwarf(module) || ret;
+        #ifndef DBGHELP_STATIC_LIB
         ret = pe_load_msc_debug_info(pcs, module) || ret;
+        #endif
         ret = ret || pe_load_coff_symbol_table(module); /* FIXME */
         /* if we still have no debug info (we could only get SymExport at this
          * point), then do the SymExport except if we have an ELF container,

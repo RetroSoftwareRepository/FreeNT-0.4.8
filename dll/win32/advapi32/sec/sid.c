@@ -12,6 +12,9 @@
  */
 
 #include <advapi32.h>
+
+#include <sddl.h>
+
 WINE_DEFAULT_DEBUG_CHANNEL(advapi);
 
 #define MAX_GUID_STRING_LEN 39
@@ -1439,6 +1442,7 @@ WINAPI
 EqualSid(PSID pSid1,
          PSID pSid2)
 {
+    SetLastError(ERROR_SUCCESS);
     return RtlEqualSid (pSid1, pSid2);
 }
 
@@ -1499,6 +1503,7 @@ WINAPI
 GetSidSubAuthority(PSID pSid,
                    DWORD nSubAuthority)
 {
+    SetLastError(ERROR_SUCCESS);
     return (PDWORD)RtlSubAuthoritySid(pSid, nSubAuthority);
 }
 
@@ -1510,6 +1515,7 @@ PUCHAR
 WINAPI
 GetSidSubAuthorityCount(PSID pSid)
 {
+    SetLastError(ERROR_SUCCESS);
     return RtlSubAuthorityCountSid(pSid);
 }
 
@@ -1824,7 +1830,7 @@ static const RECORD SidTable[] =
 	{ SDDL_DOMAIN_GUESTS, WinAccountDomainGuestsSid /* FIXME: DOMAIN_GROUP_RID_GUESTS */ },
 	{ SDDL_DOMAIN_USERS, WinAccountDomainUsersSid /* FIXME: DOMAIN_GROUP_RID_USERS */ },
 	{ SDDL_ENTERPRISE_ADMINS, WinAccountEnterpriseAdminsSid /* FIXME: DOMAIN_GROUP_RID_ENTERPRISE_ADMINS */ },
-	{ SDDL_ENTERPRISE_DOMAIN_CONTROLLERS, WinLogonIdsSid /* FIXME: SECURITY_SERVER_LOGON_RID */ },
+	{ SDDL_ENTERPRISE_DOMAIN_CONTROLLERS, WinEnterpriseControllersSid },
 	{ SDDL_EVERYONE, WinWorldSid },
 	{ SDDL_GROUP_POLICY_ADMINS, WinAccountPolicyAdminsSid /* FIXME: DOMAIN_GROUP_RID_POLICY_ADMINS */ },
 	{ SDDL_INTERACTIVE, WinInteractiveSid },

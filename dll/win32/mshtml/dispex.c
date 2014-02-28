@@ -16,25 +16,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-
-#include <stdarg.h>
-#include <assert.h>
-
-#define COBJMACROS
-#define NONAMELESSUNION
-
-#include <windef.h>
-#include <winbase.h>
-//#include "winuser.h"
-#include <ole2.h>
-
-#include <wine/debug.h>
-
 #include "mshtml_private.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(mshtml);
 
 #define MAX_ARGS 16
 
@@ -270,7 +252,7 @@ static void add_func_info(dispex_data_t *data, DWORD *size, tid_t tid, const FUN
 
         info->prop_vt = desc->elemdescFunc.tdesc.vt;
         if(info->prop_vt != VT_VOID && !is_arg_type_supported(info->prop_vt)) {
-            TRACE("%s: return type %d\n", debugstr_w(info->name), info->arg_types[i]);
+            TRACE("%s: return type %d\n", debugstr_w(info->name), info->prop_vt);
             return; /* Fallback to ITypeInfo::Invoke */
         }
 
@@ -1219,7 +1201,7 @@ static HRESULT invoke_builtin_prop(DispatchEx *This, DISPID id, LCID lcid, WORD 
             if(FAILED(hres))
                 return hres;
 
-            if(flags != (DISPATCH_PROPERTYGET|DISPATCH_METHOD)) {
+            if(flags != (DISPATCH_PROPERTYGET|DISPATCH_METHOD) || dp->cArgs) {
                 if(V_VT(&v) != VT_DISPATCH) {
                     FIXME("Not a function %s\n", debugstr_variant(&v));
                     VariantClear(&v);
@@ -1231,7 +1213,7 @@ static HRESULT invoke_builtin_prop(DispatchEx *This, DISPID id, LCID lcid, WORD 
             }else if(res) {
                 *res = v;
             }else {
-                IDispatch_Release(V_DISPATCH(&v));
+                VariantClear(&v);
             }
         }
     }

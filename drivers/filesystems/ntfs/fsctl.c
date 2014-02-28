@@ -29,10 +29,10 @@
 
 #include "ntfs.h"
 
+#include <ntdddisk.h>
+
 #define NDEBUG
 #include <debug.h>
-
-/* GLOBALS *****************************************************************/
 
 /* FUNCTIONS ****************************************************************/
 
@@ -485,6 +485,8 @@ NTSTATUS
 NtfsVerifyVolume(PDEVICE_OBJECT DeviceObject,
                  PIRP Irp)
 {
+    UNREFERENCED_PARAMETER(DeviceObject);
+    UNREFERENCED_PARAMETER(Irp);
     DPRINT1("NtfsVerifyVolume() called\n");
     return STATUS_WRONG_VOLUME;
 }

@@ -52,11 +52,14 @@
 #define ASSERT_EXCLUSIVE_OBJECT_TYPE(objt) \
     ASSERT((objt) == GDIObjType_DC_TYPE || \
            (objt) == GDIObjType_RGN_TYPE)
+#define ASSERT_TRYLOCK_OBJECT_TYPE(objt) \
+    ASSERT((objt) == GDIObjType_DRVOBJ_TYPE)
 #else
 #define DBG_INCREASE_LOCK_COUNT(ppi, hobj)
 #define DBG_DECREASE_LOCK_COUNT(x, y)
 #define ASSERT_SHARED_OBJECT_TYPE(objt)
 #define ASSERT_EXCLUSIVE_OBJECT_TYPE(objt)
+#define ASSERT_TRYLOCK_OBJECT_TYPE(objt)
 #endif
 
 #if defined(_M_IX86) || defined(_M_AMD64)
@@ -222,7 +225,7 @@ InitGdiHandleTable(void)
 
 FORCEINLINE
 VOID
-IncrementGdiHandleCount(void)
+IncrementCurrentProcessGdiHandleCount(void)
 {
     PPROCESSINFO ppi = PsGetCurrentProcessWin32Process();
     if (ppi) InterlockedIncrement((LONG*)&ppi->GDIHandleCount);
@@ -230,10 +233,42 @@ IncrementGdiHandleCount(void)
 
 FORCEINLINE
 VOID
-DecrementGdiHandleCount(void)
+DecrementCurrentProcessGdiHandleCount(void)
 {
     PPROCESSINFO ppi = PsGetCurrentProcessWin32Process();
     if (ppi) InterlockedDecrement((LONG*)&ppi->GDIHandleCount);
+}
+
+FORCEINLINE
+VOID
+IncrementGdiHandleCount(ULONG ulProcessId)
+{
+    PEPROCESS pep;
+    PPROCESSINFO ppi;
+    NTSTATUS Status;
+
+    Status = PsLookupProcessByProcessId(ULongToHandle(ulProcessId), &pep);
+    NT_ASSERT(NT_SUCCESS(Status));
+
+    ppi = PsGetProcessWin32Process(pep);
+    if (ppi) InterlockedIncrement((LONG*)&ppi->GDIHandleCount);
+    if (NT_SUCCESS(Status)) ObDereferenceObject(pep);
+}
+
+FORCEINLINE
+VOID
+DecrementGdiHandleCount(ULONG ulProcessId)
+{
+    PEPROCESS pep;
+    PPROCESSINFO ppi;
+    NTSTATUS Status;
+
+    Status = PsLookupProcessByProcessId(ULongToHandle(ulProcessId), &pep);
+    NT_ASSERT(NT_SUCCESS(Status));
+
+    ppi = PsGetProcessWin32Process(pep);
+    if (ppi) InterlockedDecrement((LONG*)&ppi->GDIHandleCount);
+    if (NT_SUCCESS(Status)) ObDereferenceObject(pep);
 }
 
 static
@@ -497,7 +532,7 @@ GDIOBJ_vDereferenceObject(POBJ pobj)
                 /* Decrement the process handle count */
                 ASSERT(gpentHmgr[ulIndex].ObjectOwner.ulObj ==
                        HandleToUlong(PsGetCurrentProcessId()));
-                DecrementGdiHandleCount();
+                DecrementCurrentProcessGdiHandleCount();
             }
 
             /* Push entry to the free list */
@@ -587,6 +622,72 @@ GDIOBJ_vReferenceObjectByPointer(POBJ pobj)
     }
 
     DBG_LOGEVENT(&pobj->slhLog, EVENT_REFERENCE, cRefs);
+}
+
+PGDIOBJ
+NTAPI
+GDIOBJ_TryLockObject(
+    HGDIOBJ hobj,
+    UCHAR objt)
+{
+    PENTRY pentry;
+    POBJ pobj;
+    DWORD dwThreadId;
+
+    /* Check if the handle type matches */
+    ASSERT_TRYLOCK_OBJECT_TYPE(objt);
+    if ((((ULONG_PTR)hobj >> 16) & 0x1f) != objt)
+    {
+        DPRINT("Wrong object type: hobj=0x%p, objt=0x%x\n", hobj, objt);
+        return NULL;
+    }
+
+    /* Reference the handle entry */
+    pentry = ENTRY_ReferenceEntryByHandle(hobj, 0);
+    if (!pentry)
+    {
+        DPRINT("GDIOBJ: Requested handle 0x%p is not valid.\n", hobj);
+        return NULL;
+    }
+
+    /* Get the pointer to the BASEOBJECT */
+    pobj = pentry->einfo.pobj;
+
+    /* Check if we already own the lock */
+    dwThreadId = PtrToUlong(PsGetCurrentThreadId());
+    if (pobj->dwThreadId != dwThreadId)
+    {
+        /* Disable APCs and try acquiring the push lock */
+        KeEnterCriticalRegion();
+        if(!ExTryAcquirePushLockExclusive(&pobj->pushlock))
+        {
+            ULONG cRefs, ulIndex;
+            /* Already owned. Clean up and leave. */
+            KeLeaveCriticalRegion();
+
+            /* Calculate the index */
+            ulIndex = GDI_HANDLE_GET_INDEX(pobj->hHmgr);
+
+            /* Decrement reference count */
+            ASSERT((gpaulRefCount[ulIndex] & REF_MASK_COUNT) > 0);
+            cRefs = InterlockedDecrement((LONG*)&gpaulRefCount[ulIndex]);
+            ASSERT(cRefs & REF_MASK_VALID);
+
+            return NULL;
+        }
+
+        /* Set us as lock owner */
+        ASSERT(pobj->dwThreadId == 0);
+        pobj->dwThreadId = dwThreadId;
+    }
+
+    /* Increase lock count */
+    pobj->cExclusiveLock++;
+    DBG_INCREASE_LOCK_COUNT(PsGetCurrentProcessWin32Process(), hobj);
+    DBG_LOGEVENT(&pobj->slhLog, EVENT_LOCK, 0);
+
+    /* Return the object */
+    return pobj;
 }
 
 PGDIOBJ
@@ -710,7 +811,7 @@ GDIOBJ_hInsertObject(
     if (ulOwner == GDI_OBJ_HMGR_POWNED)
     {
         /* Increment the process handle count */
-        IncrementGdiHandleCount();
+        IncrementCurrentProcessGdiHandleCount();
 
         /* Use Process id */
         ulOwner = HandleToUlong(PsGetCurrentProcessId());
@@ -729,50 +830,64 @@ VOID
 NTAPI
 GDIOBJ_vSetObjectOwner(
     POBJ pobj,
-    ULONG ulOwner)
+    ULONG ulNewOwner)
 {
     PENTRY pentry;
+    ULONG ulOldOwner;
 
     /* This is a ugly HACK, needed to fix IntGdiSetDCOwnerEx */
     if (GDI_HANDLE_IS_STOCKOBJ(pobj->hHmgr))
     {
-        DPRINT("Trying to set ownership of stock object %p to %lx\n", pobj->hHmgr, ulOwner);
+        DPRINT("Trying to set ownership of stock object %p to %lx\n", pobj->hHmgr, ulNewOwner);
         return;
     }
 
     /* Get the handle entry */
-    ASSERT(GDI_HANDLE_GET_INDEX(pobj->hHmgr));
+    NT_ASSERT(GDI_HANDLE_GET_INDEX(pobj->hHmgr));
     pentry = &gpentHmgr[GDI_HANDLE_GET_INDEX(pobj->hHmgr)];
 
+    /* Check if the new owner is the same as the old one */
+    ulOldOwner = pentry->ObjectOwner.ulObj;
+    if (ulOldOwner == ulNewOwner)
+    {
+        /* Nothing to do */
+        return;
+    }
+
     /* Is the current process requested? */
-    if (ulOwner == GDI_OBJ_HMGR_POWNED)
+    if (ulNewOwner == GDI_OBJ_HMGR_POWNED)
     {
         /* Use process id */
-        ulOwner = HandleToUlong(PsGetCurrentProcessId());
-        if (pentry->ObjectOwner.ulObj != ulOwner)
-        {
-            IncrementGdiHandleCount();
-        }
+        ulNewOwner = HandleToUlong(PsGetCurrentProcessId());
     }
 
     // HACK
-    if (ulOwner == GDI_OBJ_HMGR_NONE)
-        ulOwner = GDI_OBJ_HMGR_PUBLIC;
+    if (ulNewOwner == GDI_OBJ_HMGR_NONE)
+        ulNewOwner = GDI_OBJ_HMGR_PUBLIC;
 
-    if (ulOwner == GDI_OBJ_HMGR_PUBLIC ||
-        ulOwner == GDI_OBJ_HMGR_NONE)
+    /* Was the object process owned? */
+    if ((ulOldOwner != GDI_OBJ_HMGR_PUBLIC) &&
+        (ulOldOwner != GDI_OBJ_HMGR_NONE))
+    {
+        /* Decrement the previous owners handle count */
+        DecrementGdiHandleCount(ulOldOwner);
+    }
+
+    /* Is the new owner a process? */
+    if ((ulNewOwner != GDI_OBJ_HMGR_PUBLIC) &&
+        (ulNewOwner != GDI_OBJ_HMGR_NONE))
+    {
+        /* Increment the new owners handle count */
+        IncrementGdiHandleCount(ulNewOwner);
+    }
+    else
     {
         /* Make sure we don't leak user mode memory */
-        ASSERT(pentry->pUser == NULL);
-        if (pentry->ObjectOwner.ulObj != GDI_OBJ_HMGR_PUBLIC &&
-            pentry->ObjectOwner.ulObj != GDI_OBJ_HMGR_NONE)
-        {
-            DecrementGdiHandleCount();
-        }
+        NT_ASSERT(pentry->pUser == NULL);
     }
 
     /* Set new owner */
-    pentry->ObjectOwner.ulObj = ulOwner;
+    pentry->ObjectOwner.ulObj = ulNewOwner;
     DBG_LOGEVENT(&pobj->slhLog, EVENT_SET_OWNER, 0);
 }
 
@@ -970,9 +1085,10 @@ GreGetObjectOwner(HGDIOBJ hobj)
 
 BOOL
 NTAPI
-GreSetObjectOwner(
+GreSetObjectOwnerEx(
     HGDIOBJ hobj,
-    ULONG ulOwner)
+    ULONG ulOwner,
+    ULONG Flags)
 {
     PENTRY pentry;
 
@@ -984,7 +1100,7 @@ GreSetObjectOwner(
     }
 
     /* Reference the handle entry */
-    pentry = ENTRY_ReferenceEntryByHandle(hobj, 0);
+    pentry = ENTRY_ReferenceEntryByHandle(hobj, Flags);
     if (!pentry)
     {
         DPRINT("GreSetObjectOwner: Invalid handle 0x%p.\n", hobj);
@@ -998,6 +1114,15 @@ GreSetObjectOwner(
     GDIOBJ_vDereferenceObject(pentry->einfo.pobj);
 
     return TRUE;
+}
+
+BOOL
+NTAPI
+GreSetObjectOwner(
+    HGDIOBJ hobj,
+    ULONG ulOwner)
+{
+    return GreSetObjectOwnerEx(hobj, ulOwner, 0);
 }
 
 INT

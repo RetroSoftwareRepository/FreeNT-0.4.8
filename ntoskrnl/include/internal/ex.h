@@ -27,6 +27,11 @@ extern ULONG ExpInitializationPhase;
 extern ULONG ExpAltTimeZoneBias;
 extern LIST_ENTRY ExSystemLookasideListHead;
 extern PCALLBACK_OBJECT PowerStateCallback;
+extern LIST_ENTRY ExPoolLookasideListHead;
+extern LIST_ENTRY ExpNonPagedLookasideListHead;
+extern LIST_ENTRY ExpPagedLookasideListHead;
+extern KSPIN_LOCK ExpNonPagedLookasideListLock;
+extern KSPIN_LOCK ExpPagedLookasideListLock;
 
 typedef struct _EXHANDLE
 {
@@ -97,34 +102,6 @@ typedef struct _HARDERROR_USER_PARAMETERS
 #define MAX_LOW_INDEX       LOW_LEVEL_ENTRIES
 #define MAX_MID_INDEX       (MID_LEVEL_ENTRIES * LOW_LEVEL_ENTRIES)
 #define MAX_HIGH_INDEX      (MID_LEVEL_ENTRIES * MID_LEVEL_ENTRIES * LOW_LEVEL_ENTRIES)
-
-//
-// Detect old GCC
-//
-#if (__GNUC__ * 10000 + __GNUC_MINOR__ * 100 + __GNUC_PATCHLEVEL__ < 40300) || \
-    (__GNUC__ * 10000 + __GNUC_MINOR__ * 100 + __GNUC_PATCHLEVEL__ == 40303)
-
-#define DEFINE_WAIT_BLOCK(x)                                \
-    struct _AlignHack                                       \
-    {                                                       \
-        UCHAR Hack[15];                                     \
-        EX_PUSH_LOCK_WAIT_BLOCK UnalignedBlock;             \
-    } WaitBlockBuffer;                                      \
-    PEX_PUSH_LOCK_WAIT_BLOCK x = (PEX_PUSH_LOCK_WAIT_BLOCK) \
-        ((ULONG_PTR)&WaitBlockBuffer.UnalignedBlock &~ 0xF);
-
-#else
-
-//
-// This is only for compatibility; the compiler will optimize the extra
-// local variable (the actual pointer) away, so we don't take any perf hit
-// by doing this.
-//
-#define DEFINE_WAIT_BLOCK(x)                                \
-    EX_PUSH_LOCK_WAIT_BLOCK WaitBlockBuffer;                \
-    PEX_PUSH_LOCK_WAIT_BLOCK x = &WaitBlockBuffer;
-
-#endif
 
 #define ExpChangeRundown(x, y, z) (ULONG_PTR)InterlockedCompareExchangePointer(&x->Ptr, (PVOID)y, (PVOID)z)
 #define ExpChangePushlock(x, y, z) InterlockedCompareExchangePointer((PVOID*)x, (PVOID)y, (PVOID)z)

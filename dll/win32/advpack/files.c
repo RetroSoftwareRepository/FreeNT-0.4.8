@@ -18,25 +18,10 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-
-#include <stdarg.h>
-//#include <stdlib.h>
-
-#include <windef.h>
-#include <winbase.h>
-#include <winuser.h>
-#include <winreg.h>
-#include <winver.h>
-#include <winternl.h>
-//#include "setupapi.h"
-#include <advpub.h>
-#include <fdi.h>
-#include <wine/debug.h>
-#include <wine/unicode.h>
 #include "advpack_private.h"
 
-WINE_DEFAULT_DEBUG_CHANNEL(advpack);
+#include <winver.h>
+#include <fdi.h>
 
 /* converts an ansi double null-terminated list to a unicode list */
 static LPWSTR ansi_to_unicode_list(LPCSTR ansi_list)
@@ -503,8 +488,8 @@ HRESULT WINAPI DelNodeRunDLL32W(HWND hWnd, HINSTANCE hInst, LPWSTR cmdline, INT 
     lstrcpyW(cmdline_copy, cmdline);
 
     /* get the parameters at indexes 0 and 1 respectively */
-    szFilename = get_parameter(&cmdline_ptr, ',');
-    szFlags = get_parameter(&cmdline_ptr, ',');
+    szFilename = get_parameter(&cmdline_ptr, ',', TRUE);
+    szFlags = get_parameter(&cmdline_ptr, ',', TRUE);
 
     if (szFlags)
         dwFlags = atolW(szFlags);

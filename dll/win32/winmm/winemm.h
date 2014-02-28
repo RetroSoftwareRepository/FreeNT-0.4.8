@@ -19,11 +19,29 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <stdarg.h>
+#ifndef _WINEMM_H_
+#define _WINEMM_H_
+
+#include <wine/config.h>
+
+#include <assert.h>
+#include <stdio.h>
+
+#define _INC_WINDOWS
+#define COM_NO_WINDOWS_H
+
+#define NONAMELESSUNION
+#define NONAMELESSSTRUCT
 
 #include <windef.h>
-//#include "winbase.h"
+#include <winbase.h>
+#include <winuser.h>
+#include <winreg.h>
 #include <mmddk.h>
+
+#include <wine/debug.h>
+#include <wine/exception.h>
+#include <wine/unicode.h>
 
 #define WINE_DEFAULT_WINMM_DRIVER     "alsa,oss,coreaudio,esd"
 #define WINE_DEFAULT_WINMM_MAPPER     "msacm32.drv"
@@ -184,3 +202,5 @@ extern HANDLE psStopEvent;
     "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Drivers"
 
 INT LoadRegistryMMEDrivers(char* key);
+
+#endif /* _WINEMM_H_ */

@@ -1,11 +1,14 @@
+#ifndef _MMC_PCH_
+#define _MMC_PCH_
+
 #include <stdarg.h>
+
 #include <windef.h>
 #include <winbase.h>
 #include <winuser.h>
-#include <commctrl.h>
-#include <tchar.h>
 
-#include "resource.h"
+#define WM_USER_CLOSE_CHILD (WM_USER + 1)
+
 
 /* console.c */
 
@@ -16,7 +19,8 @@ VOID
 UnregisterMMCWndClasses(VOID);
 
 HWND
-CreateConsoleWindow(IN LPCTSTR lpFileName  OPTIONAL);
+CreateConsoleWindow(IN LPCTSTR lpFileName OPTIONAL,
+                    int nCmdShow);
 
 /* misc.c */
 
@@ -34,3 +38,7 @@ LoadAndFormatString(IN HINSTANCE hInstance,
 
 extern HINSTANCE hAppInstance;
 extern HANDLE hAppHeap;
+extern HWND hwndMainConsole;
+extern HWND hwndMDIClient;
+
+#endif /* _MMC_PCH_ */

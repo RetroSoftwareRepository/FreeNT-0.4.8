@@ -16,26 +16,36 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#ifndef _WINE_JSCRIPT_H
+#define _WINE_JSCRIPT_H
+
+#include <wine/config.h>
+#include <wine/port.h>
+
+#include <assert.h>
+#include <stdarg.h>
+
 #define WIN32_NO_STATUS
 #define _INC_WINDOWS
 #define COM_NO_WINDOWS_H
-
-#include <stdarg.h>
-#include <stdio.h>
 
 #define COBJMACROS
 
 #include <windef.h>
 #include <winbase.h>
-#include <winuser.h>
-#include <ole2.h>
+#include <objbase.h>
+#include <oleauto.h>
 #include <dispex.h>
 #include <activscp.h>
+#include <objsafe.h>
+
+#include <wine/debug.h>
+#include <wine/list.h>
+#include <wine/unicode.h>
+
+WINE_DEFAULT_DEBUG_CHANNEL(jscript);
 
 #include "resource.h"
-
-#include <wine/unicode.h>
-#include <wine/list.h>
 
 typedef struct _jsval_t jsval_t;
 typedef struct _jsstr_t jsstr_t;
@@ -326,6 +336,7 @@ HRESULT to_integer(script_ctx_t*,jsval_t,double*) DECLSPEC_HIDDEN;
 HRESULT to_int32(script_ctx_t*,jsval_t,INT*) DECLSPEC_HIDDEN;
 HRESULT to_uint32(script_ctx_t*,jsval_t,UINT32*) DECLSPEC_HIDDEN;
 HRESULT to_string(script_ctx_t*,jsval_t,jsstr_t**) DECLSPEC_HIDDEN;
+HRESULT to_flat_string(script_ctx_t*,jsval_t,jsstr_t**,const WCHAR**) DECLSPEC_HIDDEN;
 HRESULT to_object(script_ctx_t*,jsval_t,IDispatch**) DECLSPEC_HIDDEN;
 
 HRESULT variant_change_type(script_ctx_t*,VARIANT*,VARIANT*,VARTYPE) DECLSPEC_HIDDEN;
@@ -544,3 +555,8 @@ static inline void unlock_module(void)
 {
     InterlockedDecrement(&module_ref);
 }
+
+#include "engine.h"
+#include "regexp.h"
+
+#endif /* _WINE_JSCRIPT_H */

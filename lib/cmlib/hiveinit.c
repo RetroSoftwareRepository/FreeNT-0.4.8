@@ -29,15 +29,16 @@ HvpVerifyHiveHeader(
        HvpHiveHeaderChecksum(BaseBlock) != BaseBlock->CheckSum)
    {
       DPRINT1("Verify Hive Header failed: \n");
-      DPRINT1("    Signature: 0x%x and not 0x%x, Major: 0x%x and not 0x%x\n",
+      DPRINT1("    Signature: 0x%x, expected 0x%x; Major: 0x%x, expected 0x%x\n",
           BaseBlock->Signature, HV_SIGNATURE, BaseBlock->Major, HSYS_MAJOR);
-      DPRINT1("    Minor: 0x%x is not >= 0x%x, Type: 0x%x and not 0x%x\n",
+      DPRINT1("    Minor: 0x%x is not >= 0x%x; Type: 0x%x, expected 0x%x\n",
           BaseBlock->Minor, HSYS_MINOR, BaseBlock->Type, HFILE_TYPE_PRIMARY);
-      DPRINT1("    Format: 0x%x and not 0x%x, Cluster: 0x%x and not 1\n",
+      DPRINT1("    Format: 0x%x, expected 0x%x; Cluster: 0x%x, expected 1\n",
           BaseBlock->Format, HBASE_FORMAT_MEMORY, BaseBlock->Cluster);
-      DPRINT1("    Sequence: 0x%x and not 0x%x, Checksum: 0x%x and not 0x%x\n",
+      DPRINT1("    Sequence: 0x%x, expected 0x%x; Checksum: 0x%x, expected 0x%x\n",
           BaseBlock->Sequence1, BaseBlock->Sequence2,
           HvpHiveHeaderChecksum(BaseBlock), BaseBlock->CheckSum);
+
       return FALSE;
    }
 
@@ -91,7 +92,8 @@ HvpFreeHiveBins(
 
 NTSTATUS CMAPI
 HvpCreateHive(
-   PHHIVE RegistryHive)
+   PHHIVE RegistryHive,
+   PCUNICODE_STRING FileName OPTIONAL)
 {
    PHBASE_BLOCK BaseBlock;
    ULONG Index;
@@ -99,7 +101,9 @@ HvpCreateHive(
    BaseBlock = RegistryHive->Allocate(sizeof(HBASE_BLOCK), FALSE, TAG_CM);
    if (BaseBlock == NULL)
       return STATUS_NO_MEMORY;
+
    RtlZeroMemory(BaseBlock, sizeof(HBASE_BLOCK));
+
    BaseBlock->Signature = HV_SIGNATURE;
    BaseBlock->Major = HSYS_MAJOR;
    BaseBlock->Minor = HSYS_MINOR;
@@ -107,10 +111,31 @@ HvpCreateHive(
    BaseBlock->Format = HBASE_FORMAT_MEMORY;
    BaseBlock->Cluster = 1;
    BaseBlock->RootCell = HCELL_NIL;
-   BaseBlock->Length = HV_BLOCK_SIZE;
+   BaseBlock->Length = 0;
    BaseBlock->Sequence1 = 1;
    BaseBlock->Sequence2 = 1;
-   /* FIXME: Fill in the file name */
+
+   /* Copy the 31 last characters of the hive file name if any */
+   if (FileName)
+   {
+      if (FileName->Length / sizeof(WCHAR) <= HIVE_FILENAME_MAXLEN)
+      {
+         RtlCopyMemory(BaseBlock->FileName,
+                       FileName->Buffer,
+                       FileName->Length);
+      }
+      else
+      {
+         RtlCopyMemory(BaseBlock->FileName,
+                       FileName->Buffer +
+                       FileName->Length / sizeof(WCHAR) - HIVE_FILENAME_MAXLEN,
+                       HIVE_FILENAME_MAXLEN * sizeof(WCHAR));
+      }
+
+      /* NULL-terminate */
+      BaseBlock->FileName[HIVE_FILENAME_MAXLEN] = L'\0';
+   }
+
    BaseBlock->CheckSum = HvpHiveHeaderChecksum(BaseBlock);
 
    RegistryHive->BaseBlock = BaseBlock;
@@ -145,11 +170,7 @@ HvpInitializeMemoryHive(
    PULONG BitmapBuffer;
    SIZE_T ChunkSize;
 
-   //
-   // This hack is similar in magnitude to the US's National Debt
-   //
    ChunkSize = ((PHBASE_BLOCK)ChunkBase)->Length;
-   ((PHBASE_BLOCK)ChunkBase)->Length = HV_BLOCK_SIZE;
    DPRINT("ChunkSize: %lx\n", ChunkSize);
 
    if (ChunkSize < sizeof(HBASE_BLOCK) ||
@@ -172,7 +193,7 @@ HvpInitializeMemoryHive(
     * we go.
     */
 
-   Hive->Storage[Stable].Length = (ULONG)(ChunkSize / HV_BLOCK_SIZE) - 1;
+   Hive->Storage[Stable].Length = (ULONG)(ChunkSize / HV_BLOCK_SIZE);
    Hive->Storage[Stable].BlockList =
       Hive->Allocate(Hive->Storage[Stable].Length *
                      sizeof(HMAP_ENTRY), FALSE, TAG_CM);
@@ -305,8 +326,6 @@ HvpGetHiveHeader(IN PHHIVE Hive,
         Hive->Free(BaseBlock, 0);
         BaseBlock = Hive->Allocate(PAGE_SIZE, TRUE, TAG_CM);
         if (!BaseBlock) return NoMemory;
-
-        //BaseBlock->Length = PAGE_SIZE; ??
     }
 
     /* Clear it */
@@ -384,8 +403,6 @@ HvLoadHive(IN PHHIVE Hive,
                             FileSize);
     if (!Result) return STATUS_NOT_REGISTRY_FILE;
 
-    /* Apply "US National Debt" hack */
-    ((PHBASE_BLOCK)HiveData)->Length = FileSize;
 
     /* Free our base block... it's usless in this implementation */
     Hive->Free(BaseBlock, 0);
@@ -439,13 +456,12 @@ HvInitialize(
    PFILE_READ_ROUTINE FileRead,
    PFILE_FLUSH_ROUTINE FileFlush,
    ULONG Cluster OPTIONAL,
-   PUNICODE_STRING FileName)
+   PCUNICODE_STRING FileName OPTIONAL)
 {
    NTSTATUS Status;
    PHHIVE Hive = RegistryHive;
 
    UNREFERENCED_PARAMETER(HiveType);
-   UNREFERENCED_PARAMETER(FileName);
 
    /*
     * Create a new hive structure that will hold all the maintenance data.
@@ -467,7 +483,7 @@ HvInitialize(
    switch (Operation)
    {
       case HINIT_CREATE:
-         Status = HvpCreateHive(Hive);
+         Status = HvpCreateHive(Hive, FileName);
          break;
 
       case HINIT_MEMORY:
@@ -479,8 +495,8 @@ HvInitialize(
          break;
 
       case HINIT_FILE:
-
-         /* Hack of doom: Cluster is actually the file size. */
+      {
+         /* HACK of doom: Cluster is actually the file size. */
          Status = HvLoadHive(Hive, Cluster);
          if ((Status != STATUS_SUCCESS) &&
              (Status != STATUS_REGISTRY_RECOVERED))
@@ -492,6 +508,7 @@ HvInitialize(
          /* Check for previous damage */
          if (Status == STATUS_REGISTRY_RECOVERED) ASSERT(FALSE);
          break;
+     }
 
       default:
          /* FIXME: A better return status value is needed */
@@ -499,8 +516,7 @@ HvInitialize(
          ASSERT(FALSE);
    }
 
-   if (!NT_SUCCESS(Status))
-      return Status;
+   if (!NT_SUCCESS(Status)) return Status;
 
    if (Operation != HINIT_CREATE) CmPrepareHive(Hive);
 

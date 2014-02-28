@@ -9,7 +9,6 @@
 
 /* INCLUDES ******************************************************************/
 
-#include "initguid.h"
 #include <ntoskrnl.h>
 #define NDEBUG
 #include <debug.h>
@@ -344,6 +343,10 @@ PoInitSystem(IN ULONG BootPhase)
     
     /* Initialize support for dope */
     KeInitializeSpinLock(&PopDopeGlobalLock);
+
+    /* Initialize support for shutdown waits and work-items */
+    PopInitShutdownList();
+
     return TRUE;
 }
 
@@ -443,17 +446,6 @@ PoShutdownBugCheck(IN BOOLEAN LogError,
                  BugCheckParameter2,
                  BugCheckParameter3,
                  BugCheckParameter4);
-}
-
-/*
- * @unimplemented
- */
-NTSTATUS
-NTAPI
-PoRequestShutdownEvent(OUT PVOID *Event)
-{
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
 }
 
 /*
@@ -642,19 +634,6 @@ PoUnregisterSystemState(IN PVOID StateHandle)
  */
 NTSTATUS
 NTAPI
-PoQueueShutdownWorkItem(IN PWORK_QUEUE_ITEM WorkItem)
-{
-    PAGED_CODE();
-
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
-}
-
-/*
- * @unimplemented
- */
-NTSTATUS
-NTAPI
 NtInitiatePowerAction (IN POWER_ACTION SystemAction,
                        IN SYSTEM_POWER_STATE MinSystemState,
                        IN ULONG Flags,
@@ -679,8 +658,8 @@ NtPowerInformation(IN POWER_INFORMATION_LEVEL PowerInformationLevel,
 
     PAGED_CODE();
 
-    DPRINT("NtPowerInformation(PowerInformationLevel 0x%x, InputBuffer 0x%x, "
-           "InputBufferLength 0x%x, OutputBuffer 0x%x, OutputBufferLength 0x%x)\n",
+    DPRINT("NtPowerInformation(PowerInformationLevel 0x%x, InputBuffer 0x%p, "
+           "InputBufferLength 0x%x, OutputBuffer 0x%p, OutputBufferLength 0x%x)\n",
            PowerInformationLevel,
            InputBuffer, InputBufferLength,
            OutputBuffer, OutputBufferLength);
@@ -914,7 +893,7 @@ NtSetSystemPowerState(IN POWER_ACTION SystemAction,
 #endif
 
         /* Flush all volumes and the registry */
-        DPRINT1("Flushing volumes, cache flushed %d pages\n", Dummy);
+        DPRINT1("Flushing volumes, cache flushed %lu pages\n", Dummy);
         PopFlushVolumes(PopAction.Shutdown);
 
         /* Set IRP for drivers */

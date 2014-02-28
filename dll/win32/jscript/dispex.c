@@ -16,14 +16,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <assert.h>
-
 #include "jscript.h"
-
-//#include "wine/unicode.h"
-#include <wine/debug.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(jscript);
 
 /*
  * This IID is used to get jsdisp_t objecto from interface.
@@ -1524,8 +1517,15 @@ HRESULT disp_delete_name(script_ctx_t *ctx, IDispatch *disp, jsstr_t *name, BOOL
     jsdisp = iface_to_jsdisp((IUnknown*)disp);
     if(jsdisp) {
         dispex_prop_t *prop;
+        const WCHAR *ptr;
 
-        hres = find_prop_name(jsdisp, string_hash(name->str), name->str, &prop);
+        ptr = jsstr_flatten(name);
+        if(!ptr) {
+            jsdisp_release(jsdisp);
+            return E_OUTOFMEMORY;
+        }
+
+        hres = find_prop_name(jsdisp, string_hash(ptr), ptr, &prop);
         if(prop) {
             hres = delete_prop(prop, ret);
         }else {

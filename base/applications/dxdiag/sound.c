@@ -8,6 +8,9 @@
  */
 
 #include "precomp.h"
+
+#include <mmsystem.h>
+#include <mmreg.h>
 #include <dsound.h>
 
 #if 0
@@ -208,7 +211,7 @@ BOOL CALLBACK DSEnumCallback(LPGUID lpGuid, LPCWSTR lpcstrDescription, LPCWSTR l
         return FALSE;
 
     pContext->hSoundWnd = hDlgs;
-    hwndDlg = CreateDialogParamW(hInst, MAKEINTRESOURCEW(IDD_SOUND_DIALOG), pContext->hMainDialog, SoundPageWndProc, (LPARAM)pContext);
+    hwndDlg = CreateDialogParamW(hInst, MAKEINTRESOURCEW(IDD_SOUND_DIALOG), pContext->hMainDialog, SoundPageWndProc, (LPARAM)pContext); EnableDialogTheme(hwndDlg);
     if (!hwndDlg)
         return FALSE;
 

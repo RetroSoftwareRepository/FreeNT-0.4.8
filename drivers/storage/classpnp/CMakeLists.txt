@@ -26,23 +26,22 @@ list(APPEND SOURCE
     retry.c
     utils.c
     xferpkt.c
-    ${CMAKE_CURRENT_BINARY_DIR}/classpnp.def)
+    classp.h)
 
 add_library(classpnp SHARED
     ${SOURCE}
-    class.rc)
+    guid.c
+    class.rc
+    ${CMAKE_CURRENT_BINARY_DIR}/classpnp.def)
 
 if(ARCH STREQUAL "i386")
     # FIXME: http://www.cmake.org/Bug/view.php?id=12998
-    if(MSVC)
-        #add_target_compile_flags(classpnp "/Gz")
-        set_source_files_properties(${SOURCE} PROPERTIES COMPILE_FLAGS "/Gz")
-    else()
-        set_source_files_properties(${SOURCE} PROPERTIES COMPILE_FLAGS "-w")
+    if(NOT MSVC)
+        set_source_files_properties(${SOURCE} PROPERTIES COMPILE_FLAGS "-Wno-error=unused-but-set-variable -Wno-error=unused-variable -Wno-error=switch")
     endif()
 endif()
 
-add_pch(classpnp classp.h)
+add_pch(classpnp classp.h SOURCE)
 target_link_libraries(classpnp ${PSEH_LIB} libcntpr)
 set_module_type(classpnp kernelmodedriver)
 add_importlibs(classpnp hal ntoskrnl)

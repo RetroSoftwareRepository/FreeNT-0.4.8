@@ -18,12 +18,6 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <config.h>
-#include <wine/port.h>
-
-//#include <math.h>
-//#include <stdio.h>
-
 #include "wined3d_private.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(d3d_shader);
@@ -838,13 +832,14 @@ static void set_tex_op_atifs(struct wined3d_context *context, const struct wined
 {
     const struct wined3d_device *device = context->swapchain->device;
     const struct wined3d_gl_info *gl_info = context->gl_info;
+    const struct wined3d_d3d_info *d3d_info = context->d3d_info;
     const struct atifs_ffp_desc *desc;
     struct ffp_frag_settings settings;
     struct atifs_private_data *priv = device->fragment_priv;
     DWORD mapped_stage;
     unsigned int i;
 
-    gen_ffp_frag_op(device, state, &settings, TRUE);
+    gen_ffp_frag_op(context, state, &settings, TRUE);
     desc = (const struct atifs_ffp_desc *)find_ffp_frag_shader(&priv->fragment_shaders, &settings);
     if(!desc) {
         struct atifs_ffp_desc *new_desc = HeapAlloc(GetProcessHeap(), 0, sizeof(*new_desc));
@@ -854,7 +849,7 @@ static void set_tex_op_atifs(struct wined3d_context *context, const struct wined
             return;
         }
         new_desc->num_textures_used = 0;
-        for (i = 0; i < gl_info->limits.texture_stages; ++i)
+        for (i = 0; i < d3d_info->limits.ffp_blend_stages; ++i)
         {
             if (settings.op[i].cop == WINED3D_TOP_DISABLE)
                 break;
@@ -873,7 +868,7 @@ static void set_tex_op_atifs(struct wined3d_context *context, const struct wined
      */
     for (i = 0; i < desc->num_textures_used; ++i)
     {
-        mapped_stage = device->texUnitMap[i];
+        mapped_stage = context->tex_unit_map[i];
         if (mapped_stage != WINED3D_UNMAPPED_STAGE)
         {
             context_active_texture(context, gl_info, mapped_stage);
@@ -921,7 +916,7 @@ static void set_bumpmat(struct wined3d_context *context, const struct wined3d_st
 
 static void textransform(struct wined3d_context *context, const struct wined3d_state *state, DWORD state_id)
 {
-    if (!isStateDirty(context, STATE_PIXELSHADER))
+    if (!isStateDirty(context, STATE_SHADER(WINED3D_SHADER_TYPE_PIXEL)))
         set_tex_op_atifs(context, state, state_id);
 }
 
@@ -941,8 +936,7 @@ static void atifs_apply_pixelshader(struct wined3d_context *context, const struc
      * startup, and blitting disables all shaders and dirtifies all shader
      * states. If atifs can deal with this it keeps the rest of the code
      * simpler. */
-    context->select_shader = 1;
-    context->load_constants = 1;
+    context->shader_update_mask |= 1 << WINED3D_SHADER_TYPE_PIXEL;
 }
 
 static void atifs_srgbwriteenable(struct wined3d_context *context, const struct wined3d_state *state, DWORD state_id)
@@ -1081,7 +1075,7 @@ static const struct StateEntryTemplate atifs_fragmentstate_template[] = {
     {STATE_TEXTURESTAGE(5,WINED3D_TSS_TEXTURE_TRANSFORM_FLAGS), {STATE_TEXTURESTAGE(5, WINED3D_TSS_TEXTURE_TRANSFORM_FLAGS), textransform      }, WINED3D_GL_EXT_NONE             },
     {STATE_TEXTURESTAGE(6,WINED3D_TSS_TEXTURE_TRANSFORM_FLAGS), {STATE_TEXTURESTAGE(6, WINED3D_TSS_TEXTURE_TRANSFORM_FLAGS), textransform      }, WINED3D_GL_EXT_NONE             },
     {STATE_TEXTURESTAGE(7,WINED3D_TSS_TEXTURE_TRANSFORM_FLAGS), {STATE_TEXTURESTAGE(7, WINED3D_TSS_TEXTURE_TRANSFORM_FLAGS), textransform      }, WINED3D_GL_EXT_NONE             },
-    {STATE_PIXELSHADER,                                   { STATE_PIXELSHADER,                                  atifs_apply_pixelshader }, WINED3D_GL_EXT_NONE             },
+    {STATE_SHADER(WINED3D_SHADER_TYPE_PIXEL),             { STATE_SHADER(WINED3D_SHADER_TYPE_PIXEL),            atifs_apply_pixelshader }, WINED3D_GL_EXT_NONE             },
     {0 /* Terminate */,                                   { 0,                                                  0                       }, WINED3D_GL_EXT_NONE             },
 };
 
@@ -1166,10 +1160,9 @@ static void *atifs_alloc(const struct wined3d_shader_backend_ops *shader_backend
 }
 
 /* Context activation is done by the caller. */
-static void atifs_free_ffpshader(struct wine_rb_entry *entry, void *context)
+static void atifs_free_ffpshader(struct wine_rb_entry *entry, void *cb_ctx)
 {
-    struct wined3d_device *device = context;
-    const struct wined3d_gl_info *gl_info = &device->adapter->gl_info;
+    const struct wined3d_gl_info *gl_info = cb_ctx;
     struct atifs_ffp_desc *entry_ati = WINE_RB_ENTRY_VALUE(entry, struct atifs_ffp_desc, parent.entry);
 
     GL_EXTCALL(glDeleteFragmentShaderATI(entry_ati->shader));
@@ -1182,7 +1175,7 @@ static void atifs_free(struct wined3d_device *device)
 {
     struct atifs_private_data *priv = device->fragment_priv;
 
-    wine_rb_destroy(&priv->fragment_shaders, atifs_free_ffpshader, device);
+    wine_rb_destroy(&priv->fragment_shaders, atifs_free_ffpshader, &device->adapter->gl_info);
 
     HeapFree(GetProcessHeap(), 0, priv);
     device->fragment_priv = NULL;

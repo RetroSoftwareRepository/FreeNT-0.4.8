@@ -32,12 +32,10 @@
 #define NDEBUG
 #include <debug.h>
 
-
 /* GLOBALS *******************************************************************/
 
 #define ROUND_UP(N, S) ((((N) + (S) - 1) / (S)) * (S))
 #define ROUND_DOWN(N, S) ((N) - ((N) % (S)))
-
 
 /* FUNCTIONS ****************************************************************/
 
@@ -123,6 +121,12 @@ NtfsReadFile(PDEVICE_EXTENSION DeviceExt,
 
   return(Status);
 #else
+    UNREFERENCED_PARAMETER(DeviceExt);
+    UNREFERENCED_PARAMETER(FileObject);
+    UNREFERENCED_PARAMETER(Buffer);
+    UNREFERENCED_PARAMETER(Length);
+    UNREFERENCED_PARAMETER(ReadOffset);
+    UNREFERENCED_PARAMETER(IrpFlags);
     *LengthRead = 0;
     return STATUS_END_OF_FILE;
 #endif

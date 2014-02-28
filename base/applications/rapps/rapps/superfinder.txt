@@ -5,7 +5,7 @@ Name = Super Finder XT
 Version = 1.6.3.2
 Licence = Freeware
 Description = A fast and feature rich search Application.
-Size = 4.94MB
+Size = 4.94 MB
 Category = 12
 URLSite = http://fsl.sytes.net/ssearchxt.html
 URLDownload = http://www.webalice.it/guido.vinaio/releases/setup_SuperFinderXT.exe
@@ -34,6 +34,12 @@ Description = Szybka i bogata w opcje aplikacja szukająca.
 Licence = Gratuită
 Description = Aplicație rapidă de căutări complexe de text.
 Size = 4,94 Mo
+
+[Section.041f]
+Name = Süper Bulucu XT
+Licence = Ücretsiz
+Description = Hızlı ve husûsiyet zengini bir arama uygulaması.
+Size = 4,94 MB
 
 [Section.0422]
 Description = Швидка та потужна програма пошуку.

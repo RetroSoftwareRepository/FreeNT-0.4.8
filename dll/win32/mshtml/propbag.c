@@ -16,27 +16,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <config.h>
-
-#include <stdarg.h>
-
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-
-#define COBJMACROS
-
-#include <windef.h>
-#include <winbase.h>
-//#include "winuser.h"
-#include <ole2.h>
-//#include "shlobj.h"
-
 #include "mshtml_private.h"
-#include "pluginhost.h"
-
-#include <wine/debug.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(mshtml);
 
 typedef struct {
     IPropertyBag  IPropertyBag_iface;
@@ -275,7 +255,7 @@ static HRESULT fill_props(nsIDOMHTMLElement *nselem, PropertyBag *prop_bag)
 {
     nsIDOMHTMLParamElement *nsparam;
     nsAString name_str, value_str;
-    nsIDOMNodeList *params;
+    nsIDOMHTMLCollection *params;
     UINT32 length, i;
     nsIDOMNode *nsnode;
     nsresult nsres;
@@ -289,12 +269,12 @@ static HRESULT fill_props(nsIDOMHTMLElement *nselem, PropertyBag *prop_bag)
     if(NS_FAILED(nsres))
         return E_FAIL;
 
-    nsres = nsIDOMNodeList_GetLength(params, &length);
+    nsres = nsIDOMHTMLCollection_GetLength(params, &length);
     if(NS_FAILED(nsres))
         length = 0;
 
     for(i=0; i < length; i++) {
-        nsres = nsIDOMNodeList_Item(params, i, &nsnode);
+        nsres = nsIDOMHTMLCollection_Item(params, i, &nsnode);
         if(NS_FAILED(nsres)) {
             hres = E_FAIL;
             break;
@@ -333,7 +313,7 @@ static HRESULT fill_props(nsIDOMHTMLElement *nselem, PropertyBag *prop_bag)
         }
     }
 
-    nsIDOMNodeList_Release(params);
+    nsIDOMHTMLCollection_Release(params);
     return hres;
 }
 

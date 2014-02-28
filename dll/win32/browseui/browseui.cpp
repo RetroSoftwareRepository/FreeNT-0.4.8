@@ -20,8 +20,6 @@
 
 #include "precomp.h"
 
-WINE_DEFAULT_DEBUG_CHANNEL(browseui);
-
 class CBrowseUIModule : public CComModule
 {
 public:
@@ -36,7 +34,10 @@ OBJECT_ENTRY(CLSID_BandProxy, CBandProxy)
 OBJECT_ENTRY(CLSID_RebarBandSite, CBandSite)
 OBJECT_ENTRY(CLSID_BandSiteMenu, CBandSiteMenu)
 OBJECT_ENTRY(CLSID_BrandBand, CBrandBand)
+OBJECT_ENTRY(CLSID_CCommonBrowser, CCommonBrowser)
+OBJECT_ENTRY(CLSID_GlobalFolderSettings, CGlobalFolderSettings)
 OBJECT_ENTRY(CLSID_InternetToolbar, CInternetToolbar)
+OBJECT_ENTRY(CLSID_CRegTreeOptions, CRegTreeOptions)
 END_OBJECT_MAP()
 
 CBrowseUIModule                             gModule;
@@ -54,14 +55,14 @@ STDAPI_(BOOL) DllMain(HINSTANCE hInstance, DWORD dwReason, LPVOID fImpLoad)
 {
     TRACE("%p 0x%x %p\n", hInstance, dwReason, fImpLoad);
 
-    /* HACK - the global constructors don't run, so I placement new them here */
-    new (&gModule) CBrowseUIModule;
-    new (&gWinModule) CAtlWinModule;
-    new (&_AtlBaseModule) CAtlBaseModule;
-    new (&_AtlComModule) CAtlComModule;
-
     if (dwReason == DLL_PROCESS_ATTACH)
     {
+        /* HACK - the global constructors don't run, so I placement new them here */
+        new (&gModule) CBrowseUIModule;
+        new (&gWinModule) CAtlWinModule;
+        new (&_AtlBaseModule) CAtlBaseModule;
+        new (&_AtlComModule) CAtlComModule;
+
         gModule.Init(ObjectMap, hInstance, NULL);
         DisableThreadLibraryCalls (hInstance);
     }
@@ -107,7 +108,7 @@ STDAPI DllUnregisterServer()
 /***********************************************************************
  *              DllGetVersion (BROWSEUI.@)
  */
-HRESULT WINAPI DllGetVersion(DLLVERSIONINFO *info)
+STDAPI DllGetVersion(DLLVERSIONINFO *info)
 {
     if (info->cbSize != sizeof(DLLVERSIONINFO)) FIXME("support DLLVERSIONINFO2\n");
 

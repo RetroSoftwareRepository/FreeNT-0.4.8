@@ -34,18 +34,7 @@
  *
  */
 
-//#include <stdarg.h>
-//#include <string.h>
-//#include "windef.h"
-//#include "winbase.h"
-//#include "wingdi.h"
-//#include "winuser.h"
-//#include "winnls.h"
-//#include "commctrl.h"
 #include "comctl32.h"
-#include <uxtheme.h>
-#include <vssym32.h>
-#include <wine/debug.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(progress);
 
@@ -544,7 +533,7 @@ static LRESULT WINAPI ProgressWindowProc(HWND hwnd, UINT message,
     case WM_CREATE:
     {
 	DWORD dwExStyle = GetWindowLongW (hwnd, GWL_EXSTYLE);
-        
+
         theme = OpenThemeData (hwnd, themeClass);
 
 	dwExStyle &= ~(WS_EX_CLIENTEDGE | WS_EX_WINDOWEDGE);
@@ -690,17 +679,25 @@ static LRESULT WINAPI ProgressWindowProc(HWND hwnd, UINT message,
         return infoPtr->CurVal;
 
     case PBM_SETBARCOLOR:
+    {
+        COLORREF clr = infoPtr->ColorBar;
+
         infoPtr->ColorBar = (COLORREF)lParam;
 	InvalidateRect(hwnd, NULL, TRUE);
-	return 0;
+        return clr;
+    }
 
     case PBM_GETBARCOLOR:
 	return infoPtr->ColorBar;
 
     case PBM_SETBKCOLOR:
+    {
+        COLORREF clr = infoPtr->ColorBk;
+
         infoPtr->ColorBk = (COLORREF)lParam;
 	InvalidateRect(hwnd, NULL, TRUE);
-	return 0;
+        return clr;
+    }
 
     case PBM_GETBKCOLOR:
 	return infoPtr->ColorBk;

@@ -22,21 +22,35 @@
 #ifndef __WINE_MSI_PRIVATE__
 #define __WINE_MSI_PRIVATE__
 
+#include <wine/config.h>
+
+#include <assert.h>
 #include <stdarg.h>
 
-#include "windef.h"
+#define _INC_WINDOWS
+#define COM_NO_WINDOWS_H
+
+#define COBJMACROS
+#define NONAMELESSUNION
+#define NONAMELESSSTRUCT
+
+#include <windef.h>
 #include <winbase.h>
-#include "fdi.h"
-#include "msi.h"
+#include <winreg.h>
+#include <wincon.h>
+#include <winver.h>
 #include <msiquery.h>
-#include <msidefs.h>
-#include "objbase.h"
-#include "objidl.h"
+#include <objbase.h>
+#include <msiserver.h>
+#include <shlobj.h>
+#include <shlwapi.h>
 #include <fusion.h>
-#include "winnls.h"
-#include "winver.h"
+#include <sddl.h>
+#include <msidefs.h>
+
+#include <wine/debug.h>
 #include <wine/list.h>
-#include "wine/debug.h"
+#include <wine/unicode.h>
 
 static const BOOL is_64bit = sizeof(void *) > sizeof(int);
 BOOL is_wow64;
@@ -934,18 +948,9 @@ extern LONG msi_reg_set_val_dword( HKEY hkey, LPCWSTR name, DWORD val ) DECLSPEC
 extern LONG msi_reg_set_subkey_val( HKEY hkey, LPCWSTR path, LPCWSTR name, LPCWSTR val ) DECLSPEC_HIDDEN;
 
 /* msi dialog interface */
-typedef UINT (*msi_dialog_event_handler)( MSIPACKAGE*, LPCWSTR, LPCWSTR, msi_dialog* );
-extern msi_dialog *msi_dialog_create( MSIPACKAGE*, LPCWSTR, msi_dialog*, msi_dialog_event_handler ) DECLSPEC_HIDDEN;
-extern UINT msi_dialog_run_message_loop( msi_dialog* ) DECLSPEC_HIDDEN;
-extern void msi_dialog_end_dialog( msi_dialog* ) DECLSPEC_HIDDEN;
 extern void msi_dialog_check_messages( HANDLE ) DECLSPEC_HIDDEN;
 extern void msi_dialog_destroy( msi_dialog* ) DECLSPEC_HIDDEN;
 extern void msi_dialog_unregister_class( void ) DECLSPEC_HIDDEN;
-extern void msi_dialog_handle_event( msi_dialog*, LPCWSTR, LPCWSTR, MSIRECORD * ) DECLSPEC_HIDDEN;
-extern UINT msi_dialog_reset( msi_dialog *dialog ) DECLSPEC_HIDDEN;
-extern UINT msi_dialog_directorylist_up( msi_dialog *dialog ) DECLSPEC_HIDDEN;
-extern msi_dialog *msi_dialog_get_parent( msi_dialog *dialog ) DECLSPEC_HIDDEN;
-extern LPWSTR msi_dialog_get_name( msi_dialog *dialog ) DECLSPEC_HIDDEN;
 extern UINT msi_spawn_error_dialog( MSIPACKAGE*, LPWSTR, LPWSTR ) DECLSPEC_HIDDEN;
 
 /* summary information */
@@ -977,7 +982,7 @@ extern HINSTANCE msi_hInstance DECLSPEC_HIDDEN;
 extern UINT ACTION_PerformAction(MSIPACKAGE *package, const WCHAR *action, UINT script) DECLSPEC_HIDDEN;
 extern UINT ACTION_PerformUIAction(MSIPACKAGE *package, const WCHAR *action, UINT script) DECLSPEC_HIDDEN;
 extern void ACTION_FinishCustomActions( const MSIPACKAGE* package) DECLSPEC_HIDDEN;
-extern UINT ACTION_CustomAction(MSIPACKAGE *package,const WCHAR *action, UINT script, BOOL execute) DECLSPEC_HIDDEN;
+extern UINT ACTION_CustomAction(MSIPACKAGE *, const WCHAR *, UINT) DECLSPEC_HIDDEN;
 
 /* actions in other modules */
 extern UINT ACTION_AppSearch(MSIPACKAGE *package) DECLSPEC_HIDDEN;
@@ -1066,12 +1071,8 @@ extern BOOL msi_cabextract(MSIPACKAGE* package, MSIMEDIAINFO *mi, LPVOID data) D
 extern UINT msi_add_cabinet_stream(MSIPACKAGE *, UINT, IStorage *, const WCHAR *) DECLSPEC_HIDDEN;
 
 /* control event stuff */
-extern VOID ControlEvent_FireSubscribedEvent(MSIPACKAGE *package, LPCWSTR event,
-                                      MSIRECORD *data) DECLSPEC_HIDDEN;
-extern VOID ControlEvent_CleanupDialogSubscriptions(MSIPACKAGE *package, LPWSTR dialog) DECLSPEC_HIDDEN;
-extern VOID ControlEvent_CleanupSubscriptions(MSIPACKAGE *package) DECLSPEC_HIDDEN;
-extern VOID ControlEvent_SubscribeToEvent(MSIPACKAGE *package, msi_dialog *dialog,
-                                      LPCWSTR event, LPCWSTR control, LPCWSTR attribute) DECLSPEC_HIDDEN;
+extern void msi_event_fire(MSIPACKAGE *, const WCHAR *, MSIRECORD *) DECLSPEC_HIDDEN;
+extern void msi_event_cleanup_all_subscriptions( MSIPACKAGE * ) DECLSPEC_HIDDEN;
 
 /* OLE automation */
 typedef enum tid_t {
@@ -1263,5 +1264,7 @@ static inline LPWSTR strdupW( LPCWSTR src )
         lstrcpyW(dest, src);
     return dest;
 }
+
+#include "query.h"
 
 #endif /* __WINE_MSI_PRIVATE__ */

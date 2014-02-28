@@ -159,6 +159,17 @@ IntGdiPolyPolygon(DC      *dc,
     return TRUE;
 }
 
+BOOL FASTCALL
+IntPolygon(HDC hdc, POINT *Point, int Count)
+{
+   PDC dc;
+   if (!(dc = DC_LockDc(hdc)))
+   {
+      EngSetLastError(ERROR_INVALID_HANDLE);
+      return FALSE;
+   }
+   return IntGdiPolygon(dc, Point, Count);
+}
 
 
 /******************************************************************************/
@@ -295,6 +306,9 @@ NtGdiEllipse(
         //tmpFillBrushObj.ptOrigin.y += RectBounds.top - Top;
         tmpFillBrushObj.ptOrigin.x += dc->ptlDCOrig.x;
         tmpFillBrushObj.ptOrigin.y += dc->ptlDCOrig.y;
+
+        DC_vPrepareDCsForBlit(dc, RectBounds, NULL, RectBounds);
+
         ret = IntFillEllipse( dc,
                               CenterX - RadiusX,
                               CenterY - RadiusY,
@@ -302,15 +316,19 @@ NtGdiEllipse(
                               RadiusY*2, // Height
                               &tmpFillBrushObj);
         BRUSH_ShareUnlockBrush(pFillBrushObj);
-    }
 
-    if (ret)
-       ret = IntDrawEllipse( dc,
-                             CenterX - RadiusX,
-                             CenterY - RadiusY,
-                             RadiusX*2, // Width
-                             RadiusY*2, // Height
-                             pbrush);
+        if (ret)
+        {
+           ret = IntDrawEllipse( dc,
+                                 CenterX - RadiusX,
+                                 CenterY - RadiusY,
+                                 RadiusX*2, // Width
+                                 RadiusY*2, // Height
+                                 pbrush);
+        }
+
+        DC_vFinishBlit(dc, NULL);
+    }
 
     pbrush->ptPenWidth.x = PenOrigWidth;
     PEN_ShareUnlockPen(pbrush);
@@ -777,6 +795,9 @@ IntRoundRect(
     }
     else
     {
+
+        DC_vPrepareDCsForBlit(dc, RectBounds, NULL, RectBounds);
+
         RtlCopyMemory(&brushTemp, pbrFill, sizeof(brushTemp));
         brushTemp.ptOrigin.x += RectBounds.left - Left;
         brushTemp.ptOrigin.y += RectBounds.top - Top;
@@ -789,17 +810,22 @@ IntRoundRect(
                                 yCurveDiameter,
                                 &brushTemp);
         BRUSH_ShareUnlockBrush(pbrFill);
+
+        if (ret)
+        {
+           ret = IntDrawRoundRect( dc,
+                      RectBounds.left,
+                       RectBounds.top,
+                     RectBounds.right,
+                    RectBounds.bottom,
+                       xCurveDiameter,
+                       yCurveDiameter,
+                       pbrLine);
+        }
+
+        DC_vFinishBlit(dc, NULL);
     }
 
-    if (ret)
-       ret = IntDrawRoundRect( dc,
-                  RectBounds.left,
-                   RectBounds.top,
-                 RectBounds.right,
-                RectBounds.bottom,
-                   xCurveDiameter,
-                   yCurveDiameter,
-                   pbrLine);
 
     pbrLine->ptPenWidth.x = PenOrigWidth;
     PEN_ShareUnlockPen(pbrLine);
@@ -1083,6 +1109,8 @@ NtGdiExtFloodFill(
     else
         goto cleanup;
 
+    DC_vPrepareDCsForBlit(dc, DestRect, NULL, DestRect);
+
     psurf = dc->dclevel.pSurface;
     if (!psurf)
     {
@@ -1102,6 +1130,7 @@ NtGdiExtFloodFill(
     EXLATEOBJ_vCleanup(&exlo);
 
 cleanup:
+    DC_vFinishBlit(dc, NULL);
     DC_UnlockDc(dc);
     return Ret;
 }

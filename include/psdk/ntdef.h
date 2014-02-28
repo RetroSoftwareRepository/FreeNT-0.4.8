@@ -116,6 +116,7 @@
 #define _ANONYMOUS_UNION
 #define _UNION_NAME(x) x
 #define DUMMYUNIONNAME  u
+#define DUMMYUNIONNAME1 u1
 #define DUMMYUNIONNAME2 u2
 #define DUMMYUNIONNAME3 u3
 #define DUMMYUNIONNAME4 u4
@@ -126,6 +127,7 @@
 #else
 #define _UNION_NAME(x)
 #define DUMMYUNIONNAME
+#define DUMMYUNIONNAME1
 #define DUMMYUNIONNAME2
 #define DUMMYUNIONNAME3
 #define DUMMYUNIONNAME4
@@ -139,6 +141,7 @@
 #define _ANONYMOUS_STRUCT
 #define _STRUCT_NAME(x) x
 #define DUMMYSTRUCTNAME s
+#define DUMMYSTRUCTNAME1 s1
 #define DUMMYSTRUCTNAME2 s2
 #define DUMMYSTRUCTNAME3 s3
 #define DUMMYSTRUCTNAME4 s4
@@ -146,6 +149,7 @@
 #else
 #define _STRUCT_NAME(x)
 #define DUMMYSTRUCTNAME
+#define DUMMYSTRUCTNAME1
 #define DUMMYSTRUCTNAME2
 #define DUMMYSTRUCTNAME3
 #define DUMMYSTRUCTNAME4
@@ -299,6 +303,18 @@
 #endif
 #endif /* DECLSPEC_ALIGN */
 
+#ifndef SYSTEM_CACHE_ALIGNMENT_SIZE
+#if defined(_AMD64_) || defined(_X86_)
+#define SYSTEM_CACHE_ALIGNMENT_SIZE 64
+#else
+#define SYSTEM_CACHE_ALIGNMENT_SIZE 128
+#endif
+#endif
+
+#ifndef DECLSPEC_CACHEALIGN
+#define DECLSPEC_CACHEALIGN DECLSPEC_ALIGN(SYSTEM_CACHE_ALIGNMENT_SIZE)
+#endif
+
 #ifndef DECLSPEC_SELECTANY
 #if (_MSC_VER >= 1100) || defined(__GNUC__)
 #define DECLSPEC_SELECTANY  __declspec(selectany)
@@ -309,9 +325,9 @@
 
 /* Use to silence unused variable warnings when it is intentional */
 #define UNREFERENCED_PARAMETER(P) {(P)=(P);}
-#define UNREFERENCED_LOCAL_VARIABLE(L) {(L)=(L);}
+#define UNREFERENCED_LOCAL_VARIABLE(L) ((void)(L))
 #define DBG_UNREFERENCED_PARAMETER(P) {(P)=(P);}
-#define DBG_UNREFERENCED_LOCAL_VARIABLE(L) {(L)=(L);}
+#define DBG_UNREFERENCED_LOCAL_VARIABLE(L) ((void)(L))
 
 /* min/max helper macros */
 #ifndef NOMINMAX
@@ -432,6 +448,10 @@ typedef enum {
   DEFAULT_COMPARTMENT_ID
 } COMPARTMENT_ID, *PCOMPARTMENT_ID;
 
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable:4201)
+#endif
 /* Used to store a non-float 8 byte aligned structure */
 typedef struct _QUAD
 {
@@ -478,6 +498,10 @@ typedef union _ULARGE_INTEGER {
 #endif /* MIDL_PASS */
     ULONGLONG QuadPart;
 } ULARGE_INTEGER, *PULARGE_INTEGER;
+
+#ifdef _MSC_VER
+#pragma warning(pop) /* disable:4201 */
+#endif
 
 /* Physical Addresses are always treated as 64-bit wide */
 typedef LARGE_INTEGER PHYSICAL_ADDRESS, *PPHYSICAL_ADDRESS;

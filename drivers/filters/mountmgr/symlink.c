@@ -23,8 +23,6 @@
  * PROGRAMMER:       Pierre Schweitzer (pierre.schweitzer@reactos.org)
  */
 
-/* INCLUDES *****************************************************************/
-
 #include "mntmgr.h"
 
 #define NDEBUG
@@ -67,38 +65,35 @@ CreateStringWithGlobal(IN PUNICODE_STRING DosName,
                       DosName->Length - DosDevices.Length);
         IntGlobal.Buffer[IntGlobal.Length / sizeof(WCHAR)] = UNICODE_NULL;
     }
+    else if (RtlPrefixUnicodeString(&Global, DosName, TRUE))
+    {
+        /* Switch to DOS global */
+        IntGlobal.Length = DosName->Length - Global.Length + DosGlobal.Length;
+        IntGlobal.MaximumLength = IntGlobal.Length + sizeof(WCHAR);
+        IntGlobal.Buffer = AllocatePool(IntGlobal.MaximumLength);
+        if (!IntGlobal.Buffer)
+        {
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        RtlCopyMemory(IntGlobal.Buffer, DosGlobal.Buffer, DosGlobal.Length);
+        RtlCopyMemory(IntGlobal.Buffer + (DosGlobal.Length / sizeof(WCHAR)),
+                      DosName->Buffer + (Global.Length / sizeof(WCHAR)),
+                      DosName->Length - Global.Length);
+        IntGlobal.Buffer[IntGlobal.Length / sizeof(WCHAR)] = UNICODE_NULL;
+    }
     else
     {
-        if (RtlPrefixUnicodeString(&Global, DosName, TRUE))
+        /* Simply duplicate string */
+        IntGlobal.Length = DosName->Length;
+        IntGlobal.MaximumLength = DosName->MaximumLength;
+        IntGlobal.Buffer = AllocatePool(IntGlobal.MaximumLength);
+        if (!IntGlobal.Buffer)
         {
-            /* Switch to DOS global */
-            IntGlobal.Length = DosName->Length - Global.Length + DosGlobal.Length;
-            IntGlobal.MaximumLength = IntGlobal.Length + sizeof(WCHAR);
-            IntGlobal.Buffer = AllocatePool(IntGlobal.MaximumLength);
-            if (!IntGlobal.Buffer)
-            {
-                return STATUS_INSUFFICIENT_RESOURCES;
-            }
-
-            RtlCopyMemory(IntGlobal.Buffer, DosGlobal.Buffer, DosGlobal.Length);
-            RtlCopyMemory(IntGlobal.Buffer + (DosGlobal.Length / sizeof(WCHAR)),
-                          DosName->Buffer + (Global.Length / sizeof(WCHAR)),
-                          DosName->Length - Global.Length);
-            IntGlobal.Buffer[IntGlobal.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            return STATUS_INSUFFICIENT_RESOURCES;
         }
-        else
-        {
-            /* Simply duplicate string */
-            IntGlobal.Length = DosName->Length;
-            IntGlobal.MaximumLength = DosName->MaximumLength;
-            IntGlobal.Buffer = AllocatePool(IntGlobal.MaximumLength);
-            if (!IntGlobal.Buffer)
-            {
-                return STATUS_INSUFFICIENT_RESOURCES;
-            }
 
-            RtlCopyMemory(IntGlobal.Buffer, DosName->Buffer, IntGlobal.MaximumLength);
-        }
+        RtlCopyMemory(IntGlobal.Buffer, DosName->Buffer, IntGlobal.MaximumLength);
     }
 
     /* Return string */
@@ -118,6 +113,8 @@ GlobalCreateSymbolicLink(IN PUNICODE_STRING DosName,
 {
     NTSTATUS Status;
     UNICODE_STRING GlobalName;
+
+    UNREFERENCED_PARAMETER(DeviceName);
 
     /* First create the global string */
     Status = CreateStringWithGlobal(DosName, &GlobalName);
@@ -528,6 +525,8 @@ QuerySymbolicLinkNamesFromStorage(IN PDEVICE_EXTENSION DeviceExtension,
     NTSTATUS Status;
     BOOLEAN WriteNew;
     RTL_QUERY_REGISTRY_TABLE QueryTable[2];
+
+    UNREFERENCED_PARAMETER(DeviceExtension);
 
     /* First of all, count links */
     RtlZeroMemory(QueryTable, sizeof(QueryTable));

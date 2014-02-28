@@ -290,7 +290,7 @@ co_IntCallWindowProc(WNDPROC Proc,
    /* Do not allow the desktop thread to do callback to user mode */
    ASSERT(PsGetCurrentThreadWin32Thread() != gptiDesktopThread);
 
-   if (0 < lParamBufferSize)
+   if (lParamBufferSize != -1)
    {
       ArgumentLength = sizeof(WINDOWPROC_CALLBACK_ARGUMENTS) + lParamBufferSize;
       Arguments = IntCbAllocateMemory(ArgumentLength);
@@ -334,7 +334,7 @@ co_IntCallWindowProc(WNDPROC Proc,
    }
    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
    {
-      ERR("Failed to copy result from user mode!\n");
+      ERR("Failed to copy result from user mode, Message %d lParam size %d!\n", Message, lParamBufferSize);
       Status = _SEH2_GetExceptionCode();
    }
    _SEH2_END;
@@ -346,7 +346,7 @@ co_IntCallWindowProc(WNDPROC Proc,
    if (!NT_SUCCESS(Status))
    {
      ERR("Call to user mode failed!\n");
-      if (0 < lParamBufferSize)
+      if (lParamBufferSize != -1)
       {
          IntCbFreeMemory(Arguments);
       }
@@ -354,11 +354,48 @@ co_IntCallWindowProc(WNDPROC Proc,
    }
    Result = Arguments->Result;
 
-   if (0 < lParamBufferSize)
+   if (lParamBufferSize != -1)
    {
-      RtlMoveMemory((PVOID) lParam,
-                    (PVOID) ((char *) Arguments + sizeof(WINDOWPROC_CALLBACK_ARGUMENTS)),
-                    lParamBufferSize);
+      PTHREADINFO pti = PsGetCurrentThreadWin32Thread();
+      // Is this message being processed from inside kernel space?
+      BOOL InSendMessage = (pti->pcti->CTI_flags & CTI_INSENDMESSAGE);
+
+      TRACE("Copy lParam Message %d lParam %d!\n", Message, lParam);
+      switch (Message)
+      {
+          default:
+            TRACE("Don't copy lParam, Message %d Size %d lParam %d!\n", Message, lParamBufferSize, lParam);
+            break;
+          // Write back to user/kernel space. Also see g_MsgMemory.
+          case WM_CREATE:
+          case WM_GETMINMAXINFO:
+          case WM_GETTEXT:
+          case WM_NCCALCSIZE:
+          case WM_NCCREATE:
+          case WM_STYLECHANGING:
+          case WM_WINDOWPOSCHANGING:
+            TRACE("Copy lParam, Message %d Size %d lParam %d!\n", Message, lParamBufferSize, lParam);
+            if (InSendMessage)
+               // Copy into kernel space.
+               RtlMoveMemory((PVOID) lParam,
+                             (PVOID) ((char *) Arguments + sizeof(WINDOWPROC_CALLBACK_ARGUMENTS)),
+                              lParamBufferSize);
+            else
+            {
+             _SEH2_TRY
+             { // Copy into user space.
+               RtlMoveMemory((PVOID) lParam,
+                             (PVOID) ((char *) Arguments + sizeof(WINDOWPROC_CALLBACK_ARGUMENTS)),
+                              lParamBufferSize);
+             }
+             _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+             {
+                ERR("Failed to copy lParam to user space, Message %d!\n", Message);
+             }
+             _SEH2_END;
+            }
+            break;
+      }
       IntCbFreeMemory(Arguments);
    }
 
@@ -398,7 +435,7 @@ co_IntLoadSysMenuTemplate()
       {
         Result = 0;
       }
-      _SEH2_END
+      _SEH2_END;
    }
 
    UserEnterCo();
@@ -448,6 +485,8 @@ co_IntCallHookProc(INT HookId,
                    WPARAM wParam,
                    LPARAM lParam,
                    HOOKPROC Proc,
+                   INT Mod,
+                   ULONG_PTR offPfn,
                    BOOLEAN Ansi,
                    PUNICODE_STRING ModuleName)
 {
@@ -575,7 +614,11 @@ co_IntCallHookProc(INT HookId,
    Common->wParam = wParam;
    Common->lParam = lParam;
    Common->Proc = Proc;
+   Common->Mod = Mod;
+   Common->offPfn = offPfn;
    Common->Ansi = Ansi;
+   RtlZeroMemory(&Common->ModuleName, sizeof(Common->ModuleName));
+   RtlCopyMemory(&Common->ModuleName, ModuleName->Buffer, ModuleName->Length);
    Extra = (PCHAR) Common + sizeof(HOOKPROC_CALLBACK_ARGUMENTS);
 
    switch(HookId)
@@ -652,7 +695,7 @@ co_IntCallHookProc(INT HookId,
    }
 
    ResultPointer = NULL;
-   ResultLength = sizeof(LRESULT);
+   ResultLength = ArgumentLength;
 
    UserLeaveCo();
 
@@ -668,9 +711,9 @@ co_IntCallHookProc(INT HookId,
    {
       _SEH2_TRY
       {
-         ProbeForRead(ResultPointer, sizeof(LRESULT), 1);
          /* Simulate old behaviour: copy into our local buffer */
-         Result = *(LRESULT*)ResultPointer;
+         RtlMoveMemory(Argument, ResultPointer, ArgumentLength);
+         Result = Common->Result;
       }
       _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
       {
@@ -681,7 +724,7 @@ co_IntCallHookProc(INT HookId,
    }
    else
    {
-      ERR("ERROR: Hook ResultPointer 0x%p ResultLength %u\n",ResultPointer,ResultLength);
+      ERR("ERROR: Hook %d Code %d ResultPointer 0x%p ResultLength %u\n",HookId,Code,ResultPointer,ResultLength);
    }
 
    if (!NT_SUCCESS(Status))
@@ -875,6 +918,58 @@ co_IntClientThreadSetup(VOID)
    return Status;
 }
 
+HANDLE FASTCALL
+co_IntCopyImage(HANDLE hnd, UINT type, INT desiredx, INT desiredy, UINT flags)
+{
+   HANDLE Handle;
+   NTSTATUS Status;
+   ULONG ArgumentLength, ResultLength;
+   PVOID Argument, ResultPointer;
+   PCOPYIMAGE_CALLBACK_ARGUMENTS Common;
+
+   ArgumentLength = ResultLength = 0;
+   Argument = ResultPointer = NULL;
+
+   ArgumentLength = sizeof(COPYIMAGE_CALLBACK_ARGUMENTS);
+
+   Argument = IntCbAllocateMemory(ArgumentLength);
+   if (NULL == Argument)
+   {
+      ERR("CopyImage callback failed: out of memory\n");
+      return 0;
+   }
+   Common = (PCOPYIMAGE_CALLBACK_ARGUMENTS) Argument;
+
+   Common->hImage = hnd;
+   Common->uType = type;
+   Common->cxDesired = desiredx;
+   Common->cyDesired = desiredy;
+   Common->fuFlags = flags;
+
+   UserLeaveCo();
+
+   Status = KeUserModeCallback(USER32_CALLBACK_COPYIMAGE,
+                               Argument,
+                               ArgumentLength,
+                               &ResultPointer,
+                               &ResultLength);
+
+
+   UserEnterCo();
+
+   Handle = *(HANDLE*)ResultPointer;
+
+   IntCbFreeMemory(Argument);
+
+   if (!NT_SUCCESS(Status))
+   {
+      ERR("CopyImage callback failed!\n");
+      return 0;
+   }
+
+   return Handle;
+}
+
 BOOL
 APIENTRY
 co_IntGetCharsetInfo(LCID Locale, PCHARSETINFO pCs)
@@ -928,6 +1023,54 @@ co_IntGetCharsetInfo(LCID Locale, PCHARSETINFO pCs)
    if (!NT_SUCCESS(Status))
    {
       ERR("GetCharsetInfo Failed!!\n");
+      return FALSE;
+   }
+
+   return TRUE;
+}
+
+BOOL FASTCALL
+co_IntSetWndIcons(VOID)
+{
+   NTSTATUS Status;
+   ULONG ArgumentLength, ResultLength;
+   PVOID Argument, ResultPointer;
+   PSETWNDICONS_CALLBACK_ARGUMENTS Common;
+
+   ResultPointer = NULL;
+   ResultLength = ArgumentLength = sizeof(SETWNDICONS_CALLBACK_ARGUMENTS);
+
+   Argument = IntCbAllocateMemory(ArgumentLength);
+   if (NULL == Argument)
+   {
+      ERR("Set Window Icons callback failed: out of memory\n");
+      return FALSE;
+   }
+   Common = (PSETWNDICONS_CALLBACK_ARGUMENTS) Argument;
+
+   UserLeaveCo();
+
+   Status = KeUserModeCallback(USER32_CALLBACK_SETWNDICONS,
+                               Argument,
+                               ArgumentLength,
+                               &ResultPointer,
+                               &ResultLength);
+
+
+   UserEnterCo();
+
+   /* FIXME: Need to setup Registry System Cursor & Icons via Callbacks at init time! */
+   RtlMoveMemory(Common, ResultPointer, ArgumentLength);
+   gpsi->hIconSmWindows = Common->hIconSmWindows;
+   gpsi->hIconWindows   = Common->hIconWindows;
+
+   ERR("hIconSmWindows %p hIconWindows %p \n",gpsi->hIconSmWindows,gpsi->hIconWindows);
+
+   IntCbFreeMemory(Argument);
+
+   if (!NT_SUCCESS(Status))
+   {
+      ERR("Set Window Icons callback failed!\n");
       return FALSE;
    }
 

@@ -28,7 +28,14 @@
 
 #include "precomp.h"
 
+#include <tchar.h>
+#include <wincon.h>
+#include <winsvc.h>
+#include <userenv.h>
+#include <shlobj.h>
+#include <shlwapi.h>
 #include <rpcproxy.h>
+#include <ndk/cmfuncs.h>
 
 #define NDEBUG
 #include <debug.h>
@@ -39,6 +46,7 @@ CMP_WaitNoPendingInstallEvents(DWORD dwTimeout);
 /* GLOBALS ******************************************************************/
 
 HINF hSysSetupInf = INVALID_HANDLE_VALUE;
+ADMIN_INFO AdminInfo;
 
 /* FUNCTIONS ****************************************************************/
 
@@ -905,6 +913,8 @@ InstallReactOS(HINSTANCE hInstance)
 
     InstallSecurity();
 
+    SetAutoAdminLogon();
+
     hShortcutsInf = SetupOpenInfFileW(L"shortcuts.inf",
                                       NULL,
                                       INF_STYLE_WIN4,
@@ -933,7 +943,12 @@ InstallReactOS(HINSTANCE hInstance)
             HANDLE hToken;
             BOOL ret;
 
-            ret = LogonUserW(L"Administrator", L"", L"", LOGON32_LOGON_NETWORK, LOGON32_PROVIDER_DEFAULT, &hToken);
+            ret = LogonUserW(AdminInfo.Name,
+                             AdminInfo.Domain,
+                             AdminInfo.Password,
+                             LOGON32_LOGON_INTERACTIVE,
+                             LOGON32_PROVIDER_DEFAULT,
+                             &hToken);
             if (!ret)
             {
                 FatalError("LogonUserW() failed!");
@@ -958,6 +973,15 @@ InstallReactOS(HINSTANCE hInstance)
 
     LogItem(SYSSETUP_SEVERITY_INFORMATION, L"Installing ReactOS done");
     TerminateSetupActionLog();
+
+    if (AdminInfo.Name != NULL)
+        RtlFreeHeap(RtlGetProcessHeap(), 0, AdminInfo.Name);
+
+    if (AdminInfo.Domain != NULL)
+        RtlFreeHeap(RtlGetProcessHeap(), 0, AdminInfo.Domain);
+
+    if (AdminInfo.Password != NULL)
+        RtlFreeHeap(RtlGetProcessHeap(), 0, AdminInfo.Password);
 
     /* Get shutdown privilege */
     if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES, &token))

@@ -1,20 +1,26 @@
-#include <stdio.h>
-#include <assert.h>
-#include <stdlib.h>
+#ifndef _UXTHEME_PCH_
+#define _UXTHEME_PCH_
+
+#include <stdarg.h>
 
 #define WIN32_NO_STATUS
+#define _INC_WINDOWS
+#define COM_NO_WINDOWS_H
+
 #include <windef.h>
 #include <winbase.h>
 #include <wingdi.h>
-#include <winreg.h>
-#include <winnls.h>
 #include <winuser.h>
+#include <winnls.h>
 #include <windowsx.h>
 #include <undocuser.h>
 #include <uxtheme.h>
 #include <uxundoc.h>
 #include <vfwmsgs.h>
 #include <tmschema.h>
+
+#include <wine/debug.h>
+WINE_DEFAULT_DEBUG_CHANNEL(uxtheme);
 
 #define TMT_ENUM 200
 
@@ -113,14 +119,17 @@ LPCWSTR UXINI_GetNextValue(PUXINI_FILE uf, DWORD *dwNameLen, LPCWSTR *lpValue, D
 BOOL UXINI_FindValue(PUXINI_FILE uf, LPCWSTR lpName, LPCWSTR *lpValue, DWORD *dwValueLen);
 
 
-
+/* The window context stores data for the window needed through the life of the window */
 typedef struct _WND_CONTEXT
 {
+    UINT lastHitTest;
     BOOL HasAppDefinedRgn;
     BOOL HasThemeRgn;
     BOOL UpdatingRgn;
+    BOOL DirtyThemeRegion;
 } WND_CONTEXT, *PWND_CONTEXT;
 
+/* The draw context stores data that are needed by the drawing operations in the non client area of the window */
 typedef struct _DRAW_CONTEXT
 {
     HWND hWnd;
@@ -170,6 +179,8 @@ enum SCROLL_HITTEST
     SCROLL_BOTTOM_ARROW  /* Bottom or right arrow */
 };
 
+#define HT_ISBUTTON(ht) ((ht) == HTMINBUTTON || (ht) == HTMAXBUTTON || (ht) == HTCLOSE || (ht) == HTHELP)
+
 #define HASSIZEGRIP(Style, ExStyle, ParentStyle, WindowRect, ParentClientRect) \
             ((!(Style & WS_CHILD) && (Style & WS_THICKFRAME) && !(Style & WS_MAXIMIZE))  || \
              ((Style & WS_CHILD) && (ParentStyle & WS_THICKFRAME) && !(ParentStyle & WS_MAXIMIZE) && \
@@ -210,6 +221,7 @@ extern HINSTANCE hDllInst;
 extern ATOM atWindowTheme;
 extern ATOM atWndContrext;
 extern BOOL gbThemeHooksActive;
+extern PTHEME_FILE ActiveThemeFile;
 
 void UXTHEME_InitSystem(HINSTANCE hInst);
 void UXTHEME_LoadTheme(BOOL bLoad);
@@ -221,3 +233,5 @@ BOOL CALLBACK UXTHEME_broadcast_msg (HWND hWnd, LPARAM msg);
 #define ALPHABLEND_BINARY           1
 /* Full alpha blending */
 #define ALPHABLEND_FULL             2
+
+#endif /* _UXTHEME_PCH_ */

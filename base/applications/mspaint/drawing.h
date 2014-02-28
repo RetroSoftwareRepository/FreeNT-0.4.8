@@ -26,8 +26,10 @@ void Replace(HDC hdc, LONG x1, LONG y1, LONG x2, LONG y2, COLORREF fg, COLORREF 
 
 void Airbrush(HDC hdc, LONG x, LONG y, COLORREF color, LONG r);
 
-void Brush(HDC hdc, LONG x1, LONG y1, LONG x2, LONG y2, COLORREF color, COLORREF style);
+void Brush(HDC hdc, LONG x1, LONG y1, LONG x2, LONG y2, COLORREF color, LONG style);
 
 void RectSel(HDC hdc, LONG x1, LONG y1, LONG x2, LONG y2);
 
 void SelectionFrame(HDC hdc, LONG x1, LONG y1, LONG x2, LONG y2);
+
+void Text(HDC hdc, LONG x1, LONG y1, LONG x2, LONG y2, COLORREF fg, COLORREF bg, LPCTSTR lpchText, HFONT font, LONG style);

@@ -16,31 +16,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-
-#include <config.h>
-
-#include <stdarg.h>
-
-#define COBJMACROS
-
-#include <windef.h>
-#include <winbase.h>
-//#include "winuser.h"
-#include <ole2.h>
-#include <mshtmcid.h>
-#include <shlguid.h>
-
-#include <wine/debug.h>
-
 #include "mshtml_private.h"
-#include "htmlscript.h"
-#include "htmlevent.h"
-#include "binding.h"
-#include "resource.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(mshtml);
 
 static const PRUnichar blurW[]      = {'b','l','u','r',0};
 static const PRUnichar focusW[]     = {'f','o','c','u','s',0};
@@ -238,6 +214,7 @@ static nsresult NSAPI handle_load(nsIDOMEventListener *iface, nsIDOMEvent *event
     HTMLDocumentNode *doc = This->This->doc;
     nsIDOMHTMLElement *nsbody = NULL;
     HTMLDocumentObj *doc_obj = NULL;
+    nsresult nsres = NS_OK;
 
     TRACE("(%p)\n", doc);
 
@@ -247,6 +224,8 @@ static nsresult NSAPI handle_load(nsIDOMEventListener *iface, nsIDOMEvent *event
         doc_obj = doc->basedoc.doc_obj;
 
     connect_scripts(doc->window);
+
+    htmldoc_addref(&doc->basedoc);
 
     if(doc_obj)
         handle_docobj_load(doc_obj);
@@ -267,18 +246,19 @@ static nsresult NSAPI handle_load(nsIDOMEventListener *iface, nsIDOMEvent *event
         IDocObjectService_FireDocumentComplete(doc_obj->doc_object_service,
                 &doc->basedoc.window->base.IHTMLWindow2_iface, 0);
 
-    if(!doc->nsdoc) {
+    if(doc->nsdoc) {
+        nsIDOMHTMLDocument_GetBody(doc->nsdoc, &nsbody);
+        if(nsbody) {
+            fire_event(doc, EVENTID_LOAD, TRUE, (nsIDOMNode*)nsbody, event, (IDispatch*)&doc->window->base.IDispatchEx_iface);
+            nsIDOMHTMLElement_Release(nsbody);
+        }
+    }else {
         ERR("NULL nsdoc\n");
-        return NS_ERROR_FAILURE;
+        nsres = NS_ERROR_FAILURE;
     }
 
-    nsIDOMHTMLDocument_GetBody(doc->nsdoc, &nsbody);
-    if(nsbody) {
-        fire_event(doc, EVENTID_LOAD, TRUE, (nsIDOMNode*)nsbody, event, (IDispatch*)&doc->window->base.IDispatchEx_iface);
-        nsIDOMHTMLElement_Release(nsbody);
-    }
-
-    return NS_OK;
+    htmldoc_release(&doc->basedoc);
+    return nsres;
 }
 
 static nsresult NSAPI handle_htmlevent(nsIDOMEventListener *iface, nsIDOMEvent *event)

@@ -32,29 +32,9 @@
  *	Add symbol size to internal symbol table.
  */
 
-#define NONAMELESSUNION
-
-#include "config.h"
-#include "wine/port.h"
-
-#include <assert.h>
-#include <stdio.h>
-#include <stdlib.h>
-
-#include <string.h>
-#ifdef HAVE_UNISTD_H
-# include <unistd.h>
-#endif
-
-#include <stdarg.h>
-#include "windef.h"
-#include "winbase.h"
-#include "winternl.h"
-
-#include "wine/exception.h"
-#include "wine/debug.h"
 #include "dbghelp_private.h"
-#include "wine/mscvpdb.h"
+
+#include <wine/exception.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(dbghelp_msc);
 
@@ -2528,6 +2508,7 @@ static BOOL pdb_init(const struct pdb_lookup* pdb_lookup, struct pdb_file_info* 
         if (pdb_lookup->kind != PDB_JG)
         {
             WARN("Found %s, but wrong PDB kind\n", pdb_lookup->filename);
+            pdb_free(root);
             return FALSE;
         }
         pdb_file->kind = PDB_JG;

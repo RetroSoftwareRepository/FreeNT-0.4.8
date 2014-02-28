@@ -19,13 +19,8 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-
-#include "config.h"
-#include <assert.h>
-#include <stdlib.h>
-#include "wine/debug.h"
-
 #include "dbghelp_private.h"
+
 #ifdef USE_STATS
 #include <math.h>
 #endif

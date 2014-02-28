@@ -1,11 +1,13 @@
 
 if(NOT MSVC)
 
-    if (USE_PSEH3)
+    if(USE_PSEH3)
         include_directories(${REACTOS_SOURCE_DIR}/include/reactos/libs/pseh)
         list(APPEND SOURCE
             i386/pseh3.c
             i386/pseh3_i386.S)
+    elseif(USE_DUMMY_PSEH)
+        list(APPEND SOURCE dummy.c)
     elseif(ARCH STREQUAL "i386")
         list(APPEND SOURCE
             i386/framebased.S

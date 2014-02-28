@@ -5,7 +5,7 @@ Name = UltraVNC
 Version = 1.1.9.0
 Licence = GPL
 Description = Open-source VNC client/server.
-Size = 3.27MB
+Size = 3.27 MB
 Category = 5
 URLSite = http://www.uvnc.com/
 URLDownload = http://support1.uvnc.com/download/1190/UltraVNC_1_1_9_X86_Setup.exe
@@ -21,6 +21,9 @@ Description = Cliente/Servidor VNC de código abierto.
 Description = Client/serveur VNC open source.
 Size = 3,27 Mo
 
+[Section.0410]
+Description = Client/serveur VNC open source.
+
 [Section.0413]
 Description = Open-bron VNC afnemer/aanbieder.
 
@@ -30,6 +33,10 @@ Description = Otwarty klient/serwer VNC.
 [Section.0418]
 Description = Client/server VNC (open-source).
 Size = 3,27 Mo
+
+[Section.041f]
+Description = Açık kaynak bir VNC istemcisi ve bir VNC sunucusu.
+Size = 3,27 MB
 
 [Section.0422]
 Description = Відкритий VNC клієнт/сервер.

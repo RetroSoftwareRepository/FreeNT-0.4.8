@@ -55,6 +55,8 @@
 
 #include <rosdhcp.h>
 
+#include <winsvc.h>
+
 #define	PERIOD 0x2e
 #define	hyphenchar(c) ((c) == 0x2d)
 #define	bslashchar(c) ((c) == 0x5c)
@@ -221,7 +223,7 @@ ServiceMain(DWORD argc, LPWSTR *argv)
 
     DH_DbgPrint(MID_TRACE,("Going into dispatch()\n"));
 
-    DbgPrint("DHCPCSVC: DHCP service is starting up\n");
+    DH_DbgPrint(MID_TRACE, ("DHCPCSVC: DHCP service is starting up\n"));
 
     dispatch();
 

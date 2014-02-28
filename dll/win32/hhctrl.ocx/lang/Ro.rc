@@ -1,0 +1,62 @@
+/*
+ * HTML Help resources
+ *
+ * Copyright 2005 James Hawkins
+ * Copyright 2010 Claudia Cotună
+ *                Michael Stefaniuc
+ *                Fulea Ștefan
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
+ */
+
+LANGUAGE LANG_ROMANIAN, SUBLANG_NEUTRAL
+
+#pragma code_page(65001)
+
+STRINGTABLE
+BEGIN
+    IDS_CONTENTS     "&Cuprins"
+    IDS_INDEX        "&Index"
+    IDS_SEARCH       "&Caută"
+    IDS_FAVORITES    "F&avorite"
+END
+
+STRINGTABLE
+BEGIN
+    IDTB_EXPAND      "Afișează"
+    IDTB_CONTRACT    "Ascunde"
+    IDTB_STOP        "Oprește"
+    IDTB_REFRESH     "Actualizează"
+    IDTB_BACK        "Înapoi"
+    IDTB_HOME        "Acasă"
+    IDTB_SYNC        "Sincronizează"
+    IDTB_PRINT       "Imprimă"
+    IDTB_OPTIONS     "Opțiuni"
+    IDTB_FORWARD     "Înainte"
+    IDTB_NOTES       "Note"
+    IDTB_BROWSE_FWD  "Caută înainte"
+    IDTB_BROWSE_BACK "Caută înapoi"
+    IDTB_CONTENTS    "Cuprins"
+    IDTB_INDEX       "Index"
+    IDTB_SEARCH      "Caută"
+    IDTB_HISTORY     "Istoric"
+    IDTB_FAVORITES   "Favorite"
+    IDTB_JUMP1       "Salt1"
+    IDTB_JUMP2       "Salt2"
+    IDTB_CUSTOMIZE   "Personalizare"
+    IDTB_ZOOM        "Scară"
+    IDTB_TOC_NEXT    "Capitol următor"
+    IDTB_TOC_PREV    "Capitol precedent"
+END

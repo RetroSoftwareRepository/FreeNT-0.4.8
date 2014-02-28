@@ -18,18 +18,9 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-
-#include <config.h>
-
-#define COBJMACROS
-
-//#include <stdarg.h>
+#include "precomp.h"
 
 #ifdef HAVE_LIBXML2
-//# include <libxml/parser.h>
-//# include <libxml/xmlerror.h>
 # include <libxml/HTMLtree.h>
 # ifdef SONAME_LIBXSLT
 #  ifdef HAVE_LIBXSLT_PATTERN_H
@@ -42,19 +33,6 @@
 #  include <libxslt/xsltInternals.h>
 # endif
 #endif
-
-#include <windef.h>
-#include <winbase.h>
-//#include "winuser.h"
-//#include "winnls.h"
-#include <ole2.h>
-#include <msxml6.h>
-
-#include "msxml_private.h"
-
-#include <wine/debug.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(msxml);
 
 #ifdef HAVE_LIBXML2
 
@@ -153,7 +131,7 @@ static HRESULT WINAPI SupportErrorInfo_InterfaceSupportsErrorInfo(ISupportErrorI
     TRACE("(%p)->(%s)\n", This, debugstr_guid(riid));
 
     tid = This->iids;
-    while (*tid)
+    while (*tid != NULL_tid)
     {
         if (IsEqualGUID(riid, get_riid_from_tid(*tid)))
             return S_OK;
@@ -899,6 +877,50 @@ HRESULT node_get_xml(xmlnode *This, BOOL ensure_eol, BSTR *ret)
     return *ret ? S_OK : E_OUTOFMEMORY;
 }
 
+/* duplicates xmlBufferWriteQuotedString() logic */
+static void xml_write_quotedstring(xmlOutputBufferPtr buf, const xmlChar *string)
+{
+    const xmlChar *cur, *base;
+
+    if (xmlStrchr(string, '\"'))
+    {
+        if (xmlStrchr(string, '\''))
+        {
+	    xmlOutputBufferWrite(buf, 1, "\"");
+            base = cur = string;
+
+            while (*cur)
+            {
+                if (*cur == '"')
+                {
+                    if (base != cur)
+                        xmlOutputBufferWrite(buf, cur-base, (const char*)base);
+                    xmlOutputBufferWrite(buf, 6, "&quot;");
+                    cur++;
+                    base = cur;
+                }
+                else
+                    cur++;
+            }
+            if (base != cur)
+                xmlOutputBufferWrite(buf, cur-base, (const char*)base);
+	    xmlOutputBufferWrite(buf, 1, "\"");
+	}
+        else
+        {
+	    xmlOutputBufferWrite(buf, 1, "\'");
+            xmlOutputBufferWriteString(buf, (const char*)string);
+	    xmlOutputBufferWrite(buf, 1, "\'");
+        }
+    }
+    else
+    {
+        xmlOutputBufferWrite(buf, 1, "\"");
+        xmlOutputBufferWriteString(buf, (const char*)string);
+        xmlOutputBufferWrite(buf, 1, "\"");
+    }
+}
+
 static void htmldtd_dumpcontent(xmlOutputBufferPtr buf, xmlDocPtr doc)
 {
     xmlDtdPtr cur = doc->intSubset;
@@ -908,17 +930,17 @@ static void htmldtd_dumpcontent(xmlOutputBufferPtr buf, xmlDocPtr doc)
     if (cur->ExternalID)
     {
         xmlOutputBufferWriteString(buf, " PUBLIC ");
-        xmlBufferWriteQuotedString(buf->buffer, cur->ExternalID);
+        xml_write_quotedstring(buf, cur->ExternalID);
         if (cur->SystemID)
         {
             xmlOutputBufferWriteString(buf, " ");
-            xmlBufferWriteQuotedString(buf->buffer, cur->SystemID);
+            xml_write_quotedstring(buf, cur->SystemID);
 	}
     }
     else if (cur->SystemID)
     {
         xmlOutputBufferWriteString(buf, " SYSTEM ");
-        xmlBufferWriteQuotedString(buf->buffer, cur->SystemID);
+        xml_write_quotedstring(buf, cur->SystemID);
     }
     xmlOutputBufferWriteString(buf, ">\n");
 }
@@ -944,6 +966,15 @@ static void htmldoc_dumpcontent(xmlOutputBufferPtr buf, xmlDocPtr doc)
 
     }
     doc->type = type;
+}
+
+static const xmlChar *get_output_buffer_content(xmlOutputBufferPtr output)
+{
+#ifdef LIBXML2_NEW_BUFFER
+    return xmlOutputBufferGetContent(output);
+#else
+    return xmlBufferContent(output->buffer);
+#endif
 }
 
 HRESULT node_transform_node(const xmlnode *This, IXMLDOMNode *stylesheet, BSTR *p)
@@ -974,7 +1005,7 @@ HRESULT node_transform_node(const xmlnode *This, IXMLDOMNode *stylesheet, BSTR *
                 if (output)
                 {
                     htmldoc_dumpcontent(output, result->doc);
-                    content = xmlBufferContent(output->buffer);
+                    content = get_output_buffer_content(output);
                     *p = bstr_from_xmlChar(content);
                     xmlOutputBufferClose(output);
                 }

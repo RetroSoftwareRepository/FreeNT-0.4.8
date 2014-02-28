@@ -40,29 +40,7 @@
  *   Scroll (instead of repaint) as much as possible.
  */
 
-#include <config.h>
-//#include "wine/port.h"
-
-#include <assert.h>
-//#include <ctype.h>
-//#include <stdarg.h>
-//#include <string.h>
-//#include <limits.h>
-//#include <stdlib.h>
-
-#define NONAMELESSUNION
-#define NONAMELESSSTRUCT
-//#include "windef.h"
-//#include "winbase.h"
-//#include "wingdi.h"
-//#include "winuser.h"
-//#include "winnls.h"
-//#include "commctrl.h"
 #include "comctl32.h"
-#include <uxtheme.h>
-#include <vssym32.h>
-#include <wine/unicode.h>
-#include <wine/debug.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(treeview);
 
@@ -2526,7 +2504,7 @@ TREEVIEW_DrawItem(const TREEVIEW_INFO *infoPtr, HDC hdc, TREEVIEW_ITEM *item)
      * - Otherwise - use background color
      */
     if ((item->state & TVIS_DROPHILITED) || ((item == infoPtr->focusedItem) && !(item->state & TVIS_SELECTED)) ||
-	((item->state & TVIS_SELECTED) && (!infoPtr->focusedItem) &&
+	((item->state & TVIS_SELECTED) && (!infoPtr->focusedItem || item == infoPtr->focusedItem) &&
 	 (inFocus || (infoPtr->dwStyle & TVS_SHOWSELALWAYS))))
     {
 	if ((item->state & TVIS_DROPHILITED) || inFocus)
@@ -3301,6 +3279,8 @@ TREEVIEW_Collapse(TREEVIEW_INFO *infoPtr, TREEVIEW_ITEM *item,
 	TREEVIEW_RemoveAllChildren(infoPtr, item);
         item->cChildren = old_cChildren;
     }
+    if (!wasExpanded)
+        return FALSE;
 
     if (item->firstChild)
     {

@@ -17,7 +17,6 @@ endif()
 
 add_subdirectory(gdi/gdi32)
 add_subdirectory(reactx)
-add_subdirectory(user/consrv)
 add_subdirectory(user/user32)
 add_subdirectory(user/winsrv)
 
@@ -109,6 +108,7 @@ list(APPEND SOURCE
     user/ntuser/defwnd.c
     user/ntuser/desktop.c
     user/ntuser/display.c
+    user/ntuser/draw.c
     user/ntuser/event.c
     user/ntuser/focus.c
     user/ntuser/guicheck.c
@@ -179,8 +179,7 @@ list(APPEND SOURCE
     gdi/ntgdi/xformobj.c
     gdi/eng/stubs.c
     gdi/eng/umpdstubs.c
-    win32k.rc
-    ${CMAKE_CURRENT_BINARY_DIR}/win32k.def)
+    pch.h)
 
 if(USE_DIBLIB)
     add_definitions(-D_USE_DIBLIB_)
@@ -218,7 +217,12 @@ if(KDBG)
 endif()
 
 add_asm_files(win32k_asm ${ASM_SOURCE})
-add_library(win32k SHARED ${SOURCE} ${win32k_asm})
+
+add_library(win32k SHARED
+    ${SOURCE}
+    ${win32k_asm}
+    win32k.rc
+    ${CMAKE_CURRENT_BINARY_DIR}/win32k.def)
 
 set_module_type(win32k kernelmodedriver)
 
@@ -232,7 +236,7 @@ if(USE_DIBLIB)
 endif()
 
 add_importlibs(win32k ntoskrnl hal ftfd)
-add_pch(win32k pch.h)
+add_pch(win32k pch.h SOURCE)
 add_cd_file(TARGET win32k DESTINATION reactos/system32 FOR all)
 
 set_source_files_properties(sys-stubs.S PROPERTIES OBJECT_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/w32ksvc.h)

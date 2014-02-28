@@ -12,7 +12,7 @@
 
 #include "winlogon.h"
 
-WINE_DEFAULT_DEBUG_CHANNEL(winlogon);
+#include <ndk/cmfuncs.h>
 
 /* GLOBALS ******************************************************************/
 
@@ -213,9 +213,10 @@ InitKeyboardLayouts(VOID)
 
 
 BOOL
-DisplayStatusMessage(IN PWLSESSION Session,
-                     IN HDESK hDesktop,
-                     IN UINT ResourceId)
+DisplayStatusMessage(
+     IN PWLSESSION Session,
+     IN HDESK hDesktop,
+     IN UINT ResourceId)
 {
     WCHAR StatusMsg[MAX_PATH];
 
@@ -233,7 +234,8 @@ DisplayStatusMessage(IN PWLSESSION Session,
 
 
 BOOL
-RemoveStatusMessage(IN PWLSESSION Session)
+RemoveStatusMessage(
+    IN PWLSESSION Session)
 {
     if (Session->Gina.Version < WLX_VERSION_1_3)
         return TRUE;
@@ -245,10 +247,11 @@ RemoveStatusMessage(IN PWLSESSION Session)
 static
 INT_PTR
 CALLBACK
-GinaLoadFailedWindowProc(IN HWND hwndDlg,
-                         IN UINT uMsg,
-                         IN WPARAM wParam,
-                         IN LPARAM lParam)
+GinaLoadFailedWindowProc(
+    IN HWND hwndDlg,
+    IN UINT uMsg,
+    IN WPARAM wParam,
+    IN LPARAM lParam)
 {
     switch (uMsg)
     {
@@ -292,10 +295,11 @@ GinaLoadFailedWindowProc(IN HWND hwndDlg,
 
 int
 WINAPI
-WinMain(IN HINSTANCE hInstance,
-        IN HINSTANCE hPrevInstance,
-        IN LPSTR lpCmdLine,
-        IN int nShowCmd)
+WinMain(
+    IN HINSTANCE hInstance,
+    IN HINSTANCE hPrevInstance,
+    IN LPSTR lpCmdLine,
+    IN int nShowCmd)
 {
 #if 0
     LSA_STRING ProcessName, PackageName;
@@ -331,6 +335,9 @@ WinMain(IN HINSTANCE hInstance,
 
     ZeroMemory(WLSession, sizeof(WLSESSION));
     WLSession->DialogTimeout = 120; /* 2 minutes */
+
+    /* Initialize the dialog tracking list */
+    InitDialogListHead();
 
     if (!CreateWindowStationAndDesktops(WLSession))
     {
@@ -422,7 +429,7 @@ WinMain(IN HINSTANCE hInstance,
     //DisplayStatusMessage(Session, Session->WinlogonDesktop, IDS_APPLYINGCOMPUTERSETTINGS);
 
     /* Display logged out screen */
-    WLSession->LogonState = STATE_LOGGED_OFF;
+    WLSession->LogonState = STATE_INIT;
     RemoveStatusMessage(WLSession);
 
     /* Check for pending setup */
@@ -435,7 +442,7 @@ WinMain(IN HINSTANCE hInstance,
         RunSetup();
     }
     else
-        PostMessageW(WLSession->SASWindow, WLX_WM_SAS, WLX_SAS_TYPE_TIMEOUT, 0);
+        PostMessageW(WLSession->SASWindow, WLX_WM_SAS, WLX_SAS_TYPE_CTRL_ALT_DEL, 0);
 
     /* Tell kernel that CurrentControlSet is good (needed
      * to support Last good known configuration boot) */

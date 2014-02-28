@@ -8,6 +8,9 @@
 #define actctx                  202
 #define resource                203
 #define kernel32session         204
+#define comm                    205
+#define profile                 206
+#define nls                     207
 
 
 #if DBG
@@ -27,6 +30,7 @@
 
 #define debugstr_a
 #define debugstr_w
+#define debugstr_wn
 #define wine_dbgstr_w
 #define debugstr_guid
 
@@ -61,41 +65,9 @@
 #define FIELD_OFFSET(type,fld)	((LONG)&(((type *)0)->fld))
 #endif
 
-//
-// This stuff maybe should go in a vdm.h?
-//
-typedef enum _VDM_ENTRY_CODE
-{
-    VdmEntryUndo,
-    VdmEntryUpdateProcess,
-    VdmEntryUpdateControlCHandler
-} VDM_ENTRY_CODE;
-
-//
-// Undo States
-//
-#define VDM_UNDO_PARTIAL    0x01
-#define VDM_UNDO_FULL       0x02
-#define VDM_UNDO_REUSE      0x04
-#define VDM_UNDO_COMPLETED  0x08
-
-//
-// Binary Types to share with VDM
-//
-#define BINARY_TYPE_EXE     0x01
-#define BINARY_TYPE_COM     0x02
-#define BINARY_TYPE_PIF     0x03
-#define BINARY_TYPE_DOS     0x10
-#define BINARY_TYPE_SEPARATE_WOW 0x20
-#define BINARY_TYPE_WOW     0x40
-#define BINARY_TYPE_WOW_EX  0x80
-
-//
-// VDM States
-//
-#define VDM_NOT_LOADED      0x01
-#define VDM_NOT_READY       0x02
-#define VDM_READY           0x04
+#define __TRY _SEH2_TRY
+#define __EXCEPT_PAGE_FAULT _SEH2_EXCEPT(_SEH2_GetExceptionCode() == STATUS_ACCESS_VIOLATION)
+#define __ENDTRY _SEH2_END
 
 /* Undocumented CreateProcess flag */
 #define STARTF_SHELLPRIVATE         0x400
@@ -194,7 +166,7 @@ DWORD FilenameU2A_FitOrFail(LPSTR  DestA, INT destLen, PUNICODE_STRING SourceU);
 #define HeapAlloc RtlAllocateHeap
 #define HeapReAlloc RtlReAllocateHeap
 #define HeapFree RtlFreeHeap
-#define _lread  (_readfun)_hread
+#define _lread(a, b, c)  (long)(_hread(a, b, (long)c))
 
 PLARGE_INTEGER
 WINAPI
@@ -366,31 +338,6 @@ IsShimInfrastructureDisabled(
     VOID
 );
 
-BOOL
-NTAPI
-BaseDestroyVDMEnvironment(
-    IN PANSI_STRING AnsiEnv,
-    IN PUNICODE_STRING UnicodeEnv
-);
-
-BOOL
-WINAPI
-BaseGetVdmConfigInfo(
-    IN LPCWSTR Reserved,
-    IN ULONG DosSeqId,
-    IN ULONG BinaryType,
-    IN PUNICODE_STRING CmdLineString,
-    OUT PULONG VdmSize
-);
-
-BOOL
-NTAPI
-BaseCreateVDMEnvironment(
-    IN PWCHAR lpEnvironment,
-    IN PANSI_STRING AnsiEnv,
-    IN PUNICODE_STRING UnicodeEnv
-);
-
 VOID
 WINAPI
 InitCommandLines(VOID);
@@ -410,13 +357,13 @@ BasepLocateExeLdrEntry(IN PLDR_DATA_TABLE_ENTRY Entry,
 
 typedef NTSTATUS
 (NTAPI *PBASEP_APPCERT_PLUGIN_FUNC)(
-    IN PCHAR ApplicationName,
+    IN LPWSTR ApplicationName,
     IN ULONG CertFlag
 );
 
 typedef NTSTATUS
 (NTAPI *PBASEP_APPCERT_EMBEDDED_FUNC)(
-    IN PCHAR ApplicationName
+    IN LPWSTR ApplicationName
 );
 
 typedef NTSTATUS
@@ -468,15 +415,6 @@ BasepConfigureAppCertDlls(
 extern LIST_ENTRY BasepAppCertDllsList;
 extern RTL_CRITICAL_SECTION gcsAppCert;
 
-BOOL
-WINAPI
-BaseUpdateVDMEntry(
-    IN ULONG UpdateIndex,
-    IN OUT PHANDLE WaitHandle,
-    IN ULONG IndexInfo,
-    IN ULONG BinaryType
-);
-
 VOID
 WINAPI
 BaseMarkFileForDelete(
@@ -484,12 +422,6 @@ BaseMarkFileForDelete(
     IN ULONG FileAttributes
 );
 
-BOOL
-WINAPI
-BaseCheckForVDM(
-    IN HANDLE ProcessHandle,
-    OUT LPDWORD ExitCode
-);
 
 /* FIXME: This is EXPORTED! It should go in an external kernel32.h header */
 VOID
@@ -497,4 +429,15 @@ WINAPI
 BasepFreeAppCompatData(
     IN PVOID AppCompatData,
     IN PVOID AppCompatSxsData
+);
+
+NTSTATUS
+WINAPI
+BasepCheckWinSaferRestrictions(
+    IN HANDLE UserToken,
+    IN LPWSTR ApplicationName,
+    IN HANDLE FileHandle,
+    OUT PBOOLEAN InJob,
+    OUT PHANDLE NewToken,
+    OUT PHANDLE JobHandle
 );

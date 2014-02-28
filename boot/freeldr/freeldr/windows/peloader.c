@@ -182,11 +182,12 @@ WinLdrAllocateDataTableEntry(IN OUT PLIST_ENTRY ModuleListHead,
 	TRACE("WinLdrAllocateDataTableEntry(, '%s', '%s', %p)\n",
        BaseDllName, FullDllName, BasePA);
 
-	/* Allocate memory for a data table entry, zero-initialize it */
-	DataTableEntry = (PLDR_DATA_TABLE_ENTRY)MmHeapAlloc(sizeof(LDR_DATA_TABLE_ENTRY));
-	if (DataTableEntry == NULL)
-		return FALSE;
-	RtlZeroMemory(DataTableEntry, sizeof(LDR_DATA_TABLE_ENTRY));
+    /* Allocate memory for a data table entry, zero-initialize it */
+    DataTableEntry = (PLDR_DATA_TABLE_ENTRY)FrLdrHeapAlloc(sizeof(LDR_DATA_TABLE_ENTRY),
+                                                           TAG_WLDR_DTE);
+    if (DataTableEntry == NULL)
+        return FALSE;
+    RtlZeroMemory(DataTableEntry, sizeof(LDR_DATA_TABLE_ENTRY));
 
 	/* Get NT headers from the image */
 	NtHeaders = RtlImageNtHeader(BasePA);
@@ -198,16 +199,16 @@ WinLdrAllocateDataTableEntry(IN OUT PLIST_ENTRY ModuleListHead,
 	DataTableEntry->SectionPointer = 0;
 	DataTableEntry->CheckSum = NtHeaders->OptionalHeader.CheckSum;
 
-	/* Initialize BaseDllName field (UNICODE_STRING) from the Ansi BaseDllName
-	   by simple conversion - copying each character */
-	Length = (USHORT)(strlen(BaseDllName) * sizeof(WCHAR));
-	Buffer = (PWSTR)MmHeapAlloc(Length);
-	if (Buffer == NULL)
-	{
-		MmHeapFree(DataTableEntry);
-		return FALSE;
-	}
-	RtlZeroMemory(Buffer, Length);
+    /* Initialize BaseDllName field (UNICODE_STRING) from the Ansi BaseDllName
+       by simple conversion - copying each character */
+    Length = (USHORT)(strlen(BaseDllName) * sizeof(WCHAR));
+    Buffer = (PWSTR)FrLdrHeapAlloc(Length, TAG_WLDR_NAME);
+    if (Buffer == NULL)
+    {
+        FrLdrHeapFree(DataTableEntry, TAG_WLDR_DTE);
+        return FALSE;
+    }
+    RtlZeroMemory(Buffer, Length);
 
 	DataTableEntry->BaseDllName.Length = Length;
 	DataTableEntry->BaseDllName.MaximumLength = Length;
@@ -217,16 +218,16 @@ WinLdrAllocateDataTableEntry(IN OUT PLIST_ENTRY ModuleListHead,
 		*Buffer++ = *BaseDllName++;
 	}
 
-	/* Initialize FullDllName field (UNICODE_STRING) from the Ansi FullDllName
-	   using the same method */
-	Length = (USHORT)(strlen(FullDllName) * sizeof(WCHAR));
-	Buffer = (PWSTR)MmHeapAlloc(Length);
-	if (Buffer == NULL)
-	{
-		MmHeapFree(DataTableEntry);
-		return FALSE;
-	}
-	RtlZeroMemory(Buffer, Length);
+    /* Initialize FullDllName field (UNICODE_STRING) from the Ansi FullDllName
+       using the same method */
+    Length = (USHORT)(strlen(FullDllName) * sizeof(WCHAR));
+    Buffer = (PWSTR)FrLdrHeapAlloc(Length, TAG_WLDR_NAME);
+    if (Buffer == NULL)
+    {
+        FrLdrHeapFree(DataTableEntry, TAG_WLDR_DTE);
+        return FALSE;
+    }
+    RtlZeroMemory(Buffer, Length);
 
 	DataTableEntry->FullDllName.Length = Length;
 	DataTableEntry->FullDllName.MaximumLength = Length;

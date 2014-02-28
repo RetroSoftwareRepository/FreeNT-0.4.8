@@ -19,23 +19,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-
-#include <stdarg.h>
-
-#include <windef.h>
-#include <winbase.h>
-#include <winuser.h>
-#include <winreg.h>
-#include <winternl.h>
-//#include "winnls.h"
-//#include "setupapi.h"
-#include <advpub.h>
-#include <wine/unicode.h>
-#include <wine/debug.h>
 #include "advpack_private.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(advpack);
 
 typedef HRESULT (WINAPI *DLLREGISTER) (void);
 
@@ -177,7 +161,7 @@ void set_ldids(HINF hInf, LPCWSTR pszInstallSection, LPCWSTR pszWorkingDir)
             FIXME("Need to support changing paths - default will be used\n");
 
         /* set all ldids to dest */
-        while ((ptr = get_parameter(&key, ',')))
+        while ((ptr = get_parameter(&key, ',', FALSE)))
         {
             ldid = atolW(ptr);
             SetupSetDirectoryIdW(hInf, ldid, dest);
@@ -510,12 +494,12 @@ HRESULT WINAPI RegisterOCX(HWND hWnd, HINSTANCE hInst, LPCSTR cmdline, INT show)
     cmdline_ptr = cmdline_copy;
     lstrcpyW(cmdline_copy, cmdlineW.Buffer);
 
-    ocx_filename = get_parameter(&cmdline_ptr, ',');
+    ocx_filename = get_parameter(&cmdline_ptr, ',', TRUE);
     if (!ocx_filename || !*ocx_filename)
         goto done;
 
-    str_flags = get_parameter(&cmdline_ptr, ',');
-    param = get_parameter(&cmdline_ptr, ',');
+    str_flags = get_parameter(&cmdline_ptr, ',', TRUE);
+    param = get_parameter(&cmdline_ptr, ',', TRUE);
 
     hm = LoadLibraryExW(ocx_filename, NULL, LOAD_WITH_ALTERED_SEARCH_PATH);
     if (!hm)

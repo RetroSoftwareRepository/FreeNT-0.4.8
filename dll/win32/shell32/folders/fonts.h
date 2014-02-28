@@ -1,7 +1,7 @@
 /*
  * Fonts folder
  *
- * Copyright 2008       Johannes Anderwald <janderwald@reactos.org>
+ * Copyright 2008       Johannes Anderwald <johannes.anderwald@reactos.org>
  * Copyright 2009       Andrew Hill
  *
  * This library is free software; you can redistribute it and/or
@@ -92,4 +92,4 @@ class CFontsFolder :
         END_COM_MAP()
 };
 
-#endif // _SHFLDR_FONTS_H_
+#endif /* _SHFLDR_FONTS_H_ */

@@ -108,7 +108,6 @@ typedef struct _BCB
     BOOLEAN RemoveOnClose;
     ULONG TimeStamp;
     PFILE_OBJECT FileObject;
-    ULONG CacheSegmentSize;
     LARGE_INTEGER AllocationSize;
     LARGE_INTEGER FileSize;
     PCACHE_MANAGER_CALLBACKS Callbacks;
@@ -172,8 +171,8 @@ CcPfInitializePrefetcher(
 VOID
 NTAPI
 CcMdlReadComplete2(
-    IN PMDL MemoryDescriptorList,
-    IN PFILE_OBJECT FileObject
+    IN PFILE_OBJECT FileObject,
+    IN PMDL MemoryDescriptorList
 );
 
 VOID
@@ -202,13 +201,6 @@ CcRosGetCacheSegment(
 VOID
 NTAPI
 CcInitView(VOID);
-
-NTSTATUS
-NTAPI
-CcRosFreeCacheSegment(
-    PBCB,
-    PCACHE_SEGMENT
-);
 
 NTSTATUS
 NTAPI
@@ -301,7 +293,6 @@ NTSTATUS
 NTAPI
 CcRosInitializeFileCache(
     PFILE_OBJECT FileObject,
-    ULONG CacheSegmentSize,
     PCACHE_MANAGER_CALLBACKS CallBacks,
     PVOID LazyWriterContext
 );
@@ -315,3 +306,28 @@ CcRosReleaseFileCache(
 NTSTATUS
 NTAPI
 CcTryToInitializeFileCache(PFILE_OBJECT FileObject);
+
+FORCEINLINE
+BOOLEAN
+DoSegmentsIntersect(
+    _In_ ULONG Offset1,
+    _In_ ULONG Length1,
+    _In_ ULONG Offset2,
+    _In_ ULONG Length2)
+{
+    if (Offset1 + Length1 <= Offset2)
+        return FALSE;
+    if (Offset2 + Length2 <= Offset1)
+        return FALSE;
+    return TRUE;
+}
+
+FORCEINLINE
+BOOLEAN
+IsPointInSegment(
+    _In_ ULONG Offset1,
+    _In_ ULONG Length1,
+    _In_ ULONG Point)
+{
+    return DoSegmentsIntersect(Offset1, Length1, Point, 1);
+}

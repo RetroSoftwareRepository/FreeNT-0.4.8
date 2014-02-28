@@ -18,27 +18,8 @@
  * License along with this library; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
-#include "config.h"
 
-#include <stdarg.h>
-#include <assert.h>
-
-#define COBJMACROS
-
-#include "windef.h"
-#include "winbase.h"
-#include "wingdi.h"
-#include "winerror.h"
-#include "winreg.h"
-#include "objbase.h"
-#include "uuids.h"
-#include "strmif.h"
-
-#include "wine/unicode.h"
-#include "wine/debug.h"
-#include "wine/strmbase.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(strmbase);
+#include "strmbase_private.h"
 
 extern const int g_cTemplates;
 extern const FactoryTemplate g_Templates[];
@@ -211,8 +192,8 @@ HRESULT WINAPI AMovieSetupRegisterFilter2(const AMOVIESETUP_FILTER *pFilter, IFi
             REGFILTER2 rf2;
             rf2.dwVersion = 1;
             rf2.dwMerit = pFilter->merit;
-            rf2.cPins = pFilter->pins;
-            rf2.rgPins = pFilter->pPin;
+            rf2.u.s1.cPins = pFilter->pins;
+            rf2.u.s1.rgPins = pFilter->pPin;
 
             return IFilterMapper2_RegisterFilter(pIFM2, pFilter->clsid, pFilter->name, NULL, &CLSID_LegacyAmFilterCategory, NULL, &rf2);
         }

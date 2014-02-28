@@ -3,7 +3,7 @@
  * LICENSE:         GPL - See COPYING in the top level directory
  * FILE:            dll/win32/console/console.c
  * PURPOSE:         initialization of DLL
- * PROGRAMMERS:     Johannes Anderwald (johannes.anderwald@student.tugraz.at)
+ * PROGRAMMERS:     Johannes Anderwald (johannes.anderwald@reactos.org)
  */
 
 #include "console.h"
@@ -111,7 +111,7 @@ InitConsoleDefaults(PCONSOLE_PROPS pConInfo)
     /* Adapted for holding GUI terminal information */
     pConInfo->TerminalInfo.Size = sizeof(GUI_CONSOLE_INFO);
     GuiInfo = pConInfo->TerminalInfo.TermInfo = (PGUI_CONSOLE_INFO)(pConInfo + 1);
-    wcsncpy(GuiInfo->FaceName, L"Fixedsys", LF_FACESIZE); // HACK: !!
+    wcsncpy(GuiInfo->FaceName, L"VGA", LF_FACESIZE); // HACK: !!
     // GuiInfo->FaceName[0] = L'\0';
     GuiInfo->FontFamily = FF_DONTCARE;
     GuiInfo->FontSize = 0;

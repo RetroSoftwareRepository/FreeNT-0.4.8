@@ -18,29 +18,11 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-#define COM_NO_WINDOWS_H
+#include "precomp.h"
 
-#include <stdarg.h>
-//#include <stdio.h>
-
-#define COBJMACROS
-
-#include <windef.h>
-#include <winbase.h>
-//#include "winerror.h"
-//#include "winuser.h"
-#include <wine/debug.h>
-//#include "objbase.h"
-//#include "objidl.h"
 #include <ole2.h>
 #include <exdisp.h>
-#include <atlbase.h>
-//#include "atliface.h"
 #include <atlwin.h>
-
-#include <wine/unicode.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(atl);
 
@@ -90,7 +72,8 @@ static LRESULT CALLBACK AtlAxWin_wndproc( HWND hWnd, UINT wMsg, WPARAM wParam, L
 BOOL WINAPI AtlAxWinInit(void)
 {
     WNDCLASSEXW wcex;
-    const WCHAR AtlAxWin[] = {'A','t','l','A','x','W','i','n',0};
+    const WCHAR AtlAxWin100[] = {'A','t','l','A','x','W','i','n','1','0','0',0};
+    const WCHAR AtlAxWinLic100[] = {'A','t','l','A','x','W','i','n','L','i','c','1','0','0',0};
 
     FIXME("semi-stub\n");
 
@@ -98,7 +81,7 @@ BOOL WINAPI AtlAxWinInit(void)
         return FALSE;
 
     wcex.cbSize        = sizeof(wcex);
-    wcex.style         = 0;
+    wcex.style         = CS_GLOBALCLASS | CS_DBLCLKS;
     wcex.cbClsExtra    = 0;
     wcex.cbWndExtra    = 0;
     wcex.hInstance     = GetModuleHandleW( NULL );
@@ -109,7 +92,11 @@ BOOL WINAPI AtlAxWinInit(void)
     wcex.hIconSm       = 0;
 
     wcex.lpfnWndProc   = AtlAxWin_wndproc;
-    wcex.lpszClassName = AtlAxWin;
+    wcex.lpszClassName = AtlAxWin100;
+    if ( !RegisterClassExW( &wcex ) )
+        return FALSE;
+
+    wcex.lpszClassName = AtlAxWinLic100;
     if ( !RegisterClassExW( &wcex ) )
         return FALSE;
 
@@ -1353,4 +1340,26 @@ HRESULT WINAPI AtlAxGetControl(HWND hWnd, IUnknown **pUnk)
     }
 
     return IOleObject_QueryInterface( This->control, &IID_IUnknown, (void**) pUnk );
+}
+
+/***********************************************************************
+ *           AtlAxDialogBoxW              [atl100.35]
+ *
+ */
+INT_PTR WINAPI AtlAxDialogBoxW(HINSTANCE hInstance, LPCWSTR lpTemplateName, HWND hWndParent, DLGPROC lpDialogProc,
+        LPARAM dwInitParam)
+{
+    FIXME("(%p %s %p %p %lx)\n", hInstance, debugstr_w(lpTemplateName), hWndParent, lpDialogProc, dwInitParam);
+    return 0;
+}
+
+/***********************************************************************
+ *           AtlAxDialogBoxA              [atl100.36]
+ *
+ */
+INT_PTR WINAPI AtlAxDialogBoxA(HINSTANCE hInstance, LPCSTR lpTemplateName, HWND hWndParent, DLGPROC lpDialogProc,
+        LPARAM dwInitParam)
+{
+    FIXME("(%p %s %p %p %lx)\n", hInstance, debugstr_a(lpTemplateName), hWndParent, lpDialogProc, dwInitParam);
+    return 0;
 }

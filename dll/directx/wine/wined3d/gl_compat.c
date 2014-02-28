@@ -18,17 +18,10 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <config.h>
-#include <wine/port.h>
-
-#include <stdio.h>
-#ifdef HAVE_FLOAT_H
-# include <float.h>
-#endif
-
 #include "wined3d_private.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(gl_compat);
+WINE_DECLARE_DEBUG_CHANNEL(d3d_perf);
 
 /* Start GL_ARB_multitexture emulation */
 static void WINE_GLAPI wine_glMultiTexCoord1fARB(GLenum target, GLfloat s) {
@@ -176,7 +169,7 @@ static void WINE_GLAPI wine_glFogi(GLenum pname, GLint param) {
         if(param == GL_FRAGMENT_DEPTH_EXT) {
             if(ctx->fog_enabled) old_fogcoord_glEnable(GL_FOG);
         } else {
-            WARN("Fog coords activated, but not supported. Using slow emulation\n");
+            WARN_(d3d_perf)("Fog coords activated, but not supported. Using slow emulation\n");
             old_fogcoord_glDisable(GL_FOG);
         }
     } else {
@@ -197,7 +190,7 @@ static void WINE_GLAPI wine_glFogiv(GLenum pname, const GLint *param) {
         if(*param == GL_FRAGMENT_DEPTH_EXT) {
             if(ctx->fog_enabled) old_fogcoord_glEnable(GL_FOG);
         } else {
-            WARN("Fog coords activated, but not supported. Using slow emulation\n");
+            WARN_(d3d_perf)("Fog coords activated, but not supported. Using slow emulation\n");
             old_fogcoord_glDisable(GL_FOG);
         }
     } else {
@@ -218,7 +211,7 @@ static void WINE_GLAPI wine_glFogf(GLenum pname, GLfloat param) {
         if(param == GL_FRAGMENT_DEPTH_EXT) {
             if(ctx->fog_enabled) old_fogcoord_glEnable(GL_FOG);
         } else {
-            WARN("Fog coords activated, but not supported. Using slow emulation\n");
+            WARN_(d3d_perf)("Fog coords activated, but not supported. Using slow emulation\n");
             old_fogcoord_glDisable(GL_FOG);
         }
     } else {
@@ -239,7 +232,7 @@ static void WINE_GLAPI wine_glFogfv(GLenum pname, const GLfloat *param) {
         if(*param == GL_FRAGMENT_DEPTH_EXT) {
             if(ctx->fog_enabled) old_fogcoord_glEnable(GL_FOG);
         } else {
-            WARN("Fog coords activated, but not supported. Using slow emulation\n");
+            WARN_(d3d_perf)("Fog coords activated, but not supported. Using slow emulation\n");
             old_fogcoord_glDisable(GL_FOG);
         }
     } else {

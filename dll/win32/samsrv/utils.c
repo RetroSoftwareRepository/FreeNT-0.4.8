@@ -7,15 +7,9 @@
  * PROGRAMMERS:     Eric Kohl
  */
 
-/* INCLUDES ****************************************************************/
-
 #include "samsrv.h"
 
-WINE_DEFAULT_DEBUG_CHANNEL(samsrv);
-
-
-/* GLOBALS *****************************************************************/
-
+#include <winuser.h>
 
 /* FUNCTIONS ***************************************************************/
 
@@ -151,6 +145,17 @@ SampGetRidFromSid(IN PSID Sid,
         return STATUS_INVALID_SID;
 
     *Rid = *RtlSubAuthoritySid(Sid, RidCount - 1);
+
+    return STATUS_SUCCESS;
+}
+
+
+NTSTATUS
+SampCheckAccountName(IN PRPC_UNICODE_STRING AccountName,
+                     IN USHORT MaxLength)
+{
+    if (AccountName->Length > MaxLength * sizeof(WCHAR))
+        return STATUS_INVALID_ACCOUNT_NAME;
 
     return STATUS_SUCCESS;
 }

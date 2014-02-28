@@ -20,24 +20,10 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <config.h>
-
-//#include <stdarg.h>
-//#include <stdio.h>
-
-//#include "wine/unicode.h"
-#include <wine/debug.h>
-
 #include "shdocvw.h"
 
-#include <winreg.h>
 #include <shlwapi.h>
 #include <wininet.h>
-//#include "isguids.h"
-
-//#include "initguid.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(shdocvw);
 
 LONG SHDOCVW_refCount = 0;
 
@@ -149,9 +135,9 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD fdwReason, LPVOID fImpLoad)
         case DLL_PROCESS_ATTACH:
         break;
     case DLL_PROCESS_DETACH:
+        if (fImpLoad) break;
         if (SHDOCVW_hshell32) FreeLibrary(SHDOCVW_hshell32);
-        if(ieframe_instance)
-            FreeLibrary(ieframe_instance);
+        if (ieframe_instance) FreeLibrary(ieframe_instance);
         break;
     }
     return TRUE;
@@ -442,7 +428,7 @@ DWORD WINAPI ParseURLFromOutsideSourceA(LPCSTR url, LPSTR out, LPDWORD plen, LPD
     }
 
     len = sizeof(buffer) / sizeof(buffer[0]);
-    res = ParseURLFromOutsideSourceW(urlW, buffer, &len, unknown);
+    ParseURLFromOutsideSourceW(urlW, buffer, &len, unknown);
     HeapFree(GetProcessHeap(), 0, urlW);
 
     needed = WideCharToMultiByte(CP_ACP, 0, buffer, -1, NULL, 0, NULL, NULL);

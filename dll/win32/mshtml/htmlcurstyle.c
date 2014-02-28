@@ -16,24 +16,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-
-#include <stdarg.h>
-
-#define COBJMACROS
-
-#include <windef.h>
-#include <winbase.h>
-//#include "winuser.h"
-#include <ole2.h>
-
 #include "mshtml_private.h"
-#include "htmlstyle.h"
-
-#include <wine/debug.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(mshtml);
 
 struct HTMLCurrentStyle {
     DispatchEx dispex;
@@ -982,8 +965,11 @@ static HRESULT WINAPI HTMLCurrentStyle2_get_textUnderlinePosition(IHTMLCurrentSt
 static HRESULT WINAPI HTMLCurrentStyle2_get_hasLayout(IHTMLCurrentStyle2 *iface, VARIANT_BOOL *p)
 {
     HTMLCurrentStyle *This = impl_from_IHTMLCurrentStyle2(iface);
-    FIXME("(%p)->(%p)\n", This, p);
-    return E_NOTIMPL;
+
+    FIXME("(%p)->(%p) returning true\n", This, p);
+
+    *p = VARIANT_TRUE;
+    return S_OK;
 }
 
 static HRESULT WINAPI HTMLCurrentStyle2_get_scrollbarBaseColor(IHTMLCurrentStyle2 *iface, VARIANT *p)

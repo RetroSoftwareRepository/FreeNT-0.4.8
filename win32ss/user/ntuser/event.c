@@ -136,7 +136,7 @@ IntRemoveEvent(PEVENTHOOK pEH)
 {
    if (pEH)
    {
-      TRACE("IntRemoveEvent pEH 0x%x\n",pEH);
+      TRACE("IntRemoveEvent pEH %p\n", pEH);
       KeEnterCriticalRegion();
       RemoveEntryList(&pEH->Chain);
       GlobalEvents->Counts--;
@@ -224,7 +224,7 @@ IntNotifyWinEvent(
    PLIST_ENTRY pLE;
    PTHREADINFO pti, ptiCurrent;
 
-   TRACE("IntNotifyWinEvent GlobalEvents = 0x%x pWnd 0x%x\n",GlobalEvents, pWnd);
+   TRACE("IntNotifyWinEvent GlobalEvents = %p pWnd %p\n", GlobalEvents, pWnd);
 
    if (!GlobalEvents || !GlobalEvents->Counts) return;
 
@@ -260,7 +260,7 @@ IntNotifyWinEvent(
               ERR("Global Event 0x%x, idObject %d\n", Event, idObject);
               IntCallLowLevelEvent( pEH,
                                     Event,
-                                    UserHMGetHandle(pWnd),
+                                    pWnd ? UserHMGetHandle(pWnd) : NULL,
                                     idObject,
                                     idChild);
            }
@@ -269,7 +269,7 @@ IntNotifyWinEvent(
               ERR("Local Event 0x%x, idObject %d\n", Event, idObject);
               co_IntCallEventProc( UserHMGetHandle(pEH),
                                    Event,
-                                   UserHMGetHandle(pWnd),
+                                   pWnd ? UserHMGetHandle(pWnd) : NULL,
                                    idObject,
                                    idChild,
                                    PtrToUint(NtCurrentTeb()->ClientId.UniqueThread),
@@ -334,7 +334,7 @@ NtUserSetWinEventHook(
    HANDLE Handle;
    PETHREAD Thread = NULL;
 
-   TRACE("NtUserSetWinEventHook hmod 0x%x, pfn 0x%x\n",hmodWinEventProc, lpfnWinEventProc);
+   TRACE("NtUserSetWinEventHook hmod %p, pfn %p\n", hmodWinEventProc, lpfnWinEventProc);
 
    UserEnterExclusive();
 

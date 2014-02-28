@@ -15,11 +15,10 @@
 void
 placeSelWin()
 {
-    MoveWindow(hSelection, rectSel_dest[0] * zoom / 1000, rectSel_dest[1] * zoom / 1000,
-               rectSel_dest[2] * zoom / 1000 + 6, rectSel_dest[3] * zoom / 1000 + 6, TRUE);
+    MoveWindow(hSelection, rectSel_dest.left * zoom / 1000, rectSel_dest.top * zoom / 1000,
+               RECT_WIDTH(rectSel_dest) * zoom / 1000 + 6, RECT_HEIGHT(rectSel_dest) * zoom / 1000 + 6, TRUE);
     BringWindowToTop(hSelection);
-    SendMessage(hImageArea, WM_PAINT, 0, 0);
-    //SendMessage(hSelection, WM_PAINT, 0, 0);
+    InvalidateRect(hImageArea, NULL, FALSE);
 }
 
 void
@@ -58,10 +57,10 @@ int ptSP = 0;
 void
 startPaintingL(HDC hdc, LONG x, LONG y, COLORREF fg, COLORREF bg)
 {
-    startX = x;
-    startY = y;
-    lastX = x;
-    lastY = y;
+    start.x = x;
+    start.y = y;
+    last.x = x;
+    last.y = y;
     switch (activeTool)
     {
         case TOOL_FREESEL:
@@ -73,7 +72,6 @@ startPaintingL(HDC hdc, LONG x, LONG y, COLORREF fg, COLORREF bg)
             ptStack[0].x = x;
             ptStack[0].y = y;
             break;
-        case TOOL_TEXT:
         case TOOL_LINE:
         case TOOL_RECT:
         case TOOL_ELLIPSE:
@@ -81,9 +79,11 @@ startPaintingL(HDC hdc, LONG x, LONG y, COLORREF fg, COLORREF bg)
             newReversible();
             break;
         case TOOL_RECTSEL:
+        case TOOL_TEXT:
             newReversible();
             ShowWindow(hSelection, SW_HIDE);
-            rectSel_src[2] = rectSel_src[3] = 0;
+            rectSel_src.right = rectSel_src.left;
+            rectSel_src.bottom = rectSel_src.top;
             break;
         case TOOL_RUBBER:
             newReversible();
@@ -145,27 +145,27 @@ whilePaintingL(HDC hdc, LONG x, LONG y, COLORREF fg, COLORREF bg)
             Poly(hdc, ptStack, ptSP + 1, 0, 0, 2, 0, FALSE);
             break;
         case TOOL_RECTSEL:
+        case TOOL_TEXT:
         {
-            int tempX;
-            int tempY;
+            POINT temp;
             resetToU1();
-            tempX = max(0, min(x, imgXRes));
-            tempY = max(0, min(y, imgYRes));
-            rectSel_dest[0] = rectSel_src[0] = min(startX, tempX);
-            rectSel_dest[1] = rectSel_src[1] = min(startY, tempY);
-            rectSel_dest[2] = rectSel_src[2] = max(startX, tempX) - min(startX, tempX);
-            rectSel_dest[3] = rectSel_src[3] = max(startY, tempY) - min(startY, tempY);
-            RectSel(hdc, startX, startY, tempX, tempY);
+            temp.x = max(0, min(x, imgXRes));
+            temp.y = max(0, min(y, imgYRes));
+            rectSel_dest.left = rectSel_src.left = min(start.x, temp.x);
+            rectSel_dest.top = rectSel_src.top = min(start.y, temp.y);
+            rectSel_dest.right = rectSel_src.right = max(start.x, temp.x);
+            rectSel_dest.bottom = rectSel_src.bottom = max(start.y, temp.y);
+            RectSel(hdc, start.x, start.y, temp.x, temp.y);
             break;
         }
         case TOOL_RUBBER:
-            Erase(hdc, lastX, lastY, x, y, bg, rubberRadius);
+            Erase(hdc, last.x, last.y, x, y, bg, rubberRadius);
             break;
         case TOOL_PEN:
-            Line(hdc, lastX, lastY, x, y, fg, 1);
+            Line(hdc, last.x, last.y, x, y, fg, 1);
             break;
         case TOOL_BRUSH:
-            Brush(hdc, lastX, lastY, x, y, fg, brushStyle);
+            Brush(hdc, last.x, last.y, x, y, fg, brushStyle);
             break;
         case TOOL_AIRBRUSH:
             Airbrush(hdc, x, y, fg, airBrushWidth);
@@ -173,8 +173,8 @@ whilePaintingL(HDC hdc, LONG x, LONG y, COLORREF fg, COLORREF bg)
         case TOOL_LINE:
             resetToU1();
             if (GetAsyncKeyState(VK_SHIFT) < 0)
-                roundTo8Directions(startX, startY, &x, &y);
-            Line(hdc, startX, startY, x, y, fg, lineWidth);
+                roundTo8Directions(start.x, start.y, &x, &y);
+            Line(hdc, start.x, start.y, x, y, fg, lineWidth);
             break;
         case TOOL_BEZIER:
             resetToU1();
@@ -197,8 +197,8 @@ whilePaintingL(HDC hdc, LONG x, LONG y, COLORREF fg, COLORREF bg)
         case TOOL_RECT:
             resetToU1();
             if (GetAsyncKeyState(VK_SHIFT) < 0)
-                regularize(startX, startY, &x, &y);
-            Rect(hdc, startX, startY, x, y, fg, bg, lineWidth, shapeStyle);
+                regularize(start.x, start.y, &x, &y);
+            Rect(hdc, start.x, start.y, x, y, fg, bg, lineWidth, shapeStyle);
             break;
         case TOOL_SHAPE:
             resetToU1();
@@ -213,19 +213,19 @@ whilePaintingL(HDC hdc, LONG x, LONG y, COLORREF fg, COLORREF bg)
         case TOOL_ELLIPSE:
             resetToU1();
             if (GetAsyncKeyState(VK_SHIFT) < 0)
-                regularize(startX, startY, &x, &y);
-            Ellp(hdc, startX, startY, x, y, fg, bg, lineWidth, shapeStyle);
+                regularize(start.x, start.y, &x, &y);
+            Ellp(hdc, start.x, start.y, x, y, fg, bg, lineWidth, shapeStyle);
             break;
         case TOOL_RRECT:
             resetToU1();
             if (GetAsyncKeyState(VK_SHIFT) < 0)
-                regularize(startX, startY, &x, &y);
-            RRect(hdc, startX, startY, x, y, fg, bg, lineWidth, shapeStyle);
+                regularize(start.x, start.y, &x, &y);
+            RRect(hdc, start.x, start.y, x, y, fg, bg, lineWidth, shapeStyle);
             break;
     }
 
-    lastX = x;
-    lastY = y;
+    last.x = x;
+    last.y = y;
 }
 
 void
@@ -237,46 +237,46 @@ endPaintingL(HDC hdc, LONG x, LONG y, COLORREF fg, COLORREF bg)
         {
             POINT *ptStackCopy;
             int i;
-            rectSel_src[0] = rectSel_src[1] = 0x7fffffff;
-            rectSel_src[2] = rectSel_src[3] = 0;
+            rectSel_src.left = rectSel_src.top = MAXLONG;
+            rectSel_src.right = rectSel_src.bottom = 0;
             for (i = 0; i <= ptSP; i++)
             {
-                if (ptStack[i].x < rectSel_src[0])
-                    rectSel_src[0] = ptStack[i].x;
-                if (ptStack[i].y < rectSel_src[1])
-                    rectSel_src[1] = ptStack[i].y;
-                if (ptStack[i].x > rectSel_src[2])
-                    rectSel_src[2] = ptStack[i].x;
-                if (ptStack[i].y > rectSel_src[3])
-                    rectSel_src[3] = ptStack[i].y;
+                if (ptStack[i].x < rectSel_src.left)
+                    rectSel_src.left = ptStack[i].x;
+                if (ptStack[i].y < rectSel_src.top)
+                    rectSel_src.top = ptStack[i].y;
+                if (ptStack[i].x > rectSel_src.right)
+                    rectSel_src.right = ptStack[i].x;
+                if (ptStack[i].y > rectSel_src.bottom)
+                    rectSel_src.bottom = ptStack[i].y;
             }
-            rectSel_src[2] += 1 - rectSel_src[0];
-            rectSel_src[3] += 1 - rectSel_src[1];
-            rectSel_dest[0] = rectSel_src[0];
-            rectSel_dest[1] = rectSel_src[1];
-            rectSel_dest[2] = rectSel_src[2];
-            rectSel_dest[3] = rectSel_src[3];
+            rectSel_src.right  += 1;
+            rectSel_src.bottom += 1;
+            rectSel_dest.left   = rectSel_src.left;
+            rectSel_dest.top    = rectSel_src.top;
+            rectSel_dest.right  = rectSel_src.right;
+            rectSel_dest.bottom = rectSel_src.bottom;
             if (ptSP != 0)
             {
                 DeleteObject(hSelMask);
-                hSelMask = CreateBitmap(rectSel_src[2], rectSel_src[3], 1, 1, NULL);
+                hSelMask = CreateBitmap(RECT_WIDTH(rectSel_src), RECT_HEIGHT(rectSel_src), 1, 1, NULL);
                 DeleteObject(SelectObject(hSelDC, hSelMask));
                 ptStackCopy = HeapAlloc(GetProcessHeap(), HEAP_GENERATE_EXCEPTIONS, sizeof(POINT) * (ptSP + 1));
                 for (i = 0; i <= ptSP; i++)
                 {
-                    ptStackCopy[i].x = ptStack[i].x - rectSel_src[0];
-                    ptStackCopy[i].y = ptStack[i].y - rectSel_src[1];
+                    ptStackCopy[i].x = ptStack[i].x - rectSel_src.left;
+                    ptStackCopy[i].y = ptStack[i].y - rectSel_src.top;
                 }
                 Poly(hSelDC, ptStackCopy, ptSP + 1, 0x00ffffff, 0x00ffffff, 1, 2, TRUE);
                 HeapFree(GetProcessHeap(), 0, ptStackCopy);
-                SelectObject(hSelDC, hSelBm = CreateDIBWithProperties(rectSel_src[2], rectSel_src[3]));
+                SelectObject(hSelDC, hSelBm = CreateDIBWithProperties(RECT_WIDTH(rectSel_src), RECT_HEIGHT(rectSel_src)));
                 resetToU1();
-                MaskBlt(hSelDC, 0, 0, rectSel_src[2], rectSel_src[3], hDrawingDC, rectSel_src[0],
-                        rectSel_src[1], hSelMask, 0, 0, MAKEROP4(SRCCOPY, WHITENESS));
+                MaskBlt(hSelDC, 0, 0, RECT_WIDTH(rectSel_src), RECT_HEIGHT(rectSel_src), hDrawingDC, rectSel_src.left,
+                        rectSel_src.top, hSelMask, 0, 0, MAKEROP4(SRCCOPY, WHITENESS));
                 Poly(hdc, ptStack, ptSP + 1, bg, bg, 1, 2, TRUE);
                 newReversible();
 
-                MaskBlt(hDrawingDC, rectSel_src[0], rectSel_src[1], rectSel_src[2], rectSel_src[3], hSelDC, 0,
+                MaskBlt(hDrawingDC, rectSel_src.left, rectSel_src.top, RECT_WIDTH(rectSel_src), RECT_HEIGHT(rectSel_src), hSelDC, 0,
                         0, hSelMask, 0, 0, MAKEROP4(SRCCOPY, SRCAND));
 
                 placeSelWin();
@@ -292,43 +292,51 @@ endPaintingL(HDC hdc, LONG x, LONG y, COLORREF fg, COLORREF bg)
         }
         case TOOL_RECTSEL:
             resetToU1();
-            if ((rectSel_src[2] != 0) && (rectSel_src[3] != 0))
+            if ((RECT_WIDTH(rectSel_src) != 0) && (RECT_HEIGHT(rectSel_src) != 0))
             {
                 DeleteObject(hSelMask);
-                hSelMask = CreateBitmap(rectSel_src[2], rectSel_src[3], 1, 1, NULL);
+                hSelMask = CreateBitmap(RECT_WIDTH(rectSel_src), RECT_HEIGHT(rectSel_src), 1, 1, NULL);
                 DeleteObject(SelectObject(hSelDC, hSelMask));
-                Rect(hSelDC, 0, 0, rectSel_src[2], rectSel_src[3], 0x00ffffff, 0x00ffffff, 1, 2);
-                SelectObject(hSelDC, hSelBm = CreateDIBWithProperties(rectSel_src[2], rectSel_src[3]));
+                Rect(hSelDC, 0, 0, RECT_WIDTH(rectSel_src), RECT_HEIGHT(rectSel_src), 0x00ffffff, 0x00ffffff, 1, 2);
+                SelectObject(hSelDC, hSelBm = CreateDIBWithProperties(RECT_WIDTH(rectSel_src), RECT_HEIGHT(rectSel_src)));
                 resetToU1();
-                BitBlt(hSelDC, 0, 0, rectSel_src[2], rectSel_src[3], hDrawingDC, rectSel_src[0],
-                       rectSel_src[1], SRCCOPY);
-                Rect(hdc, rectSel_src[0], rectSel_src[1], rectSel_src[0] + rectSel_src[2],
-                     rectSel_src[1] + rectSel_src[3], bgColor, bgColor, 0, TRUE);
+                BitBlt(hSelDC, 0, 0, RECT_WIDTH(rectSel_src), RECT_HEIGHT(rectSel_src), hDrawingDC, rectSel_src.left,
+                       rectSel_src.top, SRCCOPY);
+                Rect(hdc, rectSel_src.left, rectSel_src.top, rectSel_src.right,
+                     rectSel_src.bottom, bgColor, bgColor, 0, TRUE);
                 newReversible();
 
-                BitBlt(hDrawingDC, rectSel_src[0], rectSel_src[1], rectSel_src[2], rectSel_src[3], hSelDC, 0,
+                BitBlt(hDrawingDC, rectSel_src.left, rectSel_src.top, RECT_WIDTH(rectSel_src), RECT_HEIGHT(rectSel_src), hSelDC, 0,
                        0, SRCCOPY);
 
                 placeSelWin();
                 ShowWindow(hSelection, SW_SHOW);
-                /* force refresh of selection contents */
-                SendMessage(hSelection, WM_LBUTTONDOWN, 0, 0);
-                SendMessage(hSelection, WM_MOUSEMOVE, 0, 0);
-                SendMessage(hSelection, WM_LBUTTONUP, 0, 0);
+                ForceRefreshSelectionContents();
+            }
+            break;
+        case TOOL_TEXT:
+            resetToU1();
+            if ((RECT_WIDTH(rectSel_src) != 0) && (RECT_HEIGHT(rectSel_src) != 0))
+            {
+                newReversible();
+
+                placeSelWin();
+                ShowWindow(hSelection, SW_SHOW);
+                ForceRefreshSelectionContents();
             }
             break;
         case TOOL_RUBBER:
-            Erase(hdc, lastX, lastY, x, y, bg, rubberRadius);
+            Erase(hdc, last.x, last.y, x, y, bg, rubberRadius);
             break;
         case TOOL_PEN:
-            Line(hdc, lastX, lastY, x, y, fg, 1);
+            Line(hdc, last.x, last.y, x, y, fg, 1);
             SetPixel(hdc, x, y, fg);
             break;
         case TOOL_LINE:
             resetToU1();
             if (GetAsyncKeyState(VK_SHIFT) < 0)
-                roundTo8Directions(startX, startY, &x, &y);
-            Line(hdc, startX, startY, x, y, fg, lineWidth);
+                roundTo8Directions(start.x, start.y, &x, &y);
+            Line(hdc, start.x, start.y, x, y, fg, lineWidth);
             break;
         case TOOL_BEZIER:
             pointSP++;
@@ -338,8 +346,8 @@ endPaintingL(HDC hdc, LONG x, LONG y, COLORREF fg, COLORREF bg)
         case TOOL_RECT:
             resetToU1();
             if (GetAsyncKeyState(VK_SHIFT) < 0)
-                regularize(startX, startY, &x, &y);
-            Rect(hdc, startX, startY, x, y, fg, bg, lineWidth, shapeStyle);
+                regularize(start.x, start.y, &x, &y);
+            Rect(hdc, start.x, start.y, x, y, fg, bg, lineWidth, shapeStyle);
             break;
         case TOOL_SHAPE:
             resetToU1();
@@ -368,14 +376,14 @@ endPaintingL(HDC hdc, LONG x, LONG y, COLORREF fg, COLORREF bg)
         case TOOL_ELLIPSE:
             resetToU1();
             if (GetAsyncKeyState(VK_SHIFT) < 0)
-                regularize(startX, startY, &x, &y);
-            Ellp(hdc, startX, startY, x, y, fg, bg, lineWidth, shapeStyle);
+                regularize(start.x, start.y, &x, &y);
+            Ellp(hdc, start.x, start.y, x, y, fg, bg, lineWidth, shapeStyle);
             break;
         case TOOL_RRECT:
             resetToU1();
             if (GetAsyncKeyState(VK_SHIFT) < 0)
-                regularize(startX, startY, &x, &y);
-            RRect(hdc, startX, startY, x, y, fg, bg, lineWidth, shapeStyle);
+                regularize(start.x, start.y, &x, &y);
+            RRect(hdc, start.x, start.y, x, y, fg, bg, lineWidth, shapeStyle);
             break;
     }
 }
@@ -383,10 +391,10 @@ endPaintingL(HDC hdc, LONG x, LONG y, COLORREF fg, COLORREF bg)
 void
 startPaintingR(HDC hdc, LONG x, LONG y, COLORREF fg, COLORREF bg)
 {
-    startX = x;
-    startY = y;
-    lastX = x;
-    lastY = y;
+    start.x = x;
+    start.y = y;
+    last.x = x;
+    last.y = y;
     switch (activeTool)
     {
         case TOOL_FREESEL:
@@ -446,13 +454,13 @@ whilePaintingR(HDC hdc, LONG x, LONG y, COLORREF fg, COLORREF bg)
     switch (activeTool)
     {
         case TOOL_RUBBER:
-            Replace(hdc, lastX, lastY, x, y, fg, bg, rubberRadius);
+            Replace(hdc, last.x, last.y, x, y, fg, bg, rubberRadius);
             break;
         case TOOL_PEN:
-            Line(hdc, lastX, lastY, x, y, bg, 1);
+            Line(hdc, last.x, last.y, x, y, bg, 1);
             break;
         case TOOL_BRUSH:
-            Brush(hdc, lastX, lastY, x, y, bg, brushStyle);
+            Brush(hdc, last.x, last.y, x, y, bg, brushStyle);
             break;
         case TOOL_AIRBRUSH:
             Airbrush(hdc, x, y, bg, airBrushWidth);
@@ -460,8 +468,8 @@ whilePaintingR(HDC hdc, LONG x, LONG y, COLORREF fg, COLORREF bg)
         case TOOL_LINE:
             resetToU1();
             if (GetAsyncKeyState(VK_SHIFT) < 0)
-                roundTo8Directions(startX, startY, &x, &y);
-            Line(hdc, startX, startY, x, y, bg, lineWidth);
+                roundTo8Directions(start.x, start.y, &x, &y);
+            Line(hdc, start.x, start.y, x, y, bg, lineWidth);
             break;
         case TOOL_BEZIER:
             resetToU1();
@@ -484,8 +492,8 @@ whilePaintingR(HDC hdc, LONG x, LONG y, COLORREF fg, COLORREF bg)
         case TOOL_RECT:
             resetToU1();
             if (GetAsyncKeyState(VK_SHIFT) < 0)
-                regularize(startX, startY, &x, &y);
-            Rect(hdc, startX, startY, x, y, bg, fg, lineWidth, shapeStyle);
+                regularize(start.x, start.y, &x, &y);
+            Rect(hdc, start.x, start.y, x, y, bg, fg, lineWidth, shapeStyle);
             break;
         case TOOL_SHAPE:
             resetToU1();
@@ -500,19 +508,19 @@ whilePaintingR(HDC hdc, LONG x, LONG y, COLORREF fg, COLORREF bg)
         case TOOL_ELLIPSE:
             resetToU1();
             if (GetAsyncKeyState(VK_SHIFT) < 0)
-                regularize(startX, startY, &x, &y);
-            Ellp(hdc, startX, startY, x, y, bg, fg, lineWidth, shapeStyle);
+                regularize(start.x, start.y, &x, &y);
+            Ellp(hdc, start.x, start.y, x, y, bg, fg, lineWidth, shapeStyle);
             break;
         case TOOL_RRECT:
             resetToU1();
             if (GetAsyncKeyState(VK_SHIFT) < 0)
-                regularize(startX, startY, &x, &y);
-            RRect(hdc, startX, startY, x, y, bg, fg, lineWidth, shapeStyle);
+                regularize(start.x, start.y, &x, &y);
+            RRect(hdc, start.x, start.y, x, y, bg, fg, lineWidth, shapeStyle);
             break;
     }
 
-    lastX = x;
-    lastY = y;
+    last.x = x;
+    last.y = y;
 }
 
 void
@@ -521,17 +529,17 @@ endPaintingR(HDC hdc, LONG x, LONG y, COLORREF fg, COLORREF bg)
     switch (activeTool)
     {
         case TOOL_RUBBER:
-            Replace(hdc, lastX, lastY, x, y, fg, bg, rubberRadius);
+            Replace(hdc, last.x, last.y, x, y, fg, bg, rubberRadius);
             break;
         case TOOL_PEN:
-            Line(hdc, lastX, lastY, x, y, bg, 1);
+            Line(hdc, last.x, last.y, x, y, bg, 1);
             SetPixel(hdc, x, y, bg);
             break;
         case TOOL_LINE:
             resetToU1();
             if (GetAsyncKeyState(VK_SHIFT) < 0)
-                roundTo8Directions(startX, startY, &x, &y);
-            Line(hdc, startX, startY, x, y, bg, lineWidth);
+                roundTo8Directions(start.x, start.y, &x, &y);
+            Line(hdc, start.x, start.y, x, y, bg, lineWidth);
             break;
         case TOOL_BEZIER:
             pointSP++;
@@ -541,8 +549,8 @@ endPaintingR(HDC hdc, LONG x, LONG y, COLORREF fg, COLORREF bg)
         case TOOL_RECT:
             resetToU1();
             if (GetAsyncKeyState(VK_SHIFT) < 0)
-                regularize(startX, startY, &x, &y);
-            Rect(hdc, startX, startY, x, y, bg, fg, lineWidth, shapeStyle);
+                regularize(start.x, start.y, &x, &y);
+            Rect(hdc, start.x, start.y, x, y, bg, fg, lineWidth, shapeStyle);
             break;
         case TOOL_SHAPE:
             resetToU1();
@@ -571,14 +579,14 @@ endPaintingR(HDC hdc, LONG x, LONG y, COLORREF fg, COLORREF bg)
         case TOOL_ELLIPSE:
             resetToU1();
             if (GetAsyncKeyState(VK_SHIFT) < 0)
-                regularize(startX, startY, &x, &y);
-            Ellp(hdc, startX, startY, x, y, bg, fg, lineWidth, shapeStyle);
+                regularize(start.x, start.y, &x, &y);
+            Ellp(hdc, start.x, start.y, x, y, bg, fg, lineWidth, shapeStyle);
             break;
         case TOOL_RRECT:
             resetToU1();
             if (GetAsyncKeyState(VK_SHIFT) < 0)
-                regularize(startX, startY, &x, &y);
-            RRect(hdc, startX, startY, x, y, bg, fg, lineWidth, shapeStyle);
+                regularize(start.x, start.y, &x, &y);
+            RRect(hdc, start.x, start.y, x, y, bg, fg, lineWidth, shapeStyle);
             break;
     }
 }

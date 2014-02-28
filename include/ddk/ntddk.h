@@ -3350,9 +3350,10 @@ static __inline PVOID
 ExAllocateFromZone(
   IN PZONE_HEADER Zone)
 {
+  PVOID Result = (PVOID)Zone->FreeList.Next;
   if (Zone->FreeList.Next)
     Zone->FreeList.Next = Zone->FreeList.Next->Next;
-  return (PVOID) Zone->FreeList.Next;
+  return Result;
 }
 
 static __inline PVOID
@@ -4992,7 +4993,7 @@ VOID
 NTAPI
 RtlUpperString(
   _Inout_ PSTRING DestinationString,
-  _In_ const PSTRING SourceString);
+  _In_ const STRING *SourceString);
 
 _IRQL_requires_max_(PASSIVE_LEVEL)
 _When_(AllocateDestinationString, _Must_inspect_result_)
@@ -5028,8 +5029,8 @@ NTSYSAPI
 LONG
 NTAPI
 RtlCompareString(
-  _In_ const PSTRING String1,
-  _In_ const PSTRING String2,
+  _In_ const STRING *String1,
+  _In_ const STRING *String2,
   _In_ BOOLEAN CaseInSensitive);
 
 NTSYSAPI
@@ -5037,7 +5038,7 @@ VOID
 NTAPI
 RtlCopyString(
   _Out_ PSTRING DestinationString,
-  _In_opt_ const PSTRING SourceString);
+  _In_opt_ const STRING *SourceString);
 
 _IRQL_requires_max_(PASSIVE_LEVEL)
 _Must_inspect_result_
@@ -5045,8 +5046,8 @@ NTSYSAPI
 BOOLEAN
 NTAPI
 RtlEqualString(
-  _In_ const PSTRING String1,
-  _In_ const PSTRING String2,
+  _In_ const STRING *String1,
+  _In_ const STRING *String2,
   _In_ BOOLEAN CaseInSensitive);
 
 _IRQL_requires_max_(PASSIVE_LEVEL)

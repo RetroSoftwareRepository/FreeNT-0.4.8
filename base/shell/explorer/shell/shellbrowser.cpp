@@ -28,22 +28,14 @@
 
 #include <precomp.h>
 
-#include "../resource.h"
-
-
  // work around GCC's wide string constant bug
 #ifdef __GNUC__
 const LPCTSTR C_DRIVE = C_DRIVE_STR;
 #endif
 
-
 ShellBrowser::ShellBrowser(HWND hwnd, HWND hwndFrame, HWND left_hwnd, WindowHandle& right_hwnd, ShellPathInfo& create_info,
 							BrowserCallback* cb, CtxMenuInterfaces& cm_ifs)
-#ifndef __MINGW32__	// IShellFolderViewCB missing in MinGW (as of 25.09.2005)
  :	super(IID_IShellFolderViewCB),
-#else
- :
-#endif
 	_hwnd(hwnd),
 	_hwndFrame(hwndFrame),
 	_left_hwnd(left_hwnd),
@@ -449,7 +441,6 @@ void ShellBrowser::UpdateFolderView(IShellFolder* folder)
 		fs.fFlags = FWF_NOCLIENTEDGE|FWF_BESTFITWINDOW;
 	}
 
-#ifndef __MINGW32__	// IShellFolderViewCB missing in MinGW (as of 25.09.2005)
 	SFV_CREATE sfv_create;
 
 	sfv_create.cbSize = sizeof(SFV_CREATE);
@@ -458,9 +449,6 @@ void ShellBrowser::UpdateFolderView(IShellFolder* folder)
 	sfv_create.psfvcb = this;
 
 	HRESULT hr = SHCreateShellFolderView(&sfv_create, &_pShellView);
-#else
-	HRESULT hr = folder->CreateViewObject(_hwnd, IID_IShellView, (void**)&_pShellView);
-#endif
 
 	if (FAILED(hr)) {
 		_pShellView = NULL;
@@ -480,9 +468,6 @@ void ShellBrowser::UpdateFolderView(IShellFolder* folder)
 	_pShellView->UIActivate(SVUIA_ACTIVATE_NOFOCUS);
 }
 
-
-#ifndef __MINGW32__	// IShellFolderViewCB missing in MinGW (as of 25.09.2005)
-
  /// shell view callback
 HRESULT STDMETHODCALLTYPE ShellBrowser::MessageSFVCB(UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
@@ -494,8 +479,6 @@ HRESULT STDMETHODCALLTYPE ShellBrowser::MessageSFVCB(UINT uMsg, WPARAM wParam, L
 
 	return E_NOTIMPL;
 }
-
-#endif
 
 
 HRESULT ShellBrowser::OnDefaultCommand(LPIDA pida)

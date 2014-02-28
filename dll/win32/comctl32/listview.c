@@ -132,37 +132,11 @@
  *
  * Functions:
  *   -- LVGroupComparE
- *
- * Known differences in message stream from native control (not known if
- * these differences cause problems):
- *   LVM_INSERTITEM issues LVM_SETITEMSTATE and LVM_SETITEM in certain cases.
- *   LVM_SETITEM does not always issue LVN_ITEMCHANGING/LVN_ITEMCHANGED.
- *   WM_CREATE does not issue WM_QUERYUISTATE and associated registry
- *     processing for "USEDOUBLECLICKTIME".
  */
 
-#include <config.h>
-//#include "wine/port.h"
-
-#include <assert.h>
-//#include <ctype.h>
-//#include <string.h>
-//#include <stdlib.h>
-//#include <stdarg.h>
-#include <stdio.h>
-
-//#include "windef.h"
-//#include "winbase.h"
-//#include "winnt.h"
-//#include "wingdi.h"
-//#include "winuser.h"
-//#include "winnls.h"
-//#include "commctrl.h"
 #include "comctl32.h"
-#include <uxtheme.h>
 
-#include <wine/debug.h>
-#include <wine/unicode.h>
+#include <stdio.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(listview);
 
@@ -6284,6 +6258,7 @@ again:
     {
         lvItem.iItem = nItem;
         lvItem.iSubItem = 0;
+        lvItem.pszText = szDispText;
         if (!LISTVIEW_GetItemW(infoPtr, &lvItem)) continue;
 
 	if (lvItem.mask & LVIF_PARAM)
@@ -7923,17 +7898,6 @@ static BOOL LISTVIEW_RedrawItems(const LISTVIEW_INFO *infoPtr, INT nFirst, INT n
  *  nearest number of pixels that are a whole line. Ex: if line height
  *  is 16 and an 8 is passed, the list will be scrolled by 16. If a 7
  *  is passed, then the scroll will be 0.  (per MSDN 7/2002)
- *
- *  For:  (per experimentation with native control and CSpy ListView)
- *     LV_VIEW_ICON       scrolling in any direction is allowed
- *     LV_VIEW_SMALLICON  scrolling in any direction is allowed
- *     LV_VIEW_LIST       dx=1 = 1 column (horizontal only)
- *                           but will only scroll 1 column per message
- *                           no matter what the value.
- *                        dy must be 0 or FALSE returned.
- *     LV_VIEW_DETAILS    dx=1 = 1 pixel
- *                        dy=  see above
- *
  */
 static BOOL LISTVIEW_Scroll(LISTVIEW_INFO *infoPtr, INT dx, INT dy)
 {
@@ -8633,7 +8597,7 @@ static DWORD LISTVIEW_SetIconSpacing(LISTVIEW_INFO *infoPtr, INT cx, INT cy)
     return oldspacing;
 }
 
-static inline void set_icon_size(SIZE *size, HIMAGELIST himl, BOOL small)
+static inline void set_icon_size(SIZE *size, HIMAGELIST himl, BOOL is_small)
 {
     INT cx, cy;
     
@@ -8644,8 +8608,8 @@ static inline void set_icon_size(SIZE *size, HIMAGELIST himl, BOOL small)
     }
     else
     {
-	size->cx = GetSystemMetrics(small ? SM_CXSMICON : SM_CXICON);
-	size->cy = GetSystemMetrics(small ? SM_CYSMICON : SM_CYICON);
+	size->cx = GetSystemMetrics(is_small ? SM_CXSMICON : SM_CXICON);
+	size->cy = GetSystemMetrics(is_small ? SM_CYSMICON : SM_CYICON);
     }
 }
 

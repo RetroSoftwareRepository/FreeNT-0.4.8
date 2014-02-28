@@ -16,16 +16,9 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#include <config.h>
-
-#include <wine/debug.h>
-//#include "lm.h"
-#include "netbios.h"
-
-#define NTOS_MODE_USER
-#include <ndk/rtlfuncs.h>
 #include "netapi32.h"
+
+#include <lmserver.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(netbios);
 
@@ -218,7 +211,28 @@ NET_API_STATUS
 WINAPI
 NetpNtStatusToApiStatus(NTSTATUS Status)
 {
-    return RtlNtStatusToDosError(Status);
+    NET_API_STATUS ApiStatus;
+
+    switch (Status)
+    {
+        case STATUS_SUCCESS:
+            ApiStatus = NERR_Success;
+            break;
+
+        case STATUS_INVALID_ACCOUNT_NAME:
+            ApiStatus = NERR_BadUsername;
+            break;
+
+        case STATUS_PASSWORD_RESTRICTION:
+            ApiStatus = NERR_PasswordTooShort;
+            break;
+
+        default:
+            ApiStatus = RtlNtStatusToDosError(Status);
+            break;
+    }
+
+    return ApiStatus;
 }
 
 NET_API_STATUS WINAPI NetUseEnum(LMSTR server, DWORD level, LPBYTE* bufptr, DWORD prefmaxsize,

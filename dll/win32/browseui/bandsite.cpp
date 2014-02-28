@@ -21,8 +21,6 @@
 
 #include "precomp.h"
 
-WINE_DEFAULT_DEBUG_CHANNEL(browseui);
-
 #ifndef ASSERT
 #define ASSERT(cond) \
     if (!(cond)) \
@@ -744,7 +742,7 @@ HRESULT STDMETHODCALLTYPE CBandSiteBase::Exec(const GUID *pguidCmdGroup, DWORD n
             default:
                 return E_FAIL;
         }
-        return S_OK;
+        return hRet;
     }
     else
         WARN("IOleCommandTarget::Exec(): Unsupported command group GUID\n");

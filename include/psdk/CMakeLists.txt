@@ -13,6 +13,7 @@ list(APPEND SOURCE
 #   asysta.idl
     atliface.idl
     audioclient.idl
+    audiopolicy.idl
     bdaiface.idl
 #   binres.idl
     bits.idl
@@ -33,12 +34,15 @@ list(APPEND SOURCE
 #   dbprop.idl
 #   dbs.idl
     devenum.idl
+    devicetopology.idl
     dimm.idl
     dispex.idl
     docobj.idl
     docobjectservice.idl
     downloadmgr.idl
+    dxgi.idl
 #   dyngraph.idl
+    endpointvolume.idl
     exdisp.idl
     fusion.idl
     hlink.idl
@@ -50,6 +54,7 @@ list(APPEND SOURCE
     imnact.idl
     imnxport.idl
     indexsrv.idl
+    inputscope.idl
     metahost.idl
     mimeinfo.idl
     mimeole.idl
@@ -107,6 +112,9 @@ list(APPEND SOURCE
     urlmon.idl
     vmr9.idl
 #   vmrender.idl
+    wbemcli.idl
+    wbemdisp.idl
+    wbemprov.idl
     wia_lh.idl
     wia_xp.idl
     wincodec.idl
@@ -119,16 +127,13 @@ list(APPEND SOURCE
     ctfutb.idl
     xmllite.idl)
 
-if(NOT MSVC)
-  list(APPEND SOURCE
-    wbemcli.idl)
-endif()
-
 add_idl_headers(psdk ${SOURCE})
-
 add_typelib(stdole2.idl)
 add_custom_target(stdole2 DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/stdole2.tlb)
 
+add_idl_headers(d3d_idl_headers d3d10.idl d3dcommon.idl)
+
+add_iid_library(dxgi_uuids dxgi.idl)
 add_iid_library(wuguid wuapi.idl)
 add_iid_library(xml_uuids msxml2.idl)
 

@@ -63,7 +63,7 @@ INIT_FUNCTION NTSTATUS NTAPI InitInputImpl(VOID);
 BOOL FASTCALL IntBlockInput(PTHREADINFO W32Thread, BOOL BlockIt);
 DWORD NTAPI CreateSystemThreads(UINT Type);
 NTSTATUS FASTCALL UserAttachThreadInput(PTHREADINFO,PTHREADINFO,BOOL);
-PTHREADINFO FASTCALL IsThreadAttach(PTHREADINFO);
+BOOL FASTCALL IsRemoveAttachThread(PTHREADINFO);
 VOID FASTCALL DoTheScreenSaver(VOID);
 #define ThreadHasInputAccess(W32Thread) (TRUE)
 
@@ -99,4 +99,4 @@ extern BYTE gafAsyncKeyState[256 * 2 / 8]; // 2 bits per key
 
 
 extern PKL gspklBaseLayout;
-
+extern KEYBOARD_ATTRIBUTES gKeyboardInfo;

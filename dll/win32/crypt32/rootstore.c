@@ -15,9 +15,9 @@
  * License along with this library; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
-#include "config.h"
-#include <stdarg.h>
-#include <stdio.h>
+
+#include "crypt32_private.h"
+
 #include <sys/types.h>
 #ifdef HAVE_SYS_STAT_H
 #include <sys/stat.h>
@@ -34,15 +34,6 @@
 #ifdef HAVE_SECURITY_SECURITY_H
 #include <Security/Security.h>
 #endif
-#include "ntstatus.h"
-#define WIN32_NO_STATUS
-#include "windef.h"
-#include "winbase.h"
-#include "winreg.h"
-#include "wincrypt.h"
-#include "winternl.h"
-#include "wine/debug.h"
-#include "crypt32_private.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(crypt);
 
@@ -326,6 +317,7 @@ static BOOL import_certs_from_file(int fd, HCERTSTORE store)
 static BOOL import_certs_from_path(LPCSTR path, HCERTSTORE store,
  BOOL allow_dir);
 
+#ifdef HAVE_READDIR
 static BOOL check_buffer_resize(char **ptr_buf, size_t *buf_size, size_t check_size)
 {
     if (check_size > *buf_size)
@@ -351,6 +343,7 @@ static BOOL check_buffer_resize(char **ptr_buf, size_t *buf_size, size_t check_s
 
     return TRUE;
 }
+#endif
 
 /* Opens path, which must be a directory, and imports certificates from every
  * file in the directory into store.

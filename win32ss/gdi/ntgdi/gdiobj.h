@@ -93,6 +93,13 @@ GreSetObjectOwner(
     HGDIOBJ hobj,
     ULONG ulOwner);
 
+BOOL
+NTAPI
+GreSetObjectOwnerEx(
+    HGDIOBJ hobj,
+    ULONG ulOwner,
+    ULONG Flags);
+
 INT
 NTAPI
 GreGetObject(
@@ -131,6 +138,12 @@ GDIOBJ_vDereferenceObject(
 PGDIOBJ
 NTAPI
 GDIOBJ_LockObject(
+    HGDIOBJ hobj,
+    UCHAR objt);
+
+PGDIOBJ
+NTAPI
+GDIOBJ_TryLockObject(
     HGDIOBJ hobj,
     UCHAR objt);
 

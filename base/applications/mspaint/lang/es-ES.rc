@@ -1,9 +1,9 @@
 /*
- * PROJECT:     PAINT for ReactOS
- * LICENSE:     unknown (LGPL assumed)
- * FILE:        base/applications/mspaint/lang/es-ES.rc
- * PURPOSE:     Spanish Language resource file
- * TRANSLATORS: Gabriel Ilardi
+ * PROJECT:    PAINT for ReactOS
+ * LICENSE:    LGPL
+ * FILE:       base/applications/mspaint/lang/es-ES.rc
+ * PURPOSE:    Spanish Language resource file
+ * TRANSLATOR: Gabriel Ilardi
  */
 
 LANGUAGE LANG_SPANISH, SUBLANG_NEUTRAL
@@ -23,7 +23,6 @@ BEGIN
         MENUITEM SEPARATOR
         MENUITEM "Salir\tAlt+F4", IDM_FILEEXIT
     END
-
     POPUP "&Edición"
     BEGIN
         MENUITEM "Deshacer\tCtrl+Z", IDM_EDITUNDO
@@ -39,7 +38,6 @@ BEGIN
         MENUITEM "Copiar a...", IDM_EDITCOPYTO
         MENUITEM "Pegar desde...", IDM_EDITPASTEFROM
     END
-
     POPUP "&Ver"
     BEGIN
         MENUITEM "Caja de herramientas\tCtrl+T", IDM_VIEWTOOLBOX, CHECKED
@@ -65,23 +63,23 @@ BEGIN
         END
         MENUITEM "Ver en pantalla completa\tCtrl+F", IDM_VIEWFULLSCREEN
     END
-
     POPUP "&Imagen"
     BEGIN
         MENUITEM "Rotar/Invertir...\tCtrl+R", IDM_IMAGEROTATEMIRROR
-        MENUITEM "Cambiar dimensiones...\tCtrl+W", IDM_IMAGECHANGESIZE
+        MENUITEM "Stretch/Skew...\tCtrl+W", IDM_IMAGESTRETCHSKEW
         MENUITEM "Recortar", IDM_IMAGECROP
         MENUITEM "Invertir colores\tCtrl+I", IDM_IMAGEINVERTCOLORS
         MENUITEM "Atributos...\tCtrl+E", IDM_IMAGEATTRIBUTES
         MENUITEM "Borrar imagen\tCtrl+Shft+N", IDM_IMAGEDELETEIMAGE
         MENUITEM "Dibujar figuras opacas", IDM_IMAGEDRAWOPAQUE
     END
-
     POPUP "&Colores"
     BEGIN
         MENUITEM "Editar paleta...", IDM_COLORSEDITPALETTE
+        MENUITEM SEPARATOR
+        MENUITEM "Modern palette", IDM_COLORSMODERNPALETTE
+        MENUITEM "Old palette", IDM_COLORSOLDPALETTE
     END
-
     POPUP "Ay&uda"
     BEGIN
         MENUITEM "Ayuda", IDM_HELPHELPTOPICS
@@ -107,7 +105,7 @@ BEGIN
     "^G", IDM_VIEWSHOWGRID
     "^F", IDM_VIEWFULLSCREEN
     "^R", IDM_IMAGEROTATEMIRROR
-    "^W", IDM_IMAGECHANGESIZE
+    "^W", IDM_IMAGESTRETCHSKEW
     "^I", IDM_IMAGEINVERTCOLORS
     "^E", IDM_IMAGEATTRIBUTES
     "N", IDM_IMAGEDELETEIMAGE, CONTROL, SHIFT, VIRTKEY
@@ -156,51 +154,64 @@ BEGIN
     PUSHBUTTON "Predefinido", IDD_ATTRIBUTESSTANDARD, 170, 40, 48, 14
 END
 
-IDD_CHANGESIZE DIALOGEX 100, 100, 225, 80
+IDD_STRETCHSKEW DIALOGEX 100, 100, 225, 150
 STYLE DS_SHELLFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 FONT 8, "MS Shell Dlg"
-CAPTION "Redimensionar"
+CAPTION "Stretch and skew image"
 BEGIN
-    GROUPBOX "Redimensionar ", IDD_CHANGESIZEGROUP, 6, 6, 158, 66
-    ICON IDI_HORZSTRETCH, IDD_CHANGESIZEICON1, 12, 18, 32, 32
-    LTEXT "Horizontal:", IDD_CHANGESIZETEXT1, 45, 24, 40, 10
-    EDITTEXT IDD_CHANGESIZEEDIT1, 90, 23, 32, 12
-    LTEXT "%", IDD_CHANGESIZETEXT2, 125, 24, 15, 10
-    ICON IDI_VERTSTRETCH, IDD_CHANGESIZEICON2, 12, 43, 32, 32
-    LTEXT "Vertical:", IDD_CHANGESIZETEXT3, 45, 49, 40, 10
-    EDITTEXT IDD_CHANGESIZEEDIT2, 90, 48, 32, 12
-    LTEXT "%", IDD_CHANGESIZETEXT4, 125, 49, 15, 10
+    GROUPBOX "Stretch", IDD_STRETCHSKEWGROUPSTRETCH, 6, 6, 158, 66
+    ICON IDI_HORZSTRETCH, IDD_STRETCHSKEWICONHSTRETCH, 12, 18, 32, 32
+    LTEXT "Horizontal:", IDD_STRETCHSKEWTEXTHSTRETCH, 45, 24, 40, 10
+    EDITTEXT IDD_STRETCHSKEWEDITHSTRETCH, 90, 23, 32, 12
+    LTEXT "%", IDD_STRETCHSKEWTEXTHPERCENT, 125, 24, 15, 10
+    ICON IDI_VERTSTRETCH, IDD_STRETCHSKEWICONVSTRETCH, 12, 43, 32, 32
+    LTEXT "Vertical:", IDD_STRETCHSKEWTEXTVSTRETCH, 45, 49, 40, 10
+    EDITTEXT IDD_STRETCHSKEWEDITVSTRETCH, 90, 48, 32, 12
+    LTEXT "%", IDD_STRETCHSKEWTEXTVPERCENT, 125, 49, 15, 10
+    GROUPBOX "Skew", IDD_STRETCHSKEWGROUPSKEW, 6, 76, 158, 66
+    ICON IDI_HORZSKEW, IDD_STRETCHSKEWICONHSKEW, 12, 88, 32, 32
+    LTEXT "Horizontal:", IDD_STRETCHSKEWTEXTHSKEW, 45, 94, 40, 10
+    EDITTEXT IDD_STRETCHSKEWEDITHSKEW, 90, 93, 32, 12
+    LTEXT "degrees", IDD_STRETCHSKEWTEXTHDEG, 125, 94, 30, 10
+    ICON IDI_VERTSKEW, IDD_STRETCHSKEWICONVSKEW, 12, 113, 32, 32
+    LTEXT "Vertical:", IDD_STRETCHSKEWTEXTVSKEW, 45, 119, 40, 10
+    EDITTEXT IDD_STRETCHSKEWEDITVSKEW, 90, 118, 32, 12
+    LTEXT "degrees", IDD_STRETCHSKEWTEXTVDEG, 125, 119, 30, 10
     DEFPUSHBUTTON "Aceptar", IDOK, 170, 8, 48, 14
     PUSHBUTTON "Cancelar", IDCANCEL, 170, 24, 48, 14
 END
 
 STRINGTABLE
 BEGIN
-    IDS_PROGRAMNAME, "Paint"
-    IDS_WINDOWTITLE, "%s - Paint"
-    IDS_INFOTITLE, "Paint para ReactOS"
-    IDS_INFOTEXT, "Paint para ReactOS is available under the GNU Lesser General Public License (LGPL) version 3 (ver www.gnu.org)"
-    IDS_SAVEPROMPTTEXT, "¿Guardar cambios cambios a %s?"
-    IDS_DEFAULTFILENAME, "Sin titulo.bmp"
-    IDS_MINIATURETITLE, "Miniatura"
-    IDS_TOOLTIP1, "Selección de forma libre"
-    IDS_TOOLTIP2, "Selección"
-    IDS_TOOLTIP3, "Borrador"
-    IDS_TOOLTIP4, "Relleno de color"
-    IDS_TOOLTIP5, "Seleccionar color"
-    IDS_TOOLTIP6, "Ampliación"
-    IDS_TOOLTIP7, "Lápiz"
-    IDS_TOOLTIP8, "Brocha"
-    IDS_TOOLTIP9, "Aerógrafo"
-    IDS_TOOLTIP10, "Texto"
-    IDS_TOOLTIP11, "Línea"
-    IDS_TOOLTIP12, "Curva"
-    IDS_TOOLTIP13, "Rectángulo"
-    IDS_TOOLTIP14, "Polígono"
-    IDS_TOOLTIP15, "Elipse"
-    IDS_TOOLTIP16, "Rectángulo redondeado"
-    IDS_OPENFILTER, "Archivos de mapa de bits (*.bmp;*.dib)\1*.bmp;*.dib\1Todos los archivos (*.*)\1*.*\1"
-    IDS_SAVEFILTER, "Mapa de bits de 24 bits (*.bmp;*.dib)\1*.bmp;*.dib\1"
-    IDS_FILESIZE, "%d bytes"
-    IDS_PRINTRES, "%d x %d pixels por metro"
+    IDS_PROGRAMNAME "Paint"
+    IDS_WINDOWTITLE "%s - Paint"
+    IDS_INFOTITLE "Paint para ReactOS"
+    IDS_INFOTEXT "Paint para ReactOS is available under the GNU Lesser General Public License (LGPL, ver www.gnu.org)"
+    IDS_SAVEPROMPTTEXT "¿Guardar cambios cambios a %s?"
+    IDS_DEFAULTFILENAME "Sin titulo.bmp"
+    IDS_MINIATURETITLE "Miniatura"
+    IDS_TOOLTIP1 "Selección de forma libre"
+    IDS_TOOLTIP2 "Selección"
+    IDS_TOOLTIP3 "Borrador"
+    IDS_TOOLTIP4 "Relleno de color"
+    IDS_TOOLTIP5 "Seleccionar color"
+    IDS_TOOLTIP6 "Ampliación"
+    IDS_TOOLTIP7 "Lápiz"
+    IDS_TOOLTIP8 "Brocha"
+    IDS_TOOLTIP9 "Aerógrafo"
+    IDS_TOOLTIP10 "Texto"
+    IDS_TOOLTIP11 "Línea"
+    IDS_TOOLTIP12 "Curva"
+    IDS_TOOLTIP13 "Rectángulo"
+    IDS_TOOLTIP14 "Polígono"
+    IDS_TOOLTIP15 "Elipse"
+    IDS_TOOLTIP16 "Rectángulo redondeado"
+    IDS_OPENFILTER "Archivos de mapa de bits (*.bmp;*.dib)\1*.bmp;*.dib\1Todos los archivos (*.*)\1*.*\1"
+    IDS_SAVEFILTER "Mapa de bits de 24 bits (*.bmp;*.dib)\1*.bmp;*.dib\1"
+    IDS_FILESIZE "%d bytes"
+    IDS_PRINTRES "%d x %d pixels por metro"
+    IDS_INTNUMBERS "Please enter integral numbers only!"
+    IDS_PERCENTAGE "The percentage must be between 1 and 500."
+    IDS_ANGLE "The angle must be between -89 and 89."
+    IDS_LOADERRORTEXT "The file %s could not be loaded."
 END

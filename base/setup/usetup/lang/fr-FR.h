@@ -998,13 +998,13 @@ static MUI_ENTRY frFRBootLoaderEntries[] =
     {
         8,
         12,
-        "Installer le chargeur de dÇmarrage sur le disque (MBR et VBR).",
+        "Installer le chargeur de dÇmarrage sur le disque dur (MBR et VBR).",
         TEXT_STYLE_NORMAL
     },
     {
         8,
         13,
-        "Installer le chargeur de dÇmarrage sur le disque (VBR seulement).",
+        "Installer le chargeur de dÇmarrage sur le disque dur (VBR seulement).",
         TEXT_STYLE_NORMAL
     },
     {
@@ -1363,7 +1363,7 @@ MUI_ERROR frFRErrorEntries[] =
         "\n"
         "CrÇer ou effacer des partitions peut dÇtruire la table de partition.\n"
         "\n"
-        "  \x07  Appuyer sur F3 pour quitter Setup."
+        "  \x07  Appuyer sur F3 pour quitter Setup.\n"
         "  \x07  Appuyer sur ENTRêE pour continuer Setup.",
         "F3= Quitter  ENTRêE = Continuer"
     },
@@ -1659,11 +1659,11 @@ MUI_STRING frFRStrings[] =
     {STRING_REBOOTCOMPUTER2,
     "   ENTRêE = RedÇmarrer l'ordinateur"},
     {STRING_CONSOLEFAIL1,
-    "Impossible d'ouvrir la console\n\n"},
+    "Impossible d'ouvrir la console\r\n\r\n"},
     {STRING_CONSOLEFAIL2,
-    "La cause propbable est l'utilisation d'un clavier USB\n"},
+    "La cause probable est l'utilisation d'un clavier USB\r\n"},
     {STRING_CONSOLEFAIL3,
-    "Les claviers USB ne sont pas complätement supportÇs actuellement\n"},
+    "Les claviers USB ne sont pas complätement supportÇs actuellement\r\n"},
     {STRING_FORMATTINGDISK,
     "Setup formate votre disque"},
     {STRING_CHECKINGDISK,

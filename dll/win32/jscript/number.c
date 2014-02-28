@@ -16,17 +16,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <config.h>
-#include <wine/port.h>
-
-//#include <math.h>
-#include <assert.h>
-
 #include "jscript.h"
-
-#include <wine/debug.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(jscript);
 
 typedef struct {
     jsdisp_t dispex;
@@ -54,7 +44,7 @@ static inline NumberInstance *number_this(vdisp_t *jsthis)
     return is_vclass(jsthis, JSCLASS_NUMBER) ? number_from_vdisp(jsthis) : NULL;
 }
 
-static inline void dtoa(double d, WCHAR *buf, int size, int *dec_point)
+static inline void number_to_str(double d, WCHAR *buf, int size, int *dec_point)
 {
     ULONGLONG l;
     int i;
@@ -113,7 +103,7 @@ static inline jsstr_t *number_to_fixed(double val, int prec)
     if(buf_size > NUMBER_DTOA_SIZE)
         buf_size = NUMBER_DTOA_SIZE;
 
-    dtoa(val, buf, buf_size, &dec_point);
+    number_to_str(val, buf, buf_size, &dec_point);
     dec_point++;
     size = 0;
     if(neg)
@@ -125,11 +115,10 @@ static inline jsstr_t *number_to_fixed(double val, int prec)
     if(prec)
         size += prec+1;
 
-    ret = jsstr_alloc_buf(size);
+    str = jsstr_alloc_buf(size, &ret);
     if(!ret)
         return NULL;
 
-    str = ret->str;
     size = buf_pos = 0;
     if(neg)
         str[size++] = '-';
@@ -172,7 +161,7 @@ static inline jsstr_t *number_to_exponential(double val, int prec)
     buf_size = prec+2;
     if(buf_size<2 || buf_size>NUMBER_DTOA_SIZE)
         buf_size = NUMBER_DTOA_SIZE;
-    dtoa(val, buf, buf_size, &dec_point);
+    number_to_str(val, buf, buf_size, &dec_point);
     buf_size--;
     if(prec == -1)
         for(; buf_size>1 && buf[buf_size-1]=='0'; buf_size--)
@@ -193,11 +182,10 @@ static inline jsstr_t *number_to_exponential(double val, int prec)
     if(neg)
         size++;
 
-    ret = jsstr_alloc_buf(size);
+    str = jsstr_alloc_buf(size, &ret);
     if(!ret)
         return NULL;
 
-    str = ret->str;
     size = 0;
     pbuf = buf;
     if(neg)

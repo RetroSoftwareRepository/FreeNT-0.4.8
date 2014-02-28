@@ -19,7 +19,13 @@
  *
  */
 
-#include "inetcpl.h"
+#include <windef.h>
+#include <winuser.h>
+#include <commctrl.h>
+
+#include "resource.h"
+
+#include <reactos/manifest_dll.rc>
 
 #ifdef LANGUAGE_DE_DE
     #include "lang/de-DE.rc"
@@ -60,11 +66,17 @@
 #ifdef LANGUAGE_RU_RU
     #include "lang/ru-RU.rc"
 #endif
+#ifdef LANGUAGE_SQ_AL
+    #include "lang/sq-AL.rc"
+#endif
 #ifdef LANGUAGE_SR_SP
     #include "lang/Sr.rc"
 #endif
 #ifdef LANGUAGE_SV_SE
     #include "lang/sv-SE.rc"
+#endif
+#ifdef LANGUAGE_TR_TR
+    #include "lang/tr-TR.rc"
 #endif
 #ifdef LANGUAGE_UK_UA
     #include "lang/uk-UA.rc"
@@ -81,6 +93,7 @@
 #define WINE_PRODUCTVERSION_STR "8.00.6001.18939"
 
 #include "wine/wine_common_ver.rc"
- 
+
 /* @makedep: inetcpl.ico */
 ICO_MAIN ICON "inetcpl.ico"
+ICO_INTERNET ICON "inetcpl.ico"

@@ -10,6 +10,7 @@ cpu.inf
 disk.inf
 display.inf
 fdc.inf
+flpydisk.inf
 hal.inf
 hdc.inf
 input.inf
@@ -59,6 +60,7 @@ AddReg=Classes
 11,,jscript.dll,1
 ;11,,ksproxy.ax,1
 11,,mlang.dll,1
+11,,mmdevapi.dll,1
 11,,mscat32.dll,1
 11,,msctf.dll,1
 11,,mshtml.dll,3
@@ -87,6 +89,7 @@ AddReg=Classes
 11,,rpcrt4.dll,1
 11,,rsabase.dll,1
 11,,rsaenh.dll,1
+11,,scrrun.dll,1
 11,,shdocvw.dll,3
 11,,shell32.dll,3
 11,,softpub.dll,1
@@ -98,6 +101,8 @@ AddReg=Classes
 11,,wininet.dll,2
 11,,wintrust.dll,1
 11,,wuapi.dll,1
+11,wbem,wbemdisp.dll,1
+11,wbem,wbemprox.dll,1
 
 [TypeLibraries]
 stdole2.tlb

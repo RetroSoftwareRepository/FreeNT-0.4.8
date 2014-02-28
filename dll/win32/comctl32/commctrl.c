@@ -52,26 +52,10 @@
  *   -- ICC_WIN95_CLASSES
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-#define COM_NO_WINDOWS_H
+#include "comctl32.h"
 
-#include <stdarg.h>
-//#include <string.h>
-//#include <stdlib.h>
-
-#include <windef.h>
-#include <winbase.h>
-//#include "wingdi.h"
-//#include "winuser.h"
-#include <winnls.h>
-//#include "commctrl.h"
-//#include "winerror.h"
-#include <winreg.h>
 #define NO_SHLWAPI_STREAM
 #include <shlwapi.h>
-#include "comctl32.h"
-#include <wine/debug.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(commctrl);
 
@@ -119,7 +103,7 @@ static BOOL create_manifest(BOOL install)
     HANDLE hFile;
     BOOL bRet = FALSE;
 
-    hResInfo = FindResourceW(COMCTL32_hModule, L"WINE_MANIFEST", RT_MANIFEST);
+    hResInfo = FindResourceW(COMCTL32_hModule, L"WINE_MANIFEST", (LPWSTR)RT_MANIFEST);
     if (!hResInfo)
         return FALSE;
 
@@ -235,7 +219,8 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
             break;
 
 	case DLL_PROCESS_DETACH:
-            /* clean up subclassing */ 
+            if (lpvReserved) break;
+            /* clean up subclassing */
             THEMING_Uninitialize();
 
             /* unregister all common control classes */
@@ -263,14 +248,11 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
 
             /* delete local pattern brush */
             DeleteObject (COMCTL32_hPattern55AABrush);
-            COMCTL32_hPattern55AABrush = NULL;
             DeleteObject (COMCTL32_hPattern55AABitmap);
-            COMCTL32_hPattern55AABitmap = NULL;
 
             /* delete global subclassing atom */
             GlobalDeleteAtom (LOWORD(COMCTL32_wSubclass));
             TRACE("Subclassing atom deleted: %p\n", COMCTL32_wSubclass);
-            COMCTL32_wSubclass = NULL;
             break;
     }
 
@@ -1013,7 +995,7 @@ HRESULT WINAPI DllInstall(BOOL bInstall, LPCWSTR cmdline)
         ERR("create_manifest failed!\n");
         return HRESULT_FROM_WIN32(GetLastError());
     }
-        
+
     return S_OK;
 }
 

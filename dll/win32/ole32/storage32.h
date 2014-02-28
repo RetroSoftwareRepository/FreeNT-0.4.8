@@ -27,21 +27,9 @@
  * License along with this library; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
+
 #ifndef __STORAGE32_H__
 #define __STORAGE32_H__
-
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-
-#include <stdarg.h>
-
-#include <windef.h>
-#include <winbase.h>
-//#include "winnt.h"
-#include <objbase.h>
-#include <winreg.h>
-#include "winternl.h"
-#include <wine/list.h>
 
 /*
  * Definitions for the file format offsets.
@@ -166,6 +154,12 @@ HRESULT FileLockBytesImpl_Construct(HANDLE hFile, DWORD openFlags, LPCWSTR pwcsN
 HRESULT STORAGE_CreateOleStream(IStorage*, DWORD) DECLSPEC_HIDDEN;
 HRESULT OLECONVERT_CreateCompObjStream(LPSTORAGE pStorage, LPCSTR strOleTypeName) DECLSPEC_HIDDEN;
 
+enum swmr_mode
+{
+  SWMR_None,
+  SWMR_Writer,
+  SWMR_Reader
+};
 
 /****************************************************************************
  * StorageBaseImpl definitions.
@@ -180,6 +174,7 @@ struct StorageBaseImpl
 {
   IStorage IStorage_iface;
   IPropertySetStorage IPropertySetStorage_iface; /* interface for adding a properties stream */
+  IDirectWriterLock IDirectWriterLock_iface;
   LONG ref;
 
   /*
@@ -225,6 +220,7 @@ struct StorageBaseImpl
    * the transacted snapshot or cache.
    */
   StorageBaseImpl *transactedChild;
+  enum swmr_mode lockingrole;
 };
 
 /* virtual methods for StorageBaseImpl objects */

@@ -20,25 +20,13 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
+#include "precomp.h"
 
-//#include <stdarg.h>
-#include <windef.h>
-//#include "winbase.h"
-//#include "winnls.h"
 #include <winioctl.h>
-#include <winnetwk.h>
 #include <npapi.h>
-#include <winreg.h>
-//#include "winuser.h"
 #define WINE_MOUNTMGR_EXTENSIONS
 #include <ddk/mountmgr.h>
-#include <wine/debug.h>
 #include <wine/unicode.h>
-#include "mprres.h"
-//#include "wnetpriv.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(mpr);
 
 /* Data structures representing network service providers.  Assumes only one
  * thread creates them, and that they are constant for the life of the process
@@ -640,7 +628,7 @@ DWORD WINAPI WNetOpenEnumA( DWORD dwScope, DWORD dwType, DWORD dwUsage,
         ret = WN_BAD_POINTER;
     else if (!providerTable || providerTable->numProviders == 0)
     {
-        lphEnum = NULL;
+        *lphEnum = NULL;
         ret = WN_NO_NETWORK;
     }
     else
@@ -732,7 +720,7 @@ DWORD WINAPI WNetOpenEnumW( DWORD dwScope, DWORD dwType, DWORD dwUsage,
         ret = WN_BAD_POINTER;
     else if (!providerTable || providerTable->numProviders == 0)
     {
-        lphEnum = NULL;
+        *lphEnum = NULL;
         ret = WN_NO_NETWORK;
     }
     else
@@ -1175,7 +1163,7 @@ static DWORD _enumerateContextW(PWNetEnumerator enumerator, LPDWORD lpcCount,
         if (ret == WN_SUCCESS)
         {
             /* reflect the fact that we already enumerated "Entire Network" */
-            lpcCount++;
+            (*lpcCount)++;
             *lpBufferSize = bufferSize + bytesNeeded;
         }
         else
@@ -1894,6 +1882,12 @@ DWORD WINAPI WNetGetUniversalNameA ( LPCSTR lpLocalPath, DWORD dwInfoLevel,
     {
         LPUNIVERSAL_NAME_INFOA info = lpBuffer;
 
+        if (GetDriveTypeA(lpLocalPath) != DRIVE_REMOTE)
+        {
+            err = ERROR_NOT_CONNECTED;
+            break;
+        }
+
         size = sizeof(*info) + lstrlenA(lpLocalPath) + 1;
         if (*lpBufferSize < size)
         {
@@ -1902,7 +1896,6 @@ DWORD WINAPI WNetGetUniversalNameA ( LPCSTR lpLocalPath, DWORD dwInfoLevel,
         }
         info->lpUniversalName = (char *)info + sizeof(*info);
         lstrcpyA(info->lpUniversalName, lpLocalPath);
-        *lpBufferSize = size;
         err = WN_NO_ERROR;
         break;
     }
@@ -1936,6 +1929,12 @@ DWORD WINAPI WNetGetUniversalNameW ( LPCWSTR lpLocalPath, DWORD dwInfoLevel,
     {
         LPUNIVERSAL_NAME_INFOW info = lpBuffer;
 
+        if (GetDriveTypeW(lpLocalPath) != DRIVE_REMOTE)
+        {
+            err = ERROR_NOT_CONNECTED;
+            break;
+        }
+
         size = sizeof(*info) + (lstrlenW(lpLocalPath) + 1) * sizeof(WCHAR);
         if (*lpBufferSize < size)
         {
@@ -1944,7 +1943,6 @@ DWORD WINAPI WNetGetUniversalNameW ( LPCWSTR lpLocalPath, DWORD dwInfoLevel,
         }
         info->lpUniversalName = (LPWSTR)((char *)info + sizeof(*info));
         lstrcpyW(info->lpUniversalName, lpLocalPath);
-        *lpBufferSize = size;
         err = WN_NO_ERROR;
         break;
     }

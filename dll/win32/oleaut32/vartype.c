@@ -18,20 +18,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-
-#define COBJMACROS
-#define NONAMELESSUNION
-#define NONAMELESSSTRUCT
-
-#include <wine/debug.h>
-#include <wine/unicode.h>
-//#include "winbase.h"
-#include <winuser.h>
-//#include "winnt.h"
-#include "variant.h"
-#include "resource.h"
+#include "precomp.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(variant);
 

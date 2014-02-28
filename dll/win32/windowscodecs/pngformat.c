@@ -16,34 +16,11 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-#define COM_NO_WINDOWS_H
-
-#include <config.h>
-#include <wine/port.h>
-
-//#include <stdarg.h>
+#include "wincodecs_private.h"
 
 #ifdef HAVE_PNG_H
 #include <png.h>
 #endif
-
-#define NONAMELESSUNION
-#define COBJMACROS
-
-#include <windef.h>
-#include <winbase.h>
-#include <objbase.h>
-//#include "wincodec.h"
-#include <wincodecsdk.h>
-
-#include "wincodecs_private.h"
-
-#include <wine/debug.h>
-#include <wine/library.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(wincodecs);
 
 static HRESULT read_png_chunk(IStream *stream, BYTE *type, BYTE **data, ULONG *data_size)
 {
@@ -180,7 +157,7 @@ MAKE_FUNCPTR(png_get_tRNS);
 MAKE_FUNCPTR(png_set_bgr);
 MAKE_FUNCPTR(png_set_crc_action);
 MAKE_FUNCPTR(png_set_error_fn);
-#if HAVE_PNG_SET_EXPAND_GRAY_1_2_4_TO_8
+#ifdef HAVE_PNG_SET_EXPAND_GRAY_1_2_4_TO_8
 MAKE_FUNCPTR(png_set_expand_gray_1_2_4_to_8);
 #else
 MAKE_FUNCPTR(png_set_gray_1_2_4_to_8);
@@ -229,7 +206,7 @@ static void *load_libpng(void)
         LOAD_FUNCPTR(png_set_bgr);
         LOAD_FUNCPTR(png_set_crc_action);
         LOAD_FUNCPTR(png_set_error_fn);
-#if HAVE_PNG_SET_EXPAND_GRAY_1_2_4_TO_8
+#ifdef HAVE_PNG_SET_EXPAND_GRAY_1_2_4_TO_8
         LOAD_FUNCPTR(png_set_expand_gray_1_2_4_to_8);
 #else
         LOAD_FUNCPTR(png_set_gray_1_2_4_to_8);
@@ -471,7 +448,7 @@ static HRESULT WINAPI PngDecoder_Initialize(IWICBitmapDecoder *iface, IStream *p
         {
             if (bit_depth < 8)
             {
-#if HAVE_PNG_SET_EXPAND_GRAY_1_2_4_TO_8
+#ifdef HAVE_PNG_SET_EXPAND_GRAY_1_2_4_TO_8
                 ppng_set_expand_gray_1_2_4_to_8(This->png_ptr);
 #else
                 ppng_set_gray_1_2_4_to_8(This->png_ptr);
@@ -870,7 +847,8 @@ static HRESULT WINAPI PngDecoder_Frame_GetColorContexts(IWICBitmapFrameDecode *i
     UINT cCount, IWICColorContext **ppIColorContexts, UINT *pcActualCount)
 {
     PngDecoder *This = impl_from_IWICBitmapFrameDecode(iface);
-    png_charp name, profile;
+    png_charp name;
+    BYTE *profile;
     png_uint_32 len;
     int compression_type;
     HRESULT hr;
@@ -881,11 +859,11 @@ static HRESULT WINAPI PngDecoder_Frame_GetColorContexts(IWICBitmapFrameDecode *i
 
     EnterCriticalSection(&This->lock);
 
-    if (ppng_get_iCCP(This->png_ptr, This->info_ptr, &name, &compression_type, &profile, &len))
+    if (ppng_get_iCCP(This->png_ptr, This->info_ptr, &name, &compression_type, (void *)&profile, &len))
     {
         if (cCount && ppIColorContexts)
         {
-            hr = IWICColorContext_InitializeFromMemory(*ppIColorContexts, (const BYTE *)profile, len);
+            hr = IWICColorContext_InitializeFromMemory(*ppIColorContexts, profile, len);
             if (FAILED(hr))
             {
                 LeaveCriticalSection(&This->lock);

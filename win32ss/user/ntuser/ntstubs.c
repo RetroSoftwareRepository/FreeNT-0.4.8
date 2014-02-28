@@ -20,44 +20,6 @@ NtUserAssociateInputContext(
     return 0;
 }
 
-
-BOOL
-APIENTRY
-NtUserAttachThreadInput(
-    IN DWORD idAttach,
-    IN DWORD idAttachTo,
-    IN BOOL fAttach)
-{
-  NTSTATUS Status;
-  PTHREADINFO pti, ptiTo;
-  BOOL Ret = FALSE;
-
-  UserEnterExclusive();
-  ERR("Enter NtUserAttachThreadInput %s\n",(fAttach ? "TRUE" : "FALSE" ));
-
-  pti = IntTID2PTI((HANDLE)idAttach);
-  ptiTo = IntTID2PTI((HANDLE)idAttachTo);
-
-  if ( !pti || !ptiTo )
-  {
-     ERR("AttachThreadInput pti or ptiTo NULL.\n");
-     EngSetLastError(ERROR_INVALID_PARAMETER);
-     goto Exit;
-  }
-
-  Status = UserAttachThreadInput( pti, ptiTo, fAttach);
-  if (!NT_SUCCESS(Status))
-  {
-     EngSetLastError(RtlNtStatusToDosError(Status));
-  }
-  else Ret = TRUE;
-
-Exit:
-  ERR("Leave NtUserAttachThreadInput, ret=%d\n",Ret);
-  UserLeave();
-  return Ret;
-}
-
 //
 // Works like BitBlt, http://msdn.microsoft.com/en-us/library/ms532278(VS.85).aspx
 //
@@ -546,7 +508,7 @@ APIENTRY
 NtUserConsoleControl(
     IN CONSOLECONTROL ConsoleCtrl,
     IN PVOID ConsoleCtrlInfo,
-    IN DWORD ConsoleCtrlInfoLength)
+    IN ULONG ConsoleCtrlInfoLength)
 {
     NTSTATUS Status = STATUS_SUCCESS;
 
@@ -560,10 +522,15 @@ NtUserConsoleControl(
     {
         case GuiConsoleWndClassAtom:
         {
+            if (ConsoleCtrlInfoLength != sizeof(ATOM))
+            {
+                Status = STATUS_INFO_LENGTH_MISMATCH;
+                break;
+            }
+
             _SEH2_TRY
             {
                 ProbeForRead(ConsoleCtrlInfo, ConsoleCtrlInfoLength, 1);
-                ASSERT(ConsoleCtrlInfoLength == sizeof(ATOM));
                 gaGuiConsoleWndClass = *(ATOM*)ConsoleCtrlInfo;
             }
             _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
@@ -575,8 +542,39 @@ NtUserConsoleControl(
             break;
         }
 
+        case ConsoleMakePalettePublic:
+        {
+            HPALETTE hPalette;
+
+            if (ConsoleCtrlInfoLength != sizeof(HPALETTE))
+            {
+                Status = STATUS_INFO_LENGTH_MISMATCH;
+                break;
+            }
+
+            _SEH2_TRY
+            {
+                ProbeForRead(ConsoleCtrlInfo, ConsoleCtrlInfoLength, 1);
+                hPalette = *(HPALETTE*)ConsoleCtrlInfo;
+            }
+            _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+            {
+                Status = _SEH2_GetExceptionCode();
+            }
+            _SEH2_END;
+
+            /* Make the palette handle public */
+            GreSetObjectOwnerEx(hPalette,
+                                GDI_OBJ_HMGR_PUBLIC,
+                                GDIOBJFLAG_IGNOREPID);
+
+            break;
+        }
+
         case ConsoleAcquireDisplayOwnership:
         {
+            ERR("NtUserConsoleControl - ConsoleAcquireDisplayOwnership is UNIMPLEMENTED\n");
+            Status = STATUS_NOT_IMPLEMENTED;
             break;
         }
 
@@ -707,16 +705,16 @@ NtUserHardErrorControl(
     return 0;
 }
 
-DWORD
-APIENTRY
+BOOL
+NTAPI
 NtUserNotifyProcessCreate(
-    DWORD dwUnknown1,
-    DWORD dwUnknown2,
-    DWORD dwUnknown3,
-    DWORD dwUnknown4)
+    HANDLE NewProcessId,
+    HANDLE SourceThreadId,
+    DWORD dwUnknown,
+    ULONG CreateFlags)
 {
     STUB;
-    return 0;
+    return FALSE;
 }
 
 NTSTATUS
@@ -1209,22 +1207,6 @@ BOOL APIENTRY NtUserGetUpdatedClipboardFormats(
 {
     STUB;
     return FALSE;
-}
-
-/*
- * @unimplemented
- */
-HCURSOR
-NTAPI
-NtUserGetCursorFrameInfo(
-    HCURSOR hCursor,
-    DWORD istep,
-    PDWORD rate_jiffies,
-    INT *num_steps)
-{
-    STUB
-
-    return 0;
 }
 
 /*

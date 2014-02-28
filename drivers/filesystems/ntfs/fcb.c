@@ -30,15 +30,9 @@
 #define NDEBUG
 #include <debug.h>
 
-/* GLOBALS *****************************************************************/
-
-
-
 /* MACROS *******************************************************************/
 
 #define TAG_FCB 'BCFI'
-
-
 
 /* FUNCTIONS ****************************************************************/
 
@@ -124,6 +118,7 @@ NtfsDestroyFCB(PNTFS_FCB Fcb)
 BOOLEAN
 NtfsFCBIsDirectory(PNTFS_FCB Fcb)
 {
+    UNREFERENCED_PARAMETER(Fcb);
 //  return(Fcb->entry.Attrib & FILE_ATTRIBUTE_DIRECTORY);
 //  return(Fcb->Entry.FileFlags & 0x02);
     return TRUE;
@@ -555,6 +550,11 @@ NtfsDirFindFile(PNTFS_VCB Vcb,
     }
 
   CcUnpinData(Context);
+#else
+    UNREFERENCED_PARAMETER(Vcb);
+    UNREFERENCED_PARAMETER(DirectoryFcb);
+    UNREFERENCED_PARAMETER(FileToFind);
+    UNREFERENCED_PARAMETER(FoundFCB);
 #endif
     return STATUS_OBJECT_NAME_NOT_FOUND;
 }

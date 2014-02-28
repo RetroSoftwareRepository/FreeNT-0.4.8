@@ -4,14 +4,10 @@
  * FILE:            dll/cpl/powercfg/hibernate.c
  * PURPOSE:         hibernate tab of applet
  * PROGRAMMERS:     Alexander Wurzinger (Lohnegrim at gmx dot net)
- *                  Johannes Anderwald (johannes.anderwald@student.tugraz.at)
+ *                  Johannes Anderwald (johannes.anderwald@reactos.org)
  *                  Martin Rottensteiner
  *                  Dmitry Chapyshev (lentind@yandex.ru)
  */
-
-//#ifndef NSTATUS
-//typedef long NTSTATUS;
-//#endif
 
 #include "powercfg.h"
 

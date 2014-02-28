@@ -758,7 +758,7 @@
 @ stdcall MmAllocatePagesForMdlEx(long long long long long long long long long)
 @ stdcall MmBuildMdlForNonPagedPool(ptr)
 @ stdcall MmCanFileBeTruncated(ptr ptr)
-;MmCommitSessionMappedView
+@ stdcall MmCommitSessionMappedView(ptr ptr)
 @ stdcall MmCreateMdl(ptr ptr long)
 ;MmCreateMirror
 @ stdcall MmCreateSection(ptr long ptr ptr long long ptr ptr)
@@ -899,7 +899,7 @@
 @ stdcall ObCloseHandle(ptr long)
 @ stdcall ObCreateObject(long ptr ptr long ptr long long long ptr)
 @ stdcall ObCreateObjectType(ptr ptr ptr ptr)
-;ObDeleteCapturedInsertInfo
+@ stdcall ObDeleteCapturedInsertInfo(ptr)
 @ stdcall ObDereferenceObject(ptr)
 @ stdcall -arch=i386,arm ObDereferenceObjectDeferDelete(ptr)
 @ stdcall ObDereferenceSecurityDescriptor(ptr long)
@@ -918,7 +918,7 @@
 @ stdcall ObReferenceObjectByPointer(ptr long ptr long)
 @ stdcall ObReferenceSecurityDescriptor(ptr long)
 @ stdcall ObReleaseObjectSecurity(ptr long)
-;ObSetHandleAttributes@12
+@ stdcall ObSetHandleAttributes(ptr ptr long)
 @ stdcall ObSetSecurityDescriptorInfo(ptr ptr ptr ptr long ptr)
 @ stdcall ObSetSecurityObjectByPointer(ptr long ptr)
 @ fastcall ObfDereferenceObject(ptr)
@@ -963,13 +963,13 @@
 @ stdcall PsGetCurrentThread() KeGetCurrentThread
 @ stdcall PsGetCurrentThreadId()
 @ stdcall PsGetCurrentThreadPreviousMode()
-;PsGetCurrentThreadProcess
-;PsGetCurrentThreadProcessId
+@ stdcall PsGetCurrentThreadProcess()
+@ stdcall PsGetCurrentThreadProcessId()
 @ stdcall PsGetCurrentThreadStackBase()
 @ stdcall PsGetCurrentThreadStackLimit()
-;PsGetCurrentThreadTeb
+@ stdcall PsGetCurrentThreadTeb()
 @ stdcall PsGetCurrentThreadWin32Thread()
-;PsGetCurrentThreadWin32ThreadAndEnterCriticalRegion
+@ stdcall PsGetCurrentThreadWin32ThreadAndEnterCriticalRegion(ptr)
 @ stdcall PsGetJobLock(ptr)
 @ stdcall PsGetJobSessionId(ptr)
 @ stdcall PsGetJobUIRestrictionsClass(ptr)
@@ -987,7 +987,7 @@
 @ stdcall PsGetProcessSectionBaseAddress(ptr)
 @ stdcall PsGetProcessSecurityPort(ptr)
 @ stdcall PsGetProcessSessionId(ptr)
-;PsGetProcessSessionIdEx
+@ stdcall PsGetProcessSessionIdEx(ptr)
 @ stdcall PsGetProcessWin32Process(ptr)
 @ stdcall PsGetProcessWin32WindowStation(ptr)
 ;@ cdecl -arch=x86_64 PsGetProcessWow64Process()
@@ -1031,10 +1031,10 @@
 @ stdcall PsSetProcessPriorityByClass(ptr ptr)
 @ stdcall PsSetProcessPriorityClass(ptr long)
 @ stdcall PsSetProcessSecurityPort(ptr ptr)
-@ stdcall PsSetProcessWin32Process(ptr ptr)
+@ stdcall PsSetProcessWin32Process(ptr ptr ptr)
 @ stdcall PsSetProcessWindowStation(ptr ptr)
 @ stdcall PsSetThreadHardErrorsAreDisabled(ptr long)
-@ stdcall PsSetThreadWin32Thread(ptr ptr)
+@ stdcall PsSetThreadWin32Thread(ptr ptr ptr)
 @ stdcall PsTerminateSystemThread(long)
 @ extern PsThreadType _PsThreadType
 ;PsWrapApcWow64Thread
@@ -1373,9 +1373,9 @@
 @ stdcall SeRegisterLogonSessionTerminatedRoutine(ptr)
 @ stdcall SeReleaseSecurityDescriptor(ptr long long)
 @ stdcall SeReleaseSubjectContext(ptr)
-;@ cdecl -arch=x86_64 SeReportSecurityEvent
+@ stdcall SeReportSecurityEvent(long ptr ptr ptr)
 @ stdcall SeSetAccessStateGenericMapping(ptr ptr)
-;SeSetAuditParameter
+@ stdcall SeSetAuditParameter(ptr long long ptr)
 @ stdcall SeSetSecurityDescriptorInfo(ptr ptr ptr ptr long ptr)
 @ stdcall SeSetSecurityDescriptorInfoEx(ptr ptr ptr ptr long long ptr)
 @ stdcall SeSinglePrivilegeCheck(long long long)

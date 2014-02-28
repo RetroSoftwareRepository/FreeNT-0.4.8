@@ -18,34 +18,9 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-#define COM_NO_WINDOWS_H
-
-#include <config.h>
-
-//#include <stdarg.h>
-
-#define COBJMACROS
-
-#include <wine/debug.h>
-//#include "windef.h"
-#include <winbase.h>
-//#include "winreg.h"
-//#include "winuser.h"
-//#include "shlwapi.h"
-//#include "winerror.h"
-#include <objbase.h>
-#include <oleauto.h>
-#include <olectl.h>
-
-//#include "wine/unicode.h"
-#include <wine/list.h>
-
-#include <msctf.h>
 #include "msctf_internal.h"
 
-WINE_DEFAULT_DEBUG_CHANNEL(msctf);
+#include <oleauto.h>
 
 typedef struct tagCompartmentValue {
     struct list entry;
@@ -135,7 +110,7 @@ static HRESULT WINAPI CompartmentMgr_QueryInterface(ITfCompartmentMgr *iface, RE
 
         if (*ppvOut)
         {
-            IUnknown_AddRef(iface);
+            ITfCompartmentMgr_AddRef(iface);
             return S_OK;
         }
 
@@ -308,7 +283,7 @@ static HRESULT WINAPI CompartmentEnumGuid_QueryInterface(IEnumGUID *iface, REFII
 
     if (*ppvOut)
     {
-        IUnknown_AddRef(iface);
+        IEnumGUID_AddRef(iface);
         return S_OK;
     }
 
@@ -468,7 +443,7 @@ static HRESULT WINAPI Compartment_QueryInterface(ITfCompartment *iface, REFIID i
 
     if (*ppvOut)
     {
-        IUnknown_AddRef(iface);
+        ITfCompartment_AddRef(iface);
         return S_OK;
     }
 
@@ -621,7 +596,7 @@ static HRESULT WINAPI CompartmentSource_UnadviseSink(ITfSource *iface, DWORD pdw
     if (get_Cookie_magic(pdwCookie)!=COOKIE_MAGIC_COMPARTMENTSINK)
         return E_INVALIDARG;
 
-    sink = (CompartmentSink*)remove_Cookie(pdwCookie);
+    sink = remove_Cookie(pdwCookie);
     if (!sink)
         return CONNECT_E_NOCONNECTION;
 

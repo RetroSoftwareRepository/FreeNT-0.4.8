@@ -31,11 +31,7 @@
 #define NDEBUG
 #include <debug.h>
 
-/* GLOBALS *****************************************************************/
-
-
 /* FUNCTIONS ****************************************************************/
-
 
 NTSTATUS
 NtfsOpenMft(PDEVICE_EXTENSION Vcb)
@@ -126,6 +122,8 @@ FindAttribute(PFILE_RECORD_HEADER FileRecord,
 {
     PATTRIBUTE Attribute;
 
+    UNREFERENCED_PARAMETER(name);
+
     Attribute = (PATTRIBUTE)((ULONG_PTR)FileRecord + FileRecord->AttributeOffset);
     while (Attribute < (PATTRIBUTE)((ULONG_PTR)FileRecord + FileRecord->BytesInUse) &&
            Attribute->AttributeType != (ATTRIBUTE_TYPE)-1)
@@ -173,6 +171,9 @@ ReadAttribute(PATTRIBUTE attr,
               PDEVICE_OBJECT DeviceObject)
 {
     PNONRESIDENT_ATTRIBUTE NresAttr = (PNONRESIDENT_ATTRIBUTE)attr;
+
+    UNREFERENCED_PARAMETER(DeviceObject);
+
     if (attr->Nonresident == FALSE)
     {
         memcpy(buffer,

@@ -6,18 +6,12 @@
  * PROGRAMMER:      Timo Kreuzer (timo.kreuzer@ewactos.org)
  */
 
-#pragma once
+#ifndef _KDDLL_H_
+#define _KDDLL_H_
 
 #define NOEXTAPI
 #include <ntifs.h>
-#include <arc/arc.h>
-#include <halfuncs.h>
 #include <windbgkd.h>
-#include <wdbgexts.h>
-#include <ioaccess.h> /* port intrinsics */
-
-#define NDEBUG
-#include <debug.h>
 
 //#define KDDEBUG /* uncomment to enable debugging this dll */
 
@@ -70,4 +64,4 @@ KDP_STATUS
 NTAPI
 KdpPollBreakIn(VOID);
 
-/* EOF */
+#endif /* _KDDLL_H_ */

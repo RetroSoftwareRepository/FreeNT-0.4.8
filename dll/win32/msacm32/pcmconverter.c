@@ -26,30 +26,9 @@
  *	  embedded driver handling scheme in msacm32.dll which isn't done yet
  */
 
-#define WIN32_NO_STATUS
-
-#include <config.h>
+#include "wineacm.h"
 
 #include <assert.h>
-#include <stdarg.h>
-//#include <string.h>
-
-#include <windef.h>
-#include <winbase.h>
-//#include "mmsystem.h"
-#define NOBITMAP
-//#include "mmreg.h"
-//#include "msacm.h"
-//#include "wingdi.h"
-#include <winnls.h>
-#include <winuser.h>
-
-#include <msacmdrv.h>
-//#include "wineacm.h"
-
-#include <wine/debug.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(msacm);
 
 /***********************************************************************
  *           PCM_drvOpen
@@ -157,7 +136,7 @@ static inline unsigned char C168(short s)
 /***********************************************************************
  *           R16
  *
- * Read a 16 bit sample (correctly handles endianess)
+ * Read a 16 bit sample (correctly handles endianness)
  */
 static inline short  R16(const unsigned char* src)
 {
@@ -167,7 +146,7 @@ static inline short  R16(const unsigned char* src)
 /***********************************************************************
  *           W16
  *
- * Write a 16 bit sample (correctly handles endianess)
+ * Write a 16 bit sample (correctly handles endianness)
  */
 static inline void  W16(unsigned char* dst, short s)
 {

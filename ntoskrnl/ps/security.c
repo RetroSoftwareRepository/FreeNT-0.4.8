@@ -698,25 +698,7 @@ PsReferenceEffectiveToken(IN PETHREAD Thread,
 
     /* Check if we don't have impersonation info */
     Process = Thread->ThreadsProcess;
-    if (!Thread->ActiveImpersonationInfo)
-    {
-        /* Fast Reference the Token */
-        Token = ObFastReferenceObject(&Process->Token);
-
-        /* Check if we got the Token or if we got locked */
-        if (!Token)
-        {
-            /* Lock the Process */
-            PspLockProcessSecurityShared(Process);
-
-            /* Do a Locked Fast Reference */
-            Token = ObFastReferenceObjectLocked(&Process->Token);
-
-            /* Unlock the Process */
-            PspUnlockProcessSecurityShared(Process);
-        }
-    }
-    else
+    if (Thread->ActiveImpersonationInfo)
     {
         /* Lock the Process */
         PspLockProcessSecurityShared(Process);
@@ -737,6 +719,22 @@ PsReferenceEffectiveToken(IN PETHREAD Thread,
             PspUnlockProcessSecurityShared(Process);
             return Token;
         }
+
+        /* Unlock the Process */
+        PspUnlockProcessSecurityShared(Process);
+    }
+
+    /* Fast Reference the Token */
+    Token = ObFastReferenceObject(&Process->Token);
+
+    /* Check if we got the Token or if we got locked */
+    if (!Token)
+    {
+        /* Lock the Process */
+        PspLockProcessSecurityShared(Process);
+
+        /* Do a Locked Fast Reference */
+        Token = ObFastReferenceObjectLocked(&Process->Token);
 
         /* Unlock the Process */
         PspUnlockProcessSecurityShared(Process);
@@ -820,10 +818,10 @@ PsDereferencePrimaryToken(IN PACCESS_TOKEN PrimaryToken)
 BOOLEAN
 NTAPI
 PsDisableImpersonation(IN PETHREAD Thread,
-                       IN PSE_IMPERSONATION_STATE ImpersonationState)
+                       OUT PSE_IMPERSONATION_STATE ImpersonationState)
 {
     PPS_IMPERSONATION_INFORMATION Impersonation = NULL;
-    LONG NewValue, OldValue;
+    LONG OldFlags;
     PAGED_CODE();
     PSTRACE(PS_SECURITY_DEBUG,
             "Thread: %p State: %p\n", Thread, ImpersonationState);
@@ -835,19 +833,11 @@ PsDisableImpersonation(IN PETHREAD Thread,
         PspLockThreadSecurityExclusive(Thread);
 
         /* Disable impersonation */
-        OldValue = Thread->CrossThreadFlags;
-        do
-        {
-            /* Attempt to change the flag */
-            NewValue =
-                InterlockedCompareExchange((PLONG)&Thread->CrossThreadFlags,
-                                           OldValue &~
-                                           CT_ACTIVE_IMPERSONATION_INFO_BIT,
-                                           OldValue);
-        } while (NewValue != OldValue);
+        OldFlags = PspClearCrossThreadFlag(Thread,
+                                           CT_ACTIVE_IMPERSONATION_INFO_BIT);
 
         /* Make sure nobody disabled it behind our back */
-        if (NewValue & CT_ACTIVE_IMPERSONATION_INFO_BIT)
+        if (OldFlags & CT_ACTIVE_IMPERSONATION_INFO_BIT)
         {
             /* Copy the old state */
             Impersonation = Thread->ImpersonationInfo;

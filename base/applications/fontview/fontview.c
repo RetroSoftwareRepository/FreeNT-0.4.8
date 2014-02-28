@@ -20,7 +20,13 @@
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
+#include "precomp.h"
+
+#include <winnls.h>
+#include <shellapi.h>
+
 #include "fontview.h"
+#include "resource.h"
 
 HINSTANCE g_hInstance;
 EXTLOGFONTW g_ExtLogFontW;
@@ -191,12 +197,12 @@ WinMain (HINSTANCE hThisInstance,
 	wincl.cbClsExtra = 0;
 	wincl.cbWndExtra = 0;
 	wincl.hInstance = hThisInstance;
-	wincl.hIcon = LoadIcon (NULL, IDI_APPLICATION);
+	wincl.hIcon = LoadIcon (GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_TT));
 	wincl.hCursor = LoadCursor (NULL, IDC_ARROW);
 	wincl.hbrBackground = (HBRUSH)COLOR_BACKGROUND;
 	wincl.lpszMenuName = NULL;
 	wincl.lpszClassName = g_szFontViewClassName;
-	wincl.hIconSm = LoadIcon (NULL, IDI_APPLICATION);
+	wincl.hIconSm = LoadIcon (GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_TT));
 
 	/* Register the window class, and if it fails quit the program */
 	if (!RegisterClassExW (&wincl))

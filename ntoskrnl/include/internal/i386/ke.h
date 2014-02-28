@@ -163,6 +163,18 @@ typedef struct _KV8086_STACK_FRAME
     KV86_FRAME V86Frame;
 } KV8086_STACK_FRAME, *PKV8086_STACK_FRAME;
 
+//
+// Large Pages Support
+//
+typedef struct _LARGE_IDENTITY_MAP
+{
+    PHARDWARE_PTE TopLevelDirectory;
+    ULONG Cr3;
+    ULONG_PTR StartAddress;
+    ULONG PagesCount;
+    PVOID PagesList[30];
+} LARGE_IDENTITY_MAP, *PLARGE_IDENTITY_MAP;
+
 /* Diable interrupts and return whether they were enabled before */
 FORCEINLINE
 BOOLEAN
@@ -371,7 +383,34 @@ KeI386VdmInitialize(
 ULONG_PTR
 NTAPI
 Ki386EnableGlobalPage(
-    IN volatile ULONG_PTR Context
+    IN ULONG_PTR Context
+);
+
+ULONG_PTR
+NTAPI
+Ki386EnableTargetLargePage(
+    IN ULONG_PTR Context
+);
+
+BOOLEAN
+NTAPI
+Ki386CreateIdentityMap(
+    IN PLARGE_IDENTITY_MAP IdentityMap,
+    IN PVOID StartPtr,
+    IN ULONG Length
+);
+
+VOID
+NTAPI
+Ki386FreeIdentityMap(
+    IN PLARGE_IDENTITY_MAP IdentityMap
+);
+
+VOID
+NTAPI
+Ki386EnableCurrentLargePage(
+    IN ULONG_PTR StartAddress,
+    IN ULONG Cr3
 );
 
 VOID
@@ -514,8 +553,8 @@ extern CHAR KiSystemCallExit2[];
 //
 // Returns a thread's FPU save area
 //
-PFX_SAVE_AREA
 FORCEINLINE
+PFX_SAVE_AREA
 KiGetThreadNpxArea(IN PKTHREAD Thread)
 {
     return (PFX_SAVE_AREA)((ULONG_PTR)Thread->InitialStack - sizeof(FX_SAVE_AREA));
@@ -575,9 +614,9 @@ Ke386SanitizeDr(IN PVOID DrAddress,
 //
 // Exception with no arguments
 //
-VOID
 FORCEINLINE
 DECLSPEC_NORETURN
+VOID
 KiDispatchException0Args(IN NTSTATUS Code,
                          IN ULONG_PTR Address,
                          IN PKTRAP_FRAME TrapFrame)
@@ -589,9 +628,9 @@ KiDispatchException0Args(IN NTSTATUS Code,
 //
 // Exception with one argument
 //
-VOID
 FORCEINLINE
 DECLSPEC_NORETURN
+VOID
 KiDispatchException1Args(IN NTSTATUS Code,
                          IN ULONG_PTR Address,
                          IN ULONG P1,
@@ -604,9 +643,9 @@ KiDispatchException1Args(IN NTSTATUS Code,
 //
 // Exception with two arguments
 //
-VOID
 FORCEINLINE
 DECLSPEC_NORETURN
+VOID
 KiDispatchException2Args(IN NTSTATUS Code,
                          IN ULONG_PTR Address,
                          IN ULONG P1,
@@ -637,8 +676,8 @@ KiDispatchException2Args(IN NTSTATUS Code,
      *
      */
 #ifdef __GNUC__
-NTSTATUS
 FORCEINLINE
+NTSTATUS
 KiSystemCallTrampoline(IN PVOID Handler,
                        IN PVOID Arguments,
                        IN ULONG StackBytes)
@@ -663,8 +702,8 @@ KiSystemCallTrampoline(IN PVOID Handler,
     return Result;
 }
 #elif defined(_MSC_VER)
-NTSTATUS
 FORCEINLINE
+NTSTATUS
 KiSystemCallTrampoline(IN PVOID Handler,
                        IN PVOID Arguments,
                        IN ULONG StackBytes)
@@ -690,8 +729,8 @@ KiSystemCallTrampoline(IN PVOID Handler,
 //
 // Checks for pending APCs
 //
-VOID
 FORCEINLINE
+VOID
 KiCheckForApcDelivery(IN PKTRAP_FRAME TrapFrame)
 {
     PKTHREAD Thread;
@@ -728,8 +767,8 @@ KiCheckForApcDelivery(IN PKTRAP_FRAME TrapFrame)
 // Converts a base thread to a GUI thread
 //
 #ifdef __GNUC__
-NTSTATUS
 FORCEINLINE
+NTSTATUS
 KiConvertToGuiThread(VOID)
 {
     NTSTATUS Result;
@@ -775,8 +814,8 @@ KiConvertToGuiThread(VOID);
 //
 // Switches from boot loader to initial kernel stack
 //
-VOID
 FORCEINLINE
+VOID
 KiSwitchToBootStack(IN ULONG_PTR InitialStack)
 {
     /* We have to switch to a new stack before continuing kernel initialization */
@@ -810,9 +849,9 @@ KiSwitchToBootStack(IN ULONG_PTR InitialStack)
 //
 // Emits the iret instruction for C code
 //
+FORCEINLINE
 DECLSPEC_NORETURN
 VOID
-FORCEINLINE
 KiIret(VOID)
 {
 #if defined(__GNUC__)
@@ -835,8 +874,8 @@ KiIret(VOID)
 // Normally this is done by the HAL, but on x86 as an optimization, the kernel
 // initiates the end by calling back into the HAL and exiting the trap here.
 //
-VOID
 FORCEINLINE
+VOID
 KiEndInterrupt(IN KIRQL Irql,
                IN PKTRAP_FRAME TrapFrame)
 {
@@ -851,8 +890,8 @@ KiEndInterrupt(IN KIRQL Irql,
 //
 // PERF Code
 //
-VOID
 FORCEINLINE
+VOID
 Ki386PerfEnd(VOID)
 {
     extern ULONGLONG BootCyclesEnd, BootCycles;

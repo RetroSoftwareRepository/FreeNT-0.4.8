@@ -6,12 +6,7 @@
  * COPYRIGHT:   Copyright 2006-2009 Eric Kohl
  */
 
-/* INCLUDES ****************************************************************/
-
 #include "lsasrv.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(lsasrv);
-
 
 /* FUNCTIONS ***************************************************************/
 
@@ -122,6 +117,17 @@ LsaIFree_LSAPR_POLICY_INFORMATION(IN POLICY_INFORMATION_CLASS InformationClass,
 }
 
 
+VOID
+NTAPI
+LsaIFree_LSAPR_PRIVILEGE_SET(IN PLSAPR_PRIVILEGE_SET Ptr)
+{
+    if (Ptr != NULL)
+    {
+        midl_user_free(Ptr);
+    }
+}
+
+
 NTSTATUS WINAPI
 LsapInitLsa(VOID)
 {
@@ -136,6 +142,9 @@ LsapInitLsa(VOID)
 
     /* Initialize the LSA database */
     LsapInitDatabase();
+
+    /* Initialize logon sessions */
+    LsapInitLogonSessions();
 
     /* Initialize registered authentication packages */
     Status = LsapInitAuthPackages();

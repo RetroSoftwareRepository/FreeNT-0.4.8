@@ -21,23 +21,58 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
+#ifndef _DBGHELP_PRIVATE_H_
+#define _DBGHELP_PRIVATE_H_
+
+#include <config.h>
+
+#include <assert.h>
+#include <stdio.h>
+
+#ifdef HAVE_SYS_MMAN_H
+# include <sys/mman.h>
+#endif
+#ifdef HAVE_SYS_STAT_H
+# include <sys/stat.h>
+#endif
+#ifdef HAVE_UNISTD_H
+# include <unistd.h>
+#endif
+
 #define _INC_WINDOWS
 #define COM_NO_WINDOWS_H
 
-#include <stdarg.h>
+#define NONAMELESSUNION
+#define NONAMELESSSTRUCT
+
+#ifndef DBGHELP_STATIC_LIB
+
+#include <wine/port.h>
+
+#include <ntstatus.h>
+#define WIN32_NO_STATUS
 #include <windef.h>
 #include <winbase.h>
 #include <winver.h>
+#include <winternl.h>
 #include <dbghelp.h>
 #include <objbase.h>
-//#include "oaidl.h"
-//#include "winnls.h"
-#include <wine/list.h>
-#include <wine/unicode.h>
-#include <wine/rbtree.h>
-
 #include <cvconst.h>
+#include <psapi.h>
+
+#include <wine/debug.h>
+#include <wine/mscvpdb.h>
+#include <wine/unicode.h>
+
+#else /* DBGHELP_STATIC_LIB */
+
+#include <string.h>
+#include "compat.h"
+
+#endif /* DBGHELP_STATIC_LIB */
+
+#include <wine/list.h>
+#include <wine/rbtree.h>
 
 /* #define USE_STATS */
 
@@ -356,6 +391,13 @@ struct module_format
     } u;
 };
 
+struct symt_idx_to_ptr
+{
+    struct hash_table_elt hash_elt;
+    DWORD idx;
+    const struct symt *sym;
+};
+
 extern const struct wine_rb_functions source_rb_functions DECLSPEC_HIDDEN;
 struct module
 {
@@ -380,6 +422,9 @@ struct module
     unsigned                    sorttab_size;
     struct symt_ht**            addr_sorttab;
     struct hash_table           ht_symbols;
+#ifdef __x86_64__
+    struct hash_table           ht_symaddr;
+#endif
 
     /* types */
     struct hash_table           ht_types;
@@ -675,7 +720,9 @@ extern BOOL         dwarf2_virtual_unwind(struct cpu_stack_walk* csw, DWORD_PTR 
                                           CONTEXT* context, ULONG_PTR* cfa) DECLSPEC_HIDDEN;
 
 /* stack.c */
+#ifndef DBGHELP_STATIC_LIB
 extern BOOL         sw_read_mem(struct cpu_stack_walk* csw, DWORD64 addr, void* ptr, DWORD sz) DECLSPEC_HIDDEN;
+#endif
 extern DWORD64      sw_xlat_addr(struct cpu_stack_walk* csw, ADDRESS64* addr) DECLSPEC_HIDDEN;
 extern void*        sw_table_access(struct cpu_stack_walk* csw, DWORD64 addr) DECLSPEC_HIDDEN;
 extern DWORD64      sw_module_base(struct cpu_stack_walk* csw, DWORD64 addr) DECLSPEC_HIDDEN;
@@ -796,3 +843,7 @@ extern struct symt_pointer*
 extern struct symt_typedef*
                     symt_new_typedef(struct module* module, struct symt* ref, 
                                      const char* name) DECLSPEC_HIDDEN;
+
+#include "image_private.h"
+
+#endif /* _DBGHELP_PRIVATE_H_ */

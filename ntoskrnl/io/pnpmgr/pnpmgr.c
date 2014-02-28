@@ -1365,7 +1365,7 @@ IopTraverseDeviceTree(PDEVICETREE_TRAVERSE_CONTEXT Context)
 
    DPRINT("Context 0x%p\n", Context);
 
-   DPRINT("IopTraverseDeviceTree(DeviceNode 0x%p  FirstDeviceNode 0x%p  Action %x  Context 0x%p)\n",
+   DPRINT("IopTraverseDeviceTree(DeviceNode 0x%p  FirstDeviceNode 0x%p  Action %p  Context 0x%p)\n",
       Context->DeviceNode, Context->FirstDeviceNode, Context->Action, Context->Context);
 
    /* Start from the specified device node */
@@ -2267,8 +2267,6 @@ IopEnumerateDevice(
         IopQueueTargetDeviceEvent(&GUID_DEVICE_ARRIVAL,
                                   &DeviceNode->InstancePath);
     }
-
-    DeviceNode->Flags &= ~DNF_NEED_TO_ENUM;
 
     DPRINT("Sending IRP_MN_QUERY_DEVICE_RELATIONS to device stack\n");
 

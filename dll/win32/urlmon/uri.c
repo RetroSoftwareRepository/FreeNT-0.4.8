@@ -17,13 +17,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-//#include <limits.h>
-
 #include "urlmon_main.h"
-#include <wine/debug.h>
-
-#define NO_SHLWAPI_REG
-#include <shlwapi.h>
 
 #include <strsafe.h>
 
@@ -41,8 +35,6 @@
 #define RAW_URI_CONVERT_TO_DOS_PATH 0x2
 
 #define COMBINE_URI_FORCE_FLAG_USE  0x1
-
-WINE_DEFAULT_DEBUG_CHANNEL(urlmon);
 
 static const IID IID_IUriObj = {0x4b364760,0x9f51,0x11df,{0x98,0x1c,0x08,0x00,0x20,0x0c,0x9a,0x66}};
 
@@ -422,7 +414,7 @@ static inline BOOL is_hierarchical_uri(const WCHAR **ptr, const parse_data *data
     else if(is_hierarchical_scheme(data->scheme_type) && (*ptr)[0] == '\\' && (*ptr)[1] == '\\') {
         *ptr += 2;
         return TRUE;
-    } else if(check_hierarchical(ptr))
+    } else if(data->scheme_type != URL_SCHEME_MAILTO && check_hierarchical(ptr))
         return TRUE;
 
     *ptr = start;
@@ -1917,8 +1909,15 @@ static BOOL parse_path_hierarchical(const WCHAR **ptr, parse_data *data, DWORD f
 static BOOL parse_path_opaque(const WCHAR **ptr, parse_data *data, DWORD flags) {
     const BOOL known_scheme = data->scheme_type != URL_SCHEME_UNKNOWN;
     const BOOL is_file = data->scheme_type == URL_SCHEME_FILE;
+    const BOOL is_mailto = data->scheme_type == URL_SCHEME_MAILTO;
 
-    data->path = *ptr;
+    if (is_mailto && (*ptr)[0] == '/' && (*ptr)[1] == '/')
+    {
+        if ((*ptr)[2]) data->path = *ptr + 2;
+        else data->path = NULL;
+    }
+    else
+        data->path = *ptr;
 
     while(!is_path_delim(**ptr)) {
         if(**ptr == '%' && known_scheme) {
@@ -1938,7 +1937,7 @@ static BOOL parse_path_opaque(const WCHAR **ptr, parse_data *data, DWORD flags) 
         ++(*ptr);
     }
 
-    data->path_len = *ptr - data->path;
+    if (data->path) data->path_len = *ptr - data->path;
     TRACE("(%p %p %x): Parsed opaque URI path %s len=%d\n", ptr, data, flags,
         debugstr_wn(data->path, data->path_len), data->path_len);
     return TRUE;
@@ -6461,7 +6460,7 @@ static HRESULT combine_uri(Uri *base, Uri *relative, DWORD flags, IUri **result,
             return E_OUTOFMEMORY;
         }
 
-        parse_uri(&data, 0);
+        parse_uri(&data, Uri_CREATE_ALLOW_IMPLICIT_FILE_SCHEME);
 
         hr = Uri_Construct(NULL, (void**)&ret);
         if(FAILED(hr)) {
@@ -6800,7 +6799,7 @@ HRESULT WINAPI CoInternetCombineUrlEx(IUri *pBaseUri, LPCWSTR pwzRelativeUrl, DW
         }
     }
 
-    hr = CreateUri(pwzRelativeUrl, Uri_CREATE_ALLOW_RELATIVE, 0, &relative);
+    hr = CreateUri(pwzRelativeUrl, Uri_CREATE_ALLOW_RELATIVE|Uri_CREATE_ALLOW_IMPLICIT_FILE_SCHEME, 0, &relative);
     if(FAILED(hr)) {
         *ppCombinedUri = NULL;
         return hr;

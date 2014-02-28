@@ -21,8 +21,6 @@
 
 #include "precomp.h"
 
-WINE_DEFAULT_DEBUG_CHANNEL(browseui);
-
 CBandSiteMenu::CBandSiteMenu()
 {
 }
@@ -40,7 +38,7 @@ HRESULT STDMETHODCALLTYPE CBandSiteMenu::SetOwner(IUnknown *pOwner)
 HRESULT STDMETHODCALLTYPE CBandSiteMenu::QueryContextMenu(
     HMENU hmenu, UINT indexMenu, UINT idCmdFirst, UINT idCmdLast, UINT uFlags)
 {
-    FIXME("(%p, %p, %p, %p, %p, %p)\n", this, hmenu, indexMenu, idCmdFirst, idCmdLast, uFlags);
+    FIXME("(%p, %p, %u, %u, %u, 0x%x)\n", this, hmenu, indexMenu, idCmdFirst, idCmdLast, uFlags);
     return E_NOTIMPL;
 }
 
@@ -53,12 +51,18 @@ HRESULT STDMETHODCALLTYPE CBandSiteMenu::InvokeCommand(LPCMINVOKECOMMANDINFO lpi
 HRESULT STDMETHODCALLTYPE CBandSiteMenu::GetCommandString(UINT_PTR idCmd, UINT uType,
     UINT *pwReserved, LPSTR pszName, UINT cchMax)
 {
-    FIXME("(%p, %p, %p, %p, %p, %p)\n", this, idCmd, uType, pwReserved, pszName, cchMax);
+    FIXME("(%p, %p, %u, %p, %p, %u)\n", this, idCmd, uType, pwReserved, pszName, cchMax);
     return E_NOTIMPL;
 }
 
 HRESULT STDMETHODCALLTYPE CBandSiteMenu::HandleMenuMsg(UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-    FIXME("(%p, %p)\n", this, uMsg, wParam, lParam);
+    FIXME("(%p, %u, %p, %p)\n", this, uMsg, wParam, lParam);
+    return E_NOTIMPL;
+}
+
+HRESULT STDMETHODCALLTYPE CBandSiteMenu::HandleMenuMsg2(UINT uMsg, WPARAM wParam, LPARAM lParam, LRESULT *plResult)
+{
+    FIXME("(%p, %u, %p, %p, %p)\n", this, uMsg, wParam, lParam, plResult);
     return E_NOTIMPL;
 }
