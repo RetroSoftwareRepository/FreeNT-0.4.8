@@ -276,6 +276,10 @@ list(APPEND SOURCE
 
 list(APPEND ASM_SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/zw.S)
 
+if (DBG)
+    list(APPEND SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/servicenames.c)
+endif()
+
 if(ARCH STREQUAL "i386")
     list(APPEND ASM_SOURCE
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/i386/fastinterlck_asm.S
