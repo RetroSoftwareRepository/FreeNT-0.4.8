@@ -1498,7 +1498,7 @@ CmpQueryFlagsInformation(
     _In_ PCM_KEY_CONTROL_BLOCK Kcb,
     _Out_ PKEY_USER_FLAGS_INFORMATION KeyFlagsInfo,
     _In_ ULONG Length,
-    _In_ PULONG ResultLength)
+    _Out_ PULONG ResultLength)
 {
     /* Validate the buffer size */
     *ResultLength = sizeof(*KeyFlagsInfo);
@@ -1511,6 +1511,59 @@ CmpQueryFlagsInformation(
     KeyFlagsInfo->UserFlags = Kcb->KcbUserFlags;
 
     return STATUS_SUCCESS;
+}
+
+static
+NTSTATUS
+CmpQueryKeyNameInformation(
+    _In_ PCM_KEY_CONTROL_BLOCK Kcb,
+    _Out_writes_bytes_to_(BufferLength, *ResultLength) PKEY_NAME_INFORMATION KeyNameInformation,
+    _In_ ULONG BufferLength,
+    _Out_ PULONG ResultLength)
+{
+    PUNICODE_STRING KeyName;
+    ULONG ActualLength;
+
+    /* Check if the KCB doesn't have a name block */
+    if (Kcb->NameBlock == NULL)
+    {
+        /* Nothing to copy, just return the status */
+        return Kcb->Delete ? STATUS_KEY_DELETED : STATUS_SUCCESS;
+    }
+
+    /* Get the name */
+    KeyName = CmpConstructName(Kcb);
+    if (KeyName == NULL)
+    {
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    /* Set the returned length */
+    *ResultLength  = FIELD_OFFSET(KEY_NAME_INFORMATION, Name) + KeyName->Length;
+
+    /* Check if the provided buffer is too small to fit even anything */
+    if (BufferLength < FIELD_OFFSET(KEY_NAME_INFORMATION, Name))
+    {
+        ExFreePoolWithTag(KeyName, TAG_CM);
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+
+    /* Set the full key name length */
+    KeyNameInformation->NameLength = KeyName->Length;
+
+    /* Calculate the size that we can copy */
+    ActualLength = min(*ResultLength, BufferLength);
+
+    /* Copy the name */
+    RtlCopyMemory(KeyNameInformation->Name,
+                  KeyName->Buffer,
+                  ActualLength - FIELD_OFFSET(KEY_NAME_INFORMATION, Name));
+
+    /* Free the key name */
+    ExFreePoolWithTag(KeyName, TAG_CM);
+
+    /* Return the status */
+    return Kcb->Delete ? STATUS_KEY_DELETED : STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -1587,12 +1640,12 @@ CmQueryKey(IN PCM_KEY_CONTROL_BLOCK Kcb,
                                               ResultLength);
             break;
 
-        /* Unsupported class for now */
         case KeyNameInformation:
-
-            /* Print message and fail */
-            DPRINT1("Unsupported class: %d!\n", KeyInformationClass);
-            Status = STATUS_NOT_IMPLEMENTED;
+            /* Call the internal API */
+            Status = CmpQueryKeyNameInformation(Kcb,
+                                                KeyInformation,
+                                                Length,
+                                                ResultLength);
             break;
 
         /* Illegal classes */
