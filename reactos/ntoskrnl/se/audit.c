@@ -351,7 +351,7 @@ SepAccessCheckAndAuditAlarmWorker(
     ResultListLength = UseResultList ? ObjectTypeListLength : 1;
 
     /// FIXME: we should do some real work here...
-    UNIMPLEMENTED;
+    //UNIMPLEMENTED;
 
     /// HACK: we just pretend all access is granted!
     for (i = 0; i < ResultListLength; i++)
@@ -1394,7 +1394,7 @@ NtPrivilegeObjectAuditAlarm(IN PUNICODE_STRING SubsystemName,
                             IN PPRIVILEGE_SET Privileges,
                             IN BOOLEAN AccessGranted)
 {
-    UNIMPLEMENTED;
+    //UNIMPLEMENTED;
     return STATUS_NOT_IMPLEMENTED;
 }
 
