@@ -337,7 +337,7 @@ UserCreateObject( PUSER_HANDLE_TABLE ht,
    switch (type)
    {
       case TYPE_WINDOW:
-//      case TYPE_MENU:
+      case TYPE_MENU:
       case TYPE_HOOK:
       case TYPE_CALLPROC:
       case TYPE_INPUTCONTEXT:
@@ -436,7 +436,7 @@ UserDereferenceObject(PVOID object)
      switch (type)
      {
         case TYPE_WINDOW:
-//        case TYPE_MENU:
+        case TYPE_MENU:
         case TYPE_HOOK:
         case TYPE_CALLPROC:
         case TYPE_INPUTCONTEXT:
@@ -554,9 +554,50 @@ HANDLE FASTCALL ValidateHandleNoErr(HANDLE handle, HANDLE_TYPE type)
    if (handle) return (PWND)UserGetObjectNoErr(gHandleTable, handle, type);
    return NULL;
 }
+
+PVOID FASTCALL ValidateHandle(HANDLE handle, HANDLE_TYPE type)
+{
+  PVOID pObj;
+  DWORD dwError = 0;
+  if (handle) 
+  {
+      pObj = UserGetObjectNoErr(gHandleTable, handle, type);
+      if (!pObj)
+      {
+          switch (type)
+          {  
+              case TYPE_WINDOW:
+                  dwError = ERROR_INVALID_WINDOW_HANDLE;
+                  break;
+              case TYPE_MENU:
+                  dwError = ERROR_INVALID_MENU_HANDLE;
+                  break;
+              case TYPE_CURSOR:
+                  dwError = ERROR_INVALID_CURSOR_HANDLE;
+                  break;
+              case TYPE_SETWINDOWPOS:
+                  dwError = ERROR_INVALID_DWP_HANDLE;
+                  break;
+              case TYPE_HOOK:
+                  dwError = ERROR_INVALID_HOOK_HANDLE;
+                  break;
+              case TYPE_ACCELTABLE:
+                  dwError = ERROR_INVALID_ACCEL_HANDLE;
+                  break;
+              default:
+                  dwError = ERROR_INVALID_HANDLE;
+                  break;
+          }
+          EngSetLastError(dwError);
+          return NULL;
+      }
+      return pObj;
+  }
+  return NULL;
+}
       
 /*
- * NtUserValidateHandleSecure
+ * NtUserValidateHandleSecure W2k3 has one argument.
  *
  * Status
  *    @implemented
@@ -568,62 +609,46 @@ NtUserValidateHandleSecure(
    HANDLE handle,
    BOOL Restricted)
 {
-   if(!Restricted)
+   UINT uType;
+   PPROCESSINFO ppi;
+   PUSER_HANDLE_ENTRY entry;
+
+   DECLARE_RETURN(BOOL);
+   UserEnterExclusive();
+
+   if (!(entry = handle_to_entry(gHandleTable, handle )))
    {
-     UINT uType;
-     {
-       PUSER_HANDLE_ENTRY entry;
-       if (!(entry = handle_to_entry(gHandleTable, handle )))
-       {
-          EngSetLastError(ERROR_INVALID_HANDLE);
-          return FALSE;
-       }
-       uType = entry->type;
-     }
-     switch (uType)
-     {
+      EngSetLastError(ERROR_INVALID_HANDLE);
+      RETURN( FALSE);
+   }
+   uType = entry->type;
+   switch (uType)
+   {
        case TYPE_WINDOW:
-       {
-         if (UserGetWindowObject((HWND) handle)) return TRUE;
-         return FALSE;
-       }
+       case TYPE_INPUTCONTEXT:
+          ppi = ((PTHREADINFO)entry->pi)->ppi;
+          break;
        case TYPE_MENU:
-       {
-         if (UserGetMenuObject((HMENU) handle)) return TRUE;
-         return FALSE;
-       }
        case TYPE_ACCELTABLE:
-       {
-         if (UserGetAccelObject((HACCEL) handle)) return TRUE;
-         return FALSE;
-       }
        case TYPE_CURSOR:
-       {
-         if (UserGetCurIconObject((HCURSOR) handle)) return TRUE;
-         return FALSE;
-       }
        case TYPE_HOOK:
-       {
-         if (IntGetHookObject((HHOOK) handle)) return TRUE;
-         return FALSE;
-       }
-       case TYPE_MONITOR:
-       {
-         if (UserGetMonitorObject((HMONITOR) handle)) return TRUE;
-         return FALSE;
-       }
        case TYPE_CALLPROC:
-       {
-         WNDPROC_INFO Proc;
-         return UserGetCallProcInfo( handle, &Proc );
-       }
+       case TYPE_SETWINDOWPOS:
+          ppi = entry->pi;
+          break;
        default:
-         EngSetLastError(ERROR_INVALID_HANDLE);
-     }
+          ppi = NULL;
+          break;
    }
-   else
-   { /* Is handle entry restricted? */
-     STUB
-   }
-   return FALSE;
+
+   if (!ppi) RETURN( FALSE);
+
+   // Same process job returns TRUE.
+   if (gptiCurrent->ppi->pW32Job == ppi->pW32Job) RETURN( TRUE);
+
+   RETURN( FALSE);
+
+CLEANUP:
+   UserLeave();
+   END_CLEANUP;
 }

@@ -726,7 +726,7 @@ TuiChangeTitle(IN OUT PFRONTEND This)
 
 static BOOL NTAPI
 TuiChangeIcon(IN OUT PFRONTEND This,
-              HICON hWindowIcon)
+              HICON IconHandle)
 {
     return TRUE;
 }
@@ -744,6 +744,13 @@ TuiGetLargestConsoleWindowSize(IN OUT PFRONTEND This,
 {
     if (!pSize) return;
     *pSize = PhysicalConsoleSize;
+}
+
+static BOOL NTAPI
+TuiGetSelectionInfo(IN OUT PFRONTEND This,
+                    PCONSOLE_SELECTION_INFO pSelectionInfo)
+{
+    return TRUE;
 }
 
 static BOOL NTAPI
@@ -778,15 +785,15 @@ TuiShowMouseCursor(IN OUT PFRONTEND This,
 
 static BOOL NTAPI
 TuiSetMouseCursor(IN OUT PFRONTEND This,
-                  HCURSOR hCursor)
+                  HCURSOR CursorHandle)
 {
     return TRUE;
 }
 
 static HMENU NTAPI
 TuiMenuControl(IN OUT PFRONTEND This,
-               UINT cmdIdLow,
-               UINT cmdIdHigh)
+               UINT CmdIdLow,
+               UINT CmdIdHigh)
 {
     return NULL;
 }
@@ -813,6 +820,7 @@ static FRONTEND_VTBL TuiVtbl =
     TuiChangeIcon,
     TuiGetConsoleWindowHandle,
     TuiGetLargestConsoleWindowSize,
+    TuiGetSelectionInfo,
     TuiSetPalette,
     TuiGetDisplayMode,
     TuiSetDisplayMode,

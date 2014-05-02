@@ -459,7 +459,7 @@ UserFreeWindowInfo(PTHREADINFO ti, PWND Wnd)
    }
 
 //    DesktopHeapFree(Wnd->head.rpdesk, Wnd);
-//    WindowObject->Wnd = NULL;
+//    WindowObject->hWnd = NULL;
 }
 
 /***********************************************************************
@@ -479,7 +479,7 @@ static LRESULT co_UserFreeWindow(PWND Window,
    HWND *Children;
    HWND *ChildHandle;
    PWND Child;
-   PMENU_OBJECT Menu;
+   PMENU Menu;
    BOOLEAN BelongsToThreadData;
 
    ASSERT(Window);
@@ -792,7 +792,7 @@ IntSetMenu(
    HMENU Menu,
    BOOL *Changed)
 {
-   PMENU_OBJECT OldMenu, NewMenu = NULL;
+   PMENU OldMenu, NewMenu = NULL;
 
    if ((Wnd->style & (WS_CHILD | WS_POPUP)) == WS_CHILD)
    {
@@ -810,7 +810,7 @@ IntSetMenu(
    if (Wnd->IDMenu)
    {
       OldMenu = IntGetMenuObject((HMENU) Wnd->IDMenu);
-      ASSERT(NULL == OldMenu || OldMenu->MenuInfo.Wnd == Wnd->head.h);
+      ASSERT(NULL == OldMenu || OldMenu->hWnd == Wnd->head.h);
    }
    else
    {
@@ -829,7 +829,7 @@ IntSetMenu(
          EngSetLastError(ERROR_INVALID_MENU_HANDLE);
          return FALSE;
       }
-      if (NULL != NewMenu->MenuInfo.Wnd)
+      if (NULL != NewMenu->hWnd)
       {
          /* Can't use the same menu for two windows */
          if (NULL != OldMenu)
@@ -845,12 +845,12 @@ IntSetMenu(
    Wnd->IDMenu = (UINT) Menu;
    if (NULL != NewMenu)
    {
-      NewMenu->MenuInfo.Wnd = Wnd->head.h;
+      NewMenu->hWnd = Wnd->head.h;
       IntReleaseMenuObject(NewMenu);
    }
    if (NULL != OldMenu)
    {
-      OldMenu->MenuInfo.Wnd = NULL;
+      OldMenu->hWnd = NULL;
       IntReleaseMenuObject(OldMenu);
    }
 
@@ -895,13 +895,13 @@ co_DestroyThreadWindows(struct _ETHREAD *Thread)
    }
 }
 
-PMENU_OBJECT FASTCALL
+PMENU FASTCALL
 IntGetSystemMenu(PWND Window, BOOL bRevert, BOOL RetMenu)
 {
-   PMENU_OBJECT Menu, NewMenu = NULL, SysMenu = NULL, ret = NULL;
+   PMENU Menu, NewMenu = NULL, SysMenu = NULL, ret = NULL;
    PTHREADINFO W32Thread;
    HMENU hNewMenu, hSysMenu;
-   ROSMENUITEMINFO ItemInfo;
+   ROSMENUITEMINFO ItemInfo = {0};
 
    if(bRevert)
    {
@@ -929,10 +929,10 @@ IntGetSystemMenu(PWND Window, BOOL bRevert, BOOL RetMenu)
 
          NewMenu = IntCloneMenu(Menu);
          if(NewMenu)
-         {
-            Window->SystemMenu = NewMenu->MenuInfo.Self;
-            NewMenu->MenuInfo.Flags |= MF_SYSMENU;
-            NewMenu->MenuInfo.Wnd = Window->head.h;
+         {  // Use spmenuSys
+            Window->SystemMenu = NewMenu->head.h;
+            NewMenu->fFlags |= MNF_SYSDESKMN;
+            NewMenu->hWnd = Window->head.h;
             ret = NewMenu;
             //IntReleaseMenuObject(NewMenu);
          }
@@ -950,8 +950,8 @@ IntGetSystemMenu(PWND Window, BOOL bRevert, BOOL RetMenu)
             UserDestroyMenu(hSysMenu);
             return NULL;
          }
-         SysMenu->MenuInfo.Flags |= MF_SYSMENU;
-         SysMenu->MenuInfo.Wnd = Window->head.h;
+         SysMenu->fFlags |= MNF_SYSDESKMN;
+         SysMenu->hWnd = Window->head.h;
          hNewMenu = co_IntLoadSysMenuTemplate();
          if(!hNewMenu)
          {
@@ -970,20 +970,24 @@ IntGetSystemMenu(PWND Window, BOOL bRevert, BOOL RetMenu)
          NewMenu = IntCloneMenu(Menu);
          if(NewMenu)
          {
-            NewMenu->MenuInfo.Flags |= MF_SYSMENU | MF_POPUP;
+            NewMenu->fFlags |= MNF_SYSDESKMN | MNF_POPUP;
+            // Do not set MNS_CHECKORBMP it breaks menus, also original code destroyed the style anyway.
             IntReleaseMenuObject(NewMenu);
             UserSetMenuDefaultItem(NewMenu, SC_CLOSE, FALSE);
 
+            if (Window->pcls->style & CS_NOCLOSE)
+               IntRemoveMenuItem(NewMenu, SC_CLOSE, MF_BYCOMMAND, TRUE);
+
             ItemInfo.cbSize = sizeof(MENUITEMINFOW);
             ItemInfo.fMask = MIIM_FTYPE | MIIM_STRING | MIIM_STATE | MIIM_SUBMENU;
-            ItemInfo.fType = MF_POPUP;
+            ItemInfo.fType = 0;
             ItemInfo.fState = MFS_ENABLED;
             ItemInfo.dwTypeData = NULL;
             ItemInfo.cch = 0;
-            ItemInfo.hSubMenu = NewMenu->MenuInfo.Self;
+            ItemInfo.hSubMenu = NewMenu->head.h;
             IntInsertMenuItem(SysMenu, (UINT) -1, TRUE, &ItemInfo);
 
-            Window->SystemMenu = SysMenu->MenuInfo.Self;
+            Window->SystemMenu = SysMenu->head.h;
 
             ret = SysMenu;
          }
@@ -1352,7 +1356,7 @@ co_IntSetParent(PWND Wnd, PWND WndNewParent)
    co_WinPosSetWindowPos( Wnd,
                          (0 == (Wnd->ExStyle & WS_EX_TOPMOST) ? HWND_TOP : HWND_TOPMOST),
                           pt.x, pt.y, 0, 0, swFlags);
-   //ERR("IntSetParent SetWindowPos 2\n");
+   //ERR("IntSetParent SetWindowPos 2 X %d Y %d\n",pt.x, pt.y);
    if (WasVisible) co_WinPosShowWindow(Wnd, SW_SHOWNORMAL);
 
    return WndOldParent;
@@ -1418,15 +1422,15 @@ co_UserSetParent(HWND hWndChild, HWND hWndNewParent)
 }
 
 BOOL FASTCALL
-IntSetSystemMenu(PWND Window, PMENU_OBJECT Menu)
+IntSetSystemMenu(PWND Window, PMENU Menu)
 {
-   PMENU_OBJECT OldMenu;
+   PMENU OldMenu;
    if(Window->SystemMenu)
    {
       OldMenu = IntGetMenuObject(Window->SystemMenu);
       if(OldMenu)
       {
-         OldMenu->MenuInfo.Flags &= ~ MF_SYSMENU;
+         OldMenu->fFlags &= ~ MNF_SYSDESKMN;
          IntReleaseMenuObject(OldMenu);
       }
    }
@@ -1434,10 +1438,10 @@ IntSetSystemMenu(PWND Window, PMENU_OBJECT Menu)
    if(Menu)
    {
       /* FIXME: Check window style, propably return FALSE? */
-      Window->SystemMenu = Menu->MenuInfo.Self;
-      Menu->MenuInfo.Flags |= MF_SYSMENU;
+      Window->SystemMenu = Menu->head.h;
+      Menu->fFlags |= MNF_SYSDESKMN;
    }
-   else
+   else // Use spmenuSys too!
       Window->SystemMenu = (HMENU)0;
 
    return TRUE;
@@ -1741,25 +1745,26 @@ IntFixWindowCoordinates(CREATESTRUCTW* Cs, PWND ParentWindow, DWORD* dwShowMode)
 
 /* Allocates and initializes a window */
 PWND FASTCALL IntCreateWindow(CREATESTRUCTW* Cs,
-                                        PLARGE_STRING WindowName,
-                                        PCLS Class,
-                                        PWND ParentWindow,
-                                        PWND OwnerWindow,
-                                        PVOID acbiBuffer,
-                                        PDESKTOP pdeskCreated)
+                              PLARGE_STRING WindowName,
+                              PCLS Class,
+                              PWND ParentWindow,
+                              PWND OwnerWindow,
+                              PVOID acbiBuffer,
+                              PDESKTOP pdeskCreated)
 {
    PWND pWnd = NULL;
    HWND hWnd;
    PTHREADINFO pti = NULL;
-   PMENU_OBJECT SystemMenu;
+   PMENU SystemMenu;
    BOOL MenuChanged;
    BOOL bUnicodeWindow;
 
    pti = pdeskCreated ? gptiDesktopThread : GetW32ThreadInfo();
 
    if (!(Cs->dwExStyle & WS_EX_LAYOUTRTL))
-   {
-      if (ParentWindow)
+   {      // Need both here for wine win.c test_CreateWindow.
+      //if (Cs->hwndParent && ParentWindow)
+      if (ParentWindow) // It breaks more tests..... WIP.
       {
          if ( (Cs->style & (WS_CHILD|WS_POPUP)) == WS_CHILD &&
               ParentWindow->ExStyle & WS_EX_LAYOUTRTL &&
@@ -1983,8 +1988,8 @@ PWND FASTCALL IntCreateWindow(CREATESTRUCTW* Cs,
    {
       SystemMenu = IntGetSystemMenu(pWnd, TRUE, TRUE);
       if(SystemMenu)
-      {
-         pWnd->SystemMenu = SystemMenu->MenuInfo.Self;
+      {  //    spmenuSys
+         pWnd->SystemMenu = SystemMenu->head.h;
          IntReleaseMenuObject(SystemMenu);
       }
    }
@@ -2570,6 +2575,16 @@ NtUserCreateWindowEx(
     lstrClassName.Buffer = NULL;
 
     ASSERT(plstrWindowName);
+
+    if ( (dwStyle & (WS_POPUP|WS_CHILD)) != WS_CHILD) 
+    {
+        /* check hMenu is valid handle */
+        if (hMenu && !ValidateHandle(hMenu, TYPE_MENU))
+        {
+            /* error is set in ValidateHandle */
+            return NULL;
+        }
+    } 
 
     /* Copy the window name to kernel mode */
     Status = ProbeAndCaptureLargeString(&lstrWindowName, plstrWindowName);
@@ -3666,7 +3681,7 @@ HMENU APIENTRY
 NtUserGetSystemMenu(HWND hWnd, BOOL bRevert)
 {
    PWND Window;
-   PMENU_OBJECT Menu;
+   PMENU Menu;
    DECLARE_RETURN(HMENU);
 
    TRACE("Enter NtUserGetSystemMenu\n");
@@ -3682,7 +3697,7 @@ NtUserGetSystemMenu(HWND hWnd, BOOL bRevert)
       RETURN(NULL);
    }
 
-   RETURN(Menu->MenuInfo.Self);
+   RETURN(Menu->head.h);
 
 CLEANUP:
    TRACE("Leave NtUserGetSystemMenu, ret=%p\n", _ret_);
@@ -3702,7 +3717,7 @@ NtUserSetSystemMenu(HWND hWnd, HMENU hMenu)
 {
    BOOL Result = FALSE;
    PWND Window;
-   PMENU_OBJECT Menu;
+   PMENU Menu;
    DECLARE_RETURN(BOOL);
 
    TRACE("Enter NtUserSetSystemMenu\n");

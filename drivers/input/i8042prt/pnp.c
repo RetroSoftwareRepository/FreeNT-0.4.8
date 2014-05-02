@@ -112,7 +112,7 @@ i8042BasicDetect(
         }
         else if (Value == KBD_RESEND)
         {
-            TRACE_(I8042PRT, "Resending...\n", Value);
+            TRACE_(I8042PRT, "Resending...\n");
             KeStallExecutionProcessor(50);
         }
         else
@@ -390,7 +390,7 @@ static NTSTATUS
 StartProcedure(
     IN PPORT_DEVICE_EXTENSION DeviceExtension)
 {
-    NTSTATUS Status;
+    NTSTATUS Status = STATUS_UNSUCCESSFUL;
     UCHAR FlagsToDisable = 0;
     UCHAR FlagsToEnable = 0;
     KIRQL Irql;
@@ -437,6 +437,7 @@ StartProcedure(
         Status = EnableInterrupts(DeviceExtension, FlagsToDisable, FlagsToEnable);
         if (!NT_SUCCESS(Status))
         {
+            WARN_(I8042PRT, "EnableInterrupts failed: %lx\n", Status);
             DeviceExtension->Flags &= ~(KEYBOARD_PRESENT | MOUSE_PRESENT);
             return Status;
         }
@@ -454,6 +455,10 @@ StartProcedure(
         {
             DeviceExtension->Flags |= KEYBOARD_INITIALIZED;
         }
+        else
+        {
+            WARN_(I8042PRT, "i8042ConnectKeyboardInterrupt failed: %lx\n", Status);
+        }
     }
 
     if (DeviceExtension->Flags & MOUSE_PRESENT &&
@@ -467,7 +472,11 @@ StartProcedure(
         {
             DeviceExtension->Flags |= MOUSE_INITIALIZED;
         }
-
+        else
+        {
+            WARN_(I8042PRT, "i8042ConnectMouseInterrupt failed: %lx\n", Status);
+        }
+        
         /* Start the mouse */
         Irql = KeAcquireInterruptSpinLock(DeviceExtension->HighestDIRQLInterrupt);
         i8042IsrWritePort(DeviceExtension, MOU_CMD_RESET, CTRL_WRITE_MOUSE);
@@ -486,7 +495,7 @@ i8042PnpStartDevice(
     PFDO_DEVICE_EXTENSION DeviceExtension;
     PPORT_DEVICE_EXTENSION PortDeviceExtension;
     PCM_PARTIAL_RESOURCE_DESCRIPTOR ResourceDescriptor, ResourceDescriptorTranslated;
-    INTERRUPT_DATA InterruptData;
+    INTERRUPT_DATA InterruptData = { NULL };
     BOOLEAN FoundDataPort = FALSE;
     BOOLEAN FoundControlPort = FALSE;
     BOOLEAN FoundIrq = FALSE;
@@ -533,7 +542,7 @@ i8042PnpStartDevice(
             {
                 if (ResourceDescriptor->u.Port.Length == 1)
                 {
-                    /* We assume that the first ressource will
+                    /* We assume that the first resource will
                      * be the control port and the second one
                      * will be the data port...
                      */
@@ -551,8 +560,8 @@ i8042PnpStartDevice(
                     }
                     else
                     {
-                        WARN_(I8042PRT, "Too much I/O ranges provided: 0x%lx\n", ResourceDescriptor->u.Port.Length);
-                        return STATUS_INVALID_PARAMETER;
+                        /* FIXME: implement PS/2 Active Multiplexing */
+                        ERR_(I8042PRT, "Unhandled I/O ranges provided: 0x%lx\n", ResourceDescriptor->u.Port.Length);
                     }
                 }
                 else
@@ -676,7 +685,9 @@ i8042Pnp(
                     PDEVICE_RELATIONS DeviceRelations;
 
                     TRACE_(I8042PRT, "IRP_MJ_PNP / IRP_MN_QUERY_DEVICE_RELATIONS / BusRelations\n");
-                    DeviceRelations = ExAllocatePool(PagedPool, sizeof(DEVICE_RELATIONS));
+                    DeviceRelations = ExAllocatePoolWithTag(PagedPool,
+                                                            sizeof(DEVICE_RELATIONS),
+                                                            I8042PRT_TAG);
                     if (DeviceRelations)
                     {
                         DeviceRelations->Count = 0;

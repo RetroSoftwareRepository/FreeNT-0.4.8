@@ -1098,7 +1098,7 @@ INT_PTR CALLBACK AboutDlgProc( HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
                 WCHAR szAuthorsText[20];
 
                 // Preload the ROS bitmap
-                hLogoBmp = (HBITMAP)LoadImage(shell32_hInstance, MAKEINTRESOURCE(IDB_SHELL_ABOUT_LOGO_24BPP), IMAGE_BITMAP, 0, 0, LR_DEFAULTCOLOR);
+                hLogoBmp = (HBITMAP)LoadImage(shell32_hInstance, MAKEINTRESOURCE(IDB_REACTOS), IMAGE_BITMAP, 0, 0, LR_DEFAULTCOLOR);
 
                 if(hLogoBmp)
                 {
@@ -1371,6 +1371,7 @@ BEGIN_OBJECT_MAP(ObjectMap)
     OBJECT_ENTRY(CLSID_MenuBandSite, CMenuBandSite)
     OBJECT_ENTRY(CLSID_MenuBand, CMenuBand)
     OBJECT_ENTRY(CLSID_MenuDeskBar, CMenuDeskBar)
+    OBJECT_ENTRY(CLSID_ExeDropHandler, CExeDropHandler)
 END_OBJECT_MAP()
 
 CShell32Module                                gModule;

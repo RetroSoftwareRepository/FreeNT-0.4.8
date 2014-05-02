@@ -10,6 +10,7 @@
 #define IDI_DOWN      2501
 
 #define IDB_ROSBMP 55
+#define IDB_ROSMASK 56
 
 #define IDS_CPLSYSTEMNAME        60
 #define IDS_CPLSYSTEMDESCRIPTION 61
@@ -37,6 +38,9 @@
 #define IDS_WARNMAXIMUMSIZE  79
 #define IDS_WARNINITIALRANGE 80
 #define IDS_WARNMAXIMUMRANGE 81
+#define IDS_PAGEFILE_NONE    82
+#define IDS_PAGEFILE_SYSTEM  83
+#define IDS_INFOREBOOT       84
 
 /* Propsheet - general */
 #define IDD_PROPPAGEGENERAL  100

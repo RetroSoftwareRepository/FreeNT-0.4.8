@@ -15,7 +15,7 @@ if /I "%1" == "arm_hosttools" (
     call %2 x86
 
     :: Configure host tools for x86
-    cmake -G %3 -DARCH=i386 %~dp0
+    cmake -G %3 -DARCH:STRING=i386 %~dp0
     exit
 )
 
@@ -37,6 +37,9 @@ if defined ROS_ARCH (
         set CMAKE_GENERATOR="Eclipse CDT4 - MinGW Makefiles"
     ) else if /I "%1" == "Makefiles" (
         set CMAKE_GENERATOR="MinGW Makefiles"
+    ) else if /I "%1" == "clang" (
+        set BUILD_ENVIRONMENT=Clang
+        set CMAKE_GENERATOR="Ninja"
     ) else (
         set CMAKE_GENERATOR="Ninja"
     )
@@ -46,6 +49,7 @@ if defined ROS_ARCH (
     cl 2>&1 | find "x86" > NUL && set ARCH=i386
     cl 2>&1 | find "x64" > NUL && set ARCH=amd64
     cl 2>&1 | find "ARM" > NUL && set ARCH=arm
+    cl 2>&1 | find "15.00." > NUL && set BUILD_ENVIRONMENT=VS9
     cl 2>&1 | find "16.00." > NUL && set BUILD_ENVIRONMENT=VS10
     cl 2>&1 | find "17.00." > NUL && set BUILD_ENVIRONMENT=VS11
     cl 2>&1 | find "18.00." > NUL && set BUILD_ENVIRONMENT=VS12
@@ -56,7 +60,13 @@ if defined ROS_ARCH (
 
     echo Detected Visual Studio Environment !BUILD_ENVIRONMENT!-!ARCH!
     if /I "%1" == "VSSolution" (
-        if "!BUILD_ENVIRONMENT!" == "VS10" (
+        if "!BUILD_ENVIRONMENT!" == "VS9" (
+            if "!ARCH!" == "amd64" (
+                set CMAKE_GENERATOR="Visual Studio 9 2008 Win64"
+            ) else (
+                set CMAKE_GENERATOR="Visual Studio 9 2008"
+            )
+        ) else if "!BUILD_ENVIRONMENT!" == "VS10" (
             if "!ARCH!" == "amd64" (
                 set CMAKE_GENERATOR="Visual Studio 10 Win64"
             ) else (
@@ -138,7 +148,7 @@ if "%ARCH%" == "arm" (
     :: Launch new script instance for x86 host tools configuration
     start "Preparing host tools for ARM cross build..." /I /B /WAIT %~dp0configure.cmd arm_hosttools "%VSINSTALLDIR%VC\vcvarsall.bat" %CMAKE_GENERATOR%
 ) else (
-    cmake -G %CMAKE_GENERATOR% -DARCH=%ARCH% "%REACTOS_SOURCE_DIR%"
+    cmake -G %CMAKE_GENERATOR% -DARCH:STRING=%ARCH% "%REACTOS_SOURCE_DIR%"
 )
 
 cd..
@@ -150,9 +160,11 @@ if EXIST CMakeCache.txt (
 )
 
 if "%BUILD_ENVIRONMENT%" == "MinGW" (
-    cmake -G %CMAKE_GENERATOR% -DENABLE_CCACHE=0 -DCMAKE_TOOLCHAIN_FILE=toolchain-gcc.cmake -DARCH=%ARCH% -DREACTOS_BUILD_TOOLS_DIR:DIR="%REACTOS_BUILD_TOOLS_DIR%" "%REACTOS_SOURCE_DIR%"
+    cmake -G %CMAKE_GENERATOR% -DENABLE_CCACHE:BOOL=0 -DCMAKE_TOOLCHAIN_FILE:FILEPATH=toolchain-gcc.cmake -DARCH:STRING=%ARCH% -DREACTOS_BUILD_TOOLS_DIR:PATH="%REACTOS_BUILD_TOOLS_DIR%" "%REACTOS_SOURCE_DIR%"
+) else if "%BUILD_ENVIRONMENT%" == "Clang" (
+    cmake -G %CMAKE_GENERATOR% -DENABLE_CCACHE:BOOL=0 -DCMAKE_TOOLCHAIN_FILE:FILEPATH=toolchain-clang.cmake -DARCH:STRING=%ARCH% -DREACTOS_BUILD_TOOLS_DIR:PATH="%REACTOS_BUILD_TOOLS_DIR%" "%REACTOS_SOURCE_DIR%"
 ) else (
-    cmake -G %CMAKE_GENERATOR% -DCMAKE_TOOLCHAIN_FILE=toolchain-msvc.cmake -DARCH=%ARCH% -DREACTOS_BUILD_TOOLS_DIR:DIR="%REACTOS_BUILD_TOOLS_DIR%" "%REACTOS_SOURCE_DIR%"
+    cmake -G %CMAKE_GENERATOR% -DCMAKE_TOOLCHAIN_FILE:FILEPATH=toolchain-msvc.cmake -DARCH:STRING=%ARCH% -DREACTOS_BUILD_TOOLS_DIR:PATH="%REACTOS_BUILD_TOOLS_DIR%" "%REACTOS_SOURCE_DIR%"
 )
 
 cd..

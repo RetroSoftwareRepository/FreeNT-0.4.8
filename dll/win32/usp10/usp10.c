@@ -1381,7 +1381,7 @@ static HRESULT _ItemizeInternal(const WCHAR *pwcInChars, int cInChars,
         else
         {
             BOOL inNumber = FALSE;
-            static WCHAR math_punc[] = {'#','$','%','+',',','-','.','/',':',0x2212, 0x2044, 0x00a0,0};
+            static const WCHAR math_punc[] = {'#','$','%','+',',','-','.','/',':',0x2212, 0x2044, 0x00a0,0};
 
             strength = heap_alloc_zero(cInChars * sizeof(WORD));
             if (!strength)
@@ -1605,12 +1605,12 @@ static HRESULT _ItemizeInternal(const WCHAR *pwcInChars, int cInChars,
      * item is set up to prevent random behaviour if the caller erroneously
      * checks the n+1 structure                                              */
     index++;
+    if (index + 1 > cMaxItems) return E_OUTOFMEMORY;
     memset(&pItems[index].a, 0, sizeof(SCRIPT_ANALYSIS));
 
     TRACE("index=%d cnt=%d iCharPos=%d\n", index, cnt, pItems[index].iCharPos);
 
     /*  Set one SCRIPT_STATE item being returned  */
-    if  (index + 1 > cMaxItems) return E_OUTOFMEMORY;
     if (pcItems) *pcItems = index;
 
     /*  Set SCRIPT_ITEM                                     */

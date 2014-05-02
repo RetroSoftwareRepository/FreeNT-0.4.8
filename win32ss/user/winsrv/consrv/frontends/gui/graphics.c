@@ -13,22 +13,103 @@
 #define NDEBUG
 #include <debug.h>
 
+#include "guiterm.h"
+
 /* FUNCTIONS ******************************************************************/
 
 VOID
-GuiCopyFromGraphicsBuffer(PGRAPHICS_SCREEN_BUFFER Buffer)
+GuiCopyFromGraphicsBuffer(PGRAPHICS_SCREEN_BUFFER Buffer,
+                          PGUI_CONSOLE_DATA GuiData)
 {
     /*
      * This function supposes that the system clipboard was opened.
      */
 
-    // PCONSOLE Console = Buffer->Header.Console;
+    HDC hMemDC;
+    HBITMAP  hBitmapTarget, hBitmapOld;
+    HPALETTE hPalette, hPaletteOld;
+    ULONG selWidth, selHeight;
 
-    UNIMPLEMENTED;
+    if (Buffer->BitMap == NULL) return;
+
+    selWidth  = GuiData->Selection.srSelection.Right - GuiData->Selection.srSelection.Left + 1;
+    selHeight = GuiData->Selection.srSelection.Bottom - GuiData->Selection.srSelection.Top + 1;
+    DPRINT1("Selection is (%d|%d) to (%d|%d)\n",
+           GuiData->Selection.srSelection.Left,
+           GuiData->Selection.srSelection.Top,
+           GuiData->Selection.srSelection.Right,
+           GuiData->Selection.srSelection.Bottom);
+
+    hMemDC = CreateCompatibleDC(GuiData->hMemDC);
+    if (hMemDC == NULL) return;
+
+    /* Allocate a bitmap to be given to the clipboard, so it will not be freed here */
+    hBitmapTarget = CreateCompatibleBitmap(GuiData->hMemDC, selWidth, selHeight);
+    if (hBitmapTarget == NULL)
+    {
+        DeleteDC(hMemDC);
+        return;
+    }
+
+    /* Select the new bitmap */
+    hBitmapOld = SelectObject(hMemDC, hBitmapTarget);
+
+    /* Change the palette in hMemDC if the current palette does exist */
+    if (Buffer->PaletteHandle == NULL)
+        hPalette = GuiData->hSysPalette;
+    else
+        hPalette = Buffer->PaletteHandle;
+
+    if (hPalette) hPaletteOld = SelectPalette(hMemDC, hPalette, FALSE);
+
+    /* Grab the mutex */
+    NtWaitForSingleObject(Buffer->Mutex, FALSE, NULL);
+
+    // The equivalent of a SetDIBitsToDevice call...
+    // It seems to be broken: it does not copy the tail of the bitmap.
+    // http://wiki.allegro.cc/index.php?title=StretchDIBits
+#if 0
+    StretchDIBits(hMemDC,
+                  0, 0,
+                  selWidth, selHeight,
+                  GuiData->Selection.srSelection.Left,
+                  GuiData->Selection.srSelection.Top,
+                  selWidth, selHeight,
+                  Buffer->BitMap,
+                  Buffer->BitMapInfo,
+                  Buffer->BitMapUsage,
+                  SRCCOPY);
+#else
+    SetDIBitsToDevice(hMemDC,
+                      /* Coordinates / size of the repainted rectangle, in the framebuffer's frame */
+                      0, 0,
+                      selWidth, selHeight,
+                      /* Coordinates / size of the corresponding image portion, in the graphics screen-buffer's frame */
+                      GuiData->Selection.srSelection.Left,
+                      GuiData->Selection.srSelection.Top,
+                      0,
+                      Buffer->ScreenBufferSize.Y, // == Buffer->BitMapInfo->bmiHeader.biHeight
+                      Buffer->BitMap,
+                      Buffer->BitMapInfo,
+                      Buffer->BitMapUsage);
+#endif
+
+    /* Release the mutex */
+    NtReleaseMutant(Buffer->Mutex, NULL);
+
+    /* Restore the palette and the old bitmap */
+    if (hPalette) SelectPalette(hMemDC, hPaletteOld, FALSE);
+    SelectObject(hMemDC, hBitmapOld);
+
+    EmptyClipboard();
+    SetClipboardData(CF_BITMAP, hBitmapTarget);
+
+    DeleteDC(hMemDC);
 }
 
 VOID
-GuiPasteToGraphicsBuffer(PGRAPHICS_SCREEN_BUFFER Buffer)
+GuiPasteToGraphicsBuffer(PGRAPHICS_SCREEN_BUFFER Buffer,
+                         PGUI_CONSOLE_DATA GuiData)
 {
     /*
      * This function supposes that the system clipboard was opened.
@@ -45,7 +126,12 @@ GuiPaintGraphicsBuffer(PGRAPHICS_SCREEN_BUFFER Buffer,
                        PRECT rcView,
                        PRECT rcFramebuffer)
 {
+    PCONSOLE Console = Buffer->Header.Console;
+    // ASSERT(Console == GuiData->Console);
+
     if (Buffer->BitMap == NULL) return;
+
+    if (!ConDrvValidateConsoleUnsafe(Console, CONSOLE_RUNNING, TRUE)) return;
 
     rcFramebuffer->left   = Buffer->ViewOrigin.X * 1 + rcView->left;
     rcFramebuffer->top    = Buffer->ViewOrigin.Y * 1 + rcView->top;
@@ -77,6 +163,8 @@ GuiPaintGraphicsBuffer(PGRAPHICS_SCREEN_BUFFER Buffer,
 
     /* Release the mutex */
     NtReleaseMutant(Buffer->Mutex, NULL);
+
+    LeaveCriticalSection(&Console->Lock);
 }
 
 /* EOF */

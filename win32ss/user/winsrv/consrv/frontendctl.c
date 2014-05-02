@@ -222,7 +222,7 @@ CSR_API(SrvSetConsoleCursor)
 
     Console = Buff->Header.Console;
 
-    Success = TermSetMouseCursor(Console, SetCursorRequest->hCursor);
+    Success = TermSetMouseCursor(Console, SetCursorRequest->CursorHandle);
 
     ConSrvReleaseScreenBuffer(Buff, TRUE);
     return (Success ? STATUS_SUCCESS : STATUS_UNSUCCESSFUL);
@@ -244,9 +244,9 @@ CSR_API(SrvConsoleMenuControl)
 
     Console = Buff->Header.Console;
 
-    MenuControlRequest->hMenu = TermMenuControl(Console,
-                                                MenuControlRequest->dwCmdIdLow,
-                                                MenuControlRequest->dwCmdIdHigh);
+    MenuControlRequest->MenuHandle = TermMenuControl(Console,
+                                                     MenuControlRequest->CmdIdLow,
+                                                     MenuControlRequest->CmdIdHigh);
 
     ConSrvReleaseScreenBuffer(Buff, TRUE);
     return STATUS_SUCCESS;
@@ -293,7 +293,7 @@ CSR_API(SrvSetConsoleIcon)
     Status = ConSrvGetConsole(ConsoleGetPerProcessData(CsrGetClientThread()->Process), &Console, TRUE);
     if (!NT_SUCCESS(Status)) return Status;
 
-    Status = (TermChangeIcon(Console, SetIconRequest->WindowIcon)
+    Status = (TermChangeIcon(Console, SetIconRequest->IconHandle)
                 ? STATUS_SUCCESS
                 : STATUS_UNSUCCESSFUL);
 
@@ -308,14 +308,13 @@ CSR_API(SrvGetConsoleSelectionInfo)
     PCONSOLE Console;
 
     Status = ConSrvGetConsole(ConsoleGetPerProcessData(CsrGetClientThread()->Process), &Console, TRUE);
-    if (NT_SUCCESS(Status))
-    {
-        memset(&GetSelectionInfoRequest->Info, 0, sizeof(CONSOLE_SELECTION_INFO));
-        if (Console->Selection.dwFlags != 0)
-            GetSelectionInfoRequest->Info = Console->Selection;
-        ConSrvReleaseConsole(Console, TRUE);
-    }
+    if (!NT_SUCCESS(Status)) return Status;
 
+    Status = (TermGetSelectionInfo(Console, &GetSelectionInfoRequest->Info)
+                ? STATUS_SUCCESS
+                : STATUS_UNSUCCESSFUL);
+
+    ConSrvReleaseConsole(Console, TRUE);
     return Status;
 }
 
