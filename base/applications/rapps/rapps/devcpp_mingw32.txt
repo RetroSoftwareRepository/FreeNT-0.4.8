@@ -1,14 +1,15 @@
-; UTF-8
+﻿; UTF-8
+; Turkish translation by Erdem Ersoy (eersoy93) (erdemersoy@live.com)
 
 [Section]
 Name = Orwell Dev-C++ MinGW32
-Version = 5.6.2
+Version = 5.6.3
 Licence = GPLv2
 Description = A maintained version of Dev-C++. It contains MinGW32 compiler.
 Size = 60.2 MB
 Category = 7
 URLSite = http://orwelldevcpp.blogspot.com/
-URLDownload = http://sourceforge.net/projects/orwelldevcpp/files/Setup%20Releases/Dev-Cpp%205.6.2%20MinGW%204.8.1%20Setup.exe
+URLDownload = http://download.sourceforge.net/project/orwelldevcpp/Setup%20Releases/Dev-Cpp%205.6.3%20MinGW%204.8.1%20Setup.exe
 CDPath = none
 
 [Section.0407]
@@ -18,5 +19,6 @@ Description = Eine gepflegte Version von Dev-C++. Der MinGW32 Compiler liegt bei
 Description = Una versione mantenuta di Dev-C++. Contiene il compilatore MinGW32.
 
 [Section.041f]
-Description = Dev-C++'nın sürdürülen bir sürümü. MinGW32 derleyicisini içerir.
+Licence = GPL 2. sürüm
+Description = Dev-C++'nın sürdürülen bir sürümü. MinGW32 derleyicisi içerir.
 Size = 60,2 MB

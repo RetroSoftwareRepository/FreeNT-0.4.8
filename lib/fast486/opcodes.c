@@ -3702,9 +3702,9 @@ FAST486_OPCODE_HANDLER(Fast486OpcodePushImm)
     }
     else
     {
-        USHORT Data;
+        SHORT Data;
 
-        if (!Fast486FetchWord(State, &Data))
+        if (!Fast486FetchWord(State, (PUSHORT)&Data))
         {
             /* Exception occurred */
             return FALSE;
@@ -3837,12 +3837,12 @@ FAST486_OPCODE_HANDLER(Fast486OpcodeImulModrmImm)
 
 FAST486_OPCODE_HANDLER(Fast486OpcodePushByteImm)
 {
-    UCHAR Data;
+    CHAR Data;
 
     /* Make sure this is the right instruction */
     ASSERT(Opcode == 0x6A);
 
-    if (!Fast486FetchByte(State, &Data))
+    if (!Fast486FetchByte(State, (PUCHAR)&Data))
     {
         /* Exception occurred */
         return FALSE;
@@ -4396,6 +4396,17 @@ FAST486_OPCODE_HANDLER(Fast486OpcodeLdsLes)
 
             /* Call the BOP handler */
             State->BopCallback(State, BopCode);
+
+            /*
+             * If an interrupt should occur at this time, delay it.
+             * We must do this because if an interrupt begins and the BOP callback
+             * changes the CS:IP, the interrupt handler won't execute and the
+             * stack pointer will never be restored.
+             */
+            if (State->IntStatus == FAST486_INT_EXECUTE)
+            {
+                State->IntStatus = FAST486_INT_DELAYED;
+            }
 
             /* Return success */
             return TRUE;

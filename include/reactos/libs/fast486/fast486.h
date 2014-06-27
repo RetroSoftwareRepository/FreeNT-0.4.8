@@ -159,7 +159,8 @@ typedef enum _FAST486_INT_STATUS
 {
     FAST486_INT_NONE = 0,
     FAST486_INT_EXECUTE = 1,
-    FAST486_INT_SIGNAL = 2
+    FAST486_INT_SIGNAL = 2,
+    FAST486_INT_DELAYED = 3
 } FAST486_INT_STATUS, *PFAST486_INT_STATUS;
 
 typedef
@@ -250,6 +251,7 @@ typedef struct _FAST486_SEG_REG
     ULONG DirConf       : 1;
     ULONG Executable    : 1;
     ULONG SystemType    : 1;
+    ULONG Rpl           : 2;
     ULONG Dpl           : 2;
     ULONG Present       : 1;
     ULONG Size          : 1;

@@ -57,7 +57,7 @@ MiCalculatePageCommitment(IN ULONG_PTR StartingAddress,
     if (Vad->u.VadFlags.MemCommit == 1)
     {
         /* This is a committed VAD, so Assume the whole range is committed */
-        CommittedPages = BYTES_TO_PAGES(EndingAddress - StartingAddress);
+        CommittedPages = (ULONG)BYTES_TO_PAGES(EndingAddress - StartingAddress);
 
         /* Is the PDE demand-zero? */
         PointerPde = MiAddressToPte(PointerPte);
@@ -1261,6 +1261,11 @@ MiGetPageProtection(IN PMMPTE PointerPte)
 {
     MMPTE TempPte;
     PMMPFN Pfn;
+    PEPROCESS CurrentProcess;
+    PETHREAD CurrentThread;
+    BOOLEAN WsSafe, WsShared;
+    ULONG Protect;
+    KIRQL OldIrql;
     PAGED_CODE();
 
     /* Copy this PTE's contents */
@@ -1270,12 +1275,79 @@ MiGetPageProtection(IN PMMPTE PointerPte)
     ASSERT(TempPte.u.Long);
 
     /* Check for a special prototype format */
-    if (TempPte.u.Soft.Valid == 0 &&
-        TempPte.u.Soft.Prototype == 1)
+    if ((TempPte.u.Soft.Valid == 0) &&
+        (TempPte.u.Soft.Prototype == 1))
     {
-        /* Unsupported now */
-        UNIMPLEMENTED;
-        ASSERT(FALSE);
+        /* Check if the prototype PTE is not yet pointing to a PTE */
+        if (TempPte.u.Soft.PageFileHigh == MI_PTE_LOOKUP_NEEDED)
+        {
+            /* The prototype PTE contains the protection */
+            return MmProtectToValue[TempPte.u.Soft.Protection];
+        }
+
+        /* Get a pointer to the underlying shared PTE */
+        PointerPte = MiProtoPteToPte(&TempPte);
+
+        /* Since the PTE we want to read can be paged out at any time, we need
+           to release the working set lock first, so that it can be paged in */
+        CurrentThread = PsGetCurrentThread();
+        CurrentProcess = PsGetCurrentProcess();
+        MiUnlockProcessWorkingSetForFault(CurrentProcess,
+                                          CurrentThread,
+                                          &WsSafe,
+                                          &WsShared);
+
+        /* Now read the PTE value */
+        TempPte = *PointerPte;
+
+        /* Check if that one is invalid */
+        if (!TempPte.u.Hard.Valid)
+        {
+            /* We get the protection directly from this PTE */
+            Protect = MmProtectToValue[TempPte.u.Soft.Protection];
+        }
+        else
+        {
+            /* The PTE is valid, so we might need to get the protection from
+               the PFN. Lock the PFN database */
+            OldIrql = KeAcquireQueuedSpinLock(LockQueuePfnLock);
+
+            /* Check if the PDE is still valid */
+            if (MiAddressToPte(PointerPte)->u.Hard.Valid == 0)
+            {
+                /* It's not, make it valid */
+                MiMakeSystemAddressValidPfn(PointerPte, OldIrql);
+            }
+
+            /* Now it's safe to read the PTE value again */
+            TempPte = *PointerPte;
+            ASSERT(TempPte.u.Long != 0);
+
+            /* Check again if the PTE is invalid */
+            if (!TempPte.u.Hard.Valid)
+            {
+                /* The PTE is not valid, so we can use it's protection field */
+                Protect = MmProtectToValue[TempPte.u.Soft.Protection];
+            }
+            else
+            {
+                /* The PTE is valid, so we can find the protection in the
+                   OriginalPte field of the PFN */
+                Pfn = MI_PFN_ELEMENT(TempPte.u.Hard.PageFrameNumber);
+                Protect = MmProtectToValue[Pfn->OriginalPte.u.Soft.Protection];
+            }
+
+            /* Release the PFN database */
+            KeReleaseQueuedSpinLock(LockQueuePfnLock, OldIrql);
+        }
+
+        /* Lock the working set again */
+        MiLockProcessWorkingSetForFault(CurrentProcess,
+                                        CurrentThread,
+                                        WsSafe,
+                                        WsShared);
+
+        return Protect;
     }
 
     /* In the easy case of transition or demand zero PTE just return its protection */
@@ -1291,10 +1363,10 @@ MiGetPageProtection(IN PMMPTE PointerPte)
     }
 
     /* This is software PTE */
-    DPRINT1("Prototype PTE: %lx %p\n", TempPte.u.Hard.PageFrameNumber, Pfn);
-    DPRINT1("VA: %p\n", MiPteToAddress(&TempPte));
-    DPRINT1("Mask: %lx\n", TempPte.u.Soft.Protection);
-    DPRINT1("Mask2: %lx\n", Pfn->OriginalPte.u.Soft.Protection);
+    DPRINT("Prototype PTE: %lx %p\n", TempPte.u.Hard.PageFrameNumber, Pfn);
+    DPRINT("VA: %p\n", MiPteToAddress(&TempPte));
+    DPRINT("Mask: %lx\n", TempPte.u.Soft.Protection);
+    DPRINT("Mask2: %lx\n", Pfn->OriginalPte.u.Soft.Protection);
     return MmProtectToValue[TempPte.u.Soft.Protection];
 }
 
@@ -1309,6 +1381,12 @@ MiQueryAddressState(IN PVOID Va,
 
     PMMPTE PointerPte, ProtoPte;
     PMMPDE PointerPde;
+#if (_MI_PAGING_LEVELS >= 3)
+    PMMPPE PointerPpe;
+#endif
+#if (_MI_PAGING_LEVELS >= 4)
+    PMMPXE PointerPxe;
+#endif
     MMPTE TempPte, TempProtoPte;
     BOOLEAN DemandZeroPte = TRUE, ValidPte = FALSE;
     ULONG State = MEM_RESERVE, Protect = 0;
@@ -1321,27 +1399,70 @@ MiQueryAddressState(IN PVOID Va,
     /* Get the PDE and PTE for the address */
     PointerPde = MiAddressToPde(Va);
     PointerPte = MiAddressToPte(Va);
+#if (_MI_PAGING_LEVELS >= 3)
+    PointerPpe = MiAddressToPpe(Va);
+#endif
+#if (_MI_PAGING_LEVELS >= 4)
+    PointerPxe = MiAddressToPxe(Va);
+#endif
 
     /* Return the next range */
     *NextVa = (PVOID)((ULONG_PTR)Va + PAGE_SIZE);
 
-    /* Is the PDE demand-zero? */
-    if (PointerPde->u.Long != 0)
+    do
     {
-        /* It is not. Is it valid? */
+#if (_MI_PAGING_LEVELS >= 4)
+        /* Does the PXE exist? */
+        if (PointerPxe->u.Long == 0)
+        {
+            /* It does not, next range starts at the next PXE */
+            *NextVa = MiPxeToAddress(PointerPxe + 1);
+            break;
+        }
+
+        /* Is the PXE valid? */
+        if (PointerPxe->u.Hard.Valid == 0)
+        {
+            /* Is isn't, fault it in (make the PPE accessible) */
+            MiMakeSystemAddressValid(PointerPpe, TargetProcess);
+        }
+#endif
+#if (_MI_PAGING_LEVELS >= 3)
+        /* Does the PPE exist? */
+        if (PointerPpe->u.Long == 0)
+        {
+            /* It does not, next range starts at the next PPE */
+            *NextVa = MiPpeToAddress(PointerPpe + 1);
+            break;
+        }
+
+        /* Is the PPE valid? */
+        if (PointerPpe->u.Hard.Valid == 0)
+        {
+            /* Is isn't, fault it in (make the PDE accessible) */
+            MiMakeSystemAddressValid(PointerPde, TargetProcess);
+        }
+#endif
+
+        /* Does the PDE exist? */
+        if (PointerPde->u.Long == 0)
+        {
+            /* It does not, next range starts at the next PDE */
+            *NextVa = MiPdeToAddress(PointerPde + 1);
+            break;
+        }
+
+        /* Is the PDE valid? */
         if (PointerPde->u.Hard.Valid == 0)
         {
-            /* Is isn't, fault it in */
-            PointerPte = MiPteToAddress(PointerPde);
+            /* Is isn't, fault it in (make the PTE accessible) */
             MiMakeSystemAddressValid(PointerPte, TargetProcess);
-            ValidPte = TRUE;
         }
-    }
-    else
-    {
-        /* It is, skip it and move to the next PDE */
-        *NextVa = MiPdeToAddress(PointerPde + 1);
-    }
+
+        /* We have a PTE that we can access now! */
+        ValidPte = TRUE;
+
+    } while (FALSE);
 
     /* Is it safe to try reading the PTE? */
     if (ValidPte)
@@ -1708,6 +1829,9 @@ MiQueryMemoryBasicInformation(IN HANDLE ProcessHandle,
         MemoryInfo.AllocationProtect = MmProtectToValue[Vad->u.VadFlags.Protection];
         MemoryInfo.Type = MEM_PRIVATE;
 
+        /* Acquire the working set lock (shared is enough) */
+        MiLockProcessWorkingSetShared(TargetProcess, PsGetCurrentThread());
+
         /* Find the largest chunk of memory which has the same state and protection mask */
         MemoryInfo.State = MiQueryAddressState(Address,
                                                Vad,
@@ -1722,6 +1846,16 @@ MiQueryMemoryBasicInformation(IN HANDLE ProcessHandle,
             if ((NewState != MemoryInfo.State) || (NewProtect != MemoryInfo.Protect)) break;
             Address = NextAddress;
         }
+
+        /* Release the working set lock */
+        MiUnlockProcessWorkingSetShared(TargetProcess, PsGetCurrentThread());
+
+        /* Check if we went outside of the VAD */
+         if (((ULONG_PTR)Address >> PAGE_SHIFT) > Vad->EndingVpn)
+         {
+            /* Set the end of the VAD as the end address */
+            Address = (PVOID)((Vad->EndingVpn + 1) << PAGE_SHIFT);
+         }
 
         /* Now that we know the last VA address, calculate the region size */
         MemoryInfo.RegionSize = ((ULONG_PTR)Address - (ULONG_PTR)MemoryInfo.BaseAddress);
@@ -1903,6 +2037,7 @@ MiProtectVirtualMemory(IN PEPROCESS Process,
     BOOLEAN Committed;
     NTSTATUS Status = STATUS_SUCCESS;
     PETHREAD Thread = PsGetCurrentThread();
+    TABLE_SEARCH_RESULT Result;
 
     /* Calculate base address for the VAD */
     StartingAddress = (ULONG_PTR)PAGE_ALIGN((*BaseAddress));
@@ -1939,10 +2074,11 @@ MiProtectVirtualMemory(IN PEPROCESS Process,
     }
 
     /* Get the VAD for this address range, and make sure it exists */
-    Vad = (PMMVAD)MiCheckForConflictingNode(StartingAddress >> PAGE_SHIFT,
-                                            EndingAddress >> PAGE_SHIFT,
-                                            &Process->VadRoot);
-    if (!Vad)
+    Result = MiCheckForConflictingNode(StartingAddress >> PAGE_SHIFT,
+                                       EndingAddress >> PAGE_SHIFT,
+                                       &Process->VadRoot,
+                                       (PMMADDRESS_NODE*)&Vad);
+    if (Result != TableFoundNode)
     {
         DPRINT("Could not find a VAD for this allocation\n");
         Status = STATUS_CONFLICTING_ADDRESSES;
@@ -4086,11 +4222,11 @@ NtAllocateVirtualMemory(IN HANDLE ProcessHandle,
     PEPROCESS Process;
     PMEMORY_AREA MemoryArea;
     PFN_NUMBER PageCount;
-    PMMVAD Vad, FoundVad;
+    PMMVAD Vad = NULL, FoundVad;
     NTSTATUS Status;
     PMMSUPPORT AddressSpace;
     PVOID PBaseAddress;
-    ULONG_PTR PRegionSize, StartingAddress, EndingAddress;
+    ULONG_PTR PRegionSize, StartingAddress, EndingAddress, HighestAddress;
     PEPROCESS CurrentProcess = PsGetCurrentProcess();
     KPROCESSOR_MODE PreviousMode = KeGetPreviousMode();
     PETHREAD CurrentThread = PsGetCurrentThread();
@@ -4099,10 +4235,12 @@ NtAllocateVirtualMemory(IN HANDLE ProcessHandle,
     BOOLEAN Attached = FALSE, ChangeProtection = FALSE;
     MMPTE TempPte;
     PMMPTE PointerPte, PointerPde, LastPte;
+    TABLE_SEARCH_RESULT Result;
+    PMMADDRESS_NODE Parent;
     PAGED_CODE();
 
     /* Check for valid Zero bits */
-    if (ZeroBits > 21)
+    if (ZeroBits > MI_MAX_ZERO_BITS)
     {
         DPRINT1("Too many zero bits\n");
         return STATUS_INVALID_PARAMETER_3;
@@ -4110,7 +4248,7 @@ NtAllocateVirtualMemory(IN HANDLE ProcessHandle,
 
     /* Check for valid Allocation Types */
     if ((AllocationType & ~(MEM_COMMIT | MEM_RESERVE | MEM_RESET | MEM_PHYSICAL |
-                    MEM_TOP_DOWN | MEM_WRITE_WATCH)))
+                    MEM_TOP_DOWN | MEM_WRITE_WATCH | MEM_LARGE_PAGES)))
     {
         DPRINT1("Invalid Allocation Type\n");
         return STATUS_INVALID_PARAMETER_5;
@@ -4155,16 +4293,16 @@ NtAllocateVirtualMemory(IN HANDLE ProcessHandle,
         return STATUS_INVALID_PARAMETER_5;
     }
 
-    /* MEM_PHYSICAL can only be used if MEM_RESERVE is also used */
-    if ((AllocationType & MEM_PHYSICAL) && !(AllocationType & MEM_RESERVE))
-    {
-        DPRINT1("MEM_WRITE_WATCH used without MEM_RESERVE\n");
-        return STATUS_INVALID_PARAMETER_5;
-    }
-
     /* Check for valid MEM_PHYSICAL usage */
     if (AllocationType & MEM_PHYSICAL)
     {
+        /* MEM_PHYSICAL can only be used if MEM_RESERVE is also used */
+        if (!(AllocationType & MEM_RESERVE))
+        {
+            DPRINT1("MEM_PHYSICAL used without MEM_RESERVE\n");
+            return STATUS_INVALID_PARAMETER_5;
+        }
+
         /* Only these flags are allowed with MEM_PHYSIAL */
         if (AllocationType & ~(MEM_RESERVE | MEM_TOP_DOWN | MEM_PHYSICAL))
         {
@@ -4196,7 +4334,7 @@ NtAllocateVirtualMemory(IN HANDLE ProcessHandle,
         {
             /* Make sure they are writable */
             ProbeForWritePointer(UBaseAddress);
-            ProbeForWriteUlong(URegionSize);
+            ProbeForWriteSize_t(URegionSize);
         }
 
         /* Capture their values */
@@ -4211,7 +4349,7 @@ NtAllocateVirtualMemory(IN HANDLE ProcessHandle,
     _SEH2_END;
 
     /* Make sure the allocation isn't past the VAD area */
-    if (PBaseAddress >= MM_HIGHEST_VAD_ADDRESS)
+    if (PBaseAddress > MM_HIGHEST_VAD_ADDRESS)
     {
         DPRINT1("Virtual allocation base above User Space\n");
         return STATUS_INVALID_PARAMETER_2;
@@ -4260,6 +4398,9 @@ NtAllocateVirtualMemory(IN HANDLE ProcessHandle,
         }
     }
 
+    DPRINT("NtAllocateVirtualMemory: Process 0x%p, Address 0x%p, Zerobits %lu , RegionSize 0x%x, Allocation type 0x%x, Protect 0x%x.\n",
+        Process, PBaseAddress, ZeroBits, PRegionSize, AllocationType, Protect);
+
     //
     // Check for large page allocations and make sure that the required privilege
     // is being held, before attempting to handle them.
@@ -4276,12 +4417,6 @@ NtAllocateVirtualMemory(IN HANDLE ProcessHandle,
     //
     // Fail on the things we don't yet support
     //
-    if (ZeroBits != 0)
-    {
-        DPRINT1("Zero bits not supported\n");
-        Status = STATUS_INVALID_PARAMETER;
-        goto FailPathNoLock;
-    }
     if ((AllocationType & MEM_LARGE_PAGES) == MEM_LARGE_PAGES)
     {
         DPRINT1("MEM_LARGE_PAGES not supported\n");
@@ -4300,18 +4435,6 @@ NtAllocateVirtualMemory(IN HANDLE ProcessHandle,
         Status = STATUS_INVALID_PARAMETER;
         goto FailPathNoLock;
     }
-    if ((AllocationType & MEM_TOP_DOWN) == MEM_TOP_DOWN)
-    {
-        DPRINT1("MEM_TOP_DOWN not supported\n");
-        AllocationType &= ~MEM_TOP_DOWN;
-    }
-
-    if (Process->VmTopDown == 1)
-    {
-        DPRINT1("VmTopDown not supported\n");
-        Status = STATUS_INVALID_PARAMETER;
-        goto FailPathNoLock;
-    }
 
     //
     // Check if the caller is reserving memory, or committing memory and letting
@@ -4322,7 +4445,7 @@ NtAllocateVirtualMemory(IN HANDLE ProcessHandle,
         //
         //  Do not allow COPY_ON_WRITE through this API
         //
-        if ((Protect & PAGE_WRITECOPY) || (Protect & PAGE_EXECUTE_WRITECOPY))
+        if (Protect & (PAGE_WRITECOPY | PAGE_EXECUTE_WRITECOPY))
         {
             DPRINT1("Copy on write not allowed through this path\n");
             Status = STATUS_INVALID_PAGE_PROTECTION;
@@ -4341,6 +4464,29 @@ NtAllocateVirtualMemory(IN HANDLE ProcessHandle,
             PageCount = BYTES_TO_PAGES(PRegionSize);
             EndingAddress = 0;
             StartingAddress = 0;
+
+            //
+            // Check if ZeroBits were specified
+            //
+            if (ZeroBits != 0)
+            {
+                //
+                // Calculate the highest address and check if it's valid
+                //
+                HighestAddress = MAXULONG_PTR >> ZeroBits;
+                if (HighestAddress > (ULONG_PTR)MM_HIGHEST_VAD_ADDRESS)
+                {
+                    Status = STATUS_INVALID_PARAMETER_3;
+                    goto FailPathNoLock;
+                }
+            }
+            else
+            {
+                //
+                // Use the highest VAD address as maximum
+                //
+                HighestAddress = (ULONG_PTR)MM_HIGHEST_VAD_ADDRESS;
+            }
         }
         else
         {
@@ -4349,8 +4495,8 @@ NtAllocateVirtualMemory(IN HANDLE ProcessHandle,
             // expected 64KB granularity, and see where the ending address will
             // fall based on the aligned address and the passed in region size
             //
-            StartingAddress = ROUND_DOWN((ULONG_PTR)PBaseAddress, _64K);
             EndingAddress = ((ULONG_PTR)PBaseAddress + PRegionSize - 1) | (PAGE_SIZE - 1);
+            StartingAddress = ROUND_DOWN((ULONG_PTR)PBaseAddress, _64K);
             PageCount = BYTES_TO_PAGES(EndingAddress - StartingAddress);
         }
 
@@ -4358,7 +4504,13 @@ NtAllocateVirtualMemory(IN HANDLE ProcessHandle,
         // Allocate and initialize the VAD
         //
         Vad = ExAllocatePoolWithTag(NonPagedPool, sizeof(MMVAD_LONG), 'SdaV');
-        ASSERT(Vad != NULL);
+        if (Vad == NULL)
+        {
+            DPRINT1("Failed to allocate a VAD!\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto FailPathNoLock;
+        }
+
         Vad->u.LongFlags = 0;
         if (AllocationType & MEM_COMMIT) Vad->u.VadFlags.MemCommit = 1;
         Vad->u.VadFlags.Protection = ProtectionMask;
@@ -4384,40 +4536,69 @@ NtAllocateVirtualMemory(IN HANDLE ProcessHandle,
         //
         if (!PBaseAddress)
         {
-            Status = MiFindEmptyAddressRangeInTree(PRegionSize,
-                                                   _64K,
-                                                   &Process->VadRoot,
-                                                   (PMMADDRESS_NODE*)&Process->VadFreeHint,
-                                                   &StartingAddress);
-            if (!NT_SUCCESS(Status)) goto FailPath;
+            /* Which way should we search? */
+            if ((AllocationType & MEM_TOP_DOWN) || Process->VmTopDown)
+            {
+                /* Find an address top-down */
+                Result = MiFindEmptyAddressRangeDownTree(PRegionSize,
+                                                         HighestAddress,
+                                                         _64K,
+                                                         &Process->VadRoot,
+                                                         &StartingAddress,
+                                                         &Parent);
+            }
+            else
+            {
+                /* Find an address bottom-up */
+                Result = MiFindEmptyAddressRangeInTree(PRegionSize,
+                                                       _64K,
+                                                       &Process->VadRoot,
+                                                       &Parent,
+                                                       &StartingAddress);
+            }
+
+            if (Result == TableFoundNode)
+            {
+                Status = STATUS_NO_MEMORY;
+                goto FailPath;
+            }
 
             //
             // Now we know where the allocation ends. Make sure it doesn't end up
             // somewhere in kernel mode.
             //
-            EndingAddress = ((ULONG_PTR)StartingAddress + PRegionSize - 1) | (PAGE_SIZE - 1);
-            if ((PVOID)EndingAddress > MM_HIGHEST_VAD_ADDRESS)
+            ASSERT(StartingAddress != 0);
+            ASSERT(StartingAddress < (ULONG_PTR)MM_HIGHEST_USER_ADDRESS);
+            EndingAddress = (StartingAddress + PRegionSize - 1) | (PAGE_SIZE - 1);
+            ASSERT(EndingAddress > StartingAddress);
+            if (EndingAddress > HighestAddress)
             {
                 Status = STATUS_NO_MEMORY;
                 goto FailPath;
             }
         }
-        else if (MiCheckForConflictingNode(StartingAddress >> PAGE_SHIFT,
-                                           EndingAddress >> PAGE_SHIFT,
-                                           &Process->VadRoot))
+        else
         {
-            //
-            // The address specified is in conflict!
-            //
-            Status = STATUS_CONFLICTING_ADDRESSES;
-            goto FailPath;
+            /* Make sure it doesn't conflict with an existing allocation */
+            Result = MiCheckForConflictingNode(StartingAddress >> PAGE_SHIFT,
+                                               EndingAddress >> PAGE_SHIFT,
+                                               &Process->VadRoot,
+                                               &Parent);
+            if (Result == TableFoundNode)
+            {
+                //
+                // The address specified is in conflict!
+                //
+                Status = STATUS_CONFLICTING_ADDRESSES;
+                goto FailPath;
+            }
         }
 
         //
         // Write out the VAD fields for this allocation
         //
-        Vad->StartingVpn = (ULONG_PTR)StartingAddress >> PAGE_SHIFT;
-        Vad->EndingVpn = (ULONG_PTR)EndingAddress >> PAGE_SHIFT;
+        Vad->StartingVpn = StartingAddress >> PAGE_SHIFT;
+        Vad->EndingVpn = EndingAddress >> PAGE_SHIFT;
 
         //
         // FIXME: Should setup VAD bitmap
@@ -4429,8 +4610,16 @@ NtAllocateVirtualMemory(IN HANDLE ProcessHandle,
         //
         MiLockProcessWorkingSetUnsafe(Process, CurrentThread);
         Vad->ControlArea = NULL; // For Memory-Area hack
-        MiInsertVad(Vad, Process);
+        Process->VadRoot.NodeHint = Vad;
+        MiInsertNode(&Process->VadRoot, (PVOID)Vad, Parent, Result);
         MiUnlockProcessWorkingSetUnsafe(Process, CurrentThread);
+
+        //
+        // Make sure the actual region size is at least as big as the
+        // requested region size and update the value
+        //
+        ASSERT(PRegionSize <= (EndingAddress + 1 - StartingAddress));
+        PRegionSize = (EndingAddress + 1 - StartingAddress);
 
         //
         // Update the virtual size of the process, and if this is now the highest
@@ -4465,8 +4654,12 @@ NtAllocateVirtualMemory(IN HANDLE ProcessHandle,
         }
         _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
         {
+            //
+            // Ignore exception!
+            //
         }
         _SEH2_END;
+        DPRINT("Reserved %x bytes at %p.\n", PRegionSize, StartingAddress);
         return STATUS_SUCCESS;
     }
 
@@ -4476,8 +4669,8 @@ NtAllocateVirtualMemory(IN HANDLE ProcessHandle,
     // on the user input, and then compute the actual region size once all the
     // alignments have been done.
     //
-    StartingAddress = (ULONG_PTR)PAGE_ALIGN(PBaseAddress);
     EndingAddress = (((ULONG_PTR)PBaseAddress + PRegionSize - 1) | (PAGE_SIZE - 1));
+    StartingAddress = (ULONG_PTR)PAGE_ALIGN(PBaseAddress);
     PRegionSize = EndingAddress - StartingAddress + 1;
 
     //
@@ -4495,10 +4688,11 @@ NtAllocateVirtualMemory(IN HANDLE ProcessHandle,
     //
     // Get the VAD for this address range, and make sure it exists
     //
-    FoundVad = (PMMVAD)MiCheckForConflictingNode(StartingAddress >> PAGE_SHIFT,
-                                                 EndingAddress >> PAGE_SHIFT,
-                                                 &Process->VadRoot);
-    if (!FoundVad)
+    Result = MiCheckForConflictingNode(StartingAddress >> PAGE_SHIFT,
+                                       EndingAddress >> PAGE_SHIFT,
+                                       &Process->VadRoot,
+                                       (PMMADDRESS_NODE*)&FoundVad);
+    if (Result != TableFoundNode)
     {
         DPRINT1("Could not find a VAD for this allocation\n");
         Status = STATUS_CONFLICTING_ADDRESSES;
@@ -4582,6 +4776,12 @@ NtAllocateVirtualMemory(IN HANDLE ProcessHandle,
         {
             //
             // Make sure it's okay to touch it
+            // Note: The Windows 2003 kernel has a bug here, passing the
+            // unaligned base address together with the aligned size,
+            // potentially covering a region larger than the actual allocation.
+            // Might be exposed through NtGdiCreateDIBSection w/ section handle
+            // For now we keep this behavior.
+            // TODO: analyze possible implications, create test case
             //
             Status = MiCheckSecuredVad(FoundVad,
                                        PBaseAddress,
@@ -4781,6 +4981,14 @@ NtAllocateVirtualMemory(IN HANDLE ProcessHandle,
 FailPath:
     MmUnlockAddressSpace(AddressSpace);
 
+    if (!NT_SUCCESS(Status))
+    {
+        if (Vad != NULL)
+        {
+            ExFreePoolWithTag(Vad, 'SdaV');
+        }
+    }
+
     //
     // Check if we need to update the protection
     //
@@ -4805,21 +5013,28 @@ FailPathNoLock:
     if (ProcessHandle != NtCurrentProcess()) ObDereferenceObject(Process);
 
     //
-    // Use SEH to write back the base address and the region size. In the case
-    // of an exception, we strangely do return back the exception code, even
-    // though the memory *has* been allocated. This mimics Windows behavior and
-    // there is not much we can do about it.
+    // Only write back results on success
     //
-    _SEH2_TRY
+    if (NT_SUCCESS(Status))
     {
-        *URegionSize = PRegionSize;
-        *UBaseAddress = (PVOID)StartingAddress;
+        //
+        // Use SEH to write back the base address and the region size. In the case
+        // of an exception, we strangely do return back the exception code, even
+        // though the memory *has* been allocated. This mimics Windows behavior and
+        // there is not much we can do about it.
+        //
+        _SEH2_TRY
+        {
+            *URegionSize = PRegionSize;
+            *UBaseAddress = (PVOID)StartingAddress;
+        }
+        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        {
+            Status = _SEH2_GetExceptionCode();
+        }
+        _SEH2_END;
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        Status = _SEH2_GetExceptionCode();
-    }
-    _SEH2_END;
+
     return Status;
 }
 
@@ -4941,6 +5156,9 @@ NtFreeVirtualMemory(IN HANDLE ProcessHandle,
             Attached = TRUE;
         }
     }
+
+    DPRINT("NtFreeVirtualMemory: Process 0x%p, Adress 0x%p, size 0x%x, FreeType %x.\n",
+        Process, PBaseAddress, PRegionSize, FreeType);
 
     //
     // Lock the address space
@@ -5125,7 +5343,7 @@ NtFreeVirtualMemory(IN HANDLE ProcessHandle,
                     ASSERT(Vad->StartingVpn << PAGE_SHIFT == (ULONG_PTR)MemoryArea->StartingAddress);
                     ASSERT((Vad->EndingVpn + 1) << PAGE_SHIFT == (ULONG_PTR)MemoryArea->EndingAddress);
                     Vad->EndingVpn = ((ULONG_PTR)StartingAddress - 1) >> PAGE_SHIFT;
-                    MemoryArea->EndingAddress = (PVOID)(((Vad->EndingVpn + 1) << PAGE_SHIFT) - 1);
+                    MemoryArea->EndingAddress = (PVOID)(StartingAddress);
                 }
                 else
                 {

@@ -1494,7 +1494,7 @@ VOID WINAPI VidBiosVideoService(LPWORD Stack)
         /* Alternate Function Select */
         case 0x12:
         {
-            DPRINT1("BIOS Function INT 12h (Alternate Function Select), BX = 0x%04X NOT IMPLEMENTED\n",
+            DPRINT1("BIOS Function INT 10h, AH = 12h (Alternate Function Select), BX = 0x%04X NOT IMPLEMENTED\n",
                     getBX());
             break;
         }
@@ -1571,6 +1571,10 @@ BOOLEAN VidBiosInitialize(VOID)
     // ((PULONG)BaseAddress)[0x42] = (ULONG)NULL;
     ((PULONG)BaseAddress)[0x43] = (ULONG)NULL;
     ((PULONG)BaseAddress)[0x44] = (ULONG)NULL;
+
+    /* Initialize the VGA BDA data */
+    Bda->VGAOptions = 0x30;     /* 256 KB Video RAM */
+    Bda->VGASwitches = 0x09;    /* High-resolution */
 
     //
     // FIXME: At the moment we always set a VGA mode. In the future,
