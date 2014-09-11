@@ -64,6 +64,9 @@ typedef struct _SEH3$_REGISTRATION_FRAME
     /* Except handler stores pointer to exception pointers here */
     PSEH3$_EXCEPTION_POINTERS volatile ExceptionPointers;
 
+    /* Except handler stores the exception code here */
+    unsigned long ExceptionCode;
+
     /* Registers that we need to save */
     unsigned long Esp;
     unsigned long Ebp;
@@ -73,6 +76,9 @@ typedef struct _SEH3$_REGISTRATION_FRAME
     unsigned long Ebx;
     unsigned long Esi;
     unsigned long Edi;
+#endif
+#ifdef __clang__
+    void *ReturnAddress;
 #endif
 } SEH3$_REGISTRATION_FRAME ,*PSEH3$_REGISTRATION_FRAME;
 
@@ -113,6 +119,22 @@ void * __cdecl __attribute__((error("Can only be used inside an exception filter
 /* This attribute allows automatic cleanup of the registered frames */
 #define _SEH3$_AUTO_CLEANUP __attribute__((cleanup(_SEH3$_AutoCleanup)))
 
+int
+__attribute__((regparm(3)))
+__attribute__((returns_twice))
+_SEH3$_RegisterFrameWithNonVolatiles(
+    volatile SEH3$_REGISTRATION_FRAME* RegistrationFrame,
+    const SEH3$_SCOPE_TABLE* ScopeTable,
+    void* AllocaFrame);
+
+int
+__attribute__((regparm(3)))
+__attribute__((returns_twice))
+_SEH3$_RegisterTryLevelWithNonVolatiles(
+    volatile SEH3$_REGISTRATION_FRAME* RegistrationFrame,
+    const SEH3$_SCOPE_TABLE* ScopeTable,
+    void* AllocaFrame);
+
 /* CLANG specific definitions! */
 #ifdef __clang__
 
@@ -121,14 +143,6 @@ void * __cdecl __attribute__((error("Can only be used inside an exception filter
 
 /* CLANG doesn't have asm goto! */
 #define _SEH3$_ASM_GOTO(...)
-
-int
-__attribute__((regparm(3)))
-__attribute__((returns_twice))
-_SEH3$_RegisterFrameWithNonVolatiles(
-    volatile SEH3$_REGISTRATION_FRAME* RegistrationFrame,
-    const SEH3$_SCOPE_TABLE* ScopeTable,
-    void* AllocaFrame);
 
 #define _SEH3$_RegisterFrame_(_TrylevelFrame, _DataTable) \
     do { \
@@ -140,14 +154,6 @@ _SEH3$_RegisterFrameWithNonVolatiles(
             goto _SEH3$_l_BeforeFilterOrFinally; \
         } \
     } while(0)
-
-int
-__attribute__((regparm(3)))
-__attribute__((returns_twice))
-_SEH3$_RegisterTryLevelWithNonVolatiles(
-    volatile SEH3$_REGISTRATION_FRAME* RegistrationFrame,
-    const SEH3$_SCOPE_TABLE* ScopeTable,
-    void* AllocaFrame);
 
 #define _SEH3$_RegisterTryLevel_(_TrylevelFrame, _DataTable) \
     do { \
@@ -171,21 +177,21 @@ _SEH3$_RegisterTryLevelWithNonVolatiles(
 
 #ifdef __cplusplus
 #define _SEH3$_CALL_WRAPPER(_Function, _TrylevelFrame, _DataTable) \
-    asm goto ("leal %0, %%eax\n" \
-              "leal %1, %%edx\n" \
-              "call " #_Function "WithStackLayout\n" \
+    asm goto ("leal %0, %%eax\n\t" \
+              "leal %1, %%edx\n\t" \
+              "call " #_Function "WithStackLayout" \
               : \
-              : "m" (*(_TrylevelFrame)), "m" (*(_DataTable)), "c"(__builtin_alloca(0)) \
+              : "m" (*(_TrylevelFrame)), "m" (*(_DataTable)), "c" (__builtin_alloca(0)), "p" (_SEH3$_RegisterFrameWithNonVolatiles) \
               : "eax", "edx", "memory" \
               : _SEH3$_l_BeforeTry, _SEH3$_l_HandlerTarget, _SEH3$_l_OnException, _SEH3$_l_BeforeFilterOrFinally, _SEH3$_l_FilterOrFinally)
 
 #else
 #define _SEH3$_CALL_WRAPPER(_Function, _TrylevelFrame, _DataTable) \
-    asm goto ("leal %0, %%eax\n" \
-              "leal %1, %%edx\n" \
-              "call " #_Function "\n" \
+    asm goto ("leal %0, %%eax\n\t" \
+              "leal %1, %%edx\n\t" \
+              "call " #_Function \
               : \
-              : "m" (*(_TrylevelFrame)), "m" (*(_DataTable)) \
+              : "m" (*(_TrylevelFrame)), "m" (*(_DataTable)), "p" (_SEH3$_RegisterFrameWithNonVolatiles) \
               : "eax", "edx", "ecx", "memory" \
               : _SEH3$_l_BeforeTry, _SEH3$_l_HandlerTarget, _SEH3$_l_OnException, _SEH3$_l_BeforeFilterOrFinally, _SEH3$_l_FilterOrFinally)
 #endif
@@ -227,8 +233,8 @@ _SEH3$_AutoCleanup(
 /* On invocation, the AllocaFrame field is loaded with the return esp value */
 #define _SEH3$_NESTED_FUNC_RETURN(_Result) \
         /* Restore esp and return to the caller */ \
-        asm volatile ("movl %[FixedEsp], %%esp\nret\n" \
-            : : "a"(_Result), [FixedEsp]"m"(_SEH3$_TrylevelFrame.AllocaFrame) : "ebx", "ecx", "edx", "esi", "edi", "flags", "memory")
+        asm volatile ("movl %[FixedEsp], %%esp\n\tret" \
+            : : "a" (_Result), [FixedEsp] "m" (_SEH3$_TrylevelFrame.AllocaFrame) : "ebx", "ecx", "edx", "esi", "edi", "flags", "memory")
 
 /* The filter "function" */
 #define _SEH3$_DEFINE_FILTER_FUNC(_Name, expression) \
@@ -252,14 +258,14 @@ _SEH3$_AutoCleanup(
 
 /* Since we cannot use nested functions, we declare these globally as macros */
 #define _abnormal_termination() (_SEH3$_TrylevelFrame.ExceptionPointers != 0)
-#define _exception_code() (_SEH3$_TrylevelFrame.ExceptionPointers->ExceptionRecord->ExceptionCode)
+#define _exception_code() (_SEH3$_TrylevelFrame.ExceptionCode)
 #define _exception_info() (_SEH3$_TrylevelFrame.ExceptionPointers)
 
 #else /* __cplusplus || __clang__ */
 
 #define _SEH3$_DECLARE_EXCEPT_INTRINSICS() \
     inline __attribute__((always_inline, gnu_inline)) \
-    unsigned long _exception_code() { return _SEH3$_TrylevelFrame.ExceptionPointers->ExceptionRecord->ExceptionCode; }
+    unsigned long _exception_code() { return _SEH3$_TrylevelFrame.ExceptionCode; }
 
 /* On GCC the filter function is a nested function with __fastcall calling
    convention. The eax register contains a base address the function uses
@@ -284,7 +290,7 @@ _SEH3$_AutoCleanup(
 _Pragma("GCC diagnostic push") \
 _Pragma("GCC diagnostic ignored \"-Wshadow\"") \
         inline __attribute__((always_inline, gnu_inline)) \
-        unsigned long _exception_code() { return _SEH3$_TrylevelFrame.ExceptionPointers->ExceptionRecord->ExceptionCode; } \
+        unsigned long _exception_code() { return _SEH3$_TrylevelFrame.ExceptionCode; } \
         inline __attribute__((always_inline, gnu_inline)) \
         void * _exception_info() { return _SEH3$_TrylevelFrame.ExceptionPointers; } \
 _Pragma("GCC diagnostic pop") \

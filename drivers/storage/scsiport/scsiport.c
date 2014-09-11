@@ -1840,6 +1840,8 @@ ScsiPortLogError(IN PVOID HwDeviceExtension,
   //PSCSI_PORT_DEVICE_EXTENSION DeviceExtension;
 
   DPRINT1("ScsiPortLogError() called\n");
+  DPRINT1("PathId: 0x%02x  TargetId: 0x%02x  Lun: 0x%02x  ErrorCode: 0x%08lx  UniqueId: 0x%08lx\n",
+          PathId, TargetId, Lun, ErrorCode, UniqueId);
 
   //DeviceExtension = CONTAINING_RECORD(HwDeviceExtension, SCSI_PORT_DEVICE_EXTENSION, MiniPortDeviceExtension);
 
@@ -5294,7 +5296,7 @@ SpiBuildDeviceMap (PSCSI_PORT_DEVICE_EXTENSION DeviceExtension,
 			  L"\\Registry\\Machine\\Hardware\\DeviceMap\\Scsi");
   InitializeObjectAttributes(&ObjectAttributes,
 			     &KeyName,
-			     OBJ_CASE_INSENSITIVE | OBJ_OPENIF,
+			     OBJ_CASE_INSENSITIVE | OBJ_OPENIF | OBJ_KERNEL_HANDLE,
 			     0,
 			     NULL);
   Status = ZwCreateKey(&ScsiKey,
@@ -5321,7 +5323,7 @@ SpiBuildDeviceMap (PSCSI_PORT_DEVICE_EXTENSION DeviceExtension,
 		       NameBuffer);
   InitializeObjectAttributes(&ObjectAttributes,
 			     &KeyName,
-			     0,
+			     OBJ_KERNEL_HANDLE,
 			     ScsiKey,
 			     NULL);
   Status = ZwCreateKey(&ScsiPortKey,

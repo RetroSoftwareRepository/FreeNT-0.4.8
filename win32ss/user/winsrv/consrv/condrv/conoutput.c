@@ -34,6 +34,7 @@ GRAPHICS_BUFFER_Destroy(IN OUT PCONSOLE_SCREEN_BUFFER Buffer);
 NTSTATUS
 CONSOLE_SCREEN_BUFFER_Initialize(OUT PCONSOLE_SCREEN_BUFFER* Buffer,
                                  IN OUT PCONSOLE Console,
+                                 IN PCONSOLE_SCREEN_BUFFER_VTBL Vtbl,
                                  IN SIZE_T Size)
 {
     if (Buffer == NULL || Console == NULL)
@@ -44,7 +45,7 @@ CONSOLE_SCREEN_BUFFER_Initialize(OUT PCONSOLE_SCREEN_BUFFER* Buffer,
 
     /* Initialize the header with the default type */
     ConSrvInitObject(&(*Buffer)->Header, SCREEN_BUFFER, Console);
-    (*Buffer)->Vtbl = NULL;
+    (*Buffer)->Vtbl = Vtbl;
     return STATUS_SUCCESS;
 }
 
@@ -74,7 +75,7 @@ CONSOLE_SCREEN_BUFFER_Destroy(IN OUT PCONSOLE_SCREEN_BUFFER Buffer)
 }
 
 // ConDrvCreateConsoleScreenBuffer
-NTSTATUS FASTCALL
+NTSTATUS
 ConDrvCreateScreenBuffer(OUT PCONSOLE_SCREEN_BUFFER* Buffer,
                          IN OUT PCONSOLE Console,
                          IN ULONG BufferType,
@@ -114,7 +115,7 @@ static VOID
 ConioSetActiveScreenBuffer(PCONSOLE_SCREEN_BUFFER Buffer);
 
 VOID NTAPI
-ConioDeleteScreenBuffer(PCONSOLE_SCREEN_BUFFER Buffer)
+ConDrvDeleteScreenBuffer(PCONSOLE_SCREEN_BUFFER Buffer)
 {
     PCONSOLE Console = Buffer->Header.Console;
     PCONSOLE_SCREEN_BUFFER NewBuffer;
@@ -151,7 +152,7 @@ ConioDeleteScreenBuffer(PCONSOLE_SCREEN_BUFFER Buffer)
     CONSOLE_SCREEN_BUFFER_Destroy(Buffer);
 }
 
-VOID FASTCALL
+VOID
 ConioDrawConsole(PCONSOLE Console)
 {
     SMALL_RECT Region;
@@ -159,7 +160,8 @@ ConioDrawConsole(PCONSOLE Console)
 
     if (ActiveBuffer)
     {
-        ConioInitRect(&Region, 0, 0, ActiveBuffer->ViewSize.Y - 1, ActiveBuffer->ViewSize.X - 1);
+        ConioInitRect(&Region, 0, 0,
+                      ActiveBuffer->ViewSize.Y - 1, ActiveBuffer->ViewSize.X - 1);
         TermDrawRegion(Console, &Region);
     }
 }
@@ -186,9 +188,9 @@ ConDrvSetConsoleActiveScreenBuffer(IN PCONSOLE Console,
     if (Buffer == Console->ActiveBuffer) return STATUS_SUCCESS;
 
     /* If old buffer has no handles, it's now unreferenced */
-    if (Console->ActiveBuffer->Header.HandleCount == 0)
+    if (Console->ActiveBuffer->Header.ReferenceCount == 0)
     {
-        ConioDeleteScreenBuffer(Console->ActiveBuffer);
+        ConDrvDeleteScreenBuffer(Console->ActiveBuffer);
     }
 
     /* Tie console to new buffer and signal the change to the frontend */
@@ -206,6 +208,13 @@ ConDrvGetActiveScreenBuffer(IN PCONSOLE Console)
 /* PUBLIC DRIVER APIS *********************************************************/
 
 NTSTATUS NTAPI
+ConDrvWriteConsoleOutputVDM(IN PCONSOLE Console,
+                            IN PTEXTMODE_SCREEN_BUFFER Buffer,
+                            IN PCHAR_CELL CharInfo/*Buffer*/,
+                            IN COORD CharInfoSize,
+                            IN OUT PSMALL_RECT WriteRegion,
+                            IN BOOLEAN DrawRegion);
+NTSTATUS NTAPI
 ConDrvInvalidateBitMapRect(IN PCONSOLE Console,
                            IN PCONSOLE_SCREEN_BUFFER Buffer,
                            IN PSMALL_RECT Region)
@@ -215,6 +224,19 @@ ConDrvInvalidateBitMapRect(IN PCONSOLE Console,
 
     /* Validity check */
     ASSERT(Console == Buffer->Header.Console);
+
+    /* In text-mode only, draw the VDM buffer if present */
+    if (GetType(Buffer) == TEXTMODE_BUFFER)
+    {
+        PTEXTMODE_SCREEN_BUFFER TextBuffer = (PTEXTMODE_SCREEN_BUFFER)Buffer;
+
+        /*Status =*/ ConDrvWriteConsoleOutputVDM(Buffer->Header.Console,
+                                                 TextBuffer,
+                                                 Console->VDMBuffer,
+                                                 Console->VDMBufferSize,
+                                                 Region,
+                                                 FALSE);
+    }
 
     /* If the output buffer is the current one, redraw the correct portion of the screen */
     if (Buffer == Console->ActiveBuffer) TermDrawRegion(Console, Region);

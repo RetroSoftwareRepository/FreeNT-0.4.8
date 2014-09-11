@@ -171,7 +171,7 @@ LPITEMIDLIST SHELL32_CreatePidlFromBindCtx(IBindCtx *pbc, LPCWSTR path)
 HRESULT WINAPI CFSFolder::ParseDisplayName(HWND hwndOwner,
         LPBC pbc,
         LPOLESTR lpszDisplayName,
-        DWORD *pchEaten, LPITEMIDLIST *ppidl,
+        DWORD *pchEaten, PIDLIST_RELATIVE *ppidl,
         DWORD *pdwAttributes)
 {
     HRESULT hr = E_INVALIDARG;
@@ -297,7 +297,7 @@ HRESULT WINAPI CFSFolder::EnumObjects(
 *  LPVOID*       ppvObject   //[out] Interface*
 */
 HRESULT WINAPI CFSFolder::BindToObject(
-    LPCITEMIDLIST pidl,
+    PCUIDLIST_RELATIVE pidl,
     LPBC pbc,
     REFIID riid,
     LPVOID * ppvOut)
@@ -317,7 +317,7 @@ HRESULT WINAPI CFSFolder::BindToObject(
 *  LPVOID*       ppvObject   //[out] Interface* returned
 */
 HRESULT WINAPI CFSFolder::BindToStorage(
-    LPCITEMIDLIST pidl,
+    PCUIDLIST_RELATIVE pidl,
     LPBC pbcReserved,
     REFIID riid,
     LPVOID *ppvOut)
@@ -334,7 +334,8 @@ HRESULT WINAPI CFSFolder::BindToStorage(
 */
 
 HRESULT WINAPI CFSFolder::CompareIDs(LPARAM lParam,
-                                     LPCITEMIDLIST pidl1, LPCITEMIDLIST pidl2)
+                                     PCUIDLIST_RELATIVE pidl1,
+                                     PCUIDLIST_RELATIVE pidl2)
 {
     int nReturn;
 
@@ -391,7 +392,7 @@ HRESULT WINAPI CFSFolder::CreateViewObject(HWND hwndOwner,
 *
 */
 HRESULT WINAPI CFSFolder::GetAttributesOf(UINT cidl,
-        LPCITEMIDLIST * apidl, DWORD * rgfInOut)
+        PCUITEMID_CHILD_ARRAY apidl, DWORD * rgfInOut)
 {
     HRESULT hr = S_OK;
 
@@ -460,8 +461,9 @@ HRESULT WINAPI CFSFolder::GetAttributesOf(UINT cidl,
 *  needs the positions.
 */
 HRESULT WINAPI CFSFolder::GetUIObjectOf(HWND hwndOwner,
-                                        UINT cidl, LPCITEMIDLIST * apidl, REFIID riid,
-                                        UINT * prgfInOut, LPVOID * ppvOut)
+                                        UINT cidl, PCUITEMID_CHILD_ARRAY apidl,
+                                        REFIID riid, UINT * prgfInOut,
+                                        LPVOID * ppvOut)
 {
     LPITEMIDLIST pidl;
     IUnknown *pObj = NULL;
@@ -597,7 +599,7 @@ void SHELL_FS_ProcessDisplayFilename(LPWSTR szPath, DWORD dwFlags)
 *  if the name is in the pidl the ret value should be a STRRET_OFFSET
 */
 
-HRESULT WINAPI CFSFolder::GetDisplayNameOf(LPCITEMIDLIST pidl,
+HRESULT WINAPI CFSFolder::GetDisplayNameOf(PCUITEMID_CHILD pidl,
         DWORD dwFlags, LPSTRRET strRet)
 {
     LPWSTR pszPath;
@@ -677,10 +679,10 @@ HRESULT WINAPI CFSFolder::GetDisplayNameOf(LPCITEMIDLIST pidl,
 */
 HRESULT WINAPI CFSFolder::SetNameOf(
     HWND hwndOwner,
-    LPCITEMIDLIST pidl,
+    PCUITEMID_CHILD pidl,
     LPCOLESTR lpName,
     DWORD dwFlags,
-    LPITEMIDLIST * pPidlOut)
+    PITEMID_CHILD *pPidlOut)
 {
     WCHAR szSrc[MAX_PATH + 1], szDest[MAX_PATH + 1];
     LPWSTR ptr;
@@ -778,7 +780,7 @@ HRESULT WINAPI CFSFolder::GetDefaultColumnState(UINT iColumn,
     return S_OK;
 }
 
-HRESULT WINAPI CFSFolder::GetDetailsEx(LPCITEMIDLIST pidl,
+HRESULT WINAPI CFSFolder::GetDetailsEx(PCUITEMID_CHILD pidl,
                                        const SHCOLUMNID * pscid, VARIANT * pv)
 {
     FIXME ("(%p)\n", this);
@@ -786,7 +788,7 @@ HRESULT WINAPI CFSFolder::GetDetailsEx(LPCITEMIDLIST pidl,
     return E_NOTIMPL;
 }
 
-HRESULT WINAPI CFSFolder::GetDetailsOf(LPCITEMIDLIST pidl,
+HRESULT WINAPI CFSFolder::GetDetailsOf(PCUITEMID_CHILD pidl,
                                        UINT iColumn, SHELLDETAILS * psd)
 {
     HRESULT hr = E_FAIL;
@@ -1431,20 +1433,17 @@ HRESULT WINAPI CFSFolder::Drop(IDataObject *pDataObject,
             _DoDropData *data = static_cast<_DoDropData*>(HeapAlloc(GetProcessHeap(), 0, sizeof(_DoDropData)));
             data->This = this;
             // Need to maintain this class in case the window is closed or the class exists temporarily (when dropping onto a folder).
+            pDataObject->AddRef();
+            pAsyncOperation->StartOperation(NULL);
+            CoMarshalInterThreadInterfaceInStream(IID_IDataObject, pDataObject, &data->pStream);
             this->AddRef();
-            data->pDataObject = pDataObject;
-            data->pAsyncOperation = pAsyncOperation;
             data->dwKeyState = dwKeyState;
             data->pt = pt;
             // Need to dereference as pdweffect gets freed.
             data->pdwEffect = *pdwEffect;
-            data->pDataObject->AddRef();
-            data->pAsyncOperation->StartOperation(NULL);
             SHCreateThread(CFSFolder::_DoDropThreadProc, data, NULL, NULL);
             return S_OK;
         }
-        else
-            pAsyncOperation->Release();
     }
     return this->_DoDrop(pDataObject, dwKeyState, pt, pdwEffect);
 }
@@ -1745,15 +1744,26 @@ HRESULT WINAPI CFSFolder::_DoDrop(IDataObject *pDataObject,
 }
 
 DWORD WINAPI CFSFolder::_DoDropThreadProc(LPVOID lpParameter) {
+    CoInitialize(NULL);
     _DoDropData *data = static_cast<_DoDropData*>(lpParameter);
-    HRESULT hr = data->This->_DoDrop(data->pDataObject, data->dwKeyState, data->pt, &data->pdwEffect);
+    IDataObject *pDataObject;
+    HRESULT hr = CoGetInterfaceAndReleaseStream (data->pStream, IID_IDataObject, (void**) &pDataObject);
+
+    if (SUCCEEDED(hr))
+    {
+        CComPtr<IAsyncOperation> pAsyncOperation;
+        hr = data->This->_DoDrop(pDataObject, data->dwKeyState, data->pt, &data->pdwEffect);
+        if (SUCCEEDED(pDataObject->QueryInterface(IID_PPV_ARG(IAsyncOperation, &pAsyncOperation))))
+        {
+            pAsyncOperation->EndOperation(hr, NULL, data->pdwEffect);
+        }
+        pDataObject->Release();
+    }
     //Release the CFSFolder and data object holds in the copying thread.
-    data->pAsyncOperation->EndOperation(hr, NULL, data->pdwEffect);
-    data->pAsyncOperation->Release();
-    data->pDataObject->Release();
     data->This->Release();
     //Release the parameter from the heap.
     HeapFree(GetProcessHeap(), 0, data);
+    CoUninitialize();
     return 0;
 }
 

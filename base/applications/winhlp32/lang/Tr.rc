@@ -1,7 +1,7 @@
 /*
  * Turkish Resources for ReactOS Winhlp32
  *
- * Copyrights: 2006 Fatih Aşıcı (fasici@linux-sevenler.org), 2013 Erdem Ersoy (eersoy93) (erdemersoy@live.com)
+ * Copyrights: 2006 Fatih Aşıcı (fasici@linux-sevenler.org); 2013, 2014 Erdem Ersoy (eersoy93) (erdemersoy@live.com)
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -32,7 +32,7 @@ MAIN_MENU MENU
   MENUITEM SEPARATOR
   MENUITEM "&Çıkış",                   MNID_FILE_EXIT
  }
- POPUP "&Düzenleme" {
+ POPUP "&Düzen" {
    MENUITEM "&Çoğalt",                 MNID_EDIT_COPYDLG
    MENUITEM SEPARATOR
    MENUITEM "&Hâşiye Ekle...",         MNID_EDIT_ANNOTATE
@@ -83,7 +83,7 @@ CAPTION "Bul"
 /* Strings */
 STRINGTABLE
 {
-STID_WINE_HELP,        "Yardım Kütüğü Görüntüleyicisi"
+STID_WINE_HELP,        "Yardım"
 STID_WHERROR,          "YANLIŞLIK"
 STID_WARNING,          "UYARI"
 STID_INFO,             "Bilgi"

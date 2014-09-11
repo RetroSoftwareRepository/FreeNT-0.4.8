@@ -48,6 +48,18 @@ BEGIN
         MENUITEM "B&asamaklandır", ID_WINDOWS_CASCADE
         MENUITEM "&Öne Getir", ID_WINDOWS_BRINGTOFRONT
     END
+    POPUP "&Bilgisayarı Kapat"
+    BEGIN
+        MENUITEM "&Uykuya Geçir",              ID_SHUTDOWN_STANDBY
+        MENUITEM "&Anıkta Beklet",             ID_SHUTDOWN_HIBERNATE
+        MENUITEM "&Kapat",                     ID_SHUTDOWN_POWEROFF
+        MENUITEM "&Yeniden Başlat",            ID_SHUTDOWN_REBOOT
+        MENUITEM """%s"" &Oturumunu Kapat",    ID_SHUTDOWN_LOGOFF
+        MENUITEM "Ku&llanıcı Değiştir\tWinKey+L", ID_SHUTDOWN_SWITCHUSER, GRAYED
+        MENUITEM "&Bilgisayarı Kilitle\tWinKey+L", ID_SHUTDOWN_LOCKCOMPUTER
+        MENUITEM "Ba&ğlantıyı Kes",            ID_SHUTDOWN_DISCONNECT, GRAYED
+        MENUITEM "B&ilgisayarı Çıkar",         ID_SHUTDOWN_EJECT_COMPUTER, GRAYED
+    END
     POPUP "&Yardım"
     BEGIN
         MENUITEM "&Yardım Konuları", ID_HELP_TOPICS
@@ -125,7 +137,7 @@ BEGIN
             MENUITEM "Dü&şük", ID_PROCESS_PAGE_SETPRIORITY_LOW
         END
         MENUITEM "İ&lişkiyi Ayarla...", ID_PROCESS_PAGE_SETAFFINITY
-        MENUITEM "Y&anlışlık Ayıklama Kanallarını Düzenle...", ID_PROCESS_PAGE_DEBUGCHANNELS
+        MENUITEM "Y&anlışlık Ayıklama Yollarını Düzenle...", ID_PROCESS_PAGE_DEBUGCHANNELS
     END
 END
 
@@ -159,7 +171,7 @@ BEGIN
     CONTROL "List2", IDC_PROCESSLIST, "SysListView32", LVS_REPORT | LVS_SINGLESEL |
             LVS_SHOWSELALWAYS | WS_BORDER | WS_TABSTOP, 7, 7, 233, 177
     PUSHBUTTON "&İşlemi Sonlandır", IDC_ENDPROCESS, 171, 189, 69, 14
-    CONTROL "&Her Kullanıcının İşlemlerini Göster", IDC_SHOWALLPROCESSES, "Button",
+    CONTROL "&Tüm Kullanıcıların İşlemlerini Göster", IDC_SHOWALLPROCESSES, "Button",
             BS_AUTOCHECKBOX | WS_TABSTOP, 7, 191, 111, 10
 END
 
@@ -220,7 +232,7 @@ END
 
 IDD_DEBUG_CHANNELS_DIALOG DIALOGEX 0, 0, 247, 210
 STYLE DS_SHELLFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
-CAPTION "Yanlışlık Ayıklama Kanalları"
+CAPTION "Yanlışlık Ayıklama Yolları"
 FONT 8, "MS Shell Dlg"
 BEGIN
     CONTROL "List2", IDC_DEBUG_CHANNELS_LIST, "SysListView32", LVS_REPORT | LVS_SINGLESEL |
@@ -323,10 +335,10 @@ BEGIN
     ID_VIEW_REFRESH "Yenileme Hızı ayârını önemsemeden Görev Yöneticisi'ni şimdi yenilemeye zorlar."
     ID_VIEW_LARGE "Görevleri büyük simgeler kullanarak gösterir."
     ID_VIEW_SMALL "Görevleri küçük simgeler kullanarak gösterir."
-    ID_VIEW_DETAILS "Her bir görev için bilgi görüntüler."
-    ID_VIEW_UPDATESPEED_HIGH "Her sâniyede iki kez görünümü yeniler."
-    ID_VIEW_UPDATESPEED_NORMAL "Her iki sâniyede bir görünümü yeniler."
-    ID_VIEW_UPDATESPEED_LOW "Her dört sâniyede bir görünümü yeniler."
+    ID_VIEW_DETAILS "Her bir görev üzerine bilgi görüntüler."
+    ID_VIEW_UPDATESPEED_HIGH "Sâniyede iki kez görünümü yeniler."
+    ID_VIEW_UPDATESPEED_NORMAL "İki sâniyede bir görünümü yeniler."
+    ID_VIEW_UPDATESPEED_LOW "Dört sâniyede bir görünümü yeniler."
 END
 
 STRINGTABLE
@@ -345,7 +357,7 @@ BEGIN
     ID_VIEW_SELECTCOLUMNS "İşlemler sayfasında hangi dikeçlerin görünür olacağını seçer."
     ID_VIEW_SHOWKERNELTIMES "Başarım çizgelerinde çekirdek sürelerini görüntüler."
     ID_VIEW_CPUHISTORY_ONEGRAPHALL "Bir bayağı geçmiş çizgesi toplam CPU kullanımını gösterir."
-    ID_VIEW_CPUHISTORY_ONEGRAPHPERCPU "Her bir CPU'nun kendi geçmiş çizgesi vardır."
+    ID_VIEW_CPUHISTORY_ONEGRAPHPERCPU "Her CPU'nun kendi geçmiş çizgesi vardır."
     ID_APPLICATION_PAGE_SWITCHTO "Bir görevi ön plana getirir, o göreve odaklatır."
 END
 
@@ -414,16 +426,16 @@ BEGIN
     IDS_MSG_PROCESSONEPRO "İşlem en azından bir işlemciyle ilişkisi olmalıdır."
     IDS_MSG_INVALIDOPTION "Geçersiz Seçenek"
     IDS_MSG_UNABLEDEBUGPROCESS "Yanlışlık Ayıklama İşleminin Yapılamaması"
-    IDS_MSG_WARNINGDEBUG "UYARI: Bu işlemde yanlışlık ayıklama veri yitimiyle sonuçlanabilir.\nYanlışlık ayıklayıcı bağlamak istediğinizi doğruluyor musunuz?"
+    IDS_MSG_WARNINGDEBUG "UYARI: Bu işlemde yanlışlık ayıklama veri yitimiyle sonuçlanabilir.\nYanlışlık ayıklayıcı bağlamak istediğinizden emin misiniz?"
     IDS_MSG_TASKMGRWARNING "Görev Yöneticisi Uyarısı"
-    IDS_MSG_WARNINGTERMINATING "UYARI: Bir işlemin sonlandırılması, veri\nyitimi ve dizge kararsızlığını içeren istenmeyen sonuçlara neden\nolabilir. İşlem sonlandırılmadan önce durumunu veyâ verisini\nkaydetme fırsatı verilmeyecektir. İşlemi\nsonlandırmak istediğinizi doğruluyor musunuz?"
+    IDS_MSG_WARNINGTERMINATING "UYARI: Bir işlemin sonlandırılması, veri\nyitimi ve dizge kararsızlığını içeren istenmeyen sonuçlara neden\nolabilir. İşlem sonlandırılmadan önce durumunu veyâ verisini\nkaydetme fırsatı verilmeyecektir. İşlemi\nsonlandırmak istediğinizden emin misiniz?"
     IDS_MSG_UNABLETERMINATEPRO "İşlem Sonlandırmanın Yapılamaması"
     IDS_MSG_UNABLECHANGEPRIORITY "Önceliğin Değiştirilememesi"
-    IDS_MSG_WARNINGCHANGEPRIORITY "UYARI: Bu işlemin öncelik sınıfının değiştirilmesi, dizge\nkararsızlığını içeren istenmeyen sonuçlara neden olabilir. Öncelik \nsınıfını değiştirmek istediğinizi doğruluyor musunuz?"
+    IDS_MSG_WARNINGCHANGEPRIORITY "UYARI: Bu işlemin öncelik sınıfının değiştirilmesi, dizge\nkararsızlığını içeren istenmeyen sonuçlara neden olabilir. Öncelik \nsınıfını değiştirmek istediğinizden emin misiniz?"
     IDS_MSG_TRAYICONCPUUSAGE "CPU Kullanımı: %%%d"
     IDS_STATUS_MEMUSAGE "Bellek Kullanımı: %d KB / %d KB"
     IDS_STATUS_CPUUSAGE "CPU Kullanımı: %%%3d"
     IDS_STATUS_PROCESSES "İşlem: %d"
-    IDS_Not_Responding "Yanıt Vermiyor"
-    IDS_Running "Çalışıyor"
+    IDS_NOT_RESPONDING "Yanıt Vermiyor"
+    IDS_RUNNING "Çalışıyor"
 END

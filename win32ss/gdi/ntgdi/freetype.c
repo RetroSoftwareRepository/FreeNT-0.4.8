@@ -1600,12 +1600,12 @@ ftGdiGetGlyphOutline(
         }
     }
 
-//  FT_Set_Pixel_Sizes(ft_face,
-//                     TextObj->logfont.elfEnumLogfontEx.elfLogFont.lfWidth,
+    FT_Set_Pixel_Sizes(ft_face,
+                       abs(TextObj->logfont.elfEnumLogfontEx.elfLogFont.lfWidth),
     /* FIXME: Should set character height if neg */
-//                     (TextObj->logfont.elfEnumLogfontEx.elfLogFont.lfHeight == 0 ?
-//                      dc->ppdev->devinfo.lfDefaultFont.lfHeight : abs(TextObj->logfont.elfEnumLogfontEx.elfLogFont.lfHeight)));
-//    FtSetCoordinateTransform(face, DC_pmxWorldToDevice(dc));
+                       (TextObj->logfont.elfEnumLogfontEx.elfLogFont.lfHeight == 0 ?
+                        dc->ppdev->devinfo.lfDefaultFont.lfHeight : abs(TextObj->logfont.elfEnumLogfontEx.elfLogFont.lfHeight)));
+    FtSetCoordinateTransform(ft_face, DC_pmxWorldToDevice(dc));
 
     TEXTOBJ_UnlockText(TextObj);
 
@@ -3212,7 +3212,7 @@ GreExtTextOutW(
     LONGLONG TextLeft, RealXStart;
     ULONG TextTop, previous, BackgroundLeft;
     FT_Bool use_kerning;
-    RECTL DestRect, MaskRect, DummyRect = {0, 0, 0, 0};
+    RECTL DestRect, MaskRect;
     POINTL SourcePoint, BrushOrigin;
     HBITMAP HSourceGlyph;
     SURFOBJ *SourceGlyphSurf;
@@ -3308,7 +3308,7 @@ GreExtTextOutW(
         DestRect.right  += dc->ptlDCOrig.x;
         DestRect.bottom += dc->ptlDCOrig.y;
 
-        DC_vPrepareDCsForBlit(dc, DestRect, NULL, DestRect);
+        DC_vPrepareDCsForBlit(dc, &DestRect, NULL, NULL);
 
         if (pdcattr->ulDirty_ & DIRTY_BACKGROUND)
             DC_vUpdateBackgroundBrush(dc);
@@ -3317,7 +3317,7 @@ GreExtTextOutW(
             &dc->dclevel.pSurface->SurfObj,
             NULL,
             NULL,
-            dc->rosdc.CombinedClip,
+            &dc->co.ClipObj,
             NULL,
             &DestRect,
             &SourcePoint,
@@ -3502,7 +3502,7 @@ GreExtTextOutW(
     BackgroundLeft = (RealXStart + 32) >> 6;
 
     /* Lock blit with a dummy rect */
-    DC_vPrepareDCsForBlit(dc, DummyRect, NULL, DummyRect);
+    DC_vPrepareDCsForBlit(dc, NULL, NULL, NULL);
 
     psurf = dc->dclevel.pSurface ;
     if(!psurf) psurf = psurfDefaultBitmap;
@@ -3577,7 +3577,7 @@ GreExtTextOutW(
                 &psurf->SurfObj,
                 NULL,
                 NULL,
-                dc->rosdc.CombinedClip,
+                &dc->co.ClipObj,
                 NULL,
                 &DestRect,
                 &SourcePoint,
@@ -3650,7 +3650,7 @@ GreExtTextOutW(
         IntEngMaskBlt(
             SurfObj,
             SourceGlyphSurf,
-            dc->rosdc.CombinedClip,
+            &dc->co.ClipObj,
             &exloRGB2Dst.xlo,
             &exloDst2RGB.xlo,
             &DestRect,
@@ -3674,6 +3674,7 @@ GreExtTextOutW(
         }
         else
         {
+            // FIXME this should probably be a matrix transform with TextTop as well.
             Scale = pdcattr->mxWorldToDevice.efM11;
             if (_FLOATOBJ_Equal0(&Scale))
                 FLOATOBJ_Set1(&Scale);

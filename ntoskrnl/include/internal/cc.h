@@ -135,7 +135,6 @@ typedef struct _ROS_VACB
     /* Entry in the list of VACBs which are dirty. */
     LIST_ENTRY DirtyVacbListEntry;
     /* Entry in the list of VACBs. */
-    LIST_ENTRY VacbListEntry;
     LIST_ENTRY VacbLruListEntry;
     /* Offset in the file which this view maps. */
     LARGE_INTEGER FileOffset;
@@ -146,7 +145,6 @@ typedef struct _ROS_VACB
     /* Pointer to the shared cache map for the file which this view maps data for. */
     PROS_SHARED_CACHE_MAP SharedCacheMap;
     /* Pointer to the next VACB in a chain. */
-    struct _ROS_VACB *NextInChain;
 } ROS_VACB, *PROS_VACB;
 
 typedef struct _INTERNAL_BCB
@@ -186,8 +184,8 @@ NTSTATUS
 NTAPI
 CcRosGetVacb(
     PROS_SHARED_CACHE_MAP SharedCacheMap,
-    ULONG FileOffset,
-    PULONGLONG BaseOffset,
+    LONGLONG FileOffset,
+    PLONGLONG BaseOffset,
     PVOID *BaseAddress,
     PBOOLEAN UptoDate,
     PROS_VACB *Vacb
@@ -213,7 +211,7 @@ NTSTATUS
 NTAPI
 CcRosUnmapVacb(
     PROS_SHARED_CACHE_MAP SharedCacheMap,
-    ULONG FileOffset,
+    LONGLONG FileOffset,
     BOOLEAN NowDirty
 );
 
@@ -221,16 +219,7 @@ PROS_VACB
 NTAPI
 CcRosLookupVacb(
     PROS_SHARED_CACHE_MAP SharedCacheMap,
-    ULONG FileOffset
-);
-
-NTSTATUS
-NTAPI
-CcRosGetVacbChain(
-    PROS_SHARED_CACHE_MAP SharedCacheMap,
-    ULONG FileOffset,
-    ULONG Length,
-    PROS_VACB *Vacb
+    LONGLONG FileOffset
 );
 
 VOID
@@ -241,7 +230,7 @@ NTSTATUS
 NTAPI
 CcRosMarkDirtyVacb(
     PROS_SHARED_CACHE_MAP SharedCacheMap,
-    ULONG FileOffset
+    LONGLONG FileOffset
 );
 
 NTSTATUS
@@ -278,7 +267,7 @@ NTSTATUS
 NTAPI
 CcRosRequestVacb(
     PROS_SHARED_CACHE_MAP SharedCacheMap,
-    ULONG FileOffset,
+    LONGLONG FileOffset,
     PVOID* BaseAddress,
     PBOOLEAN UptoDate,
     PROS_VACB *Vacb
@@ -288,6 +277,7 @@ NTSTATUS
 NTAPI
 CcRosInitializeFileCache(
     PFILE_OBJECT FileObject,
+    PCC_FILE_SIZES FileSizes,
     PCACHE_MANAGER_CALLBACKS CallBacks,
     PVOID LazyWriterContext
 );
@@ -305,10 +295,10 @@ CcTryToInitializeFileCache(PFILE_OBJECT FileObject);
 FORCEINLINE
 BOOLEAN
 DoRangesIntersect(
-    _In_ ULONGLONG Offset1,
-    _In_ ULONG Length1,
-    _In_ ULONGLONG Offset2,
-    _In_ ULONG Length2)
+    _In_ LONGLONG Offset1,
+    _In_ LONGLONG Length1,
+    _In_ LONGLONG Offset2,
+    _In_ LONGLONG Length2)
 {
     if (Offset1 + Length1 <= Offset2)
         return FALSE;
@@ -320,9 +310,9 @@ DoRangesIntersect(
 FORCEINLINE
 BOOLEAN
 IsPointInRange(
-    _In_ ULONGLONG Offset1,
-    _In_ ULONG Length1,
-    _In_ ULONGLONG Point)
+    _In_ LONGLONG Offset1,
+    _In_ LONGLONG Length1,
+    _In_ LONGLONG Point)
 {
     return DoRangesIntersect(Offset1, Length1, Point, 1);
 }

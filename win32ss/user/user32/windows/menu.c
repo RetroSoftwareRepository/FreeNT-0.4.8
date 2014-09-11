@@ -4046,7 +4046,7 @@ static INT FASTCALL MenuTrackMenu(HMENU hmenu, UINT wFlags, INT x, INT y,
  */
 static BOOL FASTCALL MenuInitTracking(HWND hWnd, HMENU hMenu, BOOL bPopup, UINT wFlags)
 {
-    ROSMENUINFO MenuInfo;
+    ROSMENUINFO MenuInfo = {0};
     
     TRACE("hwnd=%p hmenu=%p\n", hWnd, hMenu);
 
@@ -4586,11 +4586,10 @@ CheckMenuItem(HMENU hmenu,
 	      UINT uIDCheckItem,
 	      UINT uCheck)
 {
-  PMENU pMenu;
   PITEM item;
   DWORD Ret;
 
-  if (!(pMenu = ValidateHandle(hmenu, TYPE_MENU)))
+  if (!ValidateHandle(hmenu, TYPE_MENU))
      return -1;
 
   if (!(item = MENU_FindItem( &hmenu, &uIDCheckItem, uCheck ))) return -1;

@@ -11,9 +11,9 @@
 
 #pragma once
 
-NTSTATUS FASTCALL TuiInitConsole(PCONSOLE Console,
-                                 /*IN*/ PCONSOLE_START_INFO ConsoleStartInfo,
-                                 PCONSOLE_INFO ConsoleInfo,
-                                 DWORD ProcessId);
+NTSTATUS TuiInitConsole(PCONSOLE Console,
+                        /*IN*/ PCONSOLE_START_INFO ConsoleStartInfo,
+                        PCONSOLE_INFO ConsoleInfo,
+                        DWORD ProcessId);
 
 /* EOF */

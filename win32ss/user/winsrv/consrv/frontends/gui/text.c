@@ -24,7 +24,8 @@
 
 /* FUNCTIONS ******************************************************************/
 
-COLORREF PaletteRGBFromAttrib(PCONSOLE Console, WORD Attribute)
+static COLORREF
+PaletteRGBFromAttrib(PCONSRV_CONSOLE Console, WORD Attribute)
 {
     HPALETTE hPalette = Console->ActiveBuffer->PaletteHandle;
     PALETTEENTRY pe;
@@ -270,7 +271,7 @@ GuiPasteToTextModeBuffer(PTEXTMODE_SCREEN_BUFFER Buffer,
      * This function supposes that the system clipboard was opened.
      */
 
-    PCONSOLE Console = Buffer->Header.Console;
+    PCONSRV_CONSOLE Console = Buffer->Header.Console;
 
     HANDLE hData;
     LPWSTR str;
@@ -338,7 +339,7 @@ GuiPaintTextModeBuffer(PTEXTMODE_SCREEN_BUFFER Buffer,
                        PRECT rcView,
                        PRECT rcFramebuffer)
 {
-    PCONSOLE Console = Buffer->Header.Console;
+    PCONSRV_CONSOLE Console = Buffer->Header.Console;
     // ASSERT(Console == GuiData->Console);
 
     ULONG TopLine, BottomLine, LeftChar, RightChar;
@@ -348,7 +349,8 @@ GuiPaintTextModeBuffer(PTEXTMODE_SCREEN_BUFFER Buffer,
     WORD LastAttribute, Attribute;
     ULONG CursorX, CursorY, CursorHeight;
     HBRUSH CursorBrush, OldBrush;
-    HFONT OldFont;
+    HFONT OldFont, NewFont;
+    BOOLEAN IsUnderline;
 
     if (Buffer->Buffer == NULL) return;
 
@@ -372,7 +374,11 @@ GuiPaintTextModeBuffer(PTEXTMODE_SCREEN_BUFFER Buffer,
     SetTextColor(GuiData->hMemDC, PaletteRGBFromAttrib(Console, TextAttribFromAttrib(LastAttribute)));
     SetBkColor(GuiData->hMemDC, PaletteRGBFromAttrib(Console, BkgdAttribFromAttrib(LastAttribute)));
 
-    OldFont = SelectObject(GuiData->hMemDC, GuiData->Font);
+    /* We use the underscore flag as a underline flag */
+    IsUnderline = !!(LastAttribute & COMMON_LVB_UNDERSCORE);
+    /* Select the new font */
+    NewFont = GuiData->Font[IsUnderline ? FONT_BOLD : FONT_NORMAL];
+    OldFont = SelectObject(GuiData->hMemDC, NewFont);
 
     for (Line = TopLine; Line <= BottomLine; Line++)
     {
@@ -399,9 +405,18 @@ GuiPaintTextModeBuffer(PTEXTMODE_SCREEN_BUFFER Buffer,
                 Attribute = From->Attributes;
                 if (Attribute != LastAttribute)
                 {
-                    SetTextColor(GuiData->hMemDC, PaletteRGBFromAttrib(Console, TextAttribFromAttrib(Attribute)));
-                    SetBkColor(GuiData->hMemDC, PaletteRGBFromAttrib(Console, BkgdAttribFromAttrib(Attribute)));
                     LastAttribute = Attribute;
+                    SetTextColor(GuiData->hMemDC, PaletteRGBFromAttrib(Console, TextAttribFromAttrib(LastAttribute)));
+                    SetBkColor(GuiData->hMemDC, PaletteRGBFromAttrib(Console, BkgdAttribFromAttrib(LastAttribute)));
+
+                    /* Change underline state if needed */
+                    if (!!(LastAttribute & COMMON_LVB_UNDERSCORE) != IsUnderline)
+                    {
+                        IsUnderline = !!(LastAttribute & COMMON_LVB_UNDERSCORE);
+                        /* Select the new font */
+                        NewFont = GuiData->Font[IsUnderline ? FONT_BOLD : FONT_NORMAL];
+                        /* OldFont = */ SelectObject(GuiData->hMemDC, NewFont);
+                    }
                 }
             }
 
@@ -414,6 +429,9 @@ GuiPaintTextModeBuffer(PTEXTMODE_SCREEN_BUFFER Buffer,
                  LineBuffer,
                  RightChar - Start + 1);
     }
+
+    /* Restore the old font */
+    SelectObject(GuiData->hMemDC, OldFont);
 
     /*
      * Draw the caret
@@ -441,12 +459,11 @@ GuiPaintTextModeBuffer(PTEXTMODE_SCREEN_BUFFER Buffer,
                    GuiData->CharWidth,
                    CursorHeight,
                    PATCOPY);
+
             SelectObject(GuiData->hMemDC, OldBrush);
             DeleteObject(CursorBrush);
         }
     }
-
-    SelectObject(GuiData->hMemDC, OldFont);
 
     LeaveCriticalSection(&Console->Lock);
 }

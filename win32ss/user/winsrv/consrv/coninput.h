@@ -9,13 +9,8 @@
 
 #pragma once
 
-VOID FASTCALL PurgeInputBuffer(PCONSOLE Console);
-
+NTSTATUS NTAPI
+ConDrvInitInputBuffer(IN PCONSOLE Console,
+                      IN ULONG InputBufferSize);
 VOID NTAPI
-ConDrvProcessKey(IN PCONSOLE Console,
-                 IN BOOLEAN Down,
-                 IN UINT VirtualKeyCode,
-                 IN UINT VirtualScanCode,
-                 IN WCHAR UnicodeChar,
-                 IN ULONG ShiftState,
-                 IN BYTE KeyStateCtrl);
+ConDrvDeinitInputBuffer(IN PCONSOLE Console);

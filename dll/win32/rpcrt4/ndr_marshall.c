@@ -1120,7 +1120,7 @@ static void PointerFree(PMIDL_STUB_MESSAGE pStubMsg,
    * BufferStart and BufferEnd won't be reset when allocating memory for
    * sending the response. we don't have to check for the new buffer here as
    * it won't be used a type memory, only for buffer memory */
-  if (Pointer >= pStubMsg->BufferStart && Pointer < pStubMsg->BufferEnd)
+  if (Pointer >= pStubMsg->BufferStart && Pointer <= pStubMsg->BufferEnd)
       goto notfree;
 
   if (attr & RPC_FC_P_ONSTACK) {
@@ -1193,7 +1193,7 @@ static unsigned char * EmbeddedPointerMarshall(PMIDL_STUB_MESSAGE pStubMsg,
         unsigned char *bufptr = bufbase + *(const SHORT*)&info[2];
         unsigned char *saved_memory = pStubMsg->Memory;
 
-        pStubMsg->Memory = pMemory;
+        pStubMsg->Memory = membase;
         PointerMarshall(pStubMsg, bufptr, *(unsigned char**)memptr, info+4);
         pStubMsg->Memory = saved_memory;
       }
@@ -1347,7 +1347,7 @@ static void EmbeddedPointerBufferSize(PMIDL_STUB_MESSAGE pStubMsg,
         unsigned char *memptr = membase + *(const SHORT*)&info[0];
         unsigned char *saved_memory = pStubMsg->Memory;
 
-        pStubMsg->Memory = pMemory;
+        pStubMsg->Memory = membase;
         PointerBufferSize(pStubMsg, *(unsigned char**)memptr, info+4);
         pStubMsg->Memory = saved_memory;
       }

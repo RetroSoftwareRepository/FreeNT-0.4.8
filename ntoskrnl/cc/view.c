@@ -42,7 +42,6 @@
 /* GLOBALS *******************************************************************/
 
 static LIST_ENTRY DirtyVacbListHead;
-static LIST_ENTRY VacbListHead;
 static LIST_ENTRY VacbLruListHead;
 ULONG DirtyPageCount = 0;
 
@@ -331,7 +330,6 @@ retry:
             ASSERT(!current->MappedCount);
 
             RemoveEntryList(&current->CacheMapVacbListEntry);
-            RemoveEntryList(&current->VacbListEntry);
             RemoveEntryList(&current->VacbLruListEntry);
             InsertHeadList(&FreeList, &current->CacheMapVacbListEntry);
 
@@ -436,7 +434,7 @@ PROS_VACB
 NTAPI
 CcRosLookupVacb (
     PROS_SHARED_CACHE_MAP SharedCacheMap,
-    ULONG FileOffset)
+    LONGLONG FileOffset)
 {
     PLIST_ENTRY current_entry;
     PROS_VACB current;
@@ -444,7 +442,7 @@ CcRosLookupVacb (
 
     ASSERT(SharedCacheMap);
 
-    DPRINT("CcRosLookupVacb(SharedCacheMap 0x%p, FileOffset %lu)\n",
+    DPRINT("CcRosLookupVacb(SharedCacheMap 0x%p, FileOffset %I64u)\n",
            SharedCacheMap, FileOffset);
 
     KeAcquireGuardedMutex(&ViewLock);
@@ -485,14 +483,14 @@ NTSTATUS
 NTAPI
 CcRosMarkDirtyVacb (
     PROS_SHARED_CACHE_MAP SharedCacheMap,
-    ULONG FileOffset)
+    LONGLONG FileOffset)
 {
     PROS_VACB Vacb;
     KIRQL oldIrql;
 
     ASSERT(SharedCacheMap);
 
-    DPRINT("CcRosMarkDirtyVacb(SharedCacheMap 0x%p, FileOffset %lu)\n",
+    DPRINT("CcRosMarkDirtyVacb(SharedCacheMap 0x%p, FileOffset %I64u)\n",
            SharedCacheMap, FileOffset);
 
     Vacb = CcRosLookupVacb(SharedCacheMap, FileOffset);
@@ -531,7 +529,7 @@ NTSTATUS
 NTAPI
 CcRosUnmapVacb (
     PROS_SHARED_CACHE_MAP SharedCacheMap,
-    ULONG FileOffset,
+    LONGLONG FileOffset,
     BOOLEAN NowDirty)
 {
     PROS_VACB Vacb;
@@ -540,7 +538,7 @@ CcRosUnmapVacb (
 
     ASSERT(SharedCacheMap);
 
-    DPRINT("CcRosUnmapVacb(SharedCacheMap 0x%p, FileOffset %lu, NowDirty %u)\n",
+    DPRINT("CcRosUnmapVacb(SharedCacheMap 0x%p, FileOffset %I64u, NowDirty %u)\n",
            SharedCacheMap, FileOffset, NowDirty);
 
     Vacb = CcRosLookupVacb(SharedCacheMap, FileOffset);
@@ -584,7 +582,7 @@ static
 NTSTATUS
 CcRosCreateVacb (
     PROS_SHARED_CACHE_MAP SharedCacheMap,
-    ULONG FileOffset,
+    LONGLONG FileOffset,
     PROS_VACB *Vacb)
 {
     PROS_VACB current;
@@ -597,7 +595,7 @@ CcRosCreateVacb (
 
     DPRINT("CcRosCreateVacb()\n");
 
-    if (FileOffset >= SharedCacheMap->FileSize.u.LowPart)
+    if (FileOffset >= SharedCacheMap->FileSize.QuadPart)
     {
         *Vacb = NULL;
         return STATUS_INVALID_PARAMETER;
@@ -688,7 +686,6 @@ CcRosCreateVacb (
         InsertHeadList(&SharedCacheMap->CacheMapVacbListHead, &current->CacheMapVacbListEntry);
     }
     KeReleaseSpinLock(&SharedCacheMap->CacheMapLock, oldIrql);
-    InsertTailList(&VacbListHead, &current->VacbListEntry);
     InsertTailList(&VacbLruListHead, &current->VacbLruListEntry);
     KeReleaseGuardedMutex(&ViewLock);
 
@@ -730,77 +727,10 @@ CcRosCreateVacb (
 
 NTSTATUS
 NTAPI
-CcRosGetVacbChain (
-    PROS_SHARED_CACHE_MAP SharedCacheMap,
-    ULONG FileOffset,
-    ULONG Length,
-    PROS_VACB *Vacb)
-{
-    PROS_VACB current;
-    ULONG i;
-    PROS_VACB *VacbList;
-    PROS_VACB Previous = NULL;
-
-    ASSERT(SharedCacheMap);
-
-    DPRINT("CcRosGetVacbChain()\n");
-
-    Length = ROUND_UP(Length, VACB_MAPPING_GRANULARITY);
-
-    VacbList = _alloca(sizeof(PROS_VACB) *
-                       (Length / VACB_MAPPING_GRANULARITY));
-
-    /*
-     * Look for a VACB already mapping the same data.
-     */
-    for (i = 0; i < (Length / VACB_MAPPING_GRANULARITY); i++)
-    {
-        ULONG CurrentOffset = FileOffset + (i * VACB_MAPPING_GRANULARITY);
-        current = CcRosLookupVacb(SharedCacheMap, CurrentOffset);
-        if (current != NULL)
-        {
-            KeAcquireGuardedMutex(&ViewLock);
-
-            /* Move to tail of LRU list */
-            RemoveEntryList(&current->VacbLruListEntry);
-            InsertTailList(&VacbLruListHead, &current->VacbLruListEntry);
-
-            KeReleaseGuardedMutex(&ViewLock);
-
-            VacbList[i] = current;
-        }
-        else
-        {
-            CcRosCreateVacb(SharedCacheMap, CurrentOffset, &current);
-            VacbList[i] = current;
-        }
-    }
-
-    for (i = 0; i < Length / VACB_MAPPING_GRANULARITY; i++)
-    {
-        if (i == 0)
-        {
-            *Vacb = VacbList[i];
-            Previous = VacbList[i];
-        }
-        else
-        {
-            Previous->NextInChain = VacbList[i];
-            Previous = VacbList[i];
-        }
-    }
-    ASSERT(Previous);
-    Previous->NextInChain = NULL;
-
-    return STATUS_SUCCESS;
-}
-
-NTSTATUS
-NTAPI
 CcRosGetVacb (
     PROS_SHARED_CACHE_MAP SharedCacheMap,
-    ULONG FileOffset,
-    PULONGLONG BaseOffset,
+    LONGLONG FileOffset,
+    PLONGLONG BaseOffset,
     PVOID* BaseAddress,
     PBOOLEAN UptoDate,
     PROS_VACB *Vacb)
@@ -851,7 +781,7 @@ NTSTATUS
 NTAPI
 CcRosRequestVacb (
     PROS_SHARED_CACHE_MAP SharedCacheMap,
-    ULONG FileOffset,
+    LONGLONG FileOffset,
     PVOID* BaseAddress,
     PBOOLEAN UptoDate,
     PROS_VACB *Vacb)
@@ -859,13 +789,13 @@ CcRosRequestVacb (
  * FUNCTION: Request a page mapping for a shared cache map
  */
 {
-    ULONGLONG BaseOffset;
+    LONGLONG BaseOffset;
 
     ASSERT(SharedCacheMap);
 
     if (FileOffset % VACB_MAPPING_GRANULARITY != 0)
     {
-        DPRINT1("Bad fileoffset %x should be multiple of %x",
+        DPRINT1("Bad fileoffset %I64x should be multiple of %x",
                 FileOffset, VACB_MAPPING_GRANULARITY);
         KeBugCheck(CACHE_MANAGER);
     }
@@ -935,6 +865,7 @@ CcFlushCache (
 {
     PROS_SHARED_CACHE_MAP SharedCacheMap;
     LARGE_INTEGER Offset;
+    LONGLONG RemainingLength;
     PROS_VACB current;
     NTSTATUS Status;
     KIRQL oldIrql;
@@ -949,11 +880,12 @@ CcFlushCache (
         if (FileOffset)
         {
             Offset = *FileOffset;
+            RemainingLength = Length;
         }
         else
         {
-            Offset.QuadPart = (LONGLONG)0;
-            Length = SharedCacheMap->FileSize.u.LowPart;
+            Offset.QuadPart = 0;
+            RemainingLength = SharedCacheMap->FileSize.QuadPart;
         }
 
         if (IoStatus)
@@ -962,9 +894,9 @@ CcFlushCache (
             IoStatus->Information = 0;
         }
 
-        while (Length > 0)
+        while (RemainingLength > 0)
         {
-            current = CcRosLookupVacb(SharedCacheMap, Offset.u.LowPart);
+            current = CcRosLookupVacb(SharedCacheMap, Offset.QuadPart);
             if (current != NULL)
             {
                 if (current->Dirty)
@@ -985,14 +917,7 @@ CcFlushCache (
             }
 
             Offset.QuadPart += VACB_MAPPING_GRANULARITY;
-            if (Length > VACB_MAPPING_GRANULARITY)
-            {
-                Length -= VACB_MAPPING_GRANULARITY;
-            }
-            else
-            {
-                Length = 0;
-            }
+            RemainingLength -= min(RemainingLength, VACB_MAPPING_GRANULARITY);
         }
     }
     else
@@ -1040,7 +965,6 @@ CcRosDeleteFileCache (
         {
             current_entry = RemoveTailList(&SharedCacheMap->CacheMapVacbListHead);
             current = CONTAINING_RECORD(current_entry, ROS_VACB, CacheMapVacbListEntry);
-            RemoveEntryList(&current->VacbListEntry);
             RemoveEntryList(&current->VacbLruListEntry);
             if (current->Dirty)
             {
@@ -1191,6 +1115,7 @@ NTSTATUS
 NTAPI
 CcRosInitializeFileCache (
     PFILE_OBJECT FileObject,
+    PCC_FILE_SIZES FileSizes,
     PCACHE_MANAGER_CALLBACKS CallBacks,
     PVOID LazyWriterContext)
 /*
@@ -1220,13 +1145,8 @@ CcRosInitializeFileCache (
         SharedCacheMap->FileObject = FileObject;
         SharedCacheMap->Callbacks = CallBacks;
         SharedCacheMap->LazyWriteContext = LazyWriterContext;
-        if (FileObject->FsContext)
-        {
-            SharedCacheMap->SectionSize =
-                ((PFSRTL_COMMON_FCB_HEADER)FileObject->FsContext)->AllocationSize;
-            SharedCacheMap->FileSize =
-                ((PFSRTL_COMMON_FCB_HEADER)FileObject->FsContext)->FileSize;
-        }
+        SharedCacheMap->SectionSize = FileSizes->AllocationSize;
+        SharedCacheMap->FileSize = FileSizes->FileSize;
         KeInitializeSpinLock(&SharedCacheMap->CacheMapLock);
         InitializeListHead(&SharedCacheMap->CacheMapVacbListHead);
         FileObject->SectionObjectPointer->SharedCacheMap = SharedCacheMap;
@@ -1267,7 +1187,6 @@ CcInitView (
 {
     DPRINT("CcInitView()\n");
 
-    InitializeListHead(&VacbListHead);
     InitializeListHead(&DirtyVacbListHead);
     InitializeListHead(&VacbLruListHead);
     KeInitializeGuardedMutex(&ViewLock);

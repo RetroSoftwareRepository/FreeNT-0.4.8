@@ -78,30 +78,28 @@ HRESULT WINAPI CDesktopFolderEnumZ::Initialize(DWORD dwFlags)
 
 static LPITEMIDLIST _ILCreateFontItem(LPWSTR pszFont, LPWSTR pszFile)
 {
-    PIDLDATA tmp;
     LPITEMIDLIST pidl;
-    PIDLFontStruct * p;
-    int size0 = (char*)&tmp.u.cfont.szName - (char*)&tmp.u.cfont;
-    int size = size0;
+    LPPIDLDATA data;
+    int length = wcslen(pszFont) + 1;
+    int size = sizeof(PIDLDATA) + sizeof(ITEMIDLIST);
 
-    tmp.type = 0x00;
-    tmp.u.cfont.dummy = 0xFF;
-    tmp.u.cfont.offsFile = wcslen(pszFont) + 1;
+    size += length * sizeof(WCHAR);
+    size += (wcslen(pszFile) + 1) * sizeof(WCHAR);
 
-    size += (tmp.u.cfont.offsFile + wcslen(pszFile) + 1) * sizeof(WCHAR);
-
-    pidl = (LPITEMIDLIST)SHAlloc(size + 4);
+    pidl = (LPITEMIDLIST)SHAlloc(size + 5);
     if (!pidl)
         return pidl;
 
-    pidl->mkid.cb = size + 2;
-    memcpy(pidl->mkid.abID, &tmp, 2 + size0);
+    ZeroMemory(pidl, size + 5);
+    pidl->mkid.cb = size + 3;
 
-    p = &((PIDLDATA*)pidl->mkid.abID)->u.cfont;
-    wcscpy(p->szName, pszFont);
-    wcscpy(p->szName + tmp.u.cfont.offsFile, pszFile);
+    data = _ILGetDataPointer(pidl);
+    data->type = 0x00;
+    data->u.cfont.dummy = 0xFF;
+    data->u.cfont.offsFile = length;
+    wcscpy(data->u.cfont.szName, pszFont);
+    wcscpy(&data->u.cfont.szName[length], pszFile);
 
-    *(WORD*)((char*)pidl + (size + 2)) = 0;
     return pidl;
 }
 
@@ -198,7 +196,7 @@ HRESULT WINAPI CFontsFolder::ParseDisplayName(
     LPBC pbcReserved,
     LPOLESTR lpszDisplayName,
     DWORD *pchEaten,
-    LPITEMIDLIST *ppidl,
+    PIDLIST_RELATIVE *ppidl,
     DWORD * pdwAttributes)
 {
     HRESULT hr = E_UNEXPECTED;
@@ -252,7 +250,7 @@ HRESULT WINAPI CFontsFolder::EnumObjects(HWND hwndOwner, DWORD dwFlags, LPENUMID
 /**************************************************************************
 *        CFontsFolder::BindToObject
 */
-HRESULT WINAPI CFontsFolder::BindToObject(LPCITEMIDLIST pidl, LPBC pbcReserved, REFIID riid, LPVOID *ppvOut)
+HRESULT WINAPI CFontsFolder::BindToObject(PCUIDLIST_RELATIVE pidl, LPBC pbcReserved, REFIID riid, LPVOID *ppvOut)
 {
     TRACE ("(%p)->(pidl=%p,%p,%s,%p)\n", this,
            pidl, pbcReserved, shdebugstr_guid (&riid), ppvOut);
@@ -263,7 +261,7 @@ HRESULT WINAPI CFontsFolder::BindToObject(LPCITEMIDLIST pidl, LPBC pbcReserved, 
 /**************************************************************************
 *    CFontsFolder::BindToStorage
 */
-HRESULT WINAPI CFontsFolder::BindToStorage(LPCITEMIDLIST pidl, LPBC pbcReserved, REFIID riid, LPVOID *ppvOut)
+HRESULT WINAPI CFontsFolder::BindToStorage(PCUIDLIST_RELATIVE pidl, LPBC pbcReserved, REFIID riid, LPVOID *ppvOut)
 {
     FIXME ("(%p)->(pidl=%p,%p,%s,%p) stub\n", this,
            pidl, pbcReserved, shdebugstr_guid (&riid), ppvOut);
@@ -276,7 +274,7 @@ HRESULT WINAPI CFontsFolder::BindToStorage(LPCITEMIDLIST pidl, LPBC pbcReserved,
 *     CFontsFolder::CompareIDs
 */
 
-HRESULT WINAPI CFontsFolder::CompareIDs(LPARAM lParam, LPCITEMIDLIST pidl1, LPCITEMIDLIST pidl2)
+HRESULT WINAPI CFontsFolder::CompareIDs(LPARAM lParam, PCUIDLIST_RELATIVE pidl1, PCUIDLIST_RELATIVE pidl2)
 {
     int nReturn;
 
@@ -325,7 +323,7 @@ HRESULT WINAPI CFontsFolder::CreateViewObject(HWND hwndOwner, REFIID riid, LPVOI
 /**************************************************************************
 *  CFontsFolder::GetAttributesOf
 */
-HRESULT WINAPI CFontsFolder::GetAttributesOf(UINT cidl, LPCITEMIDLIST *apidl, DWORD *rgfInOut)
+HRESULT WINAPI CFontsFolder::GetAttributesOf(UINT cidl, PCUITEMID_CHILD_ARRAY apidl, DWORD *rgfInOut)
 {
     HRESULT hr = S_OK;
 
@@ -381,7 +379,7 @@ HRESULT WINAPI CFontsFolder::GetAttributesOf(UINT cidl, LPCITEMIDLIST *apidl, DW
 */
 HRESULT WINAPI CFontsFolder::GetUIObjectOf(
     HWND hwndOwner,
-    UINT cidl, LPCITEMIDLIST *apidl,
+    UINT cidl, PCUITEMID_CHILD_ARRAY apidl,
     REFIID riid, UINT *prgfInOut, LPVOID *ppvOut)
 {
     LPITEMIDLIST pidl;
@@ -439,7 +437,7 @@ HRESULT WINAPI CFontsFolder::GetUIObjectOf(
 *    CFontsFolder::GetDisplayNameOf
 *
 */
-HRESULT WINAPI CFontsFolder::GetDisplayNameOf(LPCITEMIDLIST pidl, DWORD dwFlags, LPSTRRET strRet)
+HRESULT WINAPI CFontsFolder::GetDisplayNameOf(PCUITEMID_CHILD pidl, DWORD dwFlags, LPSTRRET strRet)
 {
     PIDLFontStruct *pFont;
 
@@ -497,8 +495,8 @@ HRESULT WINAPI CFontsFolder::GetDisplayNameOf(LPCITEMIDLIST pidl, DWORD dwFlags,
 *  dwFlags   [in]  SHGNO formatting flags
 *  ppidlOut  [out] simple pidl returned
 */
-HRESULT WINAPI CFontsFolder::SetNameOf(HWND hwndOwner, LPCITEMIDLIST pidl,    /*simple pidl */
-                                       LPCOLESTR lpName, DWORD dwFlags, LPITEMIDLIST * pPidlOut)
+HRESULT WINAPI CFontsFolder::SetNameOf(HWND hwndOwner, PCUITEMID_CHILD pidl,    /*simple pidl */
+                                       LPCOLESTR lpName, DWORD dwFlags, PITEMID_CHILD *pPidlOut)
 {
     FIXME ("(%p)->(%p,pidl=%p,%s,%u,%p)\n", this,
            hwndOwner, pidl, debugstr_w (lpName), dwFlags, pPidlOut);
@@ -539,13 +537,13 @@ HRESULT WINAPI CFontsFolder::GetDefaultColumnState(UINT iColumn, DWORD *pcsFlags
     return S_OK;
 }
 
-HRESULT WINAPI CFontsFolder::GetDetailsEx(LPCITEMIDLIST pidl, const SHCOLUMNID *pscid, VARIANT *pv)
+HRESULT WINAPI CFontsFolder::GetDetailsEx(PCUITEMID_CHILD pidl, const SHCOLUMNID *pscid, VARIANT *pv)
 {
     FIXME ("(%p)\n", this);
     return E_NOTIMPL;
 }
 
-HRESULT WINAPI CFontsFolder::GetDetailsOf(LPCITEMIDLIST pidl, UINT iColumn, SHELLDETAILS *psd)
+HRESULT WINAPI CFontsFolder::GetDetailsOf(PCUITEMID_CHILD pidl, UINT iColumn, SHELLDETAILS *psd)
 {
     WCHAR buffer[MAX_PATH] = {0};
     HRESULT hr = E_FAIL;
@@ -607,9 +605,12 @@ HRESULT WINAPI CFontsFolder::GetDetailsOf(LPCITEMIDLIST pidl, UINT iColumn, SHEL
                     {
                         if (StrFormatByteSizeW(FileSize.QuadPart, buffer, sizeof(buffer) / sizeof(WCHAR)))
                         {
-                            psd->str.pOleStr = (LPWSTR)CoTaskMemAlloc(wcslen(buffer) + 1);
+                            psd->str.pOleStr = (LPWSTR)CoTaskMemAlloc((wcslen(buffer) + 1) * sizeof(WCHAR));
                             if (!psd->str.pOleStr)
+                            {
+                                CloseHandle(hFile);
                                 return E_OUTOFMEMORY;
+                            }
                             wcscpy(psd->str.pOleStr, buffer);
                             psd->str.uType = STRRET_WSTR;
                             CloseHandle(hFile);

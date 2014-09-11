@@ -26,6 +26,21 @@
     ConSrvReleaseObject(&(Buff)->Header, (IsConsoleLocked))
 
 
+/*
+ * From MSDN:
+ * "The lpMultiByteStr and lpWideCharStr pointers must not be the same.
+ *  If they are the same, the function fails, and GetLastError returns
+ *  ERROR_INVALID_PARAMETER."
+ */
+#define ConsoleInputUnicodeToAnsiChar(Console, dChar, sWChar) \
+    ASSERT((ULONG_PTR)dChar != (ULONG_PTR)sWChar); \
+    WideCharToMultiByte((Console)->InputCodePage, 0, (sWChar), 1, (dChar), 1, NULL, NULL)
+
+#define ConsoleInputAnsiToUnicodeChar(Console, dWChar, sChar) \
+    ASSERT((ULONG_PTR)dWChar != (ULONG_PTR)sChar); \
+    MultiByteToWideChar((Console)->InputCodePage, 0, (sChar), 1, (dWChar), 1)
+
+
 typedef struct _GET_INPUT_INFO
 {
     PCSR_THREAD           CallingThread;    // The thread which called the input API.
@@ -36,6 +51,159 @@ typedef struct _GET_INPUT_INFO
 
 /* PRIVATE FUNCTIONS **********************************************************/
 
+static VOID
+ConioInputEventToAnsi(PCONSOLE Console, PINPUT_RECORD InputEvent)
+{
+    if (InputEvent->EventType == KEY_EVENT)
+    {
+        WCHAR UnicodeChar = InputEvent->Event.KeyEvent.uChar.UnicodeChar;
+        InputEvent->Event.KeyEvent.uChar.UnicodeChar = 0;
+        ConsoleInputUnicodeToAnsiChar(Console,
+                                      &InputEvent->Event.KeyEvent.uChar.AsciiChar,
+                                      &UnicodeChar);
+    }
+}
+
+static VOID
+ConioInputEventToUnicode(PCONSOLE Console, PINPUT_RECORD InputEvent)
+{
+    if (InputEvent->EventType == KEY_EVENT)
+    {
+        CHAR AsciiChar = InputEvent->Event.KeyEvent.uChar.AsciiChar;
+        InputEvent->Event.KeyEvent.uChar.AsciiChar = 0;
+        ConsoleInputAnsiToUnicodeChar(Console,
+                                      &InputEvent->Event.KeyEvent.uChar.UnicodeChar,
+                                      &AsciiChar);
+    }
+}
+
+static ULONG
+PreprocessInput(PCONSRV_CONSOLE Console,
+                PINPUT_RECORD InputEvent,
+                ULONG NumEventsToWrite)
+{
+    ULONG NumEvents;
+
+    /*
+     * Loop each event, and for each, check for pause or unpause
+     * and perform adequate behaviour.
+     */
+    for (NumEvents = NumEventsToWrite; NumEvents > 0; --NumEvents)
+    {
+        /* Check for pause or unpause */
+        if (InputEvent->EventType == KEY_EVENT && InputEvent->Event.KeyEvent.bKeyDown)
+        {
+            WORD vk = InputEvent->Event.KeyEvent.wVirtualKeyCode;
+            if (!(Console->PauseFlags & PAUSED_FROM_KEYBOARD))
+            {
+                DWORD cks = InputEvent->Event.KeyEvent.dwControlKeyState;
+                if (Console->InputBuffer.Mode & ENABLE_LINE_INPUT &&
+                    (vk == VK_PAUSE ||
+                    (vk == 'S' && (cks & (LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED)) &&
+                                 !(cks & (LEFT_ALT_PRESSED  | RIGHT_ALT_PRESSED)))))
+                {
+                    ConioPause(Console, PAUSED_FROM_KEYBOARD);
+
+                    /* Skip the event */
+                    RtlMoveMemory(InputEvent,
+                                  InputEvent + 1,
+                                  (NumEvents - 1) * sizeof(INPUT_RECORD));
+                    --NumEventsToWrite;
+                    continue;
+                }
+            }
+            else
+            {
+                if ((vk < VK_SHIFT || vk > VK_CAPITAL) && vk != VK_LWIN &&
+                    vk != VK_RWIN && vk != VK_NUMLOCK && vk != VK_SCROLL)
+                {
+                    ConioUnpause(Console, PAUSED_FROM_KEYBOARD);
+
+                    /* Skip the event */
+                    RtlMoveMemory(InputEvent,
+                                  InputEvent + 1,
+                                  (NumEvents - 1) * sizeof(INPUT_RECORD));
+                    --NumEventsToWrite;
+                    continue;
+                }
+            }
+        }
+
+        /* Go to the next event */
+        ++InputEvent;
+    }
+
+    return NumEventsToWrite;
+}
+
+static VOID
+PostprocessInput(PCONSRV_CONSOLE Console)
+{
+    CsrNotifyWait(&Console->ReadWaitQueue,
+                  FALSE,
+                  NULL,
+                  NULL);
+    if (!IsListEmpty(&Console->ReadWaitQueue))
+    {
+        CsrDereferenceWait(&Console->ReadWaitQueue);
+    }
+}
+
+
+NTSTATUS NTAPI
+ConDrvWriteConsoleInput(IN PCONSOLE Console,
+                        IN PCONSOLE_INPUT_BUFFER InputBuffer,
+                        IN BOOLEAN AppendToEnd,
+                        IN PINPUT_RECORD InputRecord,
+                        IN ULONG NumEventsToWrite,
+                        OUT PULONG NumEventsWritten OPTIONAL);
+static NTSTATUS
+ConioAddInputEvents(PCONSRV_CONSOLE Console,
+                    PINPUT_RECORD InputRecords, // InputEvent
+                    ULONG NumEventsToWrite,
+                    PULONG NumEventsWritten,
+                    BOOLEAN AppendToEnd)
+{
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    if (NumEventsWritten) *NumEventsWritten = 0;
+
+    NumEventsToWrite = PreprocessInput(Console, InputRecords, NumEventsToWrite);
+    if (NumEventsToWrite == 0) return STATUS_SUCCESS;
+
+    // Status = ConDrvAddInputEvents(Console,
+                                  // InputRecords,
+                                  // NumEventsToWrite,
+                                  // NumEventsWritten,
+                                  // AppendToEnd);
+
+    Status = ConDrvWriteConsoleInput((PCONSOLE)Console,
+                                     &Console->InputBuffer,
+                                     AppendToEnd,
+                                     InputRecords,
+                                     NumEventsToWrite,
+                                     NumEventsWritten);
+
+    // if (NT_SUCCESS(Status))
+    if (Status == STATUS_SUCCESS) PostprocessInput(Console);
+
+    return Status;
+}
+
+/* FIXME: This function can be called by CONDRV, in ConioResizeBuffer() in text.c */
+NTSTATUS
+ConioProcessInputEvent(PCONSRV_CONSOLE Console,
+                       PINPUT_RECORD InputEvent)
+{
+    ULONG NumEventsWritten;
+    return ConioAddInputEvents(Console,
+                               InputEvent,
+                               1,
+                               &NumEventsWritten,
+                               TRUE);
+}
+
+
 static NTSTATUS
 WaitBeforeReading(IN PGET_INPUT_INFO InputInfo,
                   IN PCSR_API_MESSAGE ApiMessage,
@@ -45,13 +213,14 @@ WaitBeforeReading(IN PGET_INPUT_INFO InputInfo,
     if (CreateWaitBlock)
     {
         PGET_INPUT_INFO CapturedInputInfo;
+        PCONSRV_CONSOLE Console = (PCONSRV_CONSOLE)InputInfo->InputBuffer->Header.Console;
 
         CapturedInputInfo = ConsoleAllocHeap(0, sizeof(GET_INPUT_INFO));
         if (!CapturedInputInfo) return STATUS_NO_MEMORY;
 
         RtlMoveMemory(CapturedInputInfo, InputInfo, sizeof(GET_INPUT_INFO));
 
-        if (!CsrCreateWait(&InputInfo->InputBuffer->ReadWaitQueue,
+        if (!CsrCreateWait(&Console->ReadWaitQueue,
                            WaitFunction,
                            InputInfo->CallingThread,
                            ApiMessage,
@@ -133,6 +302,7 @@ Quit:
 NTSTATUS NTAPI
 ConDrvReadConsole(IN PCONSOLE Console,
                   IN PCONSOLE_INPUT_BUFFER InputBuffer,
+                  /**/IN PUNICODE_STRING ExeName /**/OPTIONAL/**/,/**/
                   IN BOOLEAN Unicode,
                   OUT PVOID Buffer,
                   IN OUT PCONSOLE_READCONSOLE_CONTROL ReadControl,
@@ -148,20 +318,64 @@ ReadChars(IN PGET_INPUT_INFO InputInfo,
     PCONSOLE_INPUT_BUFFER InputBuffer = InputInfo->InputBuffer;
     CONSOLE_READCONSOLE_CONTROL ReadControl;
 
+    UNICODE_STRING ExeName;
+
+    PVOID Buffer;
+    ULONG NrCharactersRead = 0;
+    ULONG CharSize = (ReadConsoleRequest->Unicode ? sizeof(WCHAR) : sizeof(CHAR));
+
+    /* Compute the executable name, if needed */
+    if (ReadConsoleRequest->InitialNumBytes == 0 &&
+        ReadConsoleRequest->ExeLength <= sizeof(ReadConsoleRequest->StaticBuffer))
+    {
+        ExeName.Length = ExeName.MaximumLength = ReadConsoleRequest->ExeLength;
+        ExeName.Buffer = (PWCHAR)ReadConsoleRequest->StaticBuffer;
+    }
+    else
+    {
+        ExeName.Length = ExeName.MaximumLength = 0;
+        ExeName.Buffer = NULL;
+    }
+
+    /* Build the ReadControl structure */
     ReadControl.nLength           = sizeof(CONSOLE_READCONSOLE_CONTROL);
-    ReadControl.nInitialChars     = ReadConsoleRequest->NrCharactersRead;
+    ReadControl.nInitialChars     = ReadConsoleRequest->InitialNumBytes / CharSize;
     ReadControl.dwCtrlWakeupMask  = ReadConsoleRequest->CtrlWakeupMask;
     ReadControl.dwControlKeyState = ReadConsoleRequest->ControlKeyState;
 
+    /*
+     * For optimization purposes, Windows (and hence ReactOS, too, for
+     * compatibility reasons) uses a static buffer if no more than eighty
+     * bytes are read. Otherwise a new buffer is used.
+     * The client-side expects that we know this behaviour.
+     */
+    if (ReadConsoleRequest->CaptureBufferSize <= sizeof(ReadConsoleRequest->StaticBuffer))
+    {
+        /*
+         * Adjust the internal pointer, because its old value points to
+         * the static buffer in the original ApiMessage structure.
+         */
+        // ReadConsoleRequest->Buffer = ReadConsoleRequest->StaticBuffer;
+        Buffer = ReadConsoleRequest->StaticBuffer;
+    }
+    else
+    {
+        Buffer = ReadConsoleRequest->Buffer;
+    }
+
+    DPRINT1("Calling ConDrvReadConsole(%wZ)\n", &ExeName);
     Status = ConDrvReadConsole(InputBuffer->Header.Console,
                                InputBuffer,
+                               &ExeName,
                                ReadConsoleRequest->Unicode,
-                               ReadConsoleRequest->Buffer,
+                               Buffer,
                                &ReadControl,
-                               ReadConsoleRequest->NrCharactersToRead,
-                               &ReadConsoleRequest->NrCharactersRead);
+                               ReadConsoleRequest->NumBytes / CharSize, // NrCharactersToRead
+                               &NrCharactersRead);
+    DPRINT1("ConDrvReadConsole returned (%d ; Status = 0x%08x)\n",
+           NrCharactersRead, Status);
 
-    ReadConsoleRequest->ControlKeyState = ReadControl.dwControlKeyState;
+    // ReadConsoleRequest->ControlKeyState = ReadControl.dwControlKeyState;
 
     if (Status == STATUS_PENDING)
     {
@@ -173,7 +387,13 @@ ReadChars(IN PGET_INPUT_INFO InputInfo,
     }
     else
     {
-        /* We read all what we wanted, we return the error code we were given */
+        /*
+         * We read all what we wanted. Set the number of bytes read and
+         * return the error code we were given.
+         */
+        ReadConsoleRequest->NumBytes = NrCharactersRead * CharSize;
+        ReadConsoleRequest->ControlKeyState = ReadControl.dwControlKeyState;
+
         return Status;
         // return STATUS_SUCCESS;
     }
@@ -248,7 +468,6 @@ ConDrvGetConsoleInput(IN PCONSOLE Console,
                       IN PCONSOLE_INPUT_BUFFER InputBuffer,
                       IN BOOLEAN KeepEvents,
                       IN BOOLEAN WaitForMoreEvents,
-                      IN BOOLEAN Unicode,
                       OUT PINPUT_RECORD InputRecord,
                       IN ULONG NumEventsToRead,
                       OUT PULONG NumEventsRead OPTIONAL);
@@ -260,17 +479,38 @@ ReadInputBuffer(IN PGET_INPUT_INFO InputInfo,
     NTSTATUS Status;
     PCONSOLE_GETINPUT GetInputRequest = &((PCONSOLE_API_MESSAGE)ApiMessage)->Data.GetInputRequest;
     PCONSOLE_INPUT_BUFFER InputBuffer = InputInfo->InputBuffer;
+    ULONG NumEventsRead;
 
-    // GetInputRequest->InputsRead = 0;
+    PINPUT_RECORD InputRecord;
 
+    /*
+     * For optimization purposes, Windows (and hence ReactOS, too, for
+     * compatibility reasons) uses a static buffer if no more than five
+     * input records are read. Otherwise a new buffer is used.
+     * The client-side expects that we know this behaviour.
+     */
+    if (GetInputRequest->NumRecords <= sizeof(GetInputRequest->RecordStaticBuffer)/sizeof(INPUT_RECORD))
+    {
+        /*
+         * Adjust the internal pointer, because its old value points to
+         * the static buffer in the original ApiMessage structure.
+         */
+        // GetInputRequest->RecordBufPtr = GetInputRequest->RecordStaticBuffer;
+        InputRecord = GetInputRequest->RecordStaticBuffer;
+    }
+    else
+    {
+        InputRecord = GetInputRequest->RecordBufPtr;
+    }
+
+    NumEventsRead = 0;
     Status = ConDrvGetConsoleInput(InputBuffer->Header.Console,
                                    InputBuffer,
-                                   (GetInputRequest->wFlags & CONSOLE_READ_KEEPEVENT) != 0,
-                                   (GetInputRequest->wFlags & CONSOLE_READ_CONTINUE ) == 0,
-                                   GetInputRequest->Unicode,
-                                   GetInputRequest->InputRecord,
-                                   GetInputRequest->Length,
-                                   &GetInputRequest->InputsRead);
+                                   (GetInputRequest->Flags & CONSOLE_READ_KEEPEVENT) != 0,
+                                   (GetInputRequest->Flags & CONSOLE_READ_CONTINUE ) == 0,
+                                   InputRecord,
+                                   GetInputRequest->NumRecords,
+                                   &NumEventsRead);
 
     if (Status == STATUS_PENDING)
     {
@@ -282,7 +522,24 @@ ReadInputBuffer(IN PGET_INPUT_INFO InputInfo,
     }
     else
     {
-        /* We read all what we wanted, we return the error code we were given */
+        /*
+         * We read all what we wanted. Set the number of events read and
+         * return the error code we were given.
+         */
+        GetInputRequest->NumRecords = NumEventsRead;
+
+        if (NT_SUCCESS(Status))
+        {
+            /* Now translate everything to ANSI */
+            if (!GetInputRequest->Unicode)
+            {
+                for (; NumEventsRead > 0; --NumEventsRead)
+                {
+                    ConioInputEventToAnsi(InputBuffer->Header.Console, --InputRecord);
+                }
+            }
+        }
+
         return Status;
         // return STATUS_SUCCESS;
     }
@@ -302,24 +559,38 @@ CSR_API(SrvReadConsole)
 
     DPRINT("SrvReadConsole\n");
 
-    if (!CsrValidateMessageBuffer(ApiMessage,
-                                  (PVOID*)&ReadConsoleRequest->Buffer,
-                                  ReadConsoleRequest->BufferSize,
-                                  sizeof(BYTE)))
+    /*
+     * For optimization purposes, Windows (and hence ReactOS, too, for
+     * compatibility reasons) uses a static buffer if no more than eighty
+     * bytes are read. Otherwise a new buffer is used.
+     * The client-side expects that we know this behaviour.
+     */
+    if (ReadConsoleRequest->CaptureBufferSize <= sizeof(ReadConsoleRequest->StaticBuffer))
     {
-        return STATUS_INVALID_PARAMETER;
+        /*
+         * Adjust the internal pointer, because its old value points to
+         * the static buffer in the original ApiMessage structure.
+         */
+        // ReadConsoleRequest->Buffer = ReadConsoleRequest->StaticBuffer;
+    }
+    else
+    {
+        if (!CsrValidateMessageBuffer(ApiMessage,
+                                      (PVOID*)&ReadConsoleRequest->Buffer,
+                                      ReadConsoleRequest->CaptureBufferSize,
+                                      sizeof(BYTE)))
+        {
+            return STATUS_INVALID_PARAMETER;
+        }
     }
 
-    if (ReadConsoleRequest->NrCharactersRead > ReadConsoleRequest->NrCharactersToRead)
+    if (ReadConsoleRequest->InitialNumBytes > ReadConsoleRequest->NumBytes)
     {
         return STATUS_INVALID_PARAMETER;
     }
 
     Status = ConSrvGetInputBufferAndHandleEntry(ProcessData, ReadConsoleRequest->InputHandle, &InputBuffer, &HandleEntry, GENERIC_READ, TRUE);
     if (!NT_SUCCESS(Status)) return Status;
-
-    // This member is set by the caller (IntReadConsole in kernel32)
-    // ReadConsoleRequest->NrCharactersRead = 0;
 
     InputInfo.CallingThread = CsrGetClientThread();
     InputInfo.HandleEntry   = HandleEntry;
@@ -345,21 +616,36 @@ CSR_API(SrvGetConsoleInput)
 
     DPRINT("SrvGetConsoleInput\n");
 
-    if (GetInputRequest->wFlags & ~(CONSOLE_READ_KEEPEVENT | CONSOLE_READ_CONTINUE))
+    if (GetInputRequest->Flags & ~(CONSOLE_READ_KEEPEVENT | CONSOLE_READ_CONTINUE))
         return STATUS_INVALID_PARAMETER;
 
-    if (!CsrValidateMessageBuffer(ApiMessage,
-                                  (PVOID*)&GetInputRequest->InputRecord,
-                                  GetInputRequest->Length,
-                                  sizeof(INPUT_RECORD)))
+    /*
+     * For optimization purposes, Windows (and hence ReactOS, too, for
+     * compatibility reasons) uses a static buffer if no more than five
+     * input records are read. Otherwise a new buffer is used.
+     * The client-side expects that we know this behaviour.
+     */
+    if (GetInputRequest->NumRecords <= sizeof(GetInputRequest->RecordStaticBuffer)/sizeof(INPUT_RECORD))
     {
-        return STATUS_INVALID_PARAMETER;
+        /*
+         * Adjust the internal pointer, because its old value points to
+         * the static buffer in the original ApiMessage structure.
+         */
+        // GetInputRequest->RecordBufPtr = GetInputRequest->RecordStaticBuffer;
+    }
+    else
+    {
+        if (!CsrValidateMessageBuffer(ApiMessage,
+                                      (PVOID*)&GetInputRequest->RecordBufPtr,
+                                      GetInputRequest->NumRecords,
+                                      sizeof(INPUT_RECORD)))
+        {
+            return STATUS_INVALID_PARAMETER;
+        }
     }
 
     Status = ConSrvGetInputBufferAndHandleEntry(ProcessData, GetInputRequest->InputHandle, &InputBuffer, &HandleEntry, GENERIC_READ, TRUE);
     if (!NT_SUCCESS(Status)) return Status;
-
-    GetInputRequest->InputsRead = 0;
 
     InputInfo.CallingThread = CsrGetClientThread();
     InputInfo.HandleEntry   = HandleEntry;
@@ -374,14 +660,15 @@ CSR_API(SrvGetConsoleInput)
     return Status;
 }
 
+#if 0
 NTSTATUS NTAPI
 ConDrvWriteConsoleInput(IN PCONSOLE Console,
                         IN PCONSOLE_INPUT_BUFFER InputBuffer,
-                        IN BOOLEAN Unicode,
                         IN BOOLEAN AppendToEnd,
                         IN PINPUT_RECORD InputRecord,
                         IN ULONG NumEventsToWrite,
                         OUT PULONG NumEventsWritten OPTIONAL);
+#endif
 CSR_API(SrvWriteConsoleInput)
 {
     NTSTATUS Status;
@@ -389,30 +676,74 @@ CSR_API(SrvWriteConsoleInput)
     PCONSOLE_INPUT_BUFFER InputBuffer;
     ULONG NumEventsWritten;
 
+    PINPUT_RECORD InputRecord;
+
     DPRINT("SrvWriteConsoleInput\n");
 
-    if (!CsrValidateMessageBuffer(ApiMessage,
-                                  (PVOID*)&WriteInputRequest->InputRecord,
-                                  WriteInputRequest->Length,
-                                  sizeof(INPUT_RECORD)))
+    /*
+     * For optimization purposes, Windows (and hence ReactOS, too, for
+     * compatibility reasons) uses a static buffer if no more than five
+     * input records are written. Otherwise a new buffer is used.
+     * The client-side expects that we know this behaviour.
+     */
+    if (WriteInputRequest->NumRecords <= sizeof(WriteInputRequest->RecordStaticBuffer)/sizeof(INPUT_RECORD))
     {
-        return STATUS_INVALID_PARAMETER;
+        /*
+         * Adjust the internal pointer, because its old value points to
+         * the static buffer in the original ApiMessage structure.
+         */
+        // WriteInputRequest->RecordBufPtr = WriteInputRequest->RecordStaticBuffer;
+        InputRecord = WriteInputRequest->RecordStaticBuffer;
+    }
+    else
+    {
+        if (!CsrValidateMessageBuffer(ApiMessage,
+                                      (PVOID*)&WriteInputRequest->RecordBufPtr,
+                                      WriteInputRequest->NumRecords,
+                                      sizeof(INPUT_RECORD)))
+        {
+            return STATUS_INVALID_PARAMETER;
+        }
+
+        InputRecord = WriteInputRequest->RecordBufPtr;
     }
 
     Status = ConSrvGetInputBuffer(ConsoleGetPerProcessData(CsrGetClientThread()->Process),
                                   WriteInputRequest->InputHandle,
                                   &InputBuffer, GENERIC_WRITE, TRUE);
-    if (!NT_SUCCESS(Status)) return Status;
+    if (!NT_SUCCESS(Status))
+    {
+        WriteInputRequest->NumRecords = 0;
+        return Status;
+    }
 
+    /* First translate everything to UNICODE */
+    if (!WriteInputRequest->Unicode)
+    {
+        ULONG i;
+        for (i = 0; i < WriteInputRequest->NumRecords; ++i)
+        {
+            ConioInputEventToUnicode(InputBuffer->Header.Console, &InputRecord[i]);
+        }
+    }
+
+    /* Now, add the events */
     NumEventsWritten = 0;
-    Status = ConDrvWriteConsoleInput(InputBuffer->Header.Console,
-                                     InputBuffer,
-                                     WriteInputRequest->Unicode,
-                                     WriteInputRequest->AppendToEnd,
-                                     WriteInputRequest->InputRecord,
-                                     WriteInputRequest->Length,
-                                     &NumEventsWritten);
-    WriteInputRequest->Length = NumEventsWritten;
+    Status = ConioAddInputEvents((PCONSRV_CONSOLE)InputBuffer->Header.Console,
+                                 // InputBuffer,
+                                 InputRecord,
+                                 WriteInputRequest->NumRecords,
+                                 &NumEventsWritten,
+                                 WriteInputRequest->AppendToEnd);
+
+    // Status = ConDrvWriteConsoleInput(InputBuffer->Header.Console,
+                                     // InputBuffer,
+                                     // WriteInputRequest->AppendToEnd,
+                                     // InputRecord,
+                                     // WriteInputRequest->NumRecords,
+                                     // &NumEventsWritten);
+
+    WriteInputRequest->NumRecords = NumEventsWritten;
 
     ConSrvReleaseInputBuffer(InputBuffer, TRUE);
     return Status;

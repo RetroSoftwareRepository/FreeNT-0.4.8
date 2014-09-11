@@ -8,13 +8,19 @@
 
 #pragma once
 
-/* Macros used to call functions in the FRONTEND_VTBL virtual table */
+/* Macros used to call functions in the TERMINAL_VTBL virtual table */
+
+#define TermReadStream(Console, ExeName, /**/ Unicode, /**/ Buffer, ReadControl, NumCharsToRead, NumCharsRead) \
+    (Console)->TermIFace.Vtbl->ReadStream(&(Console)->TermIFace, (ExeName), /**/ (Unicode), /**/ \
+                                           (Buffer), (ReadControl), (NumCharsToRead), (NumCharsRead))
+
+#define TermWriteStream(Console, ScreenBuffer, Buffer, Length, Attrib) \
+    (Console)->TermIFace.Vtbl->WriteStream(&(Console)->TermIFace, (ScreenBuffer), (Buffer), \
+                                           (Length), (Attrib))
+
 
 #define TermDrawRegion(Console, Region) \
     (Console)->TermIFace.Vtbl->DrawRegion(&(Console)->TermIFace, (Region))
-#define TermWriteStream(Console, Block, CurStartX, CurStartY, ScrolledLines, Buffer, Length) \
-    (Console)->TermIFace.Vtbl->WriteStream(&(Console)->TermIFace, (Block), (CurStartX), (CurStartY), \
-                                           (ScrolledLines), (Buffer), (Length))
 #define TermSetCursorInfo(Console, ScreenBuffer) \
     (Console)->TermIFace.Vtbl->SetCursorInfo(&(Console)->TermIFace, (ScreenBuffer))
 #define TermSetScreenInfo(Console, ScreenBuffer, OldCursorX, OldCursorY) \
@@ -25,34 +31,35 @@
     (Console)->TermIFace.Vtbl->SetActiveScreenBuffer(&(Console)->TermIFace)
 #define TermReleaseScreenBuffer(Console, ScreenBuffer) \
     (Console)->TermIFace.Vtbl->ReleaseScreenBuffer(&(Console)->TermIFace, (ScreenBuffer))
-#define TermProcessKeyCallback(Console, Msg, KeyStateMenu, ShiftState, VirtualKeyCode, Down) \
-    (Console)->TermIFace.Vtbl->ProcessKeyCallback(&(Console)->TermIFace, (Msg), (KeyStateMenu), (ShiftState), (VirtualKeyCode), (Down))
-#define TermRefreshInternalInfo(Console) \
-    (Console)->TermIFace.Vtbl->RefreshInternalInfo(&(Console)->TermIFace)
-
-#define TermChangeTitle(Console) \
-    (Console)->TermIFace.Vtbl->ChangeTitle(&(Console)->TermIFace)
-#define TermChangeIcon(Console, IconHandle) \
-    (Console)->TermIFace.Vtbl->ChangeIcon(&(Console)->TermIFace, (IconHandle))
-#define TermGetConsoleWindowHandle(Console) \
-    (Console)->TermIFace.Vtbl->GetConsoleWindowHandle(&(Console)->TermIFace)
 #define TermGetLargestConsoleWindowSize(Console, pSize) \
     (Console)->TermIFace.Vtbl->GetLargestConsoleWindowSize(&(Console)->TermIFace, (pSize))
-#define TermGetSelectionInfo(Console, pSelectionInfo) \
-    (Console)->TermIFace.Vtbl->GetSelectionInfo(&(Console)->TermIFace, (pSelectionInfo))
 #define TermSetPalette(Console, PaletteHandle, PaletteUsage) \
     (Console)->TermIFace.Vtbl->SetPalette(&(Console)->TermIFace, (PaletteHandle), (PaletteUsage))
-#define TermGetDisplayMode(Console) \
-    (Console)->TermIFace.Vtbl->GetDisplayMode(&(Console)->TermIFace)
-#define TermSetDisplayMode(Console, NewMode) \
-    (Console)->TermIFace.Vtbl->SetDisplayMode(&(Console)->TermIFace, (NewMode))
 #define TermShowMouseCursor(Console, Show) \
     (Console)->TermIFace.Vtbl->ShowMouseCursor(&(Console)->TermIFace, (Show))
+
+
+/* Macros used to call functions in the FRONTEND_VTBL virtual table */
+
+#define TermRefreshInternalInfo(Console) \
+    (Console)->FrontEndIFace.Vtbl->RefreshInternalInfo(&(Console)->FrontEndIFace)
+#define TermChangeTitle(Console) \
+    (Console)->FrontEndIFace.Vtbl->ChangeTitle(&(Console)->FrontEndIFace)
+#define TermChangeIcon(Console, IconHandle) \
+    (Console)->FrontEndIFace.Vtbl->ChangeIcon(&(Console)->FrontEndIFace, (IconHandle))
+#define TermGetConsoleWindowHandle(Console) \
+    (Console)->FrontEndIFace.Vtbl->GetConsoleWindowHandle(&(Console)->FrontEndIFace)
+#define TermGetSelectionInfo(Console, pSelectionInfo) \
+    (Console)->FrontEndIFace.Vtbl->GetSelectionInfo(&(Console)->FrontEndIFace, (pSelectionInfo))
+#define TermGetDisplayMode(Console) \
+    (Console)->FrontEndIFace.Vtbl->GetDisplayMode(&(Console)->FrontEndIFace)
+#define TermSetDisplayMode(Console, NewMode) \
+    (Console)->FrontEndIFace.Vtbl->SetDisplayMode(&(Console)->FrontEndIFace, (NewMode))
 #define TermSetMouseCursor(Console, CursorHandle) \
-    (Console)->TermIFace.Vtbl->SetMouseCursor(&(Console)->TermIFace, (CursorHandle))
+    (Console)->FrontEndIFace.Vtbl->SetMouseCursor(&(Console)->FrontEndIFace, (CursorHandle))
 #define TermMenuControl(Console, CmdIdLow, CmdIdHigh) \
-    (Console)->TermIFace.Vtbl->MenuControl(&(Console)->TermIFace, (CmdIdLow), (CmdIdHigh))
+    (Console)->FrontEndIFace.Vtbl->MenuControl(&(Console)->FrontEndIFace, (CmdIdLow), (CmdIdHigh))
 #define TermSetMenuClose(Console, Enable) \
-    (Console)->TermIFace.Vtbl->SetMenuClose(&(Console)->TermIFace, (Enable))
+    (Console)->FrontEndIFace.Vtbl->SetMenuClose(&(Console)->FrontEndIFace, (Enable))
 
 /* EOF */

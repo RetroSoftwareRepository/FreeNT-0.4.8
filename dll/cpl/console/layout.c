@@ -107,6 +107,8 @@ PaintText(LPDRAWITEMSTRUCT drawItem,
     HBRUSH hBrush;
     HFONT Font, OldFont;
 
+    COORD FontSize = GuiInfo->FontSize;
+
     if (TextMode == Screen)
         CurrentAttrib = pConInfo->ci.ScreenAttrib;
     else if (TextMode == Popup)
@@ -120,8 +122,11 @@ PaintText(LPDRAWITEMSTRUCT drawItem,
     hBrush = CreateSolidBrush(nbkColor);
     if (!hBrush) return FALSE;
 
-    Font = CreateFontW(LOWORD(GuiInfo->FontSize),
-                       0, // HIWORD(GuiInfo->FontSize),
+    FontSize.Y = FontSize.Y > 0 ? -MulDiv(FontSize.Y, GetDeviceCaps(drawItem->hDC, LOGPIXELSY), 72)
+                                : FontSize.Y;
+
+    Font = CreateFontW(FontSize.Y,
+                       FontSize.X,
                        0,
                        TA_BASELINE,
                        GuiInfo->FontWeight,
@@ -131,8 +136,8 @@ PaintText(LPDRAWITEMSTRUCT drawItem,
                        OEM_CHARSET,
                        OUT_DEFAULT_PRECIS,
                        CLIP_DEFAULT_PRECIS,
-                       NONANTIALIASED_QUALITY,
-                       FIXED_PITCH | GuiInfo->FontFamily /* FF_DONTCARE */,
+                       DEFAULT_QUALITY,
+                       FIXED_PITCH | GuiInfo->FontFamily,
                        GuiInfo->FaceName);
     if (Font == NULL)
     {
@@ -154,7 +159,7 @@ PaintText(LPDRAWITEMSTRUCT drawItem,
     DrawTextW(drawItem->hDC, szPreviewText, wcslen(szPreviewText), &drawItem->rcItem, 0);
     SetTextColor(drawItem->hDC, ptColor);
     SetBkColor(drawItem->hDC, pbkColor);
-    DeleteObject((HGDIOBJ)hBrush);
+    DeleteObject(hBrush);
 
     SelectObject(drawItem->hDC, OldFont);
     DeleteObject(Font);

@@ -191,6 +191,74 @@ macro(dir_to_num dir var)
         set(${var} 17)
     elseif(${dir} STREQUAL reactos/Resources/Themes/Lautus)
         set(${var} 18)
+    elseif(${dir} STREQUAL reactos/Help)
+        set(${var} 19)
+    elseif(${dir} STREQUAL reactos/Config)
+        set(${var} 20)
+    elseif(${dir} STREQUAL reactos/Cursors)
+        set(${var} 21)
+    elseif(${dir} STREQUAL reactos/system32/ShellExt)
+        set(${var} 22)
+    elseif(${dir} STREQUAL reactos/Temp)
+        set(${var} 23)
+    elseif(${dir} STREQUAL reactos/system32/spool)
+        set(${var} 24)
+    elseif(${dir} STREQUAL reactos/system32/spool/drivers)
+        set(${var} 25)
+    elseif(${dir} STREQUAL reactos/system32/spool/drivers/color)
+        set(${var} 26)
+    elseif(${dir} STREQUAL reactos/system32/spool/drivers/w32x86)
+        set(${var} 27)
+    elseif(${dir} STREQUAL reactos/system32/spool/drivers/w32x86/3)
+        set(${var} 28)
+    elseif(${dir} STREQUAL reactos/system32/spool/prtprocs)
+        set(${var} 29)
+    elseif(${dir} STREQUAL reactos/system32/spool/prtprocs/w32x86)
+        set(${var} 30)
+    elseif(${dir} STREQUAL reactos/system32/spool/PRINTERS)
+        set(${var} 31)
+    elseif(${dir} STREQUAL reactos/system32/wbem/Repository)
+        set(${var} 32)
+    elseif(${dir} STREQUAL reactos/system32/wbem/Repository/FS)
+        set(${var} 33)
+    elseif(${dir} STREQUAL reactos/system32/wbem/mof/good)
+        set(${var} 34)
+    elseif(${dir} STREQUAL reactos/system32/wbem/mof/bad)
+        set(${var} 35)
+    elseif(${dir} STREQUAL reactos/system32/wbem/AdStatus)
+        set(${var} 36)
+    elseif(${dir} STREQUAL reactos/system32/wbem/xml)
+        set(${var} 37)
+    elseif(${dir} STREQUAL reactos/system32/wbem/Logs)
+        set(${var} 38)
+    elseif(${dir} STREQUAL reactos/system32/wbem/AutoRecover)
+        set(${var} 39)
+    elseif(${dir} STREQUAL reactos/system32/wbem/snmp)
+        set(${var} 40)
+    elseif(${dir} STREQUAL reactos/system32/wbem/Performance)
+        set(${var} 41)
+    elseif(${dir} STREQUAL reactos/twain_32)
+        set(${var} 42)
+    elseif(${dir} STREQUAL reactos/repair)
+        set(${var} 43)
+    elseif(${dir} STREQUAL reactos/Web)
+        set(${var} 44)
+    elseif(${dir} STREQUAL reactos/Web/Wallpaper)
+        set(${var} 45)
+    elseif(${dir} STREQUAL reactos/Prefetch)
+        set(${var} 46)
+    elseif(${dir} STREQUAL reactos/security)
+        set(${var} 47)
+    elseif(${dir} STREQUAL reactos/security/Database)
+        set(${var} 48)
+    elseif(${dir} STREQUAL reactos/security/logs)
+        set(${var} 49)
+    elseif(${dir} STREQUAL reactos/security/templates)
+        set(${var} 50)
+    elseif(${dir} STREQUAL reactos/system32/CatRoot)
+        set(${var} 51)
+    elseif(${dir} STREQUAL reactos/system32/CatRoot2)
+        set(${var} 52)
     else()
         message(FATAL_ERROR "Wrong destination: ${dir}")
     endif()
@@ -248,9 +316,11 @@ function(add_cd_file)
             file(APPEND ${REACTOS_BINARY_DIR}/boot/bootdata/packages/reactos.dff.dyn "\"${__relative_file}\" ${_num}\n")
             unset(__relative_file)
             if(_CD_TARGET)
-                #manage dependency
-                add_dependencies(reactos_cab ${_CD_TARGET})
+                #manage dependency - target level
+                add_dependencies(reactos_cab_inf ${_CD_TARGET})
             endif()
+            # manage dependency - file level
+            set_property(GLOBAL APPEND PROPERTY REACTOS_CAB_DEPENDS ${_CD_FILE})
         endif()
     endif() #end bootcd
 
@@ -304,6 +374,29 @@ function(add_cd_file)
 endfunction()
 
 function(create_iso_lists)
+    # generate reactos.cab before anything else
+    get_property(_filelist GLOBAL PROPERTY REACTOS_CAB_DEPENDS)
+
+    # begin with reactos.inf. We want this command to be always executed, so we pretend it generates another file although it will never do.
+    add_custom_command(
+        OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/reactos.inf ${CMAKE_CURRENT_BINARY_DIR}/__some_non_existent_file
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${REACTOS_BINARY_DIR}/boot/bootdata/packages/reactos.inf ${CMAKE_CURRENT_BINARY_DIR}/reactos.inf
+        DEPENDS ${REACTOS_BINARY_DIR}/boot/bootdata/packages/reactos.inf reactos_cab_inf)
+
+    add_custom_command(
+        OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/reactos.cab
+        COMMAND native-cabman -C ${REACTOS_BINARY_DIR}/boot/bootdata/packages/reactos.dff -RC ${CMAKE_CURRENT_BINARY_DIR}/reactos.inf -N -P ${REACTOS_SOURCE_DIR}
+        DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/reactos.inf native-cabman ${_filelist})
+
+    add_custom_target(reactos_cab DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/reactos.cab)
+    add_dependencies(reactos_cab reactos_cab_inf)
+
+    add_cd_file(
+        TARGET reactos_cab
+        FILE ${CMAKE_CURRENT_BINARY_DIR}/reactos.cab
+        DESTINATION reactos
+        NO_CAB FOR bootcd regtest)
+
     get_property(_filelist GLOBAL PROPERTY BOOTCD_FILE_LIST)
     string(REPLACE ";" "\n" _filelist "${_filelist}")
     file(APPEND ${REACTOS_BINARY_DIR}/boot/bootcd.lst "${_filelist}")

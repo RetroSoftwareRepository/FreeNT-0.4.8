@@ -48,7 +48,7 @@ SetConWndConsoleLeaderCID(IN PGUI_CONSOLE_DATA GuiData)
     PCONSOLE_PROCESS_DATA ProcessData;
     CLIENT_ID ConsoleLeaderCID;
 
-    ProcessData = ConDrvGetConsoleLeaderProcess(GuiData->Console);
+    ProcessData = ConSrvGetConsoleLeaderProcess(GuiData->Console);
     ConsoleLeaderCID = ProcessData->Process->ClientId;
     SetWindowLongPtrW(GuiData->hWindow, GWLP_CONSOLE_LEADER_PID,
                       (LONG_PTR)(ConsoleLeaderCID.UniqueProcess));
@@ -282,7 +282,7 @@ CreateSysMenu(HWND hWnd)
 }
 
 static VOID
-SendMenuEvent(PCONSOLE Console, UINT CmdId)
+SendMenuEvent(PCONSRV_CONSOLE Console, UINT CmdId)
 {
     INPUT_RECORD er;
 
@@ -366,7 +366,7 @@ static LRESULT
 OnCommand(PGUI_CONSOLE_DATA GuiData, WPARAM wParam, LPARAM lParam)
 {
     LRESULT Ret = TRUE;
-    PCONSOLE Console = GuiData->Console;
+    PCONSRV_CONSOLE Console = GuiData->Console;
 
     /*
      * In case the selected menu item belongs to the user-reserved menu id range,
@@ -486,15 +486,164 @@ ResizeConWnd(PGUI_CONSOLE_DATA GuiData, DWORD WidthUnit, DWORD HeightUnit)
     // to: InvalidateRect(GuiData->hWindow, NULL, TRUE);
 }
 
+
+VOID
+DeleteFonts(PGUI_CONSOLE_DATA GuiData)
+{
+    ULONG i;
+    for (i = 0; i < sizeof(GuiData->Font) / sizeof(GuiData->Font[0]); ++i)
+    {
+        if (GuiData->Font[i] != NULL) DeleteObject(GuiData->Font[i]);
+        GuiData->Font[i] = NULL;
+    }
+}
+
+static HFONT
+CreateDerivedFont(HFONT OrgFont,
+                  // COORD   FontSize,
+                  ULONG   FontWeight,
+                  // BOOLEAN bItalic,
+                  BOOLEAN bUnderline,
+                  BOOLEAN bStrikeOut)
+{
+    LOGFONT lf;
+
+    /* Initialize the LOGFONT structure */
+    RtlZeroMemory(&lf, sizeof(lf));
+
+    /* Retrieve the details of the current font */
+    if (GetObject(OrgFont, sizeof(lf), &lf) == 0)
+        return NULL;
+
+    /* Change the font attributes */
+    // lf.lfHeight = FontSize.Y;
+    // lf.lfWidth  = FontSize.X;
+    lf.lfWeight = FontWeight;
+    // lf.lfItalic = bItalic;
+    lf.lfUnderline = bUnderline;
+    lf.lfStrikeOut = bStrikeOut;
+
+    /* Build a new font */
+    return CreateFontIndirect(&lf);
+}
+
+BOOL
+InitFonts(PGUI_CONSOLE_DATA GuiData,
+          LPWSTR FaceName, // Points to a WCHAR array of LF_FACESIZE elements.
+          ULONG  FontFamily,
+          COORD  FontSize,
+          ULONG  FontWeight)
+{
+    HDC hDC;
+    HFONT OldFont, NewFont;
+    TEXTMETRICW Metrics;
+    SIZE CharSize;
+
+    hDC = GetDC(GuiData->hWindow);
+
+    /*
+     * Initialize a new NORMAL font and get its metrics.
+     */
+
+    FontSize.Y = FontSize.Y > 0 ? -MulDiv(FontSize.Y, GetDeviceCaps(hDC, LOGPIXELSY), 72)
+                                : FontSize.Y;
+
+    NewFont = CreateFontW(FontSize.Y,
+                          FontSize.X,
+                          0,
+                          TA_BASELINE,
+                          FontWeight,
+                          FALSE,
+                          FALSE,
+                          FALSE,
+                          OEM_CHARSET,
+                          OUT_DEFAULT_PRECIS,
+                          CLIP_DEFAULT_PRECIS,
+                          DEFAULT_QUALITY,
+                          FIXED_PITCH | FontFamily,
+                          FaceName);
+    if (NewFont == NULL)
+    {
+        DPRINT1("InitFonts: CreateFontW failed\n");
+        ReleaseDC(GuiData->hWindow, hDC);
+        return FALSE;
+    }
+
+    OldFont = SelectObject(hDC, NewFont);
+    if (OldFont == NULL)
+    {
+        DPRINT1("InitFonts: SelectObject failed\n");
+        ReleaseDC(GuiData->hWindow, hDC);
+        DeleteObject(NewFont);
+        return FALSE;
+    }
+
+    if (!GetTextMetricsW(hDC, &Metrics))
+    {
+        DPRINT1("InitFonts: GetTextMetrics failed\n");
+        SelectObject(hDC, OldFont);
+        ReleaseDC(GuiData->hWindow, hDC);
+        DeleteObject(NewFont);
+        return FALSE;
+    }
+    GuiData->CharWidth  = Metrics.tmMaxCharWidth;
+    GuiData->CharHeight = Metrics.tmHeight + Metrics.tmExternalLeading;
+
+    /* Measure real char width more precisely if possible */
+    if (GetTextExtentPoint32W(hDC, L"R", 1, &CharSize))
+        GuiData->CharWidth = CharSize.cx;
+
+    SelectObject(hDC, OldFont);
+    ReleaseDC(GuiData->hWindow, hDC);
+
+    /*
+     * Initialization succeeded.
+     */
+    // Delete all the old fonts first.
+    DeleteFonts(GuiData);
+    GuiData->Font[FONT_NORMAL] = NewFont;
+
+    /*
+     * Now build the other fonts (bold, underlined, mixed).
+     */
+    GuiData->Font[FONT_BOLD] =
+        CreateDerivedFont(GuiData->Font[FONT_NORMAL],
+                          FontWeight < FW_BOLD ? FW_BOLD : FontWeight,
+                          FALSE,
+                          FALSE);
+    GuiData->Font[FONT_UNDERLINE] =
+        CreateDerivedFont(GuiData->Font[FONT_NORMAL],
+                          FontWeight,
+                          TRUE,
+                          FALSE);
+    GuiData->Font[FONT_BOLD | FONT_UNDERLINE] =
+        CreateDerivedFont(GuiData->Font[FONT_NORMAL],
+                          FontWeight < FW_BOLD ? FW_BOLD : FontWeight,
+                          TRUE,
+                          FALSE);
+
+    /*
+     * Save the settings.
+     */
+    if (FaceName != GuiData->GuiInfo.FaceName)
+    {
+        SIZE_T Length = min(wcslen(FaceName) + 1, LF_FACESIZE); // wcsnlen
+        wcsncpy(GuiData->GuiInfo.FaceName, FaceName, LF_FACESIZE);
+        GuiData->GuiInfo.FaceName[Length] = L'\0'; // NULL-terminate
+    }
+    GuiData->GuiInfo.FontFamily = FontFamily;
+    GuiData->GuiInfo.FontSize   = FontSize;
+    GuiData->GuiInfo.FontWeight = FontWeight;
+
+    return TRUE;
+}
+
+
 static BOOL
 OnNcCreate(HWND hWnd, LPCREATESTRUCTW Create)
 {
     PGUI_CONSOLE_DATA GuiData = (PGUI_CONSOLE_DATA)Create->lpCreateParams;
-    PCONSOLE Console;
-    HDC hDC;
-    HFONT OldFont;
-    TEXTMETRICW Metrics;
-    SIZE CharSize;
+    PCONSRV_CONSOLE Console;
 
     if (NULL == GuiData)
     {
@@ -506,67 +655,18 @@ OnNcCreate(HWND hWnd, LPCREATESTRUCTW Create)
 
     GuiData->hWindow = hWnd;
 
-    GuiData->Font = CreateFontW(LOWORD(GuiData->GuiInfo.FontSize),
-                                0, // HIWORD(GuiData->GuiInfo.FontSize),
-                                0,
-                                TA_BASELINE,
-                                GuiData->GuiInfo.FontWeight,
-                                FALSE,
-                                FALSE,
-                                FALSE,
-                                OEM_CHARSET,
-                                OUT_DEFAULT_PRECIS,
-                                CLIP_DEFAULT_PRECIS,
-                                NONANTIALIASED_QUALITY,
-                                FIXED_PITCH | GuiData->GuiInfo.FontFamily /* FF_DONTCARE */,
-                                GuiData->GuiInfo.FaceName);
-
-    if (NULL == GuiData->Font)
+    /* Initialize the fonts */
+    if (!InitFonts(GuiData,
+                   GuiData->GuiInfo.FaceName,
+                   GuiData->GuiInfo.FontFamily,
+                   GuiData->GuiInfo.FontSize,
+                   GuiData->GuiInfo.FontWeight))
     {
-        DPRINT1("GuiConsoleNcCreate: CreateFont failed\n");
+        DPRINT1("GuiConsoleNcCreate: InitFonts failed\n");
         GuiData->hWindow = NULL;
         SetEvent(GuiData->hGuiInitEvent);
         return FALSE;
     }
-    hDC = GetDC(GuiData->hWindow);
-    if (NULL == hDC)
-    {
-        DPRINT1("GuiConsoleNcCreate: GetDC failed\n");
-        DeleteObject(GuiData->Font);
-        GuiData->hWindow = NULL;
-        SetEvent(GuiData->hGuiInitEvent);
-        return FALSE;
-    }
-    OldFont = SelectObject(hDC, GuiData->Font);
-    if (NULL == OldFont)
-    {
-        DPRINT1("GuiConsoleNcCreate: SelectObject failed\n");
-        ReleaseDC(GuiData->hWindow, hDC);
-        DeleteObject(GuiData->Font);
-        GuiData->hWindow = NULL;
-        SetEvent(GuiData->hGuiInitEvent);
-        return FALSE;
-    }
-    if (!GetTextMetricsW(hDC, &Metrics))
-    {
-        DPRINT1("GuiConsoleNcCreate: GetTextMetrics failed\n");
-        SelectObject(hDC, OldFont);
-        ReleaseDC(GuiData->hWindow, hDC);
-        DeleteObject(GuiData->Font);
-        GuiData->hWindow = NULL;
-        SetEvent(GuiData->hGuiInitEvent);
-        return FALSE;
-    }
-    GuiData->CharWidth  = Metrics.tmMaxCharWidth;
-    GuiData->CharHeight = Metrics.tmHeight + Metrics.tmExternalLeading;
-
-    /* Measure real char width more precisely if possible. */
-    if (GetTextExtentPoint32W(hDC, L"R", 1, &CharSize))
-        GuiData->CharWidth = CharSize.cx;
-
-    SelectObject(hDC, OldFont);
-
-    ReleaseDC(GuiData->hWindow, hDC);
 
     /* Initialize the terminal framebuffer */
     GuiData->hMemDC  = CreateCompatibleDC(NULL);
@@ -610,7 +710,6 @@ GuiConsoleSwitchFullScreen(PGUI_CONSOLE_DATA GuiData);
 static VOID
 OnActivate(PGUI_CONSOLE_DATA GuiData, WPARAM wParam)
 {
-    PCONSOLE Console = GuiData->Console;
     WORD ActivationState = LOWORD(wParam);
 
     DPRINT1("WM_ACTIVATE - ActivationState = %d\n");
@@ -637,19 +736,18 @@ OnActivate(PGUI_CONSOLE_DATA GuiData, WPARAM wParam)
     }
 
     /*
-     * When we are in QuickEdit mode, ignore the next mouse signal
-     * when we are going to be enabled again via the mouse, in order
-     * to prevent e.g. an erroneous right-click from the user which
-     * would have as an effect to paste some unwanted text...
+     * Ignore the next mouse signal when we are going to be enabled again via
+     * the mouse, in order to prevent, e.g. when we are in Edit mode, erroneous
+     * mouse actions from the user that could spoil text selection or copy/pastes.
      */
-    if (Console->QuickEdit && (ActivationState == WA_CLICKACTIVE))
+    if (ActivationState == WA_CLICKACTIVE)
         GuiData->IgnoreNextMouseSignal = TRUE;
 }
 
 static VOID
 OnFocus(PGUI_CONSOLE_DATA GuiData, BOOL SetFocus)
 {
-    PCONSOLE Console = GuiData->Console;
+    PCONSRV_CONSOLE Console = GuiData->Console;
     INPUT_RECORD er;
 
     if (!ConDrvValidateConsoleUnsafe(Console, CONSOLE_RUNNING, TRUE)) return;
@@ -816,7 +914,7 @@ UpdateSelection(PGUI_CONSOLE_DATA GuiData,
                 PCOORD SelectionAnchor OPTIONAL,
                 PCOORD coord)
 {
-    PCONSOLE Console = GuiData->Console;
+    PCONSRV_CONSOLE Console = GuiData->Console;
     HRGN oldRgn = CreateSelectionRgn(GuiData, GuiData->LineSelection,
                                      &GuiData->Selection.dwSelectionAnchor,
                                      &GuiData->Selection.srSelection);
@@ -947,11 +1045,9 @@ GuiPaintGraphicsBuffer(PGRAPHICS_SCREEN_BUFFER Buffer,
 static VOID
 OnPaint(PGUI_CONSOLE_DATA GuiData)
 {
-    PCONSOLE_SCREEN_BUFFER ActiveBuffer;
+    PCONSOLE_SCREEN_BUFFER ActiveBuffer = GuiData->ActiveBuffer;
     PAINTSTRUCT ps;
     RECT rcPaint;
-
-    ActiveBuffer = GuiData->ActiveBuffer;
 
     BeginPaint(GuiData->hWindow, &ps);
     if (ps.hdc != NULL &&
@@ -1043,7 +1139,7 @@ IsSystemKey(WORD VirtualKeyCode)
 static VOID
 OnKey(PGUI_CONSOLE_DATA GuiData, UINT msg, WPARAM wParam, LPARAM lParam)
 {
-    PCONSOLE Console = GuiData->Console;
+    PCONSRV_CONSOLE Console = GuiData->Console;
     PCONSOLE_SCREEN_BUFFER ActiveBuffer;
 
     if (!ConDrvValidateConsoleUnsafe(Console, CONSOLE_RUNNING, TRUE)) return;
@@ -1208,7 +1304,7 @@ InvalidateCell(PGUI_CONSOLE_DATA GuiData,
 static VOID
 OnTimer(PGUI_CONSOLE_DATA GuiData)
 {
-    PCONSOLE Console = GuiData->Console;
+    PCONSRV_CONSOLE Console = GuiData->Console;
     PCONSOLE_SCREEN_BUFFER Buff;
 
     SetTimer(GuiData->hWindow, CONGUI_UPDATE_TIMER, CURSOR_BLINK_TIME, NULL);
@@ -1313,7 +1409,7 @@ OnTimer(PGUI_CONSOLE_DATA GuiData)
 static BOOL
 OnClose(PGUI_CONSOLE_DATA GuiData)
 {
-    PCONSOLE Console = GuiData->Console;
+    PCONSRV_CONSOLE Console = GuiData->Console;
 
     if (!ConDrvValidateConsoleUnsafe(Console, CONSOLE_RUNNING, TRUE))
         return TRUE;
@@ -1325,7 +1421,7 @@ OnClose(PGUI_CONSOLE_DATA GuiData)
      * We shouldn't wait here, though, since the console lock is entered.
      * A copy of the thread list probably needs to be made.
      */
-    ConDrvConsoleProcessCtrlEvent(Console, 0, CTRL_CLOSE_EVENT);
+    ConSrvConsoleProcessCtrlEvent(Console, 0, CTRL_CLOSE_EVENT);
 
     LeaveCriticalSection(&Console->Lock);
     return FALSE;
@@ -1345,7 +1441,7 @@ OnNcDestroy(HWND hWnd)
         if (GuiData->hMemDC ) DeleteDC(GuiData->hMemDC);
         if (GuiData->hBitmap) DeleteObject(GuiData->hBitmap);
         // if (GuiData->hSysPalette) DeleteObject(GuiData->hSysPalette);
-        if (GuiData->Font) DeleteObject(GuiData->Font);
+        DeleteFonts(GuiData);
     }
 
     /* Free the GuiData registration */
@@ -1384,17 +1480,20 @@ static LRESULT
 OnMouse(PGUI_CONSOLE_DATA GuiData, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     BOOL Err = FALSE;
-    PCONSOLE Console = GuiData->Console;
+    PCONSRV_CONSOLE Console = GuiData->Console;
+
+    // FIXME: It's here that we need to check whether we has focus or not
+    // and whether we are in edit mode or not, to know if we need to deal
+    // with the mouse, or not.
 
     if (GuiData->IgnoreNextMouseSignal)
     {
         if (msg != WM_LBUTTONDOWN &&
             msg != WM_MBUTTONDOWN &&
-            msg != WM_RBUTTONDOWN &&
-            msg != WM_MOUSEMOVE)
+            msg != WM_RBUTTONDOWN)
         {
             /*
-             * If this mouse signal is not a button-down action or a move,
+             * If this mouse signal is not a button-down action
              * then it is the last signal being ignored.
              */
             GuiData->IgnoreNextMouseSignal = FALSE;
@@ -1402,7 +1501,7 @@ OnMouse(PGUI_CONSOLE_DATA GuiData, UINT msg, WPARAM wParam, LPARAM lParam)
         else
         {
             /*
-             * This mouse signal is a button-down action or a move.
+             * This mouse signal is a button-down action.
              * Ignore it and perform default action.
              */
             Err = TRUE;
@@ -1610,6 +1709,20 @@ OnMouse(PGUI_CONSOLE_DATA GuiData, UINT msg, WPARAM wParam, LPARAM lParam)
                 break;
         }
 
+        /*
+         * HACK FOR CORE-8394: Ignore the next mouse move signal
+         * just after mouse down click actions.
+         */
+        switch (msg)
+        {
+            case WM_LBUTTONDOWN:
+            case WM_MBUTTONDOWN:
+            case WM_RBUTTONDOWN:
+                GuiData->IgnoreNextMouseSignal = TRUE;
+            default:
+                break;
+        }
+
         if (!Err)
         {
             if (wKeyState & MK_LBUTTON)
@@ -1722,7 +1835,7 @@ Paste(PGUI_CONSOLE_DATA GuiData)
 static VOID
 OnGetMinMaxInfo(PGUI_CONSOLE_DATA GuiData, PMINMAXINFO minMaxInfo)
 {
-    PCONSOLE Console = GuiData->Console;
+    PCONSRV_CONSOLE Console = GuiData->Console;
     PCONSOLE_SCREEN_BUFFER ActiveBuffer;
     DWORD windx, windy;
     UINT  WidthUnit, HeightUnit;
@@ -1754,7 +1867,7 @@ OnGetMinMaxInfo(PGUI_CONSOLE_DATA GuiData, PMINMAXINFO minMaxInfo)
 static VOID
 OnSize(PGUI_CONSOLE_DATA GuiData, WPARAM wParam, LPARAM lParam)
 {
-    PCONSOLE Console = GuiData->Console;
+    PCONSRV_CONSOLE Console = GuiData->Console;
 
     if (!ConDrvValidateConsoleUnsafe(Console, CONSOLE_RUNNING, TRUE)) return;
 
@@ -1832,7 +1945,6 @@ OnMove(PGUI_CONSOLE_DATA GuiData)
 // HACK: This functionality is standard for general scrollbars. Don't add it by hand.
 
 VOID
-FASTCALL
 GuiConsoleHandleScrollbarMenu(VOID)
 {
     HMENU hMenu;
@@ -1860,7 +1972,7 @@ GuiConsoleHandleScrollbarMenu(VOID)
 static LRESULT
 OnScroll(PGUI_CONSOLE_DATA GuiData, UINT uMsg, WPARAM wParam)
 {
-    PCONSOLE Console = GuiData->Console;
+    PCONSRV_CONSOLE Console = GuiData->Console;
     PCONSOLE_SCREEN_BUFFER Buff;
     SCROLLINFO sInfo;
     int fnBar;
@@ -1971,7 +2083,7 @@ ConWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     LRESULT Result = 0;
     PGUI_CONSOLE_DATA GuiData = NULL;
-    PCONSOLE Console = NULL;
+    PCONSRV_CONSOLE Console = NULL;
 
     /*
      * - If it's the first time we create a window for the terminal,
@@ -2071,7 +2183,7 @@ ConWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
             /* Detect Alt-Esc/Space/Tab presses defer to DefWindowProc */
             if ( (HIWORD(lParam) & KF_ALTDOWN) && (wParam == VK_ESCAPE || wParam == VK_SPACE || wParam == VK_TAB))
             {
-               return DefWindowProcW(hWnd, msg, wParam, lParam);
+                return DefWindowProcW(hWnd, msg, wParam, lParam);
             }
 
             OnKey(GuiData, msg, wParam, lParam);
@@ -2309,8 +2421,21 @@ ConWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
             break;
         }
 
+        /*
+         * Undocumented message sent by Windows' console.dll for applying console info.
+         * See http://www.catch22.net/sites/default/source/files/setconsoleinfo.c
+         * and http://www.scn.rain.com/~neighorn/PDF/MSBugPaper.pdf
+         * for more information.
+         */
+        case WM_SETCONSOLEINFO:
+        {
+            DPRINT1("WM_SETCONSOLEINFO message\n");
+            GuiApplyWindowsConsoleSettings(GuiData, (HANDLE)wParam);
+            break;
+        }
+
         case PM_CONSOLE_BEEP:
-            DPRINT1("Beep !!\n");
+            DPRINT1("Beep\n");
             Beep(800, 200);
             break;
 
