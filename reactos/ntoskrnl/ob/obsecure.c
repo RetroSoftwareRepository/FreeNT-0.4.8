@@ -131,27 +131,26 @@ ObSetSecurityDescriptorInfo(IN PVOID Object,
 
     /* Get the object header */
     ObjectHeader = OBJECT_TO_OBJECT_HEADER(Object);
-
-    /* Reference the old descriptor */
-    OldDescriptor = ObpReferenceSecurityDescriptor(ObjectHeader);
-    NewDescriptor = OldDescriptor;
-
-    /* Set the SD information */
-    Status = SeSetSecurityDescriptorInfo(Object,
-                                         SecurityInformation,
-                                         SecurityDescriptor,
-                                         &NewDescriptor,
-                                         PoolType,
-                                         GenericMapping);
-    if (!NT_SUCCESS(Status))
-    {
-        /* We failed, dereference the old one */
-        if (OldDescriptor) ObDereferenceSecurityDescriptor(OldDescriptor, 1);
-        return Status;
-    }
-
     while (TRUE)
     {
+        /* Reference the old descriptor */
+        OldDescriptor = ObpReferenceSecurityDescriptor(ObjectHeader);
+        NewDescriptor = OldDescriptor;
+
+        /* Set the SD information */
+        Status = SeSetSecurityDescriptorInfo(Object,
+                                             SecurityInformation,
+                                             SecurityDescriptor,
+                                             &NewDescriptor,
+                                             PoolType,
+                                             GenericMapping);
+        if (!NT_SUCCESS(Status))
+        {
+            /* We failed, dereference the old one */
+            if (OldDescriptor) ObDereferenceSecurityDescriptor(OldDescriptor, 1);
+            break;
+        }
+
         /* Now add this to the cache */
         Status = ObLogSecurityDescriptor(NewDescriptor,
                                          &CachedDescriptor,
@@ -174,18 +173,15 @@ ObSetSecurityDescriptorInfo(IN PVOID Object,
                                               CachedDescriptor,
                                               OldDescriptor);
 
-        /* Get the security descriptor */
-        SecurityDescriptor = ExGetObjectFastReference(OldValue);
-        Count = ExGetCountFastReference(OldValue);
-
         /* Make sure the swap worked */
-        if (SecurityDescriptor == OldDescriptor)
+        if (ExGetObjectFastReference(OldValue) == OldDescriptor)
         {
             /* Flush waiters */
             ObpAcquireObjectLock(ObjectHeader);
             ObpReleaseObjectLock(ObjectHeader);
 
             /* And dereference the old one */
+            Count = ExGetCountFastReference(OldValue);
             ObDereferenceSecurityDescriptor(OldDescriptor, Count + 2);
             break;
         }
