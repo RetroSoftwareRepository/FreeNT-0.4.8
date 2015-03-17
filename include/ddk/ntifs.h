@@ -870,11 +870,11 @@ typedef VOID
 (NTAPI *PRTL_FREE_STRING_ROUTINE)(
   _In_ __drv_freesMem(Mem) _Post_invalid_ PVOID Buffer);
 
-extern const PRTL_ALLOCATE_STRING_ROUTINE RtlAllocateStringRoutine;
-extern const PRTL_FREE_STRING_ROUTINE RtlFreeStringRoutine;
+extern NTKERNELAPI const PRTL_ALLOCATE_STRING_ROUTINE RtlAllocateStringRoutine;
+extern NTKERNELAPI const PRTL_FREE_STRING_ROUTINE RtlFreeStringRoutine;
 
 #if _WIN32_WINNT >= 0x0600
-extern const PRTL_REALLOCATE_STRING_ROUTINE RtlReallocateStringRoutine;
+extern NTKERNELAPI const PRTL_REALLOCATE_STRING_ROUTINE RtlReallocateStringRoutine;
 #endif
 
 _Function_class_(RTL_HEAP_COMMIT_ROUTINE)
@@ -1005,6 +1005,16 @@ RtlCreateUnicodeString(
   _Out_ _At_(DestinationString->Buffer, __drv_allocatesMem(Mem))
     PUNICODE_STRING DestinationString,
   _In_z_ PCWSTR SourceString);
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+_Must_inspect_result_
+NTSYSAPI
+BOOLEAN
+NTAPI
+RtlPrefixString(
+  _In_ const STRING *String1,
+  _In_ const STRING *String2,
+  _In_ BOOLEAN CaseInsensitive);
 
 _IRQL_requires_max_(APC_LEVEL)
 NTSYSAPI
@@ -3548,7 +3558,7 @@ typedef struct _FILE_FS_CONTROL_INFORMATION {
 #define FSCTL_GET_NTFS_FILE_RECORD      CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 26, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define FSCTL_GET_VOLUME_BITMAP         CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 27, METHOD_NEITHER,  FILE_ANY_ACCESS)
 #define FSCTL_GET_RETRIEVAL_POINTERS    CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 28, METHOD_NEITHER,  FILE_ANY_ACCESS)
-#define FSCTL_MOVE_FILE                 CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 29, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define FSCTL_MOVE_FILE                 CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 29, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
 #define FSCTL_IS_VOLUME_DIRTY           CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 30, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define FSCTL_ALLOW_EXTENDED_DASD_IO    CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 32, METHOD_NEITHER,  FILE_ANY_ACCESS)
 
@@ -3563,22 +3573,22 @@ typedef struct _FILE_FS_CONTROL_INFORMATION {
 #define FSCTL_SET_REPARSE_POINT         CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 41, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
 #define FSCTL_GET_REPARSE_POINT         CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 42, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define FSCTL_DELETE_REPARSE_POINT      CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 43, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
-#define FSCTL_ENUM_USN_DATA             CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 44, METHOD_NEITHER,  FILE_READ_DATA)
+#define FSCTL_ENUM_USN_DATA             CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 44, METHOD_NEITHER,  FILE_ANY_ACCESS)
 #define FSCTL_SECURITY_ID_CHECK         CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 45, METHOD_NEITHER,  FILE_READ_DATA)
-#define FSCTL_READ_USN_JOURNAL          CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 46, METHOD_NEITHER,  FILE_READ_DATA)
+#define FSCTL_READ_USN_JOURNAL          CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 46, METHOD_NEITHER,  FILE_ANY_ACCESS)
 #define FSCTL_SET_OBJECT_ID_EXTENDED    CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 47, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
 #define FSCTL_CREATE_OR_GET_OBJECT_ID   CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 48, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define FSCTL_SET_SPARSE                CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 49, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
 #define FSCTL_SET_ZERO_DATA             CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 50, METHOD_BUFFERED, FILE_WRITE_DATA)
 #define FSCTL_QUERY_ALLOCATED_RANGES    CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 51, METHOD_NEITHER,  FILE_READ_DATA)
 #define FSCTL_ENABLE_UPGRADE            CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 52, METHOD_BUFFERED, FILE_WRITE_DATA)
-#define FSCTL_SET_ENCRYPTION            CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 53, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define FSCTL_SET_ENCRYPTION            CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 53, METHOD_NEITHER,  FILE_ANY_ACCESS)
 #define FSCTL_ENCRYPTION_FSCTL_IO       CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 54, METHOD_NEITHER,  FILE_ANY_ACCESS)
 #define FSCTL_WRITE_RAW_ENCRYPTED       CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 55, METHOD_NEITHER,  FILE_SPECIAL_ACCESS)
 #define FSCTL_READ_RAW_ENCRYPTED        CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 56, METHOD_NEITHER,  FILE_SPECIAL_ACCESS)
-#define FSCTL_CREATE_USN_JOURNAL        CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 57, METHOD_NEITHER,  FILE_READ_DATA)
-#define FSCTL_READ_FILE_USN_DATA        CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 58, METHOD_NEITHER,  FILE_READ_DATA)
-#define FSCTL_WRITE_USN_CLOSE_RECORD    CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 59, METHOD_NEITHER,  FILE_READ_DATA)
+#define FSCTL_CREATE_USN_JOURNAL        CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 57, METHOD_NEITHER,  FILE_ANY_ACCESS)
+#define FSCTL_READ_FILE_USN_DATA        CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 58, METHOD_NEITHER,  FILE_ANY_ACCESS)
+#define FSCTL_WRITE_USN_CLOSE_RECORD    CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 59, METHOD_NEITHER,  FILE_ANY_ACCESS)
 #define FSCTL_EXTEND_VOLUME             CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 60, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define FSCTL_QUERY_USN_JOURNAL         CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 61, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define FSCTL_DELETE_USN_JOURNAL        CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 62, METHOD_BUFFERED, FILE_ANY_ACCESS)
@@ -3621,7 +3631,6 @@ typedef struct _FILE_FS_CONTROL_INFORMATION {
 #define FSCTL_SHRINK_VOLUME                 CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 108, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
 #define FSCTL_SET_SHORT_NAME_BEHAVIOR       CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 109, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define FSCTL_DFSR_SET_GHOST_HANDLE_STATE   CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 110, METHOD_BUFFERED, FILE_ANY_ACCESS)
-
 #define FSCTL_TXFS_LIST_TRANSACTION_LOCKED_FILES \
                                             CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 120, METHOD_BUFFERED, FILE_READ_DATA)
 #define FSCTL_TXFS_LIST_TRANSACTIONS        CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 121, METHOD_BUFFERED, FILE_READ_DATA)
@@ -3642,17 +3651,15 @@ typedef struct _FILE_FS_CONTROL_INFORMATION {
 #define FSCTL_GET_RETRIEVAL_POINTER_BASE    CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 141, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define FSCTL_SET_PERSISTENT_VOLUME_STATE   CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 142, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define FSCTL_QUERY_PERSISTENT_VOLUME_STATE CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 143, METHOD_BUFFERED, FILE_ANY_ACCESS)
-
 #define FSCTL_REQUEST_OPLOCK                CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 144, METHOD_BUFFERED, FILE_ANY_ACCESS)
-
 #define FSCTL_CSV_TUNNEL_REQUEST            CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 145, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define FSCTL_IS_CSV_FILE                   CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 146, METHOD_BUFFERED, FILE_ANY_ACCESS)
-
 #define FSCTL_QUERY_FILE_SYSTEM_RECOGNITION CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 147, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define FSCTL_CSV_GET_VOLUME_PATH_NAME      CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 148, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define FSCTL_CSV_GET_VOLUME_NAME_FOR_VOLUME_MOUNT_POINT CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 149, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define FSCTL_CSV_GET_VOLUME_PATH_NAMES_FOR_VOLUME_NAME CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 150,  METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define FSCTL_IS_FILE_ON_CSV_VOLUME         CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 151,  METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define FSCTL_CSV_INTERNAL                  CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 155,  METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 typedef struct _CSV_NAMESPACE_INFO {
   ULONG Version;
@@ -3663,6 +3670,36 @@ typedef struct _CSV_NAMESPACE_INFO {
 
 #define CSV_NAMESPACE_INFO_V1 (sizeof(CSV_NAMESPACE_INFO))
 #define CSV_INVALID_DEVICE_NUMBER 0xFFFFFFFF
+
+#endif
+
+#if (_WIN32_WINNT >= 0x0602)
+
+#define FSCTL_FILE_LEVEL_TRIM               CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 130, METHOD_BUFFERED, FILE_WRITE_DATA)
+#define FSCTL_CORRUPTION_HANDLING           CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 152, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define FSCTL_OFFLOAD_READ                  CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 153, METHOD_BUFFERED, FILE_READ_ACCESS)
+#define FSCTL_OFFLOAD_WRITE                 CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 154, METHOD_BUFFERED, FILE_WRITE_ACCESS)
+#define FSCTL_SET_PURGE_FAILURE_MODE        CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 156, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define FSCTL_QUERY_FILE_LAYOUT             CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 157, METHOD_NEITHER,  FILE_ANY_ACCESS)
+#define FSCTL_IS_VOLUME_OWNED_BYCSVFS       CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 158, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define FSCTL_GET_INTEGRITY_INFORMATION     CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 159, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define FSCTL_SET_INTEGRITY_INFORMATION     CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 160, METHOD_BUFFERED, FILE_READ_DATA | FILE_WRITE_DATA)
+#define FSCTL_QUERY_FILE_REGIONS            CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 161, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define FSCTL_DEDUP_FILE                    CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 165, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define FSCTL_DEDUP_QUERY_FILE_HASHES       CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 166, METHOD_NEITHER,  FILE_READ_DATA)
+#define FSCTL_RKF_INTERNAL                  CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 171, METHOD_NEITHER,  FILE_ANY_ACCESS)
+#define FSCTL_SCRUB_DATA                    CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 172, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define FSCTL_REPAIR_COPIES                 CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 173, METHOD_BUFFERED, FILE_READ_DATA | FILE_WRITE_DATA)
+#define FSCTL_DISABLE_LOCAL_BUFFERING       CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 174, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define FSCTL_CSV_MGMT_LOCK                 CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 175, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define FSCTL_CSV_QUERY_DOWN_LEVEL_FILE_SYSTEM_CHARACTERISTICS \
+                                            CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 176, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define FSCTL_ADVANCE_FILE_ID               CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 177, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define FSCTL_CSV_SYNC_TUNNEL_REQUEST       CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 178, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define FSCTL_CSV_QUERY_VETO_FILE_DIRECT_IO CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 179, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define FSCTL_WRITE_USN_REASON              CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 180, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define FSCTL_CSV_CONTROL                   CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 181, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define FSCTL_GET_REFS_VOLUME_DATA          CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 182, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 #endif
 
@@ -4880,55 +4917,13 @@ typedef struct _FS_FILTER_CALLBACKS {
   PFS_FILTER_COMPLETION_CALLBACK PostReleaseForModifiedPageWriter;
 } FS_FILTER_CALLBACKS, *PFS_FILTER_CALLBACKS;
 
-#if (NTDDI_VERSION >= NTDDI_WINXP)
-NTKERNELAPI
-NTSTATUS
-NTAPI
-FsRtlRegisterFileSystemFilterCallbacks(
-  _In_ struct _DRIVER_OBJECT *FilterDriverObject,
-  _In_ PFS_FILTER_CALLBACKS Callbacks);
-#endif /* (NTDDI_VERSION >= NTDDI_WINXP) */
-
-#if (NTDDI_VERSION >= NTDDI_VISTA)
-NTKERNELAPI
-NTSTATUS
-NTAPI
-FsRtlNotifyStreamFileObject(
-  _In_ struct _FILE_OBJECT * StreamFileObject,
-  _In_opt_ struct _DEVICE_OBJECT *DeviceObjectHint,
-  _In_ FS_FILTER_STREAM_FO_NOTIFICATION_TYPE NotificationType,
-  _In_ BOOLEAN SafeToRecurse);
-#endif /* (NTDDI_VERSION >= NTDDI_VISTA) */
-
-#define DO_VERIFY_VOLUME                    0x00000002
-#define DO_BUFFERED_IO                      0x00000004
-#define DO_EXCLUSIVE                        0x00000008
-#define DO_DIRECT_IO                        0x00000010
-#define DO_MAP_IO_BUFFER                    0x00000020
-#define DO_DEVICE_HAS_NAME                  0x00000040
-#define DO_DEVICE_INITIALIZING              0x00000080
-#define DO_SYSTEM_BOOT_PARTITION            0x00000100
-#define DO_LONG_TERM_REQUESTS               0x00000200
-#define DO_NEVER_LAST_DEVICE                0x00000400
-#define DO_SHUTDOWN_REGISTERED              0x00000800
-#define DO_BUS_ENUMERATED_DEVICE            0x00001000
-#define DO_POWER_PAGABLE                    0x00002000
-#define DO_POWER_INRUSH                     0x00004000
-#define DO_LOW_PRIORITY_FILESYSTEM          0x00010000
-#define DO_SUPPORTS_TRANSACTIONS            0x00040000
-#define DO_FORCE_NEITHER_IO                 0x00080000
-#define DO_VOLUME_DEVICE_OBJECT             0x00100000
-#define DO_SYSTEM_SYSTEM_PARTITION          0x00200000
-#define DO_SYSTEM_CRITICAL_PARTITION        0x00400000
-#define DO_DISALLOW_EXECUTE                 0x00800000
-
-extern KSPIN_LOCK                   IoStatisticsLock;
-extern ULONG                        IoReadOperationCount;
-extern ULONG                        IoWriteOperationCount;
-extern ULONG                        IoOtherOperationCount;
-extern LARGE_INTEGER                IoReadTransferCount;
-extern LARGE_INTEGER                IoWriteTransferCount;
-extern LARGE_INTEGER                IoOtherTransferCount;
+extern NTKERNELAPI KSPIN_LOCK    IoStatisticsLock;
+extern NTKERNELAPI ULONG         IoReadOperationCount;
+extern NTKERNELAPI ULONG         IoWriteOperationCount;
+extern NTKERNELAPI ULONG         IoOtherOperationCount;
+extern NTKERNELAPI LARGE_INTEGER IoReadTransferCount;
+extern NTKERNELAPI LARGE_INTEGER IoWriteTransferCount;
+extern NTKERNELAPI LARGE_INTEGER IoOtherTransferCount;
 
 #define IO_FILE_OBJECT_NON_PAGED_POOL_CHARGE    64
 #define IO_FILE_OBJECT_PAGED_POOL_CHARGE        1024
@@ -5218,6 +5213,7 @@ KeRemoveQueueEx(
 #define ExDisableResourceBoost ExDisableResourceBoostLite
 
 VOID
+NTAPI
 ExInitializePushLock(
   _Out_ PEX_PUSH_LOCK PushLock);
 
@@ -5694,6 +5690,7 @@ SeLocateProcessImageName(
     ((PSECURITY_SUBJECT_CONTEXT) SubjectContext)->PrimaryToken )
 
 extern NTKERNELAPI PSE_EXPORTS SeExports;
+
 /******************************************************************************
  *                          Process Manager Functions                         *
  ******************************************************************************/
@@ -8356,121 +8353,126 @@ FsRtlRemovePerFileObjectContext(
   _In_opt_ PVOID OwnerId,
   _In_opt_ PVOID InstanceId);
 
-#define FsRtlFastLock(A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11) (       \
-     FsRtlPrivateLock(A1, A2, A3, A4, A5, A6, A7, A8, A9, NULL, A10, A11)   \
-)
+NTKERNELAPI
+NTSTATUS
+NTAPI
+FsRtlRegisterFileSystemFilterCallbacks(
+  _In_ struct _DRIVER_OBJECT *FilterDriverObject,
+  _In_ PFS_FILTER_CALLBACKS Callbacks);
 
-#define FsRtlAreThereCurrentFileLocks(FL) ( \
-    ((FL)->FastIoIsQuestionable)            \
-)
+#if (NTDDI_VERSION >= NTDDI_VISTA)
+NTKERNELAPI
+NTSTATUS
+NTAPI
+FsRtlNotifyStreamFileObject(
+  _In_ struct _FILE_OBJECT * StreamFileObject,
+  _In_opt_ struct _DEVICE_OBJECT *DeviceObjectHint,
+  _In_ FS_FILTER_STREAM_FO_NOTIFICATION_TYPE NotificationType,
+  _In_ BOOLEAN SafeToRecurse);
+#endif /* (NTDDI_VERSION >= NTDDI_VISTA) */
 
-#define FsRtlIncrementLockRequestsInProgress(FL) {                           \
-    ASSERT( (FL)->LockRequestsInProgress >= 0 );                             \
-    (void)                                                                   \
-    (InterlockedIncrement((LONG volatile *)&((FL)->LockRequestsInProgress)));\
+#define FsRtlFastLock(A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11)            \
+     FsRtlPrivateLock(A1, A2, A3, A4, A5, A6, A7, A8, A9, NULL, A10, A11)
+
+#define FsRtlAreThereCurrentFileLocks(FL)                                      \
+    ((FL)->FastIoIsQuestionable)
+
+#define FsRtlIncrementLockRequestsInProgress(FL) {                             \
+    ASSERT((FL)->LockRequestsInProgress >= 0);                                 \
+    (void)                                                                     \
+    (InterlockedIncrement((LONG volatile *)&((FL)->LockRequestsInProgress)));  \
 }
 
-#define FsRtlDecrementLockRequestsInProgress(FL) {                           \
-    ASSERT( (FL)->LockRequestsInProgress > 0 );                              \
-    (void)                                                                   \
-    (InterlockedDecrement((LONG volatile *)&((FL)->LockRequestsInProgress)));\
+#define FsRtlDecrementLockRequestsInProgress(FL) {                             \
+    ASSERT((FL)->LockRequestsInProgress > 0);                                  \
+    (void)                                                                     \
+    (InterlockedDecrement((LONG volatile *)&((FL)->LockRequestsInProgress)));  \
 }
 
-/* GCC compatible definition, MS one is retarded */
-extern NTKERNELAPI const UCHAR * const FsRtlLegalAnsiCharacterArray;
-#define LEGAL_ANSI_CHARACTER_ARRAY        FsRtlLegalAnsiCharacterArray
+#ifdef _NTSYSTEM_
+extern const UCHAR * const FsRtlLegalAnsiCharacterArray;
+#define LEGAL_ANSI_CHARACTER_ARRAY FsRtlLegalAnsiCharacterArray
+#else
+__CREATE_NTOS_DATA_IMPORT_ALIAS(FsRtlLegalAnsiCharacterArray)
+extern const UCHAR * const *FsRtlLegalAnsiCharacterArray;
+#define LEGAL_ANSI_CHARACTER_ARRAY (*FsRtlLegalAnsiCharacterArray)
+#endif
 
-#define FsRtlIsAnsiCharacterWild(C) (                                       \
-    FlagOn(FsRtlLegalAnsiCharacterArray[(UCHAR)(C)], FSRTL_WILD_CHARACTER ) \
-)
+#define FsRtlIsAnsiCharacterWild(C)                                            \
+    FlagOn(LEGAL_ANSI_CHARACTER_ARRAY[(UCHAR)(C)], FSRTL_WILD_CHARACTER)
 
-#define FsRtlIsAnsiCharacterLegalFat(C, WILD) (                                \
-    FlagOn(FsRtlLegalAnsiCharacterArray[(UCHAR)(C)], (FSRTL_FAT_LEGAL) |       \
-                                        ((WILD) ? FSRTL_WILD_CHARACTER : 0 ))  \
-)
+#define FsRtlIsAnsiCharacterLegalFat(C, WILD)                                  \
+    FlagOn(LEGAL_ANSI_CHARACTER_ARRAY[(UCHAR)(C)], (FSRTL_FAT_LEGAL) |         \
+                                        ((WILD) ? FSRTL_WILD_CHARACTER : 0 ))
 
-#define FsRtlIsAnsiCharacterLegalHpfs(C, WILD) (                               \
-    FlagOn(FsRtlLegalAnsiCharacterArray[(UCHAR)(C)], (FSRTL_HPFS_LEGAL) |      \
-                                        ((WILD) ? FSRTL_WILD_CHARACTER : 0 ))  \
-)
+#define FsRtlIsAnsiCharacterLegalHpfs(C, WILD)                                 \
+    FlagOn(LEGAL_ANSI_CHARACTER_ARRAY[(UCHAR)(C)], (FSRTL_HPFS_LEGAL) |        \
+                                        ((WILD) ? FSRTL_WILD_CHARACTER : 0 ))
 
-#define FsRtlIsAnsiCharacterLegalNtfs(C, WILD) (                               \
-    FlagOn(FsRtlLegalAnsiCharacterArray[(UCHAR)(C)], (FSRTL_NTFS_LEGAL) |      \
-                                        ((WILD) ? FSRTL_WILD_CHARACTER : 0 ))  \
-)
+#define FsRtlIsAnsiCharacterLegalNtfs(C, WILD)                                 \
+    FlagOn(LEGAL_ANSI_CHARACTER_ARRAY[(UCHAR)(C)], (FSRTL_NTFS_LEGAL) |        \
+                                        ((WILD) ? FSRTL_WILD_CHARACTER : 0 ))
 
-#define FsRtlIsAnsiCharacterLegalNtfsStream(C,WILD_OK) (                    \
-    FsRtlTestAnsiCharacter((C), TRUE, (WILD_OK), FSRTL_NTFS_STREAM_LEGAL)   \
-)
+#define FsRtlIsAnsiCharacterLegalNtfsStream(C,WILD_OK)                         \
+    FsRtlTestAnsiCharacter((C), TRUE, (WILD_OK), FSRTL_NTFS_STREAM_LEGAL)
 
-#define FsRtlIsAnsiCharacterLegal(C,FLAGS) (          \
-    FsRtlTestAnsiCharacter((C), TRUE, FALSE, (FLAGS)) \
-)
+#define FsRtlIsAnsiCharacterLegal(C,FLAGS)                                     \
+    FsRtlTestAnsiCharacter((C), TRUE, FALSE, (FLAGS))
 
-#define FsRtlTestAnsiCharacter(C, DEFAULT_RET, WILD_OK, FLAGS) (            \
-        ((SCHAR)(C) < 0) ? DEFAULT_RET :                                    \
-                           FlagOn( LEGAL_ANSI_CHARACTER_ARRAY[(C)],         \
-                                   (FLAGS) |                                \
-                                   ((WILD_OK) ? FSRTL_WILD_CHARACTER : 0) ) \
-)
+#define FsRtlTestAnsiCharacter(C, DEFAULT_RET, WILD_OK, FLAGS)                 \
+    (((SCHAR)(C) < 0) ? DEFAULT_RET :                                          \
+         FlagOn(LEGAL_ANSI_CHARACTER_ARRAY[(C)],                               \
+                (FLAGS) | ((WILD_OK) ? FSRTL_WILD_CHARACTER : 0)))
 
-#define FsRtlIsLeadDbcsCharacter(DBCS_CHAR) (                               \
-    (BOOLEAN)((UCHAR)(DBCS_CHAR) < 0x80 ? FALSE :                           \
-              (NLS_MB_CODE_PAGE_TAG &&                                      \
-               (NLS_OEM_LEAD_BYTE_INFO[(UCHAR)(DBCS_CHAR)] != 0)))          \
-)
+#define FsRtlIsLeadDbcsCharacter(DBCS_CHAR)                                    \
+    ((BOOLEAN)((UCHAR)(DBCS_CHAR) < 0x80 ? FALSE :                             \
+              (NLS_MB_CODE_PAGE_TAG &&                                         \
+               (NLS_OEM_LEAD_BYTE_INFO[(UCHAR)(DBCS_CHAR)] != 0))))
 
-#define FsRtlIsUnicodeCharacterWild(C) (                                    \
-    (((C) >= 0x40) ?                                                        \
-    FALSE :                                                                 \
-    FlagOn(FsRtlLegalAnsiCharacterArray[(C)], FSRTL_WILD_CHARACTER ))       \
-)
+#define FsRtlIsUnicodeCharacterWild(C)                                         \
+    ((((C) >= 0x40) ? FALSE :                                                  \
+    FlagOn(LEGAL_ANSI_CHARACTER_ARRAY[(C)], FSRTL_WILD_CHARACTER )))
 
-#define FsRtlInitPerFileContext( _fc, _owner, _inst, _cb)   \
-    ((_fc)->OwnerId = (_owner),                               \
-     (_fc)->InstanceId = (_inst),                             \
+#define FsRtlInitPerFileContext(_fc, _owner, _inst, _cb)                       \
+    ((_fc)->OwnerId = (_owner),                                                \
+     (_fc)->InstanceId = (_inst),                                              \
      (_fc)->FreeCallback = (_cb))
 
-#define FsRtlGetPerFileContextPointer(_fo) \
-    (FsRtlSupportsPerFileContexts(_fo) ? \
-        FsRtlGetPerStreamContextPointer(_fo)->FileContextSupportPointer : \
-        NULL)
+#define FsRtlGetPerFileContextPointer(_fo)                                     \
+    (FsRtlSupportsPerFileContexts(_fo) ?                                       \
+        FsRtlGetPerStreamContextPointer(_fo)->FileContextSupportPointer : NULL)
 
-#define FsRtlSupportsPerFileContexts(_fo)                     \
-    ((FsRtlGetPerStreamContextPointer(_fo) != NULL) &&        \
-     (FsRtlGetPerStreamContextPointer(_fo)->Version >= FSRTL_FCB_HEADER_V1) &&  \
+#define FsRtlSupportsPerFileContexts(_fo)                                      \
+    ((FsRtlGetPerStreamContextPointer(_fo) != NULL) &&                         \
+     (FsRtlGetPerStreamContextPointer(_fo)->Version >= FSRTL_FCB_HEADER_V1) && \
      (FsRtlGetPerStreamContextPointer(_fo)->FileContextSupportPointer != NULL))
 
-#define FsRtlSetupAdvancedHeaderEx( _advhdr, _fmutx, _fctxptr )                     \
-{                                                                                   \
-    FsRtlSetupAdvancedHeader( _advhdr, _fmutx );                                    \
-    if ((_fctxptr) != NULL) {                                                       \
-        (_advhdr)->FileContextSupportPointer = (_fctxptr);                          \
-    }                                                                               \
+#define FsRtlSetupAdvancedHeaderEx(_advhdr, _fmutx, _fctxptr)                  \
+{                                                                              \
+    FsRtlSetupAdvancedHeader( _advhdr, _fmutx );                               \
+    if ((_fctxptr) != NULL) {                                                  \
+        (_advhdr)->FileContextSupportPointer = (_fctxptr);                     \
+    }                                                                          \
 }
 
-#define FsRtlGetPerStreamContextPointer(FO) (   \
-    (PFSRTL_ADVANCED_FCB_HEADER)(FO)->FsContext \
-)
+#define FsRtlGetPerStreamContextPointer(FO)                                    \
+    ((PFSRTL_ADVANCED_FCB_HEADER)(FO)->FsContext)
 
-#define FsRtlInitPerStreamContext(PSC, O, I, FC) ( \
-    (PSC)->OwnerId = (O),                          \
-    (PSC)->InstanceId = (I),                       \
-    (PSC)->FreeCallback = (FC)                     \
-)
+#define FsRtlInitPerStreamContext(PSC, O, I, FC)                               \
+    ((PSC)->OwnerId = (O),                                                     \
+    (PSC)->InstanceId = (I),                                                   \
+    (PSC)->FreeCallback = (FC))
 
-#define FsRtlSupportsPerStreamContexts(FO) (                       \
-    (BOOLEAN)((NULL != FsRtlGetPerStreamContextPointer(FO) &&     \
-              FlagOn(FsRtlGetPerStreamContextPointer(FO)->Flags2, \
-              FSRTL_FLAG2_SUPPORTS_FILTER_CONTEXTS))               \
-)
+#define FsRtlSupportsPerStreamContexts(FO)                                     \
+    ((BOOLEAN)((NULL != FsRtlGetPerStreamContextPointer(FO) &&                 \
+               FlagOn(FsRtlGetPerStreamContextPointer(FO)->Flags2,             \
+               FSRTL_FLAG2_SUPPORTS_FILTER_CONTEXTS)))
 
-#define FsRtlLookupPerStreamContext(_sc, _oid, _iid)                          \
- (((NULL != (_sc)) &&                                                         \
-   FlagOn((_sc)->Flags2,FSRTL_FLAG2_SUPPORTS_FILTER_CONTEXTS) &&              \
-   !IsListEmpty(&(_sc)->FilterContexts)) ?                                    \
-        FsRtlLookupPerStreamContextInternal((_sc), (_oid), (_iid)) :          \
-        NULL)
+#define FsRtlLookupPerStreamContext(_sc, _oid, _iid)                           \
+    (((NULL != (_sc)) &&                                                       \
+      FlagOn((_sc)->Flags2,FSRTL_FLAG2_SUPPORTS_FILTER_CONTEXTS) &&            \
+      !IsListEmpty(&(_sc)->FilterContexts)) ?                                  \
+          FsRtlLookupPerStreamContextInternal((_sc), (_oid), (_iid)) : NULL)
 
 _IRQL_requires_max_(APC_LEVEL)
 FORCEINLINE
@@ -8499,12 +8501,12 @@ FsRtlSetupAdvancedHeader(
 #endif
 }
 
-#define FsRtlInitPerFileObjectContext(_fc, _owner, _inst)         \
+#define FsRtlInitPerFileObjectContext(_fc, _owner, _inst)                      \
            ((_fc)->OwnerId = (_owner), (_fc)->InstanceId = (_inst))
 
-#define FsRtlCompleteRequest(IRP,STATUS) {         \
-    (IRP)->IoStatus.Status = (STATUS);             \
-    IoCompleteRequest( (IRP), IO_DISK_INCREMENT ); \
+#define FsRtlCompleteRequest(IRP, STATUS) {                                    \
+    (IRP)->IoStatus.Status = (STATUS);                                         \
+    IoCompleteRequest( (IRP), IO_DISK_INCREMENT );                             \
 }
 /* Common Cache Types */
 
@@ -8586,7 +8588,7 @@ typedef VOID
     (((PSECTION_OBJECT_POINTERS)(FO)->SectionObjectPointer)->SharedCacheMap != NULL) \
 )
 
-extern ULONG CcFastMdlReadWait;
+extern NTKERNELAPI ULONG CcFastMdlReadWait;
 
 #if (NTDDI_VERSION >= NTDDI_WIN2K)
 
@@ -10968,13 +10970,14 @@ HalGetDmaAlignmentRequirement(
 #define HalGetDmaAlignmentRequirement() 1L
 #endif
 
-extern NTKERNELAPI PUSHORT NlsOemLeadByteInfo;
-#define NLS_OEM_LEAD_BYTE_INFO            NlsOemLeadByteInfo
-
-#ifdef NLS_MB_CODE_PAGE_TAG
-#undef NLS_MB_CODE_PAGE_TAG
+#ifdef _NTSYSTEM_
+extern PUSHORT NlsOemLeadByteInfo;
+#define NLS_OEM_LEAD_BYTE_INFO NlsOemLeadByteInfo
+#else
+__CREATE_NTOS_DATA_IMPORT_ALIAS(NlsOemLeadByteInfo)
+extern PUSHORT *NlsOemLeadByteInfo;
+#define NLS_OEM_LEAD_BYTE_INFO (*NlsOemLeadByteInfo)
 #endif
-#define NLS_MB_CODE_PAGE_TAG              NlsMbOemCodePageTag
 
 #if (NTDDI_VERSION >= NTDDI_VISTA)
 
@@ -11253,15 +11256,6 @@ typedef struct _OBJECT_BASIC_INFORMATION
     LARGE_INTEGER CreationTime;
 } OBJECT_BASIC_INFORMATION, *POBJECT_BASIC_INFORMATION;
 
-typedef struct _BITMAP_RANGE {
-    LIST_ENTRY      Links;
-    LONGLONG        BasePage;
-    ULONG           FirstDirtyPage;
-    ULONG           LastDirtyPage;
-    ULONG           DirtyPages;
-    PULONG          Bitmap;
-} BITMAP_RANGE, *PBITMAP_RANGE;
-
 typedef struct _FILE_COPY_ON_WRITE_INFORMATION {
     BOOLEAN ReplaceIfExists;
     HANDLE  RootDirectory;
@@ -11378,19 +11372,6 @@ typedef struct _GET_RETRIEVAL_DESCRIPTOR {
     ULONGLONG       StartVcn;
     MAPPING_PAIR    Pair[1];
 } GET_RETRIEVAL_DESCRIPTOR, *PGET_RETRIEVAL_DESCRIPTOR;
-
-typedef struct _MBCB {
-    CSHORT          NodeTypeCode;
-    CSHORT          NodeIsInZone;
-    ULONG           PagesToWrite;
-    ULONG           DirtyPages;
-    ULONG           Reserved;
-    LIST_ENTRY      BitmapRanges;
-    LONGLONG        ResumeWritePage;
-    BITMAP_RANGE    BitmapRange1;
-    BITMAP_RANGE    BitmapRange2;
-    BITMAP_RANGE    BitmapRange3;
-} MBCB, *PMBCB;
 
 typedef struct _MOVEFILE_DESCRIPTOR {
      HANDLE         FileHandle;

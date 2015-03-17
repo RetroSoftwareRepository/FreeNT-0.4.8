@@ -9,6 +9,8 @@
 
 #include "precomp.h"
 
+#include <windowsx.h>
+
 static BOOL pCreateToolbar(PMAIN_WND_INFO Info);
 
 static const TCHAR szMainWndClass[] = TEXT("DevMgmtWndClass");
@@ -266,7 +268,7 @@ UpdateViewMenu(PMAIN_WND_INFO Info)
 
     CheckMenuItem(hMenu,
                   IDC_SHOWHIDDEN,
-                  MF_BYCOMMAND | (Info->bShowHidden) ? MF_CHECKED : MF_UNCHECKED);
+                  MF_BYCOMMAND | (Info->bShowHidden ? MF_CHECKED : MF_UNCHECKED));
 }
 
 
@@ -302,7 +304,7 @@ InitMainWnd(PMAIN_WND_INFO Info)
                                      0);
     SetMenuDefaultItem(Info->hShortcutMenu, IDC_PROP, FALSE);
 
-    /* create seperate thread to emum devices */
+    /* create separate thread to emum devices */
     DevEnumThread = CreateThread(NULL,
                                  0,
                                  DeviceEnumThread,
@@ -416,6 +418,23 @@ OnNotify(PMAIN_WND_INFO Info,
         }
         break;
 
+        case NM_RETURN:
+        {
+            HTREEITEM hSelected = TreeView_GetSelection(Info->hTreeView);
+            if (Info->Display == DevicesByType)
+            {
+                OpenPropSheet(Info->hTreeView, hSelected);
+            }
+            else if (Info->Display == DevicesByConnection)
+            {
+                if (hSelected != TreeView_GetRoot(Info->hTreeView))
+                {
+                    OpenPropSheet(Info->hTreeView, hSelected);
+                }
+            }    
+        }
+        break;
+        
         case NM_DBLCLK:
         {
             HTREEITEM hSelected = TreeView_GetSelection(Info->hTreeView);

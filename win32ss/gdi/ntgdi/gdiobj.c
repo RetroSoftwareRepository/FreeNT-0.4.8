@@ -37,12 +37,63 @@
 #define NDEBUG
 #include <debug.h>
 
-// Move to gdidbg.h
+FORCEINLINE
+ULONG
+InterlockedReadUlong(
+    _In_ _Interlocked_operand_ ULONG volatile *Source)
+{
+    return *Source;
+}
+
+FORCEINLINE
+void
+INCREASE_THREAD_LOCK_COUNT(
+    _In_ HANDLE hobj)
+{
+    PTHREADINFO pti = PsGetCurrentThreadWin32Thread();
+    DBG_UNREFERENCED_PARAMETER(hobj);
+    if (pti)
+    {
 #if DBG
-#define DBG_INCREASE_LOCK_COUNT(pti, hobj) \
-    if (pti) ((PTHREADINFO)pti)->acExclusiveLockCount[((ULONG_PTR)hobj >> 16) & 0x1f]++;
-#define DBG_DECREASE_LOCK_COUNT(pti, hobj) \
-    if (pti) ((PTHREADINFO)pti)->acExclusiveLockCount[((ULONG_PTR)hobj >> 16) & 0x1f]--;
+        pti->acExclusiveLockCount[((ULONG_PTR)hobj >> 16) & 0x1f]++;
+#endif
+        pti->cExclusiveLocks++;
+    }
+}
+
+FORCEINLINE
+void
+DECREASE_THREAD_LOCK_COUNT(
+    _In_ HANDLE hobj)
+{
+    PTHREADINFO pti = PsGetCurrentThreadWin32Thread();
+    DBG_UNREFERENCED_PARAMETER(hobj);
+    if (pti)
+    {
+#if DBG
+        pti->acExclusiveLockCount[((ULONG_PTR)hobj >> 16) & 0x1f]--;
+#endif
+        pti->cExclusiveLocks--;
+    }
+}
+
+#if DBG
+VOID
+ASSERT_LOCK_ORDER(
+    _In_ UCHAR objt)
+{
+    PTHREADINFO pti = PsGetCurrentThreadWin32Thread();
+    ULONG i;
+
+    if (pti)
+    {
+        /* Ensure correct locking order! */
+        for (i = objt + 1; i < GDIObjTypeTotal; i++)
+        {
+            NT_ASSERT(pti->acExclusiveLockCount[i] == 0);
+        }
+    }
+}
 #define ASSERT_SHARED_OBJECT_TYPE(objt) \
     ASSERT((objt) == GDIObjType_SURF_TYPE || \
            (objt) == GDIObjType_PAL_TYPE || \
@@ -52,11 +103,13 @@
 #define ASSERT_EXCLUSIVE_OBJECT_TYPE(objt) \
     ASSERT((objt) == GDIObjType_DC_TYPE || \
            (objt) == GDIObjType_RGN_TYPE)
+#define ASSERT_TRYLOCK_OBJECT_TYPE(objt) \
+    ASSERT((objt) == GDIObjType_DRVOBJ_TYPE)
 #else
-#define DBG_INCREASE_LOCK_COUNT(ppi, hobj)
-#define DBG_DECREASE_LOCK_COUNT(x, y)
+#define ASSERT_LOCK_ORDER(hobj)
 #define ASSERT_SHARED_OBJECT_TYPE(objt)
 #define ASSERT_EXCLUSIVE_OBJECT_TYPE(objt)
+#define ASSERT_TRYLOCK_OBJECT_TYPE(objt)
 #endif
 
 #if defined(_M_IX86) || defined(_M_AMD64)
@@ -80,57 +133,58 @@ enum
 static PVOID gpvGdiHdlTblSection = NULL;
 PENTRY gpentHmgr;
 PULONG gpaulRefCount;
-ULONG gulFirstFree;
-ULONG gulFirstUnused;
+volatile ULONG gulFirstFree;
+volatile ULONG gulFirstUnused;
 static PPAGED_LOOKASIDE_LIST gpaLookasideList;
 
-static BOOL NTAPI GDIOBJ_Cleanup(PVOID ObjectBody);
+static VOID NTAPI GDIOBJ_vCleanup(PVOID ObjectBody);
 
 static const
 GDICLEANUPPROC
 apfnCleanup[] =
 {
-    NULL,             /* 00 GDIObjType_DEF_TYPE */
-    DC_Cleanup,       /* 01 GDIObjType_DC_TYPE */
-    NULL,             /* 02 GDIObjType_UNUSED1_TYPE */
-    NULL,             /* 03 GDIObjType_UNUSED2_TYPE */
-    REGION_Cleanup,   /* 04 GDIObjType_RGN_TYPE */
-    SURFACE_Cleanup,  /* 05 GDIObjType_SURF_TYPE */
-    GDIOBJ_Cleanup,   /* 06 GDIObjType_CLIENTOBJ_TYPE */
-    GDIOBJ_Cleanup,   /* 07 GDIObjType_PATH_TYPE */
-    PALETTE_Cleanup,  /* 08 GDIObjType_PAL_TYPE */
-    GDIOBJ_Cleanup,   /* 09 GDIObjType_ICMLCS_TYPE */
-    GDIOBJ_Cleanup,   /* 0a GDIObjType_LFONT_TYPE */
-    NULL,             /* 0b GDIObjType_RFONT_TYPE, unused */
-    NULL,             /* 0c GDIObjType_PFE_TYPE, unused */
-    NULL,             /* 0d GDIObjType_PFT_TYPE, unused */
-    GDIOBJ_Cleanup,   /* 0e GDIObjType_ICMCXF_TYPE */
-    NULL,             /* 0f GDIObjType_SPRITE_TYPE, unused */
-    BRUSH_Cleanup,    /* 10 GDIObjType_BRUSH_TYPE, BRUSH, PEN, EXTPEN */
-    NULL,             /* 11 GDIObjType_UMPD_TYPE, unused */
-    NULL,             /* 12 GDIObjType_UNUSED4_TYPE */
-    NULL,             /* 13 GDIObjType_SPACE_TYPE, unused */
-    NULL,             /* 14 GDIObjType_UNUSED5_TYPE */
-    NULL,             /* 15 GDIObjType_META_TYPE, unused */
-    NULL,             /* 16 GDIObjType_EFSTATE_TYPE, unused */
-    NULL,             /* 17 GDIObjType_BMFD_TYPE, unused */
-    NULL,             /* 18 GDIObjType_VTFD_TYPE, unused */
-    NULL,             /* 19 GDIObjType_TTFD_TYPE, unused */
-    NULL,             /* 1a GDIObjType_RC_TYPE, unused */
-    NULL,             /* 1b GDIObjType_TEMP_TYPE, unused */
-    DRIVEROBJ_Cleanup,/* 1c GDIObjType_DRVOBJ_TYPE */
-    NULL,             /* 1d GDIObjType_DCIOBJ_TYPE, unused */
-    NULL,             /* 1e GDIObjType_SPOOL_TYPE, unused */
-    NULL,             /* 1f reserved entry */
+    NULL,              /* 00 GDIObjType_DEF_TYPE */
+    DC_vCleanup,       /* 01 GDIObjType_DC_TYPE */
+    NULL,              /* 02 GDIObjType_UNUSED1_TYPE */
+    NULL,              /* 03 GDIObjType_UNUSED2_TYPE */
+    REGION_vCleanup,   /* 04 GDIObjType_RGN_TYPE */
+    SURFACE_vCleanup,  /* 05 GDIObjType_SURF_TYPE */
+    GDIOBJ_vCleanup,   /* 06 GDIObjType_CLIENTOBJ_TYPE */
+    GDIOBJ_vCleanup,   /* 07 GDIObjType_PATH_TYPE */
+    PALETTE_vCleanup,  /* 08 GDIObjType_PAL_TYPE */
+    GDIOBJ_vCleanup,   /* 09 GDIObjType_ICMLCS_TYPE */
+    GDIOBJ_vCleanup,   /* 0a GDIObjType_LFONT_TYPE */
+    NULL,              /* 0b GDIObjType_RFONT_TYPE, unused */
+    NULL,              /* 0c GDIObjType_PFE_TYPE, unused */
+    NULL,              /* 0d GDIObjType_PFT_TYPE, unused */
+    GDIOBJ_vCleanup,   /* 0e GDIObjType_ICMCXF_TYPE */
+    NULL,              /* 0f GDIObjType_SPRITE_TYPE, unused */
+    BRUSH_vCleanup,    /* 10 GDIObjType_BRUSH_TYPE, BRUSH, PEN, EXTPEN */
+    NULL,              /* 11 GDIObjType_UMPD_TYPE, unused */
+    NULL,              /* 12 GDIObjType_UNUSED4_TYPE */
+    NULL,              /* 13 GDIObjType_SPACE_TYPE, unused */
+    NULL,              /* 14 GDIObjType_UNUSED5_TYPE */
+    NULL,              /* 15 GDIObjType_META_TYPE, unused */
+    NULL,              /* 16 GDIObjType_EFSTATE_TYPE, unused */
+    NULL,              /* 17 GDIObjType_BMFD_TYPE, unused */
+    NULL,              /* 18 GDIObjType_VTFD_TYPE, unused */
+    NULL,              /* 19 GDIObjType_TTFD_TYPE, unused */
+    NULL,              /* 1a GDIObjType_RC_TYPE, unused */
+    NULL,              /* 1b GDIObjType_TEMP_TYPE, unused */
+    DRIVEROBJ_vCleanup,/* 1c GDIObjType_DRVOBJ_TYPE */
+    NULL,              /* 1d GDIObjType_DCIOBJ_TYPE, unused */
+    NULL,              /* 1e GDIObjType_SPOOL_TYPE, unused */
+    NULL,              /* 1f reserved entry */
 };
 
 /* INTERNAL FUNCTIONS ********************************************************/
 
 static
-BOOL NTAPI
-GDIOBJ_Cleanup(PVOID ObjectBody)
+VOID
+NTAPI
+GDIOBJ_vCleanup(PVOID ObjectBody)
 {
-    return TRUE;
+    /* Nothing to do */
 }
 
 static
@@ -246,9 +300,11 @@ IncrementGdiHandleCount(ULONG ulProcessId)
 
     Status = PsLookupProcessByProcessId(ULongToHandle(ulProcessId), &pep);
     NT_ASSERT(NT_SUCCESS(Status));
+    __analysis_assume(NT_SUCCESS(Status));
 
     ppi = PsGetProcessWin32Process(pep);
     if (ppi) InterlockedIncrement((LONG*)&ppi->GDIHandleCount);
+    if (NT_SUCCESS(Status)) ObDereferenceObject(pep);
 }
 
 FORCEINLINE
@@ -261,9 +317,11 @@ DecrementGdiHandleCount(ULONG ulProcessId)
 
     Status = PsLookupProcessByProcessId(ULongToHandle(ulProcessId), &pep);
     NT_ASSERT(NT_SUCCESS(Status));
+    __analysis_assume(NT_SUCCESS(Status));
 
     ppi = PsGetProcessWin32Process(pep);
     if (ppi) InterlockedDecrement((LONG*)&ppi->GDIHandleCount);
+    if (NT_SUCCESS(Status)) ObDereferenceObject(pep);
 }
 
 static
@@ -278,7 +336,7 @@ ENTRY_pentPopFreeEntry(VOID)
     do
     {
         /* Get the index and sequence number of the first free entry */
-        iFirst = gulFirstFree;
+        iFirst = InterlockedReadUlong(&gulFirstFree);
 
         /* Check if we have a free entry */
         if (!(iFirst & GDI_HANDLE_INDEX_MASK))
@@ -290,6 +348,10 @@ ENTRY_pentPopFreeEntry(VOID)
             if (iFirst >= GDI_HANDLE_COUNT)
             {
                 DPRINT1("No more GDI handles left!\n");
+#if DBG_ENABLE_GDIOBJ_BACKTRACES
+                DbgDumpGdiHandleTableWithBT();
+#endif
+                InterlockedDecrement((LONG*)&gulFirstUnused);
                 return 0;
             }
 
@@ -301,7 +363,7 @@ ENTRY_pentPopFreeEntry(VOID)
         pentFree = &gpentHmgr[iFirst & GDI_HANDLE_INDEX_MASK];
 
         /* Create a new value with an increased sequence number */
-        iNext = (USHORT)(ULONG_PTR)pentFree->einfo.pobj;
+        iNext = GDI_HANDLE_GET_INDEX(pentFree->einfo.hFree);
         iNext |= (iFirst & ~GDI_HANDLE_INDEX_MASK) + 0x10000;
 
         /* Try to exchange the FirstFree value */
@@ -342,7 +404,7 @@ ENTRY_vPushFreeEntry(PENTRY pentFree)
     do
     {
         /* Get the current first free index and sequence number */
-        iFirst = gulFirstFree;
+        iFirst = InterlockedReadUlong(&gulFirstFree);
 
         /* Set the einfo.pobj member to the index of the first free entry */
         pentFree->einfo.pobj = UlongToPtr(iFirst & GDI_HANDLE_INDEX_MASK);
@@ -467,6 +529,9 @@ GDIOBJ_AllocateObject(UCHAR objt, ULONG cjSize, FLONG fl)
     pobj->BaseFlags = fl & 0xffff;
     DBG_INITLOG(&pobj->slhLog);
     DBG_LOGEVENT(&pobj->slhLog, EVENT_ALLOCATE, 0);
+#if DBG_ENABLE_GDIOBJ_BACKTRACES
+    DbgCaptureStackBackTace(pobj->apvBackTrace, 1, GDI_OBJECT_STACK_LEVELS);
+#endif /* GDI_DEBUG */
 
     return pobj;
 }
@@ -510,6 +575,10 @@ GDIOBJ_vDereferenceObject(POBJ pobj)
     if (ulIndex)
     {
         /* Decrement reference count */
+        if ((gpaulRefCount[ulIndex] & REF_MASK_COUNT) == 0)
+        {
+            DBG_DUMP_EVENT_LIST(&pobj->slhLog);
+        }
         ASSERT((gpaulRefCount[ulIndex] & REF_MASK_COUNT) > 0);
         cRefs = InterlockedDecrement((LONG*)&gpaulRefCount[ulIndex]);
         DBG_LOGEVENT(&pobj->slhLog, EVENT_DEREFERENCE, cRefs);
@@ -621,6 +690,75 @@ GDIOBJ_vReferenceObjectByPointer(POBJ pobj)
 
 PGDIOBJ
 NTAPI
+GDIOBJ_TryLockObject(
+    HGDIOBJ hobj,
+    UCHAR objt)
+{
+    PENTRY pentry;
+    POBJ pobj;
+    DWORD dwThreadId;
+
+    /* Check if the handle type matches */
+    ASSERT_TRYLOCK_OBJECT_TYPE(objt);
+    if ((((ULONG_PTR)hobj >> 16) & 0x1f) != objt)
+    {
+        DPRINT("Wrong object type: hobj=0x%p, objt=0x%x\n", hobj, objt);
+        return NULL;
+    }
+
+    /* Make sure lock order is correct */
+    ASSERT_LOCK_ORDER(objt);
+
+    /* Reference the handle entry */
+    pentry = ENTRY_ReferenceEntryByHandle(hobj, 0);
+    if (!pentry)
+    {
+        DPRINT("GDIOBJ: Requested handle 0x%p is not valid.\n", hobj);
+        return NULL;
+    }
+
+    /* Get the pointer to the BASEOBJECT */
+    pobj = pentry->einfo.pobj;
+
+    /* Check if we already own the lock */
+    dwThreadId = PtrToUlong(PsGetCurrentThreadId());
+    if (pobj->dwThreadId != dwThreadId)
+    {
+        /* Disable APCs and try acquiring the push lock */
+        KeEnterCriticalRegion();
+        if(!ExTryAcquirePushLockExclusive(&pobj->pushlock))
+        {
+            ULONG cRefs, ulIndex;
+            /* Already owned. Clean up and leave. */
+            KeLeaveCriticalRegion();
+
+            /* Calculate the index */
+            ulIndex = GDI_HANDLE_GET_INDEX(pobj->hHmgr);
+
+            /* Decrement reference count */
+            ASSERT((gpaulRefCount[ulIndex] & REF_MASK_COUNT) > 0);
+            cRefs = InterlockedDecrement((LONG*)&gpaulRefCount[ulIndex]);
+            ASSERT(cRefs & REF_MASK_VALID);
+
+            return NULL;
+        }
+
+        /* Set us as lock owner */
+        ASSERT(pobj->dwThreadId == 0);
+        pobj->dwThreadId = dwThreadId;
+    }
+
+    /* Increase lock count */
+    pobj->cExclusiveLock++;
+    INCREASE_THREAD_LOCK_COUNT(hobj);
+    DBG_LOGEVENT(&pobj->slhLog, EVENT_LOCK, 0);
+
+    /* Return the object */
+    return pobj;
+}
+
+PGDIOBJ
+NTAPI
 GDIOBJ_LockObject(
     HGDIOBJ hobj,
     UCHAR objt)
@@ -636,6 +774,9 @@ GDIOBJ_LockObject(
         DPRINT("Wrong object type: hobj=0x%p, objt=0x%x\n", hobj, objt);
         return NULL;
     }
+
+    /* Make sure lock order is correct */
+    ASSERT_LOCK_ORDER(objt);
 
     /* Reference the handle entry */
     pentry = ENTRY_ReferenceEntryByHandle(hobj, 0);
@@ -663,7 +804,7 @@ GDIOBJ_LockObject(
 
     /* Increase lock count */
     pobj->cExclusiveLock++;
-    DBG_INCREASE_LOCK_COUNT(PsGetCurrentProcessWin32Process(), hobj);
+    INCREASE_THREAD_LOCK_COUNT(hobj);
     DBG_LOGEVENT(&pobj->slhLog, EVENT_LOCK, 0);
 
     /* Return the object */
@@ -679,7 +820,7 @@ GDIOBJ_vUnlockObject(POBJ pobj)
 
     /* Decrease lock count */
     pobj->cExclusiveLock--;
-    DBG_DECREASE_LOCK_COUNT(PsGetCurrentProcessWin32Process(), pobj->hHmgr);
+    DECREASE_THREAD_LOCK_COUNT(pobj->hHmgr);
     DBG_LOGEVENT(&pobj->slhLog, EVENT_UNLOCK, 0);
 
     /* Check if this was the last lock */
@@ -730,7 +871,7 @@ GDIOBJ_hInsertObject(
     ExAcquirePushLockExclusive(&pobj->pushlock);
     pobj->cExclusiveLock = 1;
     pobj->dwThreadId = PtrToUlong(PsGetCurrentThreadId());
-    DBG_INCREASE_LOCK_COUNT(PsGetCurrentProcessWin32Process(), pobj->hHmgr);
+    INCREASE_THREAD_LOCK_COUNT(pobj->hHmgr);
 
     /* Get object type from the hHmgr field */
     objt = ((ULONG_PTR)pobj->hHmgr >> 16) & 0xff;
@@ -928,7 +1069,7 @@ GDIOBJ_vDeleteObject(POBJ pobj)
             /* Release the pushlock and reenable APCs */
             ExReleasePushLockExclusive(&pobj->pushlock);
             KeLeaveCriticalRegion();
-            DBG_DECREASE_LOCK_COUNT(PsGetCurrentProcessWin32Process(), pobj->hHmgr);
+            DECREASE_THREAD_LOCK_COUNT(pobj->hHmgr);
         }
     }
 
@@ -1174,6 +1315,15 @@ NtGdiCreateClientObj(
     POBJ pObject;
     HANDLE handle;
 
+    /* Check if ulType is valid */
+    if ((ulType != GDILoObjType_LO_METAFILE16_TYPE) &&
+        (ulType != GDILoObjType_LO_METAFILE_TYPE) &&
+        (ulType != GDILoObjType_LO_METADC16_TYPE))
+    {
+        DPRINT1("NtGdiCreateClientObj: Invalid object type 0x%lx.\n", ulType);
+        return NULL;
+    }
+
     /* Allocate a new object */
     pObject = GDIOBJ_AllocateObject(GDIObjType_CLIENTOBJ_TYPE,
                                     sizeof(CLIENTOBJ),
@@ -1183,9 +1333,6 @@ NtGdiCreateClientObj(
         DPRINT1("NtGdiCreateClientObj: Could not allocate a clientobj.\n");
         return NULL;
     }
-
-    /* Mask out everything that would change the type in a wrong manner */
-    ulType &= (GDI_HANDLE_TYPE_MASK & ~GDI_HANDLE_BASETYPE_MASK);
 
     /* Set the real object type */
     pObject->hHmgr = UlongToHandle(ulType | GDILoObjType_LO_CLIENTOBJ_TYPE);
@@ -1366,9 +1513,7 @@ GDI_CleanupForProcess(struct _EPROCESS *Process)
     }
 
 #if DBG
-//#ifdef GDI_DEBUG
-	DbgGdiHTIntegrityCheck();
-//#endif
+    DbgGdiHTIntegrityCheck();
 #endif
 
     ppi = PsGetCurrentProcessWin32Process();

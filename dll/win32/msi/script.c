@@ -18,25 +18,9 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-#define COM_NO_WINDOWS_H
-
-#define COBJMACROS
-
-#include <stdarg.h>
-#include <windef.h>
-//#include "winbase.h"
-//#include "winerror.h"
-//#include "winuser.h"
-//#include "msidefs.h"
 #include "msipriv.h"
-#include <activscp.h>
-#include <oleauto.h>
-#include <wine/debug.h>
-#include <wine/unicode.h>
 
-//#include "msiserver.h"
+#include <activscp.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(msi);
 
@@ -360,7 +344,7 @@ DWORD call_script(MSIHANDLE hPackage, INT type, LPCWSTR script, LPCWSTR function
     if (FAILED(hr)) goto done;
 
     /* Call a function if necessary through the IDispatch interface */
-    if (function != NULL && strlenW(function) > 0) {
+    if (function && function[0]) {
         TRACE("Calling function %s\n", debugstr_w(function));
 
         hr = IActiveScript_GetScriptDispatch(pActiveScript, NULL, &pDispatch);

@@ -25,9 +25,12 @@ list(APPEND SOURCE
     s_texture.c
     s_triangle.c
     s_zoom.c
-)
+    precomp.h)
 
 add_library(mesa_swrast STATIC ${SOURCE})
+add_pch(mesa_swrast precomp.h SOURCE)
+
 if(NOT MSVC)
+    add_target_compile_flags(mesa_swrast "-Wno-unused-variable")
     allow_warnings(mesa_swrast)
 endif()

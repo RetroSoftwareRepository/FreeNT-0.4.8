@@ -18,25 +18,33 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-//#include "windef.h"
-//#include "oleacc.h"
+#include <windef.h>
+#include <oleacc.h>
 
-#ifdef LANGUAGE_EN_US
-    #include "lang/oleacc_En.rc"
-#endif
-#ifdef LANGUAGE_KO_KR
-    #include "lang/oleacc_Ko.rc"
-#endif
-#ifdef LANGUAGE_NL_NL
-    #include "lang/oleacc_Nl.rc"
-#endif
-#ifdef LANGUAGE_PL_PL
-    #include "lang/oleacc_Pl.rc"
-#endif
+#include "resource.h"
+
+1 TYPELIB "oleacc_classes.tlb"
+1 WINE_REGISTRY "oleacc_classes.rgs"
+
+LANGUAGE LANG_NEUTRAL, SUBLANG_NEUTRAL
+
+#define WINE_FILEDESCRIPTION_STR "Wine OLE Accessibility"
+#define WINE_FILENAME_STR "oleacc.dll"
+#define WINE_FILEVERSION 7,0,0,0
+#define WINE_FILEVERSION_STR "7.0.0.0"
+#define WINE_PRODUCTVERSION 6,1,7600,16385
+#define WINE_PRODUCTVERSION_STR "6.1.6700.16385"
+
+#include <wine/wine_common_ver.rc>
 
 /* UTF-8 */
+#pragma code_page(65001)
+
 #ifdef LANGUAGE_DE_DE
     #include "lang/oleacc_De.rc"
+#endif
+#ifdef LANGUAGE_EN_US
+    #include "lang/oleacc_En.rc"
 #endif
 #ifdef LANGUAGE_FR_FR
     #include "lang/oleacc_Fr.rc"
@@ -50,11 +58,20 @@
 #ifdef LANGUAGE_IT_IT
     #include "lang/oleacc_It.rc"
 #endif
+#ifdef LANGUAGE_KO_KR
+    #include "lang/oleacc_Ko.rc"
+#endif
 #ifdef LANGUAGE_LT_LT
     #include "lang/oleacc_Lt.rc"
 #endif
+#ifdef LANGUAGE_NL_NL
+    #include "lang/oleacc_Nl.rc"
+#endif
 #ifdef LANGUAGE_NO_NO
     #include "lang/oleacc_No.rc"
+#endif
+#ifdef LANGUAGE_PL_PL
+    #include "lang/oleacc_Pl.rc"
 #endif
 #ifdef LANGUAGE_PT_PT
     #include "lang/oleacc_Pt.rc"
@@ -62,8 +79,17 @@
 #ifdef LANGUAGE_RO_RO
     #include "lang/oleacc_Ro.rc"
 #endif
+#ifdef LANGUAGE_RU_RU
+    #include "lang/oleacc_Ru.rc"
+#endif
 #ifdef LANGUAGE_SL_SI
     #include "lang/oleacc_Si.rc"
+#endif
+#ifdef LANGUAGE_SQ_AL
+    #include "lang/oleacc_Sq.rc"
+#endif
+#ifdef LANGUAGE_TR_TR
+    #include "lang/oleacc_Tr.rc"
 #endif
 #ifdef LANGUAGE_UK_UA
     #include "lang/oleacc_Uk.rc"

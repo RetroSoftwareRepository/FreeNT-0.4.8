@@ -33,6 +33,8 @@
 
 #include "ndissys.h"
 
+#include <ntifs.h>
+
 #define PARAMETERS_KEY L"Parameters"     /* The parameters subkey under the device-specific key */
 
 /*
@@ -642,6 +644,13 @@ NdisReadConfiguration(
 
         (*ParameterValue)->ParameterData.StringData.Buffer = Buffer;
         (*ParameterValue)->ParameterData.StringData.Length = KeyInformation->DataLength;
+    }
+    else if (KeyInformation->Type == REG_DWORD)
+    {
+        ASSERT(KeyInformation->DataLength == sizeof(ULONG));
+        NDIS_DbgPrint(MAX_TRACE, ("NdisParameterInteger\n"));
+        (*ParameterValue)->ParameterType = NdisParameterInteger;
+        (*ParameterValue)->ParameterData.IntegerData = * (ULONG *) &KeyInformation->Data[0];
     }
     else if (KeyInformation->Type == REG_SZ)
     {

@@ -54,6 +54,7 @@ EngSrcBufferedBitBlt (
                                     iTmpBitmapFormat,
                                     0,
                                     0,
+                                    0,
                                     NULL);
     if (psurfTmp == NULL)
     {
@@ -147,6 +148,7 @@ EngTrgBufferedBitBlt (
                                     rclTmp.right,
                                     rclTmp.bottom,
                                     iTmpBitmapFormat,
+                                    0,
                                     0,
                                     0,
                                     NULL);
@@ -494,11 +496,22 @@ EngBitBlt (
     /* Check if the ROP uses a mask */
     if (ROP4_USES_MASK(rop4))
     {
-        /* Must have a mask surface and point */
-        NT_ASSERT(psoMask);
-        NT_ASSERT(pptlMask);
-
         //__debugbreak();
+
+        /* Check if we don't have a mask surface */
+        if (psoMask == NULL)
+        {
+            /* Must have a brush */
+            NT_ASSERT(pbo); // FIXME: test this!
+
+            /* Check if the BRUSHOBJ can provide the mask */
+            psoMask = BRUSHOBJ_psoMask(pbo);
+            if (psoMask == NULL)
+            {
+                /* We have no mask, assume the mask is all foreground */
+                rop4 = (rop4 & 0xFF) || ((rop4 & 0xFF) << 8);
+            }
+        }
 
         /* Set the mask format info */
         bltdata.siMsk.iFormat = psoMask->iBitmapFormat;

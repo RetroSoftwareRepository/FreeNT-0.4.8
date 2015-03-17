@@ -1,6 +1,9 @@
 #pragma once
 
-PMENU_OBJECT FASTCALL UserGetMenuObject(HMENU hMenu);
+FORCEINLINE PMENU UserGetMenuObject(HMENU hMenu)
+{
+   return UserGetObject(gHandleTable, hMenu, TYPE_MENU);
+}
 
 #define ASSERT_REFS_CO(_obj_) \
 { \
@@ -37,9 +40,15 @@ PMENU_OBJECT FASTCALL UserGetMenuObject(HMENU hMenu);
 
 PWND FASTCALL IntGetWindowObject(HWND hWnd);
 
+/*************** DDE.C ****************/
+
+BOOL FASTCALL IntDdeSendMessageHook(PWND,UINT,WPARAM,LPARAM);
+BOOL APIENTRY IntDdePostMessageHook(IN PWND,IN UINT,IN WPARAM,IN OUT LPARAM*,IN OUT LONG_PTR*);
+BOOL APIENTRY IntDdeGetMessageHook(PMSG,LONG_PTR);
+
 /*************** MAIN.C ***************/
 
-NTSTATUS NTAPI UserCreateThreadInfo(struct _ETHREAD *Thread);
+NTSTATUS NTAPI InitThreadCallback(PETHREAD Thread);
 
 /*************** WINSTA.C ***************/
 
@@ -103,13 +112,13 @@ PWND FASTCALL UserGetWindowObject(HWND hWnd);
 VOID FASTCALL co_DestroyThreadWindows(struct _ETHREAD *Thread);
 HWND FASTCALL UserGetShellWindow(VOID);
 HDC FASTCALL UserGetDCEx(PWND Window OPTIONAL, HANDLE ClipRegion, ULONG Flags);
-BOOLEAN FASTCALL co_UserDestroyWindow(PWND Wnd);
+BOOLEAN co_UserDestroyWindow(PVOID Object);
 PWND FASTCALL UserGetAncestor(PWND Wnd, UINT Type);
 
 /*************** MENU.C ***************/
 
-HMENU FASTCALL UserCreateMenu(BOOL PopupMenu);
-BOOL FASTCALL UserSetMenuDefaultItem(PMENU_OBJECT Menu, UINT uItem, UINT fByPos);
+HMENU FASTCALL UserCreateMenu(PDESKTOP Desktop, BOOL PopupMenu);
+BOOL FASTCALL UserSetMenuDefaultItem(PMENU Menu, UINT uItem, UINT fByPos);
 BOOL FASTCALL UserDestroyMenu(HMENU hMenu);
 
 /*************** SCROLLBAR.C ***************/

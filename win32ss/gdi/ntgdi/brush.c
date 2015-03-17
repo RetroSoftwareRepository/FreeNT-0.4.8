@@ -13,19 +13,47 @@
 
 ULONG gulBrushUnique;
 
+static
+VOID
+BRUSH_vInit(
+    PBRUSH pbr)
+{
+    /* Start with kmode brush attribute */
+    pbr->pBrushAttr = &pbr->BrushAttr;
+}
+
+static
+PBRUSH
+BRUSH_AllocBrushWithHandle(
+    VOID)
+{
+    PBRUSH pbr;
+
+    pbr = (PBRUSH)GDIOBJ_AllocObjWithHandle(GDILoObjType_LO_BRUSH_TYPE, sizeof(BRUSH));
+    if (pbr == NULL)
+    {
+        return NULL;
+    }
+
+    BRUSH_vInit(pbr);
+    return pbr;
+}
+
+static
 BOOL
-NTAPI
 BRUSH_bAllocBrushAttr(PBRUSH pbr)
 {
     PPROCESSINFO ppi;
     BRUSH_ATTR *pBrushAttr;
+    NT_ASSERT(pbr->pBrushAttr == &pbr->BrushAttr);
 
     // HACK: this currently does not work
     return 1;
 
     /* Get the PROCESSINFO pointer */
     ppi = PsGetCurrentProcessWin32Process();
-    ASSERT(ppi);
+    NT_ASSERT(ppi);
+    __analysis_assume(ppi);
 
     /* Allocate a brush attribute from the gdi pool */
     pBrushAttr = GdiPoolAllocate(ppi->pPoolBrushAttr);
@@ -40,7 +68,7 @@ BRUSH_bAllocBrushAttr(PBRUSH pbr)
     *pbr->pBrushAttr = pbr->BrushAttr;
 
     /* Default hatch style is -1 */
-    pbr->ulStyle = -1;
+    pbr->iHatch = -1;
 
     pbr->ulBrushUnique = InterlockedIncrementUL(&gulBrushUnique);
 
@@ -51,8 +79,8 @@ BRUSH_bAllocBrushAttr(PBRUSH pbr)
     return TRUE;
 }
 
+static
 VOID
-NTAPI
 BRUSH_vFreeBrushAttr(PBRUSH pbr)
 {
     PPROCESSINFO ppi;
@@ -149,23 +177,22 @@ BRUSH_bSetBrushOwner(PBRUSH pbr, ULONG ulOwner)
     // FIXME:
     if (pbr->flAttrs & BR_IS_GLOBAL) return TRUE;
 
-    /* Set ownership of the pattern bitmap */
-    if (pbr->hbmPattern)
-        GreSetObjectOwner(pbr->hbmPattern, ulOwner);
-
     if ((ulOwner == GDI_OBJ_HMGR_PUBLIC) || ulOwner == GDI_OBJ_HMGR_NONE)
     {
-        /* Free the brush attribute */
+        /* Free user mode attribute, if any */
         BRUSH_vFreeBrushAttr(pbr);
+
+        // Deny user access to User Data.
+        GDIOBJ_vSetObjectAttr(&pbr->BaseObject, NULL);
     }
-    else if (ulOwner == GDI_OBJ_HMGR_POWNED)
+
+    if (ulOwner == GDI_OBJ_HMGR_POWNED)
     {
-        /* Check if there is no usermode attribute */
-        if (pbr->pBrushAttr == &pbr->BrushAttr)
-        {
-            /* Free the brush attribute */
-            BRUSH_bAllocBrushAttr(pbr);
-        }
+        /* Allocate a user mode attribute */
+        BRUSH_bAllocBrushAttr(pbr);
+
+        // Allow user access to User Data.
+        GDIOBJ_vSetObjectAttr(&pbr->BaseObject, pbr->pBrushAttr);
     }
 
     GDIOBJ_vSetObjectOwner(&pbr->BaseObject, ulOwner);
@@ -177,23 +204,18 @@ BOOL
 NTAPI
 GreSetBrushOwner(HBRUSH hBrush, ULONG ulOwner)
 {
-    BOOL bResult;
+    BOOL Ret;
     PBRUSH pbrush;
 
-    /* Reference the brush */
     pbrush = BRUSH_ShareLockBrush(hBrush);
-
-    /* Set the brush owner */
-    bResult = BRUSH_bSetBrushOwner(pbrush, ulOwner);
-
-    /* Dereference the brush */
+    Ret = IntGdiSetBrushOwner(pbrush, ulOwner);
     BRUSH_ShareUnlockBrush(pbrush);
-    return bResult;
+    return Ret;
 }
 
-BOOL
+VOID
 NTAPI
-BRUSH_Cleanup(PVOID ObjectBody)
+BRUSH_vCleanup(PVOID ObjectBody)
 {
     PBRUSH pbrush = (PBRUSH)ObjectBody;
 
@@ -216,8 +238,6 @@ BRUSH_Cleanup(PVOID ObjectBody)
     {
         ExFreePool(pbrush->pStyle);
     }
-
-    return TRUE;
 }
 
 INT
@@ -248,7 +268,7 @@ BRUSH_GetObject(PBRUSH pbrush, INT cjSize, LPLOGBRUSH plogbrush)
     else if (pbrush->flAttrs & BR_IS_HATCH)
     {
         plogbrush->lbStyle = BS_HATCHED;
-        plogbrush->lbHatch = pbrush->ulStyle;
+        plogbrush->lbHatch = pbrush->iHatch;
     }
     else if (pbrush->flAttrs & BR_IS_DIB)
     {
@@ -298,7 +318,7 @@ GreSetSolidBrushColor(HBRUSH hbr, COLORREF crColor)
 HBRUSH
 NTAPI
 GreCreateBrushInternal(
-    _In_ ULONG ulStyle,
+    _In_ ULONG iHatch,
     _In_ HBITMAP hbmPattern,
     _In_ HBITMAP hbmClient,
     _In_ COLORREF crColor,
@@ -330,7 +350,7 @@ GreCreateBrushInternal(
     pbr->flAttrs = flAttrib;
     pbr->hbmPattern = hbmPattern;
     pbr->hbmClient = hbmClient;
-    pbr->ulStyle = ulStyle;
+    pbr->iHatch = iHatch;
     pbr->BrushAttr.lbColor = crColor;
 
     /* Get the handle and unlock the brush */
@@ -505,6 +525,77 @@ NtGdiCreateDIBBrush(
 
     /* Call the internal worker function */
     return GreCreateBrushInternal(0, hbmPattern, pvPackedDIB, 0, flAttr);
+}
+
+HBITMAP
+APIENTRY
+NtGdiGetObjectBitmapHandle(
+    _In_ HBRUSH hbr,
+    _Out_ UINT *piUsage)
+{
+    HBITMAP hbmPattern;
+    PBRUSH pbr;
+
+    /* Lock the brush */
+    pbr = BRUSH_ShareLockBrush(hbr);
+    if (pbr == NULL)
+    {
+        DPRINT1("Could not lock brush\n");
+        return NULL;
+    }
+
+    /* Get the pattern bitmap handle */
+    hbmPattern = pbr->hbmPattern;
+
+    _SEH2_TRY
+    {
+        ProbeForWrite(piUsage, sizeof(*piUsage), sizeof(*piUsage));
+
+        /* Set usage according to flags */
+        if (pbr->flAttrs & BR_IS_DIBPALCOLORS)
+            *piUsage = DIB_PAL_COLORS;
+        else
+            *piUsage = DIB_RGB_COLORS;
+    }
+    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+    {
+        DPRINT1("Got exception!\n");
+        hbmPattern = NULL;
+    }
+    _SEH2_END;
+
+    /* Unlock the brush */
+    BRUSH_ShareUnlockBrush(pbr);
+
+    /* Return the pattern bitmap handle */
+    return hbmPattern;
+}
+
+/*
+ * @unimplemented
+ */
+HBRUSH
+APIENTRY
+NtGdiSetBrushAttributes(
+    IN HBRUSH hbm,
+    IN DWORD dwFlags)
+{
+    UNIMPLEMENTED;
+    return NULL;
+}
+
+
+/*
+ * @unimplemented
+ */
+HBRUSH
+APIENTRY
+NtGdiClearBrushAttributes(
+    IN HBRUSH hbr,
+    IN DWORD dwFlags)
+{
+    UNIMPLEMENTED;
+    return NULL;
 }
 
 

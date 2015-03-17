@@ -218,7 +218,7 @@ FsRtlCopyRead(IN PFILE_OBJECT FileObject,
             /* File was accessed */
             FileObject->Flags |= FO_FILE_FAST_IO_READ;
 
-            if (Result == TRUE)
+            if (Result != FALSE)
             {
                 ASSERT((IoStatus->Status == STATUS_END_OF_FILE) ||
                        (((ULONGLONG)FileOffset->QuadPart + IoStatus->Information) <=
@@ -227,7 +227,7 @@ FsRtlCopyRead(IN PFILE_OBJECT FileObject,
         }
 
         /* Update the current file offset */
-        if (Result == TRUE)
+        if (Result != FALSE)
         {
             FileObject->CurrentByteOffset.QuadPart = FileOffset->QuadPart + IoStatus->Information;
         }
@@ -295,11 +295,6 @@ FsRtlCopyWrite(IN PFILE_OBJECT FileObject,
     ASSERT(FileObject);
     ASSERT(FileObject->FsContext);
 
-#if defined(__GNUC__) && (__GNUC__ * 100 + __GNUC_MINOR__ == 405)
-    /* Silence incorrect GCC 4.5.x warning */
-    OldFileSize.LowPart = 0;
-#endif
-
     /* Initialize some of the vars and pointers */
     NewSize.QuadPart = 0;
     Offset.QuadPart = FileOffset->QuadPart + Length;
@@ -348,7 +343,7 @@ FsRtlCopyWrite(IN PFILE_OBJECT FileObject,
          * If we append, use the file size as offset.
          * Also, check that we aren't crossing the 4GB boundary.
          */
-        if (FileOffsetAppend == TRUE)
+        if (FileOffsetAppend != FALSE)
         {
             Offset.LowPart = FcbHeader->FileSize.LowPart;
             NewSize.LowPart = FcbHeader->FileSize.LowPart + Length;
@@ -386,7 +381,7 @@ FsRtlCopyWrite(IN PFILE_OBJECT FileObject,
                 /* Then we need to acquire the resource exclusive */
                 ExReleaseResourceLite(FcbHeader->Resource);
                 ExAcquireResourceExclusiveLite(FcbHeader->Resource, TRUE);
-                if (FileOffsetAppend == TRUE)
+                if (FileOffsetAppend != FALSE)
                 {
                     Offset.LowPart = FcbHeader->FileSize.LowPart; // ??
                     NewSize.LowPart = FcbHeader->FileSize.LowPart + Length;
@@ -488,7 +483,7 @@ FsRtlCopyWrite(IN PFILE_OBJECT FileObject,
         PsGetCurrentThread()->TopLevelIrp = 0;
 
         /* Did the operation succeed? */
-        if (Result == TRUE)
+        if (Result != FALSE)
         {
             /* Update the valid file size if necessary */
             if (NewSize.LowPart > FcbHeader->ValidDataLength.LowPart)
@@ -547,11 +542,6 @@ FsRtlCopyWrite(IN PFILE_OBJECT FileObject,
     {
         LARGE_INTEGER OldFileSize;
 
-#if defined(__GNUC__) && (__GNUC__ * 100 + __GNUC_MINOR__ == 405)
-        /* Silence incorrect GCC 4.5.x warning */
-        OldFileSize.QuadPart = 0;
-#endif
-
         /* Sanity check */
         ASSERT(!KeIsExecutingDpc());
 
@@ -578,7 +568,7 @@ FsRtlCopyWrite(IN PFILE_OBJECT FileObject,
         }
 
         /* Check if we are appending */
-        if (FileOffsetAppend == TRUE)
+        if (FileOffsetAppend != FALSE)
         {
             Offset.QuadPart = FcbHeader->FileSize.QuadPart;
             NewSize.QuadPart = FcbHeader->FileSize.QuadPart + Length;
@@ -1348,7 +1338,7 @@ FsRtlPrepareMdlWriteDev(IN PFILE_OBJECT FileObject,
     }
 
     /* Check if we are appending */
-    if (FileOffsetAppend == TRUE)
+    if (FileOffsetAppend != FALSE)
     {
         Offset.QuadPart = FcbHeader->FileSize.QuadPart;
         NewSize.QuadPart = FcbHeader->FileSize.QuadPart + Length;
@@ -1812,7 +1802,7 @@ FsRtlAcquireFileForModWriteEx(IN PFILE_OBJECT FileObject,
         Exclusive = TRUE;
         ResourceToAcquire = FcbHeader->Resource;
     }
-    else if (!FcbHeader->PagingIoResource || 
+    else if (!FcbHeader->PagingIoResource ||
              (FcbHeader->Flags & FSRTL_FLAG_ACQUIRE_MAIN_RSRC_SH))
     {
         /* Acquire main resource shared if flag is specified or
@@ -1952,9 +1942,35 @@ FsRtlReleaseFileForModWrite(IN PFILE_OBJECT FileObject,
  *--*/
 NTSTATUS
 NTAPI
-FsRtlRegisterFileSystemFilterCallbacks(IN PDRIVER_OBJECT FilterDriverObject,
-                                       IN PFS_FILTER_CALLBACKS Callbacks)
+FsRtlRegisterFileSystemFilterCallbacks(
+    PDRIVER_OBJECT FilterDriverObject,
+    PFS_FILTER_CALLBACKS Callbacks)
 {
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
+    PFS_FILTER_CALLBACKS NewCallbacks;
+    PEXTENDED_DRIVER_EXTENSION DriverExtension;
+    PAGED_CODE();
+
+    /* Verify parameters */
+    if ((FilterDriverObject == NULL) || (Callbacks == NULL))
+    {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    /* Allocate a buffer for a copy of the callbacks */
+    NewCallbacks = ExAllocatePoolWithTag(NonPagedPool,
+                                         Callbacks->SizeOfFsFilterCallbacks,
+                                         'gmSF');
+    if (NewCallbacks == NULL)
+    {
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    /* Copy the callbacks */
+    RtlCopyMemory(NewCallbacks, Callbacks, Callbacks->SizeOfFsFilterCallbacks);
+
+    /* Set the callbacks in the driver extension */
+    DriverExtension = (PEXTENDED_DRIVER_EXTENSION)FilterDriverObject->DriverExtension;
+    DriverExtension->FsFilterCallbacks = NewCallbacks;
+
+    return STATUS_SUCCESS;
 }

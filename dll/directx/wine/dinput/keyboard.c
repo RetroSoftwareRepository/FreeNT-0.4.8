@@ -20,24 +20,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <config.h>
-//#include "wine/port.h"
-
-#include <stdarg.h>
-//#include <string.h>
-#include <windef.h>
-#include <winbase.h>
-#include <winuser.h>
-#include <winnls.h>
-//#include "winerror.h"
-//#include "dinput.h"
-
-//#include "dinput_private.h"
-#include "device_private.h"
-#include <wine/debug.h>
-//#include "wine/unicode.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(dinput);
+#include "dinput_private.h"
 
 #define WINE_DINPUT_KEYBOARD_MAX_KEYS 256
 
@@ -127,7 +110,7 @@ static int KeyboardCallback( LPDIRECTINPUTDEVICE8A iface, WPARAM wparam, LPARAM 
 
     EnterCriticalSection(&This->base.crit);
     queue_event(iface, DIDFT_MAKEINSTANCE(dik_code) | DIDFT_PSHBUTTON,
-                new_diks, hook->time, This->base.dinput->evsequence++);
+                new_diks, GetCurrentTime(), This->base.dinput->evsequence++);
     LeaveCriticalSection(&This->base.crit);
 
     return ret;
@@ -335,6 +318,10 @@ static HRESULT WINAPI SysKeyboardWImpl_GetDeviceState(LPDIRECTINPUTDEVICE8W ifac
 
     if (len != This->base.data_format.user_df->dwDataSize )
         return DIERR_INVALIDPARAM;
+
+#ifndef __REACTOS__
+    __wine_check_for_events( QS_ALLINPUT );
+#endif
 
     EnterCriticalSection(&This->base.crit);
 

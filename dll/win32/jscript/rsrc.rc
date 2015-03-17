@@ -16,6 +16,10 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#include <windef.h>
+
+#include "resource.h"
+
 /* @makedep: jscript.rgs */
 2 WINE_REGISTRY jscript.rgs
 
@@ -33,19 +37,17 @@
 
 #include "wine/wine_common_ver.rc"
 
-#ifdef LANGUAGE_EN_US
-    #include "lang/jscript_En.rc"
-#endif
-#ifdef LANGUAGE_PL_PL
-    #include "lang/jscript_Pl.rc"
-#endif
-
 /* UTF-8 */
+#pragma code_page(65001)
+
 #ifdef LANGUAGE_DA_DK
     #include "lang/jscript_Da.rc"
 #endif
 #ifdef LANGUAGE_DE_DE
     #include "lang/jscript_De.rc"
+#endif
+#ifdef LANGUAGE_EN_US
+    #include "lang/jscript_En.rc"
 #endif
 #ifdef LANGUAGE_ES_ES
     #include "lang/jscript_Es.rc"
@@ -77,6 +79,9 @@
 #ifdef LANGUAGE_NO_NO
     #include "lang/jscript_No.rc"
 #endif
+#ifdef LANGUAGE_PL_PL
+    #include "lang/jscript_Pl.rc"
+#endif
 #ifdef LANGUAGE_PT_PT
     #include "lang/jscript_Pt.rc"
 #endif
@@ -88,6 +93,12 @@
 #endif
 #ifdef LANGUAGE_SL_SI
     #include "lang/jscript_Si.rc"
+#endif
+#ifdef LANGUAGE_SQ_AL
+    #include "lang/jscript_Sq.rc"
+#endif
+#ifdef LANGUAGE_TR_TR
+    #include "lang/jscript_Tr.rc"
 #endif
 #ifdef LANGUAGE_UK_UA
     #include "lang/jscript_Uk.rc"

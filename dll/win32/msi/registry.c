@@ -19,28 +19,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-#define COM_NO_WINDOWS_H
-
-//#include <stdarg.h>
-
-#define COBJMACROS
-#define NONAMELESSUNION
-
-#include <windef.h>
-//#include "winbase.h"
-#include <winreg.h>
-//#include "winnls.h"
-//#include "shlwapi.h"
-#include <wine/debug.h>
-//#include "msi.h"
 #include "msipriv.h"
-//#include "wincrypt.h"
-#include <wine/unicode.h>
-//#include "winver.h"
-//#include "winuser.h"
-#include <sddl.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(msi);
 
@@ -104,12 +83,6 @@ static const WCHAR szInstallProperties_fmt[] = {
     '%','s','\\','P','r','o','d','u','c','t','s','\\','%','s','\\',
     'I','n','s','t','a','l','l','P','r','o','p','e','r','t','i','e','s',0};
 
-static const WCHAR szInstaller_LocalManaged_fmt[] = {
-    'S','o','f','t','w','a','r','e','\\','M','i','c','r','o','s','o','f','t','\\',
-    'W','i','n','d','o','w','s','\\','C','u','r','r','e','n','t','V','e','r','s','i','o','n','\\',
-    'I','n','s','t','a','l','l','e','r','\\','M','a','n','a','g','e','d','\\','%','s','\\',
-    'I','n','s','t','a','l','l','e','r','\\','P','r','o','d','u','c','t','s',0};
-
 static const WCHAR szInstaller_LocalManagedProd_fmt[] = {
     'S','o','f','t','w','a','r','e','\\','M','i','c','r','o','s','o','f','t','\\',
     'W','i','n','d','o','w','s','\\','C','u','r','r','e','n','t','V','e','r','s','i','o','n','\\',
@@ -131,11 +104,6 @@ static const WCHAR szInstaller_Patches[] = {
     'S','o','f','t','w','a','r','e','\\','M','i','c','r','o','s','o','f','t','\\',
     'W','i','n','d','o','w','s','\\','C','u','r','r','e','n','t','V','e','r','s','i','o','n','\\',
     'I','n','s','t','a','l','l','e','r','\\','P','a','t','c','h','e','s',0};
-
-static const WCHAR szInstaller_Components[] = {
-    'S','o','f','t','w','a','r','e','\\','M','i','c','r','o','s','o','f','t','\\',
-    'W','i','n','d','o','w','s','\\','C','u','r','r','e','n','t','V','e','r','s','i','o','n','\\',
-    'I','n','s','t','a','l','l','e','r','\\','C','o','m','p','o','n','e','n','t','s',0};
 
 static const WCHAR szInstaller_LocalClassesProducts[] = {
     'S','o','f','t','w','a','r','e','\\','C','l','a','s','s','e','s','\\',
@@ -498,7 +466,7 @@ UINT MSIREG_DeleteUninstallKey(const WCHAR *product, enum platform platform)
         strcpyW(keypath, szUninstall);
         strcatW(keypath, product);
     }
-    return RegDeleteTreeW(HKEY_LOCAL_MACHINE, keypath);
+    return SHDeleteKeyW(HKEY_LOCAL_MACHINE, keypath);
 }
 
 UINT MSIREG_OpenProductKey(LPCWSTR szProduct, LPCWSTR szUserSid, MSIINSTALLCONTEXT context, HKEY *key, BOOL create)
@@ -549,7 +517,7 @@ UINT MSIREG_DeleteUserProductKey(LPCWSTR szProduct)
 
     strcpyW(keypath, szUserProducts);
     strcatW(keypath, squished_pc);
-    return RegDeleteTreeW(HKEY_CURRENT_USER, keypath);
+    return SHDeleteKeyW(HKEY_CURRENT_USER, keypath);
 }
 
 UINT MSIREG_OpenUserPatchesKey(LPCWSTR szPatch, HKEY *key, BOOL create)
@@ -614,7 +582,7 @@ UINT MSIREG_DeleteUserFeaturesKey(LPCWSTR szProduct)
 
     strcpyW(keypath, szUserFeatures);
     strcatW(keypath, squished_pc);
-    return RegDeleteTreeW(HKEY_CURRENT_USER, keypath);
+    return SHDeleteKeyW(HKEY_CURRENT_USER, keypath);
 }
 
 static UINT MSIREG_OpenInstallerFeaturesKey(LPCWSTR szProduct, HKEY *key, BOOL create)
@@ -728,7 +696,7 @@ UINT MSIREG_DeleteUserDataComponentKey(LPCWSTR szComponent, LPCWSTR szUserSid)
         sprintfW(keypath, szUserDataComponents_fmt, szUserSid);
 
     if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, keypath, 0, access, &hkey)) return ERROR_SUCCESS;
-    r = RegDeleteTreeW(hkey, comp);
+    r = SHDeleteKeyW(hkey, comp);
     RegCloseKey(hkey);
     return r;
 }
@@ -809,7 +777,7 @@ UINT MSIREG_DeleteUserDataPatchKey(LPCWSTR patch, MSIINSTALLCONTEXT context)
         LocalFree(usersid);
     }
     if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, keypath, 0, access, &hkey)) return ERROR_SUCCESS;
-    r = RegDeleteTreeW(hkey, squished_patch);
+    r = SHDeleteKeyW(hkey, squished_patch);
     RegCloseKey(hkey);
     return r;
 }
@@ -886,7 +854,7 @@ UINT MSIREG_DeleteUserDataProductKey(LPCWSTR szProduct)
     LocalFree(usersid);
 
     if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, keypath, 0, access, &hkey)) return ERROR_SUCCESS;
-    r = RegDeleteTreeW(hkey, squished_pc);
+    r = SHDeleteKeyW(hkey, squished_pc);
     RegCloseKey(hkey);
     return r;
 }
@@ -902,7 +870,7 @@ UINT MSIREG_DeleteProductKey(LPCWSTR szProduct)
     TRACE("%s squished %s\n", debugstr_w(szProduct), debugstr_w(squished_pc));
 
     if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, szInstaller_Products, 0, access, &hkey)) return ERROR_SUCCESS;
-    r = RegDeleteTreeW(hkey, squished_pc);
+    r = SHDeleteKeyW(hkey, squished_pc);
     RegCloseKey(hkey);
     return r;
 }
@@ -959,7 +927,7 @@ UINT MSIREG_DeleteUserUpgradeCodesKey(LPCWSTR szUpgradeCode)
 
     strcpyW(keypath, szInstaller_UserUpgradeCodes);
     strcatW(keypath, squished_pc);
-    return RegDeleteTreeW(HKEY_CURRENT_USER, keypath);
+    return SHDeleteKeyW(HKEY_CURRENT_USER, keypath);
 }
 
 UINT MSIREG_DeleteLocalClassesProductKey(LPCWSTR szProductCode)
@@ -973,7 +941,7 @@ UINT MSIREG_DeleteLocalClassesProductKey(LPCWSTR szProductCode)
     TRACE("%s squished %s\n", debugstr_w(szProductCode), debugstr_w(squished_pc));
 
     if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, szInstaller_LocalClassesProducts, 0, access, &hkey)) return ERROR_SUCCESS;
-    r = RegDeleteTreeW(hkey, squished_pc);
+    r = SHDeleteKeyW(hkey, squished_pc);
     RegCloseKey(hkey);
     return r;
 }
@@ -989,7 +957,7 @@ UINT MSIREG_DeleteLocalClassesFeaturesKey(LPCWSTR szProductCode)
     TRACE("%s squished %s\n", debugstr_w(szProductCode), debugstr_w(squished_pc));
 
     if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, szInstaller_LocalClassesFeatures, 0, access, &hkey)) return ERROR_SUCCESS;
-    r = RegDeleteTreeW(hkey, squished_pc);
+    r = SHDeleteKeyW(hkey, squished_pc);
     RegCloseKey(hkey);
     return r;
 }
@@ -1020,7 +988,7 @@ UINT MSIREG_DeleteClassesUpgradeCodesKey(LPCWSTR szUpgradeCode)
     TRACE("%s squished %s\n", debugstr_w(szUpgradeCode), debugstr_w(squished_pc));
 
     if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, szInstaller_ClassesUpgradeCodes, 0, access, &hkey)) return ERROR_SUCCESS;
-    r = RegDeleteTreeW(hkey, squished_pc);
+    r = SHDeleteKeyW(hkey, squished_pc);
     RegCloseKey(hkey);
     return r;
 }
@@ -1516,6 +1484,24 @@ UINT WINAPI MsiEnumClientsW(LPCWSTR szComponent, DWORD index, LPWSTR szProduct)
     }
     RegCloseKey(hkeyComp);
     return r;
+}
+
+UINT WINAPI MsiEnumClientsExA(LPCSTR component, LPCSTR usersid, DWORD ctx, DWORD index,
+                              CHAR installed_product[GUID_SIZE],
+                              MSIINSTALLCONTEXT *installed_ctx, LPSTR sid, LPDWORD sid_len)
+{
+    FIXME("%s, %s, %u, %u, %p, %p, %p, %p\n", debugstr_a(component), debugstr_a(usersid),
+          ctx, index, installed_product, installed_ctx, sid, sid_len);
+    return ERROR_ACCESS_DENIED;
+}
+
+UINT WINAPI MsiEnumClientsExW(LPCWSTR component, LPCWSTR usersid, DWORD ctx, DWORD index,
+                              WCHAR installed_product[GUID_SIZE],
+                              MSIINSTALLCONTEXT *installed_ctx, LPWSTR sid, LPDWORD sid_len)
+{
+    FIXME("%s, %s, %u, %u, %p, %p, %p, %p\n", debugstr_w(component), debugstr_w(usersid),
+          ctx, index, installed_product, installed_ctx, sid, sid_len);
+    return ERROR_ACCESS_DENIED;
 }
 
 static UINT MSI_EnumComponentQualifiers( LPCWSTR szComponent, DWORD iIndex,

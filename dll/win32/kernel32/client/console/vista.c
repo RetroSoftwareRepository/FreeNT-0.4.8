@@ -18,13 +18,12 @@
 
 #if _WIN32_WINNT >= 0x600
 
-/*--------------------------------------------------------------
- *  GetConsoleHistoryInfo
- *
+/*
  * @implemented
  */
 BOOL
 WINAPI
+DECLSPEC_HOTPATCH
 GetConsoleHistoryInfo(PCONSOLE_HISTORY_INFO lpConsoleHistoryInfo)
 {
     NTSTATUS Status;
@@ -55,13 +54,12 @@ GetConsoleHistoryInfo(PCONSOLE_HISTORY_INFO lpConsoleHistoryInfo)
 }
 
 
-/*--------------------------------------------------------------
- *  SetConsoleHistoryInfo
- *
+/*
  * @implemented
  */
 BOOL
 WINAPI
+DECLSPEC_HOTPATCH
 SetConsoleHistoryInfo(IN PCONSOLE_HISTORY_INFO lpConsoleHistoryInfo)
 {
     NTSTATUS Status;
@@ -92,13 +90,12 @@ SetConsoleHistoryInfo(IN PCONSOLE_HISTORY_INFO lpConsoleHistoryInfo)
 }
 
 
-/*--------------------------------------------------------------
- *  GetConsoleOriginalTitleW
- *
+/*
  * @unimplemented
  */
 DWORD
 WINAPI
+DECLSPEC_HOTPATCH
 GetConsoleOriginalTitleW(OUT LPWSTR lpConsoleTitle,
                          IN DWORD nSize)
 {
@@ -108,13 +105,12 @@ GetConsoleOriginalTitleW(OUT LPWSTR lpConsoleTitle,
 }
 
 
-/*--------------------------------------------------------------
- *  GetConsoleOriginalTitleA
- *
+/*
  * @unimplemented
  */
 DWORD
 WINAPI
+DECLSPEC_HOTPATCH
 GetConsoleOriginalTitleA(OUT LPSTR lpConsoleTitle,
                          IN DWORD nSize)
 {
@@ -124,13 +120,12 @@ GetConsoleOriginalTitleA(OUT LPSTR lpConsoleTitle,
 }
 
 
-/*--------------------------------------------------------------
- *  GetConsoleScreenBufferInfoEx
- *
+/*
  * @unimplemented
  */
 BOOL
 WINAPI
+DECLSPEC_HOTPATCH
 GetConsoleScreenBufferInfoEx(IN HANDLE hConsoleOutput,
                              OUT PCONSOLE_SCREEN_BUFFER_INFOEX lpConsoleScreenBufferInfoEx)
 {
@@ -140,13 +135,12 @@ GetConsoleScreenBufferInfoEx(IN HANDLE hConsoleOutput,
 }
 
 
-/*--------------------------------------------------------------
- *  SetConsoleScreenBufferInfoEx
- *
+/*
  * @unimplemented
  */
 BOOL
 WINAPI
+DECLSPEC_HOTPATCH
 SetConsoleScreenBufferInfoEx(IN HANDLE hConsoleOutput,
                              IN PCONSOLE_SCREEN_BUFFER_INFOEX lpConsoleScreenBufferInfoEx)
 {
@@ -156,13 +150,12 @@ SetConsoleScreenBufferInfoEx(IN HANDLE hConsoleOutput,
 }
 
 
-/*--------------------------------------------------------------
- *  GetCurrentConsoleFontEx
- *
+/*
  * @unimplemented
  */
 BOOL
 WINAPI
+DECLSPEC_HOTPATCH
 GetCurrentConsoleFontEx(IN HANDLE hConsoleOutput,
                         IN BOOL bMaximumWindow,
                         OUT PCONSOLE_FONT_INFOEX lpConsoleCurrentFontEx)

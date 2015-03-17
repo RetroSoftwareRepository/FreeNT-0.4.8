@@ -43,6 +43,9 @@
 
 #define SCSI_PORT_NEXT_REQUEST_READY  0x0008
 
+#define TAG_SCSI_DEVEXT 'DscS'
+#define TAG_SCSI_ACCESS_RANGES 'AscS'
+
 DBG_DEFAULT_CHANNEL(SCSIPORT);
 
 typedef struct
@@ -145,7 +148,7 @@ typedef struct tagDISKCONTEXT
     ULONGLONG SectorNumber;
 } DISKCONTEXT;
 
-static LONG DiskClose(ULONG FileId)
+static ARC_STATUS DiskClose(ULONG FileId)
 {
     DISKCONTEXT* Context = FsGetDeviceSpecific(FileId);
 
@@ -153,7 +156,7 @@ static LONG DiskClose(ULONG FileId)
     return ESUCCESS;
 }
 
-static LONG DiskGetFileInformation(ULONG FileId, FILEINFORMATION* Information)
+static ARC_STATUS DiskGetFileInformation(ULONG FileId, FILEINFORMATION* Information)
 {
     DISKCONTEXT* Context = FsGetDeviceSpecific(FileId);
 
@@ -164,7 +167,7 @@ static LONG DiskGetFileInformation(ULONG FileId, FILEINFORMATION* Information)
     return ESUCCESS;
 }
 
-static LONG DiskOpen(CHAR* Path, OPENMODE OpenMode, ULONG* FileId)
+static ARC_STATUS DiskOpen(CHAR* Path, OPENMODE OpenMode, ULONG* FileId)
 {
     PSCSI_REQUEST_BLOCK Srb;
     PCDB Cdb;
@@ -234,7 +237,7 @@ static LONG DiskOpen(CHAR* Path, OPENMODE OpenMode, ULONG* FileId)
     return ESUCCESS;
 }
 
-static LONG DiskRead(ULONG FileId, VOID* Buffer, ULONG N, ULONG* Count)
+static ARC_STATUS DiskRead(ULONG FileId, VOID* Buffer, ULONG N, ULONG* Count)
 {
     DISKCONTEXT* Context = FsGetDeviceSpecific(FileId);
     PSCSI_REQUEST_BLOCK Srb;
@@ -342,7 +345,7 @@ static LONG DiskRead(ULONG FileId, VOID* Buffer, ULONG N, ULONG* Count)
     return ESUCCESS;
 }
 
-static LONG DiskSeek(ULONG FileId, LARGE_INTEGER* Position, SEEKMODE SeekMode)
+static ARC_STATUS DiskSeek(ULONG FileId, LARGE_INTEGER* Position, SEEKMODE SeekMode)
 {
     DISKCONTEXT* Context = FsGetDeviceSpecific(FileId);
 
@@ -773,7 +776,7 @@ SpiScanDevice(
     IN ULONG Lun)
 {
     ULONG FileId, i;
-    ULONG Status;
+    ARC_STATUS Status;
     NTSTATUS ret;
     struct _DRIVE_LAYOUT_INFORMATION *PartitionBuffer;
     CHAR PartitionName[64];
@@ -1097,7 +1100,7 @@ ScsiPortInitialize(
         Again = FALSE;
 
         DeviceExtensionSize = sizeof(SCSI_PORT_DEVICE_EXTENSION) + HwInitializationData->DeviceExtensionSize;
-        DeviceExtension = MmHeapAlloc(DeviceExtensionSize);
+        DeviceExtension = FrLdrTempAlloc(DeviceExtensionSize, TAG_SCSI_DEVEXT);
         if (!DeviceExtension)
         {
             return STATUS_NO_MEMORY;
@@ -1116,15 +1119,16 @@ ScsiPortInitialize(
                                      FirstConfigCall);
         if (Status != STATUS_SUCCESS)
         {
-            MmHeapFree(DeviceExtension);
+            FrLdrTempFree(DeviceExtension, TAG_SCSI_DEVEXT);
             return Status;
         }
 
         PortConfig.NumberOfAccessRanges = HwInitializationData->NumberOfAccessRanges;
-        PortConfig.AccessRanges = MmHeapAlloc(sizeof(ACCESS_RANGE) * HwInitializationData->NumberOfAccessRanges);
+        PortConfig.AccessRanges = FrLdrTempAlloc(sizeof(ACCESS_RANGE) * HwInitializationData->NumberOfAccessRanges,
+                                                 TAG_SCSI_ACCESS_RANGES);
         if (!PortConfig.AccessRanges)
         {
-           MmHeapFree(DeviceExtension);
+           FrLdrTempFree(DeviceExtension, TAG_SCSI_DEVEXT);
            return STATUS_NO_MEMORY;
         }
         RtlZeroMemory(PortConfig.AccessRanges, sizeof(ACCESS_RANGE) * HwInitializationData->NumberOfAccessRanges);
@@ -1151,14 +1155,14 @@ ScsiPortInitialize(
                                      &SlotNumber))
             {
                 /* Continue to the next bus, nothing here */
-                MmHeapFree(DeviceExtension);
+                FrLdrTempFree(DeviceExtension, TAG_SCSI_DEVEXT);
                 return STATUS_INTERNAL_ERROR;
             }
 
             if (!PortConfig.BusInterruptLevel)
             {
                 /* Bypass this slot, because no interrupt was assigned */
-                MmHeapFree(DeviceExtension);
+                FrLdrTempFree(DeviceExtension, TAG_SCSI_DEVEXT);
                 return STATUS_INTERNAL_ERROR;
             }
         }
@@ -1171,7 +1175,7 @@ ScsiPortInitialize(
              &PortConfig,
              &Again) != SP_RETURN_FOUND)
         {
-            MmHeapFree(DeviceExtension);
+            FrLdrTempFree(DeviceExtension, TAG_SCSI_DEVEXT);
             return STATUS_INTERNAL_ERROR;
         }
 
@@ -1189,7 +1193,7 @@ ScsiPortInitialize(
         /* Initialize adapter */
         if (!DeviceExtension->HwInitialize(DeviceExtension->MiniPortDeviceExtension))
         {
-            MmHeapFree(DeviceExtension);
+            FrLdrTempFree(DeviceExtension, TAG_SCSI_DEVEXT);
             return STATUS_INTERNAL_ERROR;
         }
 
@@ -1570,7 +1574,7 @@ LoadBootDeviceDriver(VOID)
     CHAR NtBootDdPath[MAX_PATH];
     PVOID ImageBase = NULL;
     ULONG (NTAPI *EntryPoint)(IN PVOID DriverObject, IN PVOID RegistryPath);
-    BOOLEAN Status;
+    BOOLEAN Success;
 
     /* Initialize the loaded module list */
     InitializeListHead(&ModuleListHead);
@@ -1580,37 +1584,37 @@ LoadBootDeviceDriver(VOID)
     strcat(NtBootDdPath, "\\NTBOOTDD.SYS");
 
     /* Load file */
-    Status = WinLdrLoadImage(NtBootDdPath, LoaderBootDriver, &ImageBase);
-    if (!Status)
+    Success = WinLdrLoadImage(NtBootDdPath, LoaderBootDriver, &ImageBase);
+    if (!Success)
     {
         /* That's OK. File simply doesn't exist */
         return ESUCCESS;
     }
 
     /* Allocate a DTE for ntbootdd */
-    Status = WinLdrAllocateDataTableEntry(&ModuleListHead, "ntbootdd.sys",
+    Success = WinLdrAllocateDataTableEntry(&ModuleListHead, "ntbootdd.sys",
         "NTBOOTDD.SYS", ImageBase, &BootDdDTE);
-    if (!Status)
+    if (!Success)
         return EIO;
 
     /* Add the PE part of freeldr.sys to the list of loaded executables, it
        contains Scsiport* exports, imported by ntbootdd.sys */
-    Status = WinLdrAllocateDataTableEntry(&ModuleListHead, "scsiport.sys",
+    Success = WinLdrAllocateDataTableEntry(&ModuleListHead, "scsiport.sys",
         "FREELDR.SYS", &__ImageBase, &FreeldrDTE);
-    if (!Status)
+    if (!Success)
     {
         RemoveEntryList(&BootDdDTE->InLoadOrderLinks);
         return EIO;
     }
 
     /* Fix imports */
-    Status = WinLdrScanImportDescriptorTable(&ModuleListHead, "", BootDdDTE);
+    Success = WinLdrScanImportDescriptorTable(&ModuleListHead, "", BootDdDTE);
 
     /* Now unlinkt the DTEs, they won't be valid later */
     RemoveEntryList(&BootDdDTE->InLoadOrderLinks);
     RemoveEntryList(&FreeldrDTE->InLoadOrderLinks);
 
-    if (!Status)
+    if (!Success)
         return EIO;
 
     /* Change imports to PA */
@@ -1631,14 +1635,13 @@ LoadBootDeviceDriver(VOID)
     NtHeaders = RtlImageNtHeader(VaToPa(BootDdDTE->DllBase));
     if (!NtHeaders)
         return EIO;
-    Status = (BOOLEAN)LdrRelocateImageWithBias(
-        VaToPa(BootDdDTE->DllBase),
-        NtHeaders->OptionalHeader.ImageBase - (ULONG_PTR)BootDdDTE->DllBase,
-        "FreeLdr",
-        TRUE,
-        TRUE, /* in case of conflict still return success */
-        FALSE);
-    if (!Status)
+    Success = (BOOLEAN)LdrRelocateImageWithBias(VaToPa(BootDdDTE->DllBase),
+                                                NtHeaders->OptionalHeader.ImageBase - (ULONG_PTR)BootDdDTE->DllBase,
+                                                "FreeLdr",
+                                                TRUE,
+                                                TRUE, /* in case of conflict still return success */
+                                                FALSE);
+    if (!Success)
         return EIO;
 
     /* Call the entrypoint */

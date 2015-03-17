@@ -28,6 +28,15 @@
 #include <freeldr.h>
 #include <debug.h>
 
+#define TAG_NTFS_CONTEXT 'CftN'
+#define TAG_NTFS_LIST 'LftN'
+#define TAG_NTFS_MFT 'MftN'
+#define TAG_NTFS_INDEX_REC 'IftN'
+#define TAG_NTFS_BITMAP 'BftN'
+#define TAG_NTFS_FILE 'FftN'
+#define TAG_NTFS_VOLUME 'VftN'
+#define TAG_NTFS_DATA 'DftN'
+
 DBG_DEFAULT_CHANNEL(FILESYSTEM);
 
 typedef struct _NTFS_VOLUME_INFO
@@ -98,7 +107,8 @@ static PNTFS_ATTR_CONTEXT NtfsPrepareAttributeContext(PNTFS_ATTR_RECORD AttrReco
 {
     PNTFS_ATTR_CONTEXT Context;
 
-    Context = MmHeapAlloc(FIELD_OFFSET(NTFS_ATTR_CONTEXT, Record) + AttrRecord->Length);
+    Context = FrLdrTempAlloc(FIELD_OFFSET(NTFS_ATTR_CONTEXT, Record) + AttrRecord->Length,
+                             TAG_NTFS_CONTEXT);
     RtlCopyMemory(&Context->Record, AttrRecord, AttrRecord->Length);
     if (AttrRecord->IsNonResident)
     {
@@ -129,7 +139,7 @@ static PNTFS_ATTR_CONTEXT NtfsPrepareAttributeContext(PNTFS_ATTR_RECORD AttrReco
 
 static VOID NtfsReleaseAttributeContext(PNTFS_ATTR_CONTEXT Context)
 {
-    MmHeapFree(Context);
+    FrLdrTempFree(Context, TAG_NTFS_CONTEXT);
 }
 
 static BOOLEAN NtfsDiskRead(PNTFS_VOLUME_INFO Volume, ULONGLONG Offset, ULONGLONG Length, PCHAR Buffer)
@@ -137,7 +147,7 @@ static BOOLEAN NtfsDiskRead(PNTFS_VOLUME_INFO Volume, ULONGLONG Offset, ULONGLON
     LARGE_INTEGER Position;
     ULONG Count;
     ULONG ReadLength;
-    LONG ret;
+    ARC_STATUS Status;
 
     TRACE("NtfsDiskRead - Offset: %I64d Length: %I64d\n", Offset, Length);
 
@@ -147,11 +157,11 @@ static BOOLEAN NtfsDiskRead(PNTFS_VOLUME_INFO Volume, ULONGLONG Offset, ULONGLON
     if (Offset % Volume->BootSector.BytesPerSector)
     {
         Position.QuadPart = Offset & ~(Volume->BootSector.BytesPerSector - 1);
-        ret = ArcSeek(Volume->DeviceId, &Position, SeekAbsolute);
-        if (ret != ESUCCESS)
+        Status = ArcSeek(Volume->DeviceId, &Position, SeekAbsolute);
+        if (Status != ESUCCESS)
             return FALSE;
-        ret = ArcRead(Volume->DeviceId, Volume->TemporarySector, Volume->BootSector.BytesPerSector, &Count);
-        if (ret != ESUCCESS || Count != Volume->BootSector.BytesPerSector)
+        Status = ArcRead(Volume->DeviceId, Volume->TemporarySector, Volume->BootSector.BytesPerSector, &Count);
+        if (Status != ESUCCESS || Count != Volume->BootSector.BytesPerSector)
             return FALSE;
         ReadLength = (USHORT)min(Length, Volume->BootSector.BytesPerSector - (Offset % Volume->BootSector.BytesPerSector));
 
@@ -176,12 +186,12 @@ static BOOLEAN NtfsDiskRead(PNTFS_VOLUME_INFO Volume, ULONGLONG Offset, ULONGLON
     if (Length >= Volume->BootSector.BytesPerSector)
     {
         Position.QuadPart = Offset;
-        ret = ArcSeek(Volume->DeviceId, &Position, SeekAbsolute);
-        if (ret != ESUCCESS)
+        Status = ArcSeek(Volume->DeviceId, &Position, SeekAbsolute);
+        if (Status != ESUCCESS)
             return FALSE;
         ReadLength = Length & ~(Volume->BootSector.BytesPerSector - 1);
-        ret = ArcRead(Volume->DeviceId, Buffer, ReadLength, &Count);
-        if (ret != ESUCCESS || Count != ReadLength)
+        Status = ArcRead(Volume->DeviceId, Buffer, ReadLength, &Count);
+        if (Status != ESUCCESS || Count != ReadLength)
             return FALSE;
 
         //
@@ -198,11 +208,11 @@ static BOOLEAN NtfsDiskRead(PNTFS_VOLUME_INFO Volume, ULONGLONG Offset, ULONGLON
     if (Length)
     {
         Position.QuadPart = Offset;
-        ret = ArcSeek(Volume->DeviceId, &Position, SeekAbsolute);
-        if (ret != ESUCCESS)
+        Status = ArcSeek(Volume->DeviceId, &Position, SeekAbsolute);
+        if (Status != ESUCCESS)
             return FALSE;
-        ret = ArcRead(Volume->DeviceId, Buffer, (ULONG)Length, &Count);
-        if (ret != ESUCCESS || Count != Length)
+        Status = ArcRead(Volume->DeviceId, Buffer, (ULONG)Length, &Count);
+        if (Status != ESUCCESS || Count != Length)
             return FALSE;
     }
 
@@ -384,7 +394,7 @@ static PNTFS_ATTR_CONTEXT NtfsFindAttributeHelper(PNTFS_VOLUME_INFO Volume, PNTF
 
             ListSize = NtfsGetAttributeSize(&ListContext->Record);
             if(ListSize <= 0xFFFFFFFF)
-                ListBuffer = MmHeapAlloc((ULONG)ListSize);
+                ListBuffer = FrLdrTempAlloc((ULONG)ListSize, TAG_NTFS_LIST);
             else
                 ListBuffer = NULL;
 
@@ -403,7 +413,7 @@ static PNTFS_ATTR_CONTEXT NtfsFindAttributeHelper(PNTFS_VOLUME_INFO Volume, PNTF
                                                   Type, Name, NameLength);
 
                 NtfsReleaseAttributeContext(ListContext);
-                MmHeapFree(ListBuffer);
+                FrLdrTempFree(ListBuffer, TAG_NTFS_LIST);
 
                 if (Context != NULL)
                     return Context;
@@ -551,7 +561,7 @@ static BOOLEAN NtfsFindMftRecord(PNTFS_VOLUME_INFO Volume, ULONGLONG MFTIndex, P
     ULONG RecordOffset;
     ULONG IndexBlockSize;
 
-    MftRecord = MmHeapAlloc(Volume->MftRecordSize);
+    MftRecord = FrLdrTempAlloc(Volume->MftRecordSize, TAG_NTFS_MFT);
     if (MftRecord == NULL)
     {
         return FALSE;
@@ -564,14 +574,14 @@ static BOOLEAN NtfsFindMftRecord(PNTFS_VOLUME_INFO Volume, ULONGLONG MFTIndex, P
         IndexRootCtx = NtfsFindAttribute(Volume, MftRecord, NTFS_ATTR_TYPE_INDEX_ROOT, L"$I30");
         if (IndexRootCtx == NULL)
         {
-            MmHeapFree(MftRecord);
+            FrLdrTempFree(MftRecord, TAG_NTFS_MFT);
             return FALSE;
         }
 
-        IndexRecord = MmHeapAlloc(Volume->IndexRecordSize);
+        IndexRecord = FrLdrTempAlloc(Volume->IndexRecordSize, TAG_NTFS_INDEX_REC);
         if (IndexRecord == NULL)
         {
-            MmHeapFree(MftRecord);
+            FrLdrTempFree(MftRecord, TAG_NTFS_MFT);
             return FALSE;
         }
 
@@ -590,8 +600,8 @@ static BOOLEAN NtfsFindMftRecord(PNTFS_VOLUME_INFO Volume, ULONGLONG MFTIndex, P
             if (NtfsCompareFileName(FileName, IndexEntry))
             {
                 *OutMFTIndex = IndexEntry->Data.Directory.IndexedFile;
-                MmHeapFree(IndexRecord);
-                MmHeapFree(MftRecord);
+                FrLdrTempFree(IndexRecord, TAG_NTFS_INDEX_REC);
+                FrLdrTempFree(MftRecord, TAG_NTFS_MFT);
                 return TRUE;
             }
         IndexEntry = (PNTFS_INDEX_ENTRY)((PCHAR)IndexEntry + IndexEntry->Length);
@@ -607,20 +617,20 @@ static BOOLEAN NtfsFindMftRecord(PNTFS_VOLUME_INFO Volume, ULONGLONG MFTIndex, P
             if (IndexBitmapCtx == NULL)
             {
                 TRACE("Corrupted filesystem!\n");
-                MmHeapFree(MftRecord);
+                FrLdrTempFree(MftRecord, TAG_NTFS_MFT);
                 return FALSE;
             }
             BitmapDataSize = NtfsGetAttributeSize(&IndexBitmapCtx->Record);
             TRACE("BitmapDataSize: %x\n", (ULONG)BitmapDataSize);
             if(BitmapDataSize <= 0xFFFFFFFF)
-                BitmapData = MmHeapAlloc((ULONG)BitmapDataSize);
+                BitmapData = FrLdrTempAlloc((ULONG)BitmapDataSize, TAG_NTFS_BITMAP);
             else
                 BitmapData = NULL;
 
             if (BitmapData == NULL)
             {
-                MmHeapFree(IndexRecord);
-                MmHeapFree(MftRecord);
+                FrLdrTempFree(IndexRecord, TAG_NTFS_INDEX_REC);
+                FrLdrTempFree(MftRecord, TAG_NTFS_MFT);
                 return FALSE;
             }
             NtfsReadAttribute(Volume, IndexBitmapCtx, 0, BitmapData, (ULONG)BitmapDataSize);
@@ -630,9 +640,9 @@ static BOOLEAN NtfsFindMftRecord(PNTFS_VOLUME_INFO Volume, ULONGLONG MFTIndex, P
             if (IndexAllocationCtx == NULL)
             {
                 TRACE("Corrupted filesystem!\n");
-                MmHeapFree(BitmapData);
-                MmHeapFree(IndexRecord);
-                MmHeapFree(MftRecord);
+                FrLdrTempFree(BitmapData, TAG_NTFS_BITMAP);
+                FrLdrTempFree(IndexRecord, TAG_NTFS_INDEX_REC);
+                FrLdrTempFree(MftRecord, TAG_NTFS_MFT);
                 return FALSE;
             }
             IndexAllocationSize = NtfsGetAttributeSize(&IndexAllocationCtx->Record);
@@ -674,9 +684,9 @@ static BOOLEAN NtfsFindMftRecord(PNTFS_VOLUME_INFO Volume, ULONGLONG MFTIndex, P
                     {
                         TRACE("File found\n");
                         *OutMFTIndex = IndexEntry->Data.Directory.IndexedFile;
-                        MmHeapFree(BitmapData);
-                        MmHeapFree(IndexRecord);
-                        MmHeapFree(MftRecord);
+                        FrLdrTempFree(BitmapData, TAG_NTFS_BITMAP);
+                        FrLdrTempFree(IndexRecord, TAG_NTFS_INDEX_REC);
+                        FrLdrTempFree(MftRecord, TAG_NTFS_MFT);
                         NtfsReleaseAttributeContext(IndexAllocationCtx);
                         return TRUE;
                     }
@@ -687,16 +697,16 @@ static BOOLEAN NtfsFindMftRecord(PNTFS_VOLUME_INFO Volume, ULONGLONG MFTIndex, P
             }
 
             NtfsReleaseAttributeContext(IndexAllocationCtx);
-            MmHeapFree(BitmapData);
+            FrLdrTempFree(BitmapData, TAG_NTFS_BITMAP);
         }
 
-        MmHeapFree(IndexRecord);
+        FrLdrTempFree(IndexRecord, TAG_NTFS_INDEX_REC);
     }
     else
     {
         TRACE("Can't read MFT record\n");
     }
-    MmHeapFree(MftRecord);
+    FrLdrTempFree(MftRecord, TAG_NTFS_MFT);
 
     return FALSE;
 }
@@ -745,17 +755,17 @@ static BOOLEAN NtfsLookupFile(PNTFS_VOLUME_INFO Volume, PCSTR FileName, PNTFS_MF
     return TRUE;
 }
 
-LONG NtfsClose(ULONG FileId)
+ARC_STATUS NtfsClose(ULONG FileId)
 {
     PNTFS_FILE_HANDLE FileHandle = FsGetDeviceSpecific(FileId);
 
     NtfsReleaseAttributeContext(FileHandle->DataContext);
-    MmHeapFree(FileHandle);
+    FrLdrTempFree(FileHandle, TAG_NTFS_FILE);
 
     return ESUCCESS;
 }
 
-LONG NtfsGetFileInformation(ULONG FileId, FILEINFORMATION* Information)
+ARC_STATUS NtfsGetFileInformation(ULONG FileId, FILEINFORMATION* Information)
 {
     PNTFS_FILE_HANDLE FileHandle = FsGetDeviceSpecific(FileId);
 
@@ -771,7 +781,7 @@ LONG NtfsGetFileInformation(ULONG FileId, FILEINFORMATION* Information)
     return ESUCCESS;
 }
 
-LONG NtfsOpen(CHAR* Path, OPENMODE OpenMode, ULONG* FileId)
+ARC_STATUS NtfsOpen(CHAR* Path, OPENMODE OpenMode, ULONG* FileId)
 {
     PNTFS_VOLUME_INFO Volume;
     PNTFS_FILE_HANDLE FileHandle;
@@ -795,7 +805,8 @@ LONG NtfsOpen(CHAR* Path, OPENMODE OpenMode, ULONG* FileId)
     //
     // Allocate file structure
     //
-    FileHandle = MmHeapAlloc(sizeof(NTFS_FILE_HANDLE) + Volume->MftRecordSize);
+    FileHandle = FrLdrTempAlloc(sizeof(NTFS_FILE_HANDLE) + Volume->MftRecordSize,
+                                TAG_NTFS_FILE);
     if (!FileHandle)
     {
         return ENOMEM;
@@ -809,7 +820,7 @@ LONG NtfsOpen(CHAR* Path, OPENMODE OpenMode, ULONG* FileId)
     MftRecord = (PNTFS_MFT_RECORD)(FileHandle + 1);
     if (!NtfsLookupFile(Volume, Path, MftRecord, &FileHandle->DataContext))
     {
-        MmHeapFree(FileHandle);
+        FrLdrTempFree(FileHandle, TAG_NTFS_FILE);
         return ENOENT;
     }
 
@@ -817,7 +828,7 @@ LONG NtfsOpen(CHAR* Path, OPENMODE OpenMode, ULONG* FileId)
     return ESUCCESS;
 }
 
-LONG NtfsRead(ULONG FileId, VOID* Buffer, ULONG N, ULONG* Count)
+ARC_STATUS NtfsRead(ULONG FileId, VOID* Buffer, ULONG N, ULONG* Count)
 {
     PNTFS_FILE_HANDLE FileHandle = FsGetDeviceSpecific(FileId);
     ULONGLONG BytesRead64;
@@ -837,7 +848,7 @@ LONG NtfsRead(ULONG FileId, VOID* Buffer, ULONG N, ULONG* Count)
         return EIO;
 }
 
-LONG NtfsSeek(ULONG FileId, LARGE_INTEGER* Position, SEEKMODE SeekMode)
+ARC_STATUS NtfsSeek(ULONG FileId, LARGE_INTEGER* Position, SEEKMODE SeekMode)
 {
     PNTFS_FILE_HANDLE FileHandle = FsGetDeviceSpecific(FileId);
 
@@ -869,12 +880,12 @@ const DEVVTBL* NtfsMount(ULONG DeviceId)
     PNTFS_VOLUME_INFO Volume;
     LARGE_INTEGER Position;
     ULONG Count;
-    LONG ret;
+    ARC_STATUS Status;
 
     //
     // Allocate data for volume information
     //
-    Volume = MmHeapAlloc(sizeof(NTFS_VOLUME_INFO));
+    Volume = FrLdrTempAlloc(sizeof(NTFS_VOLUME_INFO), TAG_NTFS_VOLUME);
     if (!Volume)
         return NULL;
     RtlZeroMemory(Volume, sizeof(NTFS_VOLUME_INFO));
@@ -884,16 +895,16 @@ const DEVVTBL* NtfsMount(ULONG DeviceId)
     //
     Position.HighPart = 0;
     Position.LowPart = 0;
-    ret = ArcSeek(DeviceId, &Position, SeekAbsolute);
-    if (ret != ESUCCESS)
+    Status = ArcSeek(DeviceId, &Position, SeekAbsolute);
+    if (Status != ESUCCESS)
     {
-        MmHeapFree(Volume);
+        FrLdrTempFree(Volume, TAG_NTFS_VOLUME);
         return NULL;
     }
-    ret = ArcRead(DeviceId, &Volume->BootSector, sizeof(Volume->BootSector), &Count);
-    if (ret != ESUCCESS || Count != sizeof(Volume->BootSector))
+    Status = ArcRead(DeviceId, &Volume->BootSector, sizeof(Volume->BootSector), &Count);
+    if (Status != ESUCCESS || Count != sizeof(Volume->BootSector))
     {
-        MmHeapFree(Volume);
+        FrLdrTempFree(Volume, TAG_NTFS_VOLUME);
         return NULL;
     }
 
@@ -902,7 +913,7 @@ const DEVVTBL* NtfsMount(ULONG DeviceId)
     //
     if (!RtlEqualMemory(Volume->BootSector.SystemId, "NTFS", 4))
     {
-        MmHeapFree(Volume);
+        FrLdrTempFree(Volume, TAG_NTFS_VOLUME);
         return NULL;
     }
 
@@ -929,39 +940,39 @@ const DEVVTBL* NtfsMount(ULONG DeviceId)
     // Read MFT index
     //
     TRACE("Reading MFT index...\n");
-    Volume->MasterFileTable = MmHeapAlloc(Volume->MftRecordSize);
+    Volume->MasterFileTable = FrLdrTempAlloc(Volume->MftRecordSize, TAG_NTFS_MFT);
     if (!Volume->MasterFileTable)
     {
-        MmHeapFree(Volume);
+        FrLdrTempFree(Volume, TAG_NTFS_VOLUME);
         return NULL;
     }
     Position.QuadPart = Volume->BootSector.MftLocation * Volume->ClusterSize;
-    ret = ArcSeek(DeviceId, &Position, SeekAbsolute);
-    if (ret != ESUCCESS)
+    Status = ArcSeek(DeviceId, &Position, SeekAbsolute);
+    if (Status != ESUCCESS)
     {
         FileSystemError("Failed to seek to Master File Table record.");
-        MmHeapFree(Volume->MasterFileTable);
-        MmHeapFree(Volume);
+        FrLdrTempFree(Volume->MasterFileTable, TAG_NTFS_MFT);
+        FrLdrTempFree(Volume, TAG_NTFS_VOLUME);
         return NULL;
     }
-    ret = ArcRead(DeviceId, Volume->MasterFileTable, Volume->MftRecordSize, &Count);
-    if (ret != ESUCCESS || Count != Volume->MftRecordSize)
+    Status = ArcRead(DeviceId, Volume->MasterFileTable, Volume->MftRecordSize, &Count);
+    if (Status != ESUCCESS || Count != Volume->MftRecordSize)
     {
         FileSystemError("Failed to read the Master File Table record.");
-        MmHeapFree(Volume->MasterFileTable);
-        MmHeapFree(Volume);
+        FrLdrTempFree(Volume->MasterFileTable, TAG_NTFS_MFT);
+        FrLdrTempFree(Volume, TAG_NTFS_VOLUME);
         return NULL;
     }
 
     //
     // Keep room to read partial sectors
     //
-    Volume->TemporarySector = MmHeapAlloc(Volume->BootSector.BytesPerSector);
+    Volume->TemporarySector = FrLdrTempAlloc(Volume->BootSector.BytesPerSector, TAG_NTFS_DATA);
     if (!Volume->TemporarySector)
     {
         FileSystemError("Failed to allocate memory.");
-        MmHeapFree(Volume->MasterFileTable);
-        MmHeapFree(Volume);
+        FrLdrTempFree(Volume->MasterFileTable, TAG_NTFS_MFT);
+        FrLdrTempFree(Volume, TAG_NTFS_VOLUME);
         return NULL;
     }
 
@@ -978,8 +989,8 @@ const DEVVTBL* NtfsMount(ULONG DeviceId)
     if (!Volume->MFTContext)
     {
         FileSystemError("Can't find data attribute for Master File Table.");
-        MmHeapFree(Volume->MasterFileTable);
-        MmHeapFree(Volume);
+        FrLdrTempFree(Volume->MasterFileTable, TAG_NTFS_MFT);
+        FrLdrTempFree(Volume, TAG_NTFS_VOLUME);
         return NULL;
     }
 

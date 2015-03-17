@@ -17,18 +17,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-//#include <stdarg.h>
-
-#define COBJMACROS
-//#include "windef.h"
-//#include "winbase.h"
-//#include "wingdi.h"
-#include <wine/debug.h>
-//#include "wine/unicode.h"
-
 #include "d3dx9_36_private.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(d3dx);
 
 struct ID3DXBufferImpl
 {
@@ -87,7 +76,7 @@ static ULONG WINAPI ID3DXBufferImpl_Release(ID3DXBuffer *iface)
     return ref;
 }
 
-static LPVOID WINAPI ID3DXBufferImpl_GetBufferPointer(ID3DXBuffer *iface)
+static void * WINAPI ID3DXBufferImpl_GetBufferPointer(ID3DXBuffer *iface)
 {
     struct ID3DXBufferImpl *This = impl_from_ID3DXBuffer(iface);
 

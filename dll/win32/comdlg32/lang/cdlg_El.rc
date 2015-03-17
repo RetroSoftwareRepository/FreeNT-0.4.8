@@ -19,9 +19,6 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "cdlg.h"
-#include "filedlgbrowser.h"
-
 LANGUAGE LANG_GREEK, SUBLANG_DEFAULT
 
 STRINGTABLE
@@ -37,6 +34,7 @@ STRINGTABLE
                           / : < > |"
     IDS_PATHNOTEXISTING     "Το μονοπάτι δεν υπάρχει"
     IDS_FILENOTEXISTING     "Το αρχείο δεν υπάρχει"
+    IDS_INVALID_FOLDERNAME  "The selection contains a non-folder object"
 }
 
 STRINGTABLE
@@ -139,6 +137,7 @@ STRINGTABLE
     IDS_SAVE        "Αποθήκευση"
     IDS_SAVE_AS     "Αποθήκευση ως"
     IDS_OPEN_FILE   "Άνοιγμα Αρχείου"
+    IDS_SELECT_FOLDER "Select Folder"
 }
 
 /*

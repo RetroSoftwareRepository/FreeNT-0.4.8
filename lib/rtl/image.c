@@ -1,4 +1,5 @@
-/* COPYRIGHT:       See COPYING in the top level directory
+/*
+ * COPYRIGHT:       See COPYING in the top level directory
  * PROJECT:         ReactOS system libraries
  * FILE:            lib/rtl/image.c
  * PURPOSE:         Image handling functions
@@ -20,8 +21,8 @@
 
 /* FUNCTIONS *****************************************************************/
 
-USHORT
 FORCEINLINE
+USHORT
 ChkSum(ULONG Sum, PUSHORT Src, ULONG Len)
 {
     ULONG i;

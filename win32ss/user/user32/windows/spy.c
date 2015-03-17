@@ -31,6 +31,7 @@ WINE_DEFAULT_DEBUG_CHANNEL(message);
 
 #define SPY_MAX_MSGNUM   WM_USER
 #define SPY_INDENT_UNIT  4  /* 4 spaces */
+#undef ARRAYSIZE
 #define ARRAYSIZE(a) ((sizeof(a) / sizeof((a)[0])))
 
 #define DEBUG_SPY 0
@@ -1121,6 +1122,8 @@ static const char * const CCMMessageTypeNames[SPY_MAX_CCMMSGNUM + 1] =
 };
 
 #define SPY_MAX_WINEMSGNUM   9
+
+#ifndef __REACTOS__
 static const char * const WINEMessageTypeNames[SPY_MAX_WINEMSGNUM + 1] =
 {
     "WM_WINE_DESTROYWINDOW",
@@ -1133,6 +1136,7 @@ static const char * const WINEMessageTypeNames[SPY_MAX_WINEMSGNUM + 1] =
     "WM_WINE_KEYBOARD_LL_HOOK",
     "WM_WINE_MOUSE_LL_HOOK",
 };
+#endif
 
 /* Virtual key names */
 #define SPY_MAX_VKKEYSNUM 255
@@ -2095,7 +2099,7 @@ const char *SPY_GetClassLongOffsetName( INT offset )
 {
     INT index;
     if (offset < 0 && offset % 2 == 0 && ((index = -(offset + 8) / 2) <
-        sizeof(ClassLongOffsetNames) / sizeof(*ClassLongOffsetNames))) 
+        sizeof(ClassLongOffsetNames) / sizeof(*ClassLongOffsetNames)))
     {
         return ClassLongOffsetNames[index];
     }

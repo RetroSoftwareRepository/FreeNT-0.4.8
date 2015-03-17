@@ -8,6 +8,9 @@
 #define actctx                  202
 #define resource                203
 #define kernel32session         204
+#define comm                    205
+#define profile                 206
+#define nls                     207
 
 
 #if DBG
@@ -27,6 +30,7 @@
 
 #define debugstr_a
 #define debugstr_w
+#define debugstr_wn
 #define wine_dbgstr_w
 #define debugstr_guid
 
@@ -61,6 +65,9 @@
 #define FIELD_OFFSET(type,fld)	((LONG)&(((type *)0)->fld))
 #endif
 
+#define __TRY _SEH2_TRY
+#define __EXCEPT_PAGE_FAULT _SEH2_EXCEPT(_SEH2_GetExceptionCode() == STATUS_ACCESS_VIOLATION)
+#define __ENDTRY _SEH2_END
 
 /* Undocumented CreateProcess flag */
 #define STARTF_SHELLPRIVATE         0x400
@@ -124,6 +131,17 @@ DWORD
 
 extern WaitForInputIdleType UserWaitForInputIdleRoutine;
 
+/* Flags for PrivCopyFileExW && BasepCopyFileExW */
+#define BASEP_COPY_METADATA         0x10
+#define BASEP_COPY_SACL             0x20
+#define BASEP_COPY_OWNER_AND_GROUP  0x40
+#define BASEP_COPY_DIRECTORY        0x80
+#define BASEP_COPY_BACKUP_SEMANTICS 0x100
+#define BASEP_COPY_REPLACE          0x200
+#define BASEP_COPY_SKIP_DACL        0x400
+#define BASEP_COPY_PUBLIC_MASK      0xF
+#define BASEP_COPY_BASEP_MASK       0xFFFFFFF0
+
 /* GLOBAL VARIABLES **********************************************************/
 
 extern BOOL bIsFileApiAnsi;
@@ -159,7 +177,7 @@ DWORD FilenameU2A_FitOrFail(LPSTR  DestA, INT destLen, PUNICODE_STRING SourceU);
 #define HeapAlloc RtlAllocateHeap
 #define HeapReAlloc RtlReAllocateHeap
 #define HeapFree RtlFreeHeap
-#define _lread  (_readfun)_hread
+#define _lread(a, b, c)  (long)(_hread(a, b, (long)c))
 
 PLARGE_INTEGER
 WINAPI
@@ -335,7 +353,7 @@ VOID
 WINAPI
 InitCommandLines(VOID);
 
-VOID
+DWORD
 WINAPI
 BaseSetLastNTError(IN NTSTATUS Status);
 
@@ -415,6 +433,18 @@ BaseMarkFileForDelete(
     IN ULONG FileAttributes
 );
 
+BOOL
+BasepCopyFileExW(
+    IN LPCWSTR lpExistingFileName,
+    IN LPCWSTR lpNewFileName,
+    IN LPPROGRESS_ROUTINE lpProgressRoutine OPTIONAL,
+    IN LPVOID lpData OPTIONAL,
+    IN LPBOOL pbCancel OPTIONAL,
+    IN DWORD dwCopyFlags,
+    IN DWORD dwBasepFlags,
+    OUT LPHANDLE lpExistingHandle,
+    OUT LPHANDLE lpNewHandle
+);
 
 /* FIXME: This is EXPORTED! It should go in an external kernel32.h header */
 VOID

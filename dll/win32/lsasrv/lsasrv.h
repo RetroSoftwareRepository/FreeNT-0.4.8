@@ -7,40 +7,37 @@
  * PROGRAMMERS:     Eric Kohl
  */
 
+#ifndef _LSASRV_H
+#define _LSASRV_H
+
+#include <stdarg.h>
+
 #define WIN32_NO_STATUS
 #define _INC_WINDOWS
 #define COM_NO_WINDOWS_H
-#include <stdarg.h>
+
 #include <windef.h>
 #include <winbase.h>
 #include <winreg.h>
-#include <winuser.h>
+
 #define NTOS_MODE_USER
 #include <ndk/cmfuncs.h>
 #include <ndk/kefuncs.h>
-#include <ndk/lpctypes.h>
-#include <ndk/lpcfuncs.h>
 #include <ndk/mmfuncs.h>
 #include <ndk/obfuncs.h>
 #include <ndk/psfuncs.h>
 #include <ndk/rtlfuncs.h>
 #include <ndk/setypes.h>
-#include <ndk/sefuncs.h>
-#include <ndk/umfuncs.h>
 
 #include <ntsam.h>
 #include <ntlsa.h>
-//#include <ntsecapi.h>
 #include <sddl.h>
-
-//#include <string.h>
 
 #include <lsass.h>
 #include <lsa_s.h>
 
 #include <wine/debug.h>
-
-#include "resources.h"
+WINE_DEFAULT_DEBUG_CHANNEL(lsasrv);
 
 typedef enum _LSA_DB_OBJECT_TYPE
 {
@@ -64,12 +61,12 @@ typedef struct _LSA_DB_OBJECT
 
 #define LSAP_DB_SIGNATURE 0x12345678
 
-
+#define POLICY_AUDIT_EVENT_TYPE_COUNT (AuditCategoryAccountLogon - AuditCategorySystem + 1)
 typedef struct _LSAP_POLICY_AUDIT_EVENTS_DATA
 {
     BOOLEAN AuditingMode;
+    DWORD AuditEvents[POLICY_AUDIT_EVENT_TYPE_COUNT];
     DWORD MaximumAuditEventCount;
-    DWORD AuditEvents[0];
 } LSAP_POLICY_AUDIT_EVENTS_DATA, *PLSAP_POLICY_AUDIT_EVENTS_DATA;
 
 typedef struct _LSAP_LOGON_CONTEXT
@@ -89,6 +86,15 @@ extern PSID BuiltinDomainSid;
 extern UNICODE_STRING BuiltinDomainName;
 extern PSID AccountDomainSid;
 extern UNICODE_STRING AccountDomainName;
+
+extern PSID LsapWorldSid;
+extern PSID LsapNetworkSid;
+extern PSID LsapBatchSid;
+extern PSID LsapInteractiveSid;
+extern PSID LsapServiceSid;
+extern PSID LsapLocalSystemSid;
+extern PSID LsapAdministratorsSid;
+
 
 /* authpackage.c */
 NTSTATUS
@@ -159,6 +165,10 @@ LsapSetObjectAttribute(PLSA_DB_OBJECT DbObject,
 NTSTATUS
 LsapDeleteObjectAttribute(PLSA_DB_OBJECT DbObject,
                           LPWSTR AttributeName);
+
+/* dssetup.c */
+VOID
+DsSetupInit(VOID);
 
 /* lookup.c */
 NTSTATUS
@@ -297,6 +307,13 @@ LsarpLookupPrivilegeName(PLUID Value,
                          PRPC_UNICODE_STRING *Name);
 
 NTSTATUS
+LsarpLookupPrivilegeDisplayName(PRPC_UNICODE_STRING Name,
+                                USHORT ClientLanguage,
+                                USHORT ClientSystemDefaultLanguage,
+                                PRPC_UNICODE_STRING *DisplayName,
+                                USHORT *LanguageReturned);
+
+NTSTATUS
 LsarpLookupPrivilegeValue(PRPC_UNICODE_STRING Name,
                           PLUID Value);
 
@@ -395,6 +412,15 @@ NTSTATUS
 NTAPI
 LsapDeleteLogonSession(IN PLUID LogonId);
 
+NTSTATUS
+LsapSetLogonSessionData(IN PLUID LogonId);
+
+NTSTATUS
+LsapEnumLogonSessions(IN OUT PLSA_API_MSG RequestMsg);
+
+NTSTATUS
+LsapGetLogonSessionData(IN OUT PLSA_API_MSG RequestMsg);
+
 /* utils.c */
 INT
 LsapLoadString(HINSTANCE hInstance,
@@ -402,4 +428,9 @@ LsapLoadString(HINSTANCE hInstance,
                LPWSTR lpBuffer,
                INT nBufferMax);
 
-/* EOF */
+PSID
+LsapAppendRidToSid(
+    PSID SrcSid,
+    ULONG Rid);
+
+#endif /* _LSASRV_H */

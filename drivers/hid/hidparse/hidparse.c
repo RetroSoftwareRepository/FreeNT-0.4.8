@@ -10,6 +10,9 @@
 
 #include "hidparse.h"
 
+#define NDEBUG
+#include <debug.h>
+
 PVOID
 NTAPI
 AllocFunction(
@@ -67,7 +70,7 @@ CopyFunction(
 }
 
 VOID
-NTAPI
+__cdecl
 DebugFunction(
     IN LPCSTR FormatStr, ...)
 {

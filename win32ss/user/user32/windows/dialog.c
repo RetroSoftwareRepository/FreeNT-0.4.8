@@ -115,8 +115,8 @@ const struct builtin_class_descr DIALOG_builtin_class =
 {
     WC_DIALOG,       /* name */
     CS_SAVEBITS | CS_DBLCLKS, /* style  */
-    (WNDPROC) DefDlgProcA,    /* procA */
-    (WNDPROC) DefDlgProcW,    /* procW */
+    DefDlgProcA,              /* procA */
+    DefDlgProcW,              /* procW */
     DLGWINDOWEXTRA,           /* extra */
     (LPCWSTR) IDC_ARROW,      /* cursor */
     0                         /* brush */
@@ -802,8 +802,7 @@ static void DEFDLG_RestoreFocus( HWND hwnd, BOOL justActivate )
     else
         DEFDLG_SetFocus( infoPtr->hwndFocus );
 
-    /* This used to set infoPtr->hwndFocus to NULL for no apparent reason,
-       sometimes losing focus when receiving WM_SETFOCUS messages. */
+    infoPtr->hwndFocus = NULL;
 }
 
 /***********************************************************************
@@ -1047,13 +1046,14 @@ static HWND DIALOG_CreateIndirect( HINSTANCE hInst, LPCVOID dlgTemplate,
                 /* By returning TRUE, app has requested a default focus assignment.
                  * WM_INITDIALOG may have changed the tab order, so find the first
                  * tabstop control again. */
-                dlgInfo->hwndFocus = GetNextDlgTabItem( hwnd, 0, FALSE );
-                if (!dlgInfo->hwndFocus) dlgInfo->hwndFocus = GetNextDlgGroupItem( hwnd, 0, FALSE );
-                if( dlgInfo->hwndFocus )
-                    SetFocus( dlgInfo->hwndFocus );
+                focus = GetNextDlgTabItem( hwnd, 0, FALSE );
+                if (!focus) focus = GetNextDlgGroupItem( hwnd, 0, FALSE );
+                if (focus)
+                    SetFocus( focus );
             }
-//// ReactOS
-            DEFDLG_SaveFocus( hwnd );
+//// ReactOS see 43396, Fixes setting focus on Open and Close dialogs to the FileName edit control in OpenOffice.
+//// This now breaks test_SaveRestoreFocus.
+            //DEFDLG_SaveFocus( hwnd );
 ////
         }
 //// ReactOS Rev 30613 & 30644
@@ -2126,9 +2126,12 @@ GetDlgItem(
   int nIDDlgItem)
 {
     int i;
-    HWND *list = WIN_ListChildren(hDlg);
+    HWND *list;
     HWND ret = 0;
 
+    if (!hDlg) return 0; 
+
+    list = WIN_ListChildren(hDlg);
     if (!list) return 0;
 
     for (i = 0; list[i]; i++) if (GetWindowLongPtrW(list[i], GWLP_ID) == nIDDlgItem) break;
@@ -2190,7 +2193,7 @@ GetDlgItemTextA(
 {
   HWND hWnd = GetDlgItem(hDlg, nIDDlgItem);
   if ( hWnd ) return GetWindowTextA(hWnd, lpString, nMaxCount);
-  if ( nMaxCount ) *lpString = 0;
+  if ( nMaxCount ) lpString[0] = '\0';
   return 0;
 }
 
@@ -2208,7 +2211,7 @@ GetDlgItemTextW(
 {
   HWND hWnd = GetDlgItem(hDlg, nIDDlgItem);
   if ( hWnd ) return GetWindowTextW(hWnd, lpString, nMaxCount);
-  if ( nMaxCount ) *lpString = 0;
+  if ( nMaxCount ) lpString[0] = '\0';
   return 0;
 }
 

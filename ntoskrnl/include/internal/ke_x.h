@@ -514,7 +514,7 @@ KiTryThreadLock(IN PKTHREAD Thread)
     Value = InterlockedExchange((PLONG)&Thread->ThreadLock, Value);
 
     /* Return the lock state */
-    return (Value == TRUE);
+    return (Value == 1);
 }
 
 FORCEINLINE
@@ -852,8 +852,8 @@ KiCheckAlertability(IN PKTHREAD Thread,
     return STATUS_WAIT_0;
 }
 
-ULONG
 FORCEINLINE
+ULONG
 KiComputeTimerTableIndex(IN ULONGLONG DueTime)
 {
     return (DueTime / KeMaximumIncrement) & (TIMER_TABLE_SIZE - 1);

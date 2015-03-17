@@ -17,18 +17,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <config.h>
-#include <wine/port.h>
-
-//#include <limits.h>
-//#include <math.h>
-#include <assert.h>
-
 #include "jscript.h"
-
-#include <wine/debug.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(jscript);
 
 /* 1601 to 1970 is 369 years plus 89 leap days */
 #define TIME_EPOCH  ((ULONGLONG)(369 * 365 + 89) * 86400 * 1000)
@@ -48,9 +37,6 @@ typedef struct {
 
 static const WCHAR toStringW[] = {'t','o','S','t','r','i','n','g',0};
 static const WCHAR toLocaleStringW[] = {'t','o','L','o','c','a','l','e','S','t','r','i','n','g',0};
-static const WCHAR propertyIsEnumerableW[] =
-    {'p','r','o','p','e','r','t','y','I','s','E','n','u','m','e','r','a','b','l','e',0};
-static const WCHAR isPrototypeOfW[] = {'i','s','P','r','o','t','o','t','y','p','e','O','f',0};
 static const WCHAR valueOfW[] = {'v','a','l','u','e','O','f',0};
 static const WCHAR toUTCStringW[] = {'t','o','U','T','C','S','t','r','i','n','g',0};
 static const WCHAR toGMTStringW[] = {'t','o','G','M','T','S','t','r','i','n','g',0};

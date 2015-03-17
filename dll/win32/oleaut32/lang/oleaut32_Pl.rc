@@ -19,16 +19,14 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "resource.h"
-
 LANGUAGE LANG_POLISH, SUBLANG_DEFAULT 
 
 STRINGTABLE
 {
   IDS_TRUE  "Prawda"
-  IDS_FALSE "Fa³sz"
+  IDS_FALSE "FaÅ‚sz"
   IDS_YES   "Tak"
   IDS_NO    "Nie"
-  IDS_ON    "W³¹czone"
-  IDS_OFF   "Wy³¹czone"
+  IDS_ON    "WÅ‚Ä…czone"
+  IDS_OFF   "WyÅ‚Ä…czone"
 }

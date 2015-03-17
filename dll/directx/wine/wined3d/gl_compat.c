@@ -18,14 +18,6 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <config.h>
-#include <wine/port.h>
-
-#include <stdio.h>
-#ifdef HAVE_FLOAT_H
-# include <float.h>
-#endif
-
 #include "wined3d_private.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(gl_compat);
@@ -112,7 +104,8 @@ static void WINE_GLAPI wine_glMultiTexCoord4svARB(GLenum target, const GLshort *
     context_get_current()->gl_info->gl_ops.gl.p_glTexCoord4sv(v);
 }
 
-static void WINE_GLAPI wine_glActiveTextureARB(GLenum texture) {
+static void WINE_GLAPI wine_glActiveTexture(GLenum texture)
+{
     if(texture != GL_TEXTURE0) {
         ERR("Texture unit > 0 used, but GL_ARB_multitexture is not supported\n");
         return;
@@ -351,7 +344,7 @@ void add_gl_compat_wrappers(struct wined3d_gl_info *gl_info)
     if (!gl_info->supported[ARB_MULTITEXTURE])
     {
         TRACE("Applying GL_ARB_multitexture emulation hooks\n");
-        gl_info->gl_ops.ext.p_glActiveTextureARB        = wine_glActiveTextureARB;
+        gl_info->gl_ops.ext.p_glActiveTexture           = wine_glActiveTexture;
         gl_info->gl_ops.ext.p_glClientActiveTextureARB  = wine_glClientActiveTextureARB;
         gl_info->gl_ops.ext.p_glMultiTexCoord1fARB      = wine_glMultiTexCoord1fARB;
         gl_info->gl_ops.ext.p_glMultiTexCoord1fvARB     = wine_glMultiTexCoord1fvARB;

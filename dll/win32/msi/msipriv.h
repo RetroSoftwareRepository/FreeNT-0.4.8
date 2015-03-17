@@ -22,21 +22,35 @@
 #ifndef __WINE_MSI_PRIVATE__
 #define __WINE_MSI_PRIVATE__
 
+#include <wine/config.h>
+
+#include <assert.h>
 #include <stdarg.h>
 
-#include "windef.h"
+#define _INC_WINDOWS
+#define COM_NO_WINDOWS_H
+
+#define COBJMACROS
+#define NONAMELESSUNION
+#define NONAMELESSSTRUCT
+
+#include <windef.h>
 #include <winbase.h>
-#include "fdi.h"
-#include "msi.h"
+#include <winreg.h>
+#include <wincon.h>
+#include <winver.h>
 #include <msiquery.h>
-#include <msidefs.h>
-#include "objbase.h"
-#include "objidl.h"
+#include <objbase.h>
+#include <msiserver.h>
+#include <shlobj.h>
+#include <shlwapi.h>
 #include <fusion.h>
-#include "winnls.h"
-#include "winver.h"
+#include <sddl.h>
+#include <msidefs.h>
+
+#include <wine/debug.h>
 #include <wine/list.h>
-#include "wine/debug.h"
+#include <wine/unicode.h>
 
 static const BOOL is_64bit = sizeof(void *) > sizeof(int);
 BOOL is_wow64;
@@ -80,6 +94,18 @@ struct tagMSIOBJECTHDR
 #define MSI_INITIAL_MEDIA_TRANSFORM_OFFSET 10000
 #define MSI_INITIAL_MEDIA_TRANSFORM_DISKID 30000
 
+typedef struct tagMSISTREAM
+{
+    UINT str_index;
+    IStream *stream;
+} MSISTREAM;
+
+typedef struct tagMSITRANSFORM
+{
+    struct list entry;
+    IStorage *stg;
+} MSITRANSFORM;
+
 typedef struct tagMSIDATABASE
 {
     MSIOBJECTHDR hdr;
@@ -93,7 +119,9 @@ typedef struct tagMSIDATABASE
     UINT media_transform_disk_id;
     struct list tables;
     struct list transforms;
-    struct list streams;
+    MSISTREAM *streams;
+    UINT num_streams;
+    UINT num_streams_allocated;
 } MSIDATABASE;
 
 typedef struct tagMSIVIEW MSIVIEW;
@@ -154,7 +182,6 @@ typedef struct tagMSIMEDIAINFO
     UINT last_sequence;
     LPWSTR disk_prompt;
     LPWSTR cabinet;
-    LPWSTR first_volume;
     LPWSTR volume_label;
     BOOL is_continuous;
     BOOL is_extracted;
@@ -487,7 +514,7 @@ typedef struct tagMSICOMPONENT
     int num_clients;
 
     unsigned int anyAbsent:1;
-    unsigned int hasAdvertiseFeature:1;
+    unsigned int hasAdvertisedFeature:1;
     unsigned int hasLocalFeature:1;
     unsigned int hasSourceFeature:1;
 } MSICOMPONENT;
@@ -614,7 +641,7 @@ typedef struct tagMSICLASS
     MSIFEATURE *Feature;
     INT Attributes;
     /* not in the table, set during installation */
-    BOOL Installed;
+    INSTALLSTATE action;
 } MSICLASS;
 
 typedef struct tagMSIMIME MSIMIME;
@@ -629,7 +656,7 @@ typedef struct tagMSIEXTENSION
     MSIMIME *Mime;
     MSIFEATURE *Feature;
     /* not in the table, set during installation */
-    BOOL Installed;
+    INSTALLSTATE action;
     struct list verbs;
 } MSIEXTENSION;
 
@@ -642,7 +669,6 @@ struct tagMSIPROGID
     LPWSTR Description;
     LPWSTR IconPath;
     /* not in the table, set during installation */
-    BOOL InstallMe;
     MSIPROGID *CurVer;
     MSIPROGID *VersionInd;
 };
@@ -664,8 +690,6 @@ struct tagMSIMIME
     LPWSTR suffix;
     LPWSTR clsid;
     MSICLASS *Class;
-    /* not in the table, set during installation */
-    BOOL InstallMe;
 };
 
 enum SCRIPTS
@@ -686,7 +710,6 @@ typedef struct tagMSISCRIPT
     LPWSTR  *Actions[SCRIPT_MAX];
     UINT    ActionCount[SCRIPT_MAX];
     BOOL    ExecuteSequenceRun;
-    BOOL    CurrentlyScripting;
     UINT    InWhatSequence;
     LPWSTR  *UniqueActions;
     UINT    UniqueActionsCount;
@@ -747,6 +770,7 @@ extern void msi_free_handle_table(void) DECLSPEC_HIDDEN;
 
 extern void free_cached_tables( MSIDATABASE *db ) DECLSPEC_HIDDEN;
 extern UINT MSI_CommitTables( MSIDATABASE *db ) DECLSPEC_HIDDEN;
+extern UINT msi_commit_streams( MSIDATABASE *db ) DECLSPEC_HIDDEN;
 
 
 /* string table functions */
@@ -756,7 +780,7 @@ enum StringPersistence
     StringNonPersistent = 1
 };
 
-extern BOOL msi_addstringW( string_table *st, const WCHAR *data, int len, USHORT refcount, enum StringPersistence persistence ) DECLSPEC_HIDDEN;
+extern BOOL msi_add_string( string_table *st, const WCHAR *data, int len, enum StringPersistence persistence ) DECLSPEC_HIDDEN;
 extern UINT msi_string2id( const string_table *st, const WCHAR *data, int len, UINT *id ) DECLSPEC_HIDDEN;
 extern VOID msi_destroy_stringtable( string_table *st ) DECLSPEC_HIDDEN;
 extern const WCHAR *msi_string_lookup( const string_table *st, UINT id, int *len ) DECLSPEC_HIDDEN;
@@ -834,9 +858,7 @@ extern LPWSTR encode_streamname(BOOL bTable, LPCWSTR in) DECLSPEC_HIDDEN;
 extern BOOL decode_streamname(LPCWSTR in, LPWSTR out) DECLSPEC_HIDDEN;
 
 /* database internals */
-extern UINT msi_get_raw_stream( MSIDATABASE *, LPCWSTR, IStream ** ) DECLSPEC_HIDDEN;
-extern UINT msi_clone_open_stream( MSIDATABASE *, IStorage *, const WCHAR *, IStream ** ) DECLSPEC_HIDDEN;
-void msi_destroy_stream( MSIDATABASE *, const WCHAR * ) DECLSPEC_HIDDEN;
+extern UINT msi_get_stream( MSIDATABASE *, const WCHAR *, IStream ** ) DECLSPEC_HIDDEN;
 extern UINT MSI_OpenDatabaseW( LPCWSTR, LPCWSTR, MSIDATABASE ** ) DECLSPEC_HIDDEN;
 extern UINT MSI_DatabaseOpenViewW(MSIDATABASE *, LPCWSTR, MSIQUERY ** ) DECLSPEC_HIDDEN;
 extern UINT MSI_OpenQuery( MSIDATABASE *, MSIQUERY **, LPCWSTR, ... ) DECLSPEC_HIDDEN;
@@ -869,7 +891,7 @@ extern UINT MSI_SetFeatureStateW(MSIPACKAGE*, LPCWSTR, INSTALLSTATE ) DECLSPEC_H
 extern UINT msi_download_file( LPCWSTR szUrl, LPWSTR filename ) DECLSPEC_HIDDEN;
 extern UINT msi_package_add_info(MSIPACKAGE *, DWORD, DWORD, LPCWSTR, LPWSTR) DECLSPEC_HIDDEN;
 extern UINT msi_package_add_media_disk(MSIPACKAGE *, DWORD, DWORD, DWORD, LPWSTR, LPWSTR) DECLSPEC_HIDDEN;
-extern UINT msi_clone_properties(MSIPACKAGE *) DECLSPEC_HIDDEN;
+extern UINT msi_clone_properties(MSIDATABASE *) DECLSPEC_HIDDEN;
 extern UINT msi_set_context(MSIPACKAGE *) DECLSPEC_HIDDEN;
 extern void msi_adjust_privilege_properties(MSIPACKAGE *) DECLSPEC_HIDDEN;
 extern UINT MSI_GetFeatureCost(MSIPACKAGE *, MSIFEATURE *, MSICOSTTREE, INSTALLSTATE, LPINT) DECLSPEC_HIDDEN;
@@ -945,6 +967,7 @@ extern LPWSTR msi_suminfo_dup_string( MSISUMMARYINFO *si, UINT uiProperty ) DECL
 extern INT msi_suminfo_get_int32( MSISUMMARYINFO *si, UINT uiProperty ) DECLSPEC_HIDDEN;
 extern LPWSTR msi_get_suminfo_product( IStorage *stg ) DECLSPEC_HIDDEN;
 extern UINT msi_add_suminfo( MSIDATABASE *db, LPWSTR **records, int num_records, int num_columns ) DECLSPEC_HIDDEN;
+extern enum platform parse_platform( const WCHAR *str ) DECLSPEC_HIDDEN;
 
 /* undocumented functions */
 UINT WINAPI MsiCreateAndVerifyInstallerDirectory( DWORD );
@@ -1163,7 +1186,6 @@ static const WCHAR szX64[] = {'x','6','4',0};
 static const WCHAR szAMD64[] = {'A','M','D','6','4',0};
 static const WCHAR szARM[] = {'A','r','m',0};
 static const WCHAR szWow6432NodeCLSID[] = {'W','o','w','6','4','3','2','N','o','d','e','\\','C','L','S','I','D',0};
-static const WCHAR szWow6432Node[] = {'W','o','w','6','4','3','2','N','o','d','e',0};
 static const WCHAR szStreams[] = {'_','S','t','r','e','a','m','s',0};
 static const WCHAR szStorages[] = {'_','S','t','o','r','a','g','e','s',0};
 static const WCHAR szMsiPublishAssemblies[] = {'M','s','i','P','u','b','l','i','s','h','A','s','s','e','m','b','l','i','e','s',0};
@@ -1184,6 +1206,7 @@ static const WCHAR szName[] = {'N','a','m','e',0};
 static const WCHAR szData[] = {'D','a','t','a',0};
 static const WCHAR szLangResource[] = {'\\','V','a','r','F','i','l','e','I','n','f','o','\\','T','r','a','n','s','l','a','t','i','o','n',0};
 static const WCHAR szInstallLocation[] = {'I','n','s','t','a','l','l','L','o','c','a','t','i','o','n',0};
+static const WCHAR szProperty[] = {'P','r','o','p','e','r','t','y',0};
 
 /* memory allocation macro functions */
 static void *msi_alloc( size_t len ) __WINE_ALLOC_SIZE(1);
@@ -1250,5 +1273,7 @@ static inline LPWSTR strdupW( LPCWSTR src )
         lstrcpyW(dest, src);
     return dest;
 }
+
+#include "query.h"
 
 #endif /* __WINE_MSI_PRIVATE__ */

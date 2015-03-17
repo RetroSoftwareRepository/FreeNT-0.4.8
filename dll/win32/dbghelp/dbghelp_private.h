@@ -21,30 +21,58 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
+#ifndef _DBGHELP_PRIVATE_H_
+#define _DBGHELP_PRIVATE_H_
+
+#include <config.h>
+
+#include <assert.h>
+#include <stdio.h>
+
+#ifdef HAVE_SYS_MMAN_H
+# include <sys/mman.h>
+#endif
+#ifdef HAVE_SYS_STAT_H
+# include <sys/stat.h>
+#endif
+#ifdef HAVE_UNISTD_H
+# include <unistd.h>
+#endif
+
 #define _INC_WINDOWS
 #define COM_NO_WINDOWS_H
 
-#include <stdarg.h>
+#define NONAMELESSUNION
+#define NONAMELESSSTRUCT
 
 #ifndef DBGHELP_STATIC_LIB
+
+#include <wine/port.h>
+
+#include <ntstatus.h>
+#define WIN32_NO_STATUS
 #include <windef.h>
 #include <winbase.h>
 #include <winver.h>
+#include <winternl.h>
 #include <dbghelp.h>
 #include <objbase.h>
 #include <cvconst.h>
+#include <psapi.h>
+
+#include <wine/debug.h>
+#include <wine/mscvpdb.h>
 #include <wine/unicode.h>
-#else
+
+#else /* DBGHELP_STATIC_LIB */
+
 #include <string.h>
 #include "compat.h"
-#endif
 
-//#include "oaidl.h"
-//#include "winnls.h"
+#endif /* DBGHELP_STATIC_LIB */
+
 #include <wine/list.h>
 #include <wine/rbtree.h>
-
 
 /* #define USE_STATS */
 
@@ -363,12 +391,14 @@ struct module_format
     } u;
 };
 
+#ifdef __REACTOS__
 struct symt_idx_to_ptr
 {
     struct hash_table_elt hash_elt;
     DWORD idx;
     const struct symt *sym;
 };
+#endif
 
 extern const struct wine_rb_functions source_rb_functions DECLSPEC_HIDDEN;
 struct module
@@ -541,7 +571,7 @@ struct cpu
     DWORD       frame_regno;
 
     /* address manipulation */
-    unsigned    (*get_addr)(HANDLE hThread, const CONTEXT* ctx,
+    BOOL        (*get_addr)(HANDLE hThread, const CONTEXT* ctx,
                             enum cpu_addr, ADDRESS64* addr);
 
     /* stack manipulation */
@@ -566,7 +596,6 @@ extern struct cpu*      dbghelp_current_cpu DECLSPEC_HIDDEN;
 
 /* dbghelp.c */
 extern struct process* process_find_by_handle(HANDLE hProcess) DECLSPEC_HIDDEN;
-extern HANDLE hMsvcrt DECLSPEC_HIDDEN;
 extern BOOL         validate_addr64(DWORD64 addr) DECLSPEC_HIDDEN;
 extern BOOL         pcs_callback(const struct process* pcs, ULONG action, void* data) DECLSPEC_HIDDEN;
 extern void*        fetch_buffer(struct process* pcs, unsigned size) DECLSPEC_HIDDEN;
@@ -815,3 +844,7 @@ extern struct symt_pointer*
 extern struct symt_typedef*
                     symt_new_typedef(struct module* module, struct symt* ref, 
                                      const char* name) DECLSPEC_HIDDEN;
+
+#include "image_private.h"
+
+#endif /* _DBGHELP_PRIVATE_H_ */

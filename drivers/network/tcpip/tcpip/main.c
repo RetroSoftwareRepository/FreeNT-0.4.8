@@ -7,7 +7,11 @@
  * REVISIONS:
  *   CSH 01/08-2000 Created
  */
+
 #include "precomp.h"
+
+#include <dispatch.h>
+#include <fileobjs.h>
 
 PDEVICE_OBJECT TCPDeviceObject   = NULL;
 PDEVICE_OBJECT UDPDeviceObject   = NULL;
@@ -161,9 +165,9 @@ NTSTATUS TiCreateFileObject(
             TI_DbgPrint(MIN_TRACE, ("AddressCount: %d\n", Address->TAAddressCount));
             if( Address->TAAddressCount == 1 )
             {
-	            TI_DbgPrint(MIN_TRACE, ("AddressLength: %\n",
+	            TI_DbgPrint(MIN_TRACE, ("AddressLength: %u\n",
 				            Address->Address[0].AddressLength));
-	            TI_DbgPrint(MIN_TRACE, ("AddressType: %\n",
+	            TI_DbgPrint(MIN_TRACE, ("AddressType: %u\n",
 				            Address->Address[0].AddressType));
             }
 

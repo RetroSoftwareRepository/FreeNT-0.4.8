@@ -351,6 +351,11 @@ IopEditDeviceList(IN PDRIVER_OBJECT DriverObject,
             while (Previous->NextDevice != DeviceObject)
             {
                 /* Not this one, keep moving */
+                if (!Previous->NextDevice)
+                {
+                    DPRINT1("Failed to remove PDO %p on driver %wZ (not found)\n", DeviceObject, &DeviceObject->DriverObject->DriverName);
+                    return;
+                }
                 Previous = Previous->NextDevice;
             }
 
@@ -391,8 +396,8 @@ IopUnloadDevice(IN PDEVICE_OBJECT DeviceObject)
         /* Check if we have a Security Descriptor */
         if (DeviceObject->SecurityDescriptor)
         {
-            /* Free it */
-            ExFreePoolWithTag(DeviceObject->SecurityDescriptor, TAG_SD);
+            /* Dereference it */
+            ObDereferenceSecurityDescriptor(DeviceObject->SecurityDescriptor, 1);
         }
 
         /* Remove the device from the list */

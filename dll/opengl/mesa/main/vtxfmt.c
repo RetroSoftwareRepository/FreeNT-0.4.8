@@ -26,17 +26,7 @@
  *    Gareth Hughes
  */
 
-#include "glheader.h"
-#include "api_arrayelt.h"
-#include "context.h"
-#include "imports.h"
-#include "mfeatures.h"
-#include "mtypes.h"
-#include "vtxfmt.h"
-#include "eval.h"
-#include "dlist.h"
-#include "main/dispatch.h"
-
+#include <precomp.h>
 
 #if FEATURE_beginend
 
@@ -64,8 +54,6 @@ install_vtxfmt( struct _glapi_table *tab, const GLvertexformat *vfmt )
    SET_Materialfv(tab, vfmt->Materialfv);
    SET_Normal3f(tab, vfmt->Normal3f);
    SET_Normal3fv(tab, vfmt->Normal3fv);
-   SET_SecondaryColor3fEXT(tab, vfmt->SecondaryColor3fEXT);
-   SET_SecondaryColor3fvEXT(tab, vfmt->SecondaryColor3fvEXT);
    SET_TexCoord1f(tab, vfmt->TexCoord1f);
    SET_TexCoord1fv(tab, vfmt->TexCoord1fv);
    SET_TexCoord2f(tab, vfmt->TexCoord2f);
@@ -90,7 +78,6 @@ install_vtxfmt( struct _glapi_table *tab, const GLvertexformat *vfmt )
 
    SET_DrawArrays(tab, vfmt->DrawArrays);
    SET_DrawElements(tab, vfmt->DrawElements);
-   SET_DrawRangeElements(tab, vfmt->DrawRangeElements);
 
    /* GL_NV_vertex_program */
    SET_VertexAttrib1fNV(tab, vfmt->VertexAttrib1fNV);

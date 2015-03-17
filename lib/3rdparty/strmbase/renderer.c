@@ -18,17 +18,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define COBJMACROS
-
-#include "dshow.h"
-#include "wine/debug.h"
-#include "wine/unicode.h"
-#include "wine/strmbase.h"
-#include "uuids.h"
-#include "vfwmsgs.h"
 #include "strmbase_private.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(strmbase);
 
 static const WCHAR wcsInputPinName[] = {'i','n','p','u','t',' ','p','i','n',0};
 static const WCHAR wcsAltInputPinName[] = {'I','n',0};
@@ -105,8 +95,8 @@ static HRESULT WINAPI BaseRenderer_InputPin_EndOfStream(IPin * iface)
 
     TRACE("(%p/%p)->()\n", This, pFilter);
 
-    EnterCriticalSection(&pFilter->filter.csFilter);
     EnterCriticalSection(&pFilter->csRenderLock);
+    EnterCriticalSection(&pFilter->filter.csFilter);
     hr = BaseInputPinImpl_EndOfStream(iface);
     EnterCriticalSection(This->pin.pCritSec);
     if (SUCCEEDED(hr))
@@ -117,8 +107,8 @@ static HRESULT WINAPI BaseRenderer_InputPin_EndOfStream(IPin * iface)
             hr = BaseRendererImpl_EndOfStream(pFilter);
     }
     LeaveCriticalSection(This->pin.pCritSec);
-    LeaveCriticalSection(&pFilter->csRenderLock);
     LeaveCriticalSection(&pFilter->filter.csFilter);
+    LeaveCriticalSection(&pFilter->csRenderLock);
     return hr;
 }
 
@@ -130,8 +120,8 @@ static HRESULT WINAPI BaseRenderer_InputPin_BeginFlush(IPin * iface)
 
     TRACE("(%p/%p)->()\n", This, iface);
 
-    EnterCriticalSection(&pFilter->filter.csFilter);
     EnterCriticalSection(&pFilter->csRenderLock);
+    EnterCriticalSection(&pFilter->filter.csFilter);
     EnterCriticalSection(This->pin.pCritSec);
     hr = BaseInputPinImpl_BeginFlush(iface);
     if (SUCCEEDED(hr))
@@ -155,8 +145,8 @@ static HRESULT WINAPI BaseRenderer_InputPin_EndFlush(IPin * iface)
 
     TRACE("(%p/%p)->()\n", This, pFilter);
 
-    EnterCriticalSection(&pFilter->filter.csFilter);
     EnterCriticalSection(&pFilter->csRenderLock);
+    EnterCriticalSection(&pFilter->filter.csFilter);
     EnterCriticalSection(This->pin.pCritSec);
     hr = BaseInputPinImpl_EndFlush(iface);
     if (SUCCEEDED(hr))
@@ -167,8 +157,8 @@ static HRESULT WINAPI BaseRenderer_InputPin_EndFlush(IPin * iface)
             hr = BaseRendererImpl_EndFlush(pFilter);
     }
     LeaveCriticalSection(This->pin.pCritSec);
-    LeaveCriticalSection(&pFilter->csRenderLock);
     LeaveCriticalSection(&pFilter->filter.csFilter);
+    LeaveCriticalSection(&pFilter->csRenderLock);
     return hr;
 }
 
@@ -227,15 +217,14 @@ static const BaseFilterFuncTable RendererBaseFilterFuncTable = {
     BaseRenderer_GetPinCount
 };
 
-static const  BasePinFuncTable input_BaseFuncTable = {
-    BaseRenderer_Input_CheckMediaType,
-    NULL,
-    BasePinImpl_GetMediaTypeVersion,
-    BasePinImpl_GetMediaType
-};
-
 static const BaseInputPinFuncTable input_BaseInputFuncTable = {
-   BaseRenderer_Receive
+    {
+        BaseRenderer_Input_CheckMediaType,
+        NULL,
+        BasePinImpl_GetMediaTypeVersion,
+        BasePinImpl_GetMediaType
+    },
+    BaseRenderer_Receive
 };
 
 
@@ -253,7 +242,8 @@ HRESULT WINAPI BaseRenderer_Init(BaseRenderer * This, const IBaseFilterVtbl *Vtb
     piInput.pFilter = &This->filter.IBaseFilter_iface;
     lstrcpynW(piInput.achName, wcsInputPinName, sizeof(piInput.achName) / sizeof(piInput.achName[0]));
 
-    hr = BaseInputPin_Construct(&BaseRenderer_InputPin_Vtbl, &piInput, &input_BaseFuncTable, &input_BaseInputFuncTable, &This->filter.csFilter, NULL, (IPin **)&This->pInputPin);
+    hr = BaseInputPin_Construct(&BaseRenderer_InputPin_Vtbl, sizeof(BaseInputPin), &piInput,
+            &input_BaseInputFuncTable, &This->filter.csFilter, NULL, (IPin **)&This->pInputPin);
 
     if (SUCCEEDED(hr))
     {
@@ -294,7 +284,7 @@ HRESULT WINAPI BaseRendererImpl_QueryInterface(IBaseFilter* iface, REFIID riid, 
 ULONG WINAPI BaseRendererImpl_Release(IBaseFilter* iface)
 {
     BaseRenderer *This = impl_from_IBaseFilter(iface);
-    ULONG refCount = BaseFilterImpl_Release(iface);
+    ULONG refCount = InterlockedDecrement(&This->filter.refCount);
 
     if (!refCount)
     {
@@ -319,6 +309,7 @@ ULONG WINAPI BaseRendererImpl_Release(IBaseFilter* iface)
         CloseHandle(This->ThreadSignal);
         CloseHandle(This->RenderEvent);
         QualityControlImpl_Destroy(This->qcimpl);
+        BaseFilter_Destroy(&This->filter);
     }
     return refCount;
 }
@@ -471,7 +462,7 @@ HRESULT WINAPI BaseRendererImpl_Run(IBaseFilter * iface, REFERENCE_TIME tStart)
 
     if (This->pInputPin->pin.pConnectedTo)
     {
-        This->pInputPin->end_of_stream = 0;
+        This->pInputPin->end_of_stream = FALSE;
     }
     else if (This->filter.filterInfo.pGraph)
     {
@@ -514,7 +505,7 @@ HRESULT WINAPI BaseRendererImpl_Pause(IBaseFilter * iface)
             {
                 if (This->pInputPin->pin.pConnectedTo)
                     ResetEvent(This->evComplete);
-                This->pInputPin->end_of_stream = 0;
+                This->pInputPin->end_of_stream = FALSE;
             }
             else if (This->pFuncsTable->pfnOnStopStreaming)
                 This->pFuncsTable->pfnOnStopStreaming(This);

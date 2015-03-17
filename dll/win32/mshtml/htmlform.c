@@ -16,25 +16,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-
-#include <stdarg.h>
-#include <assert.h>
-
-#define COBJMACROS
-
-#include <windef.h>
-#include <winbase.h>
-//#include "winuser.h"
-#include <ole2.h>
-
-#include <wine/debug.h>
-
 #include "mshtml_private.h"
-#include "htmlevent.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(mshtml);
 
 struct HTMLFormElement {
     HTMLElement element;
@@ -288,15 +270,36 @@ static HRESULT WINAPI HTMLFormElement_get_elements(IHTMLFormElement *iface, IDis
 static HRESULT WINAPI HTMLFormElement_put_target(IHTMLFormElement *iface, BSTR v)
 {
     HTMLFormElement *This = impl_from_IHTMLFormElement(iface);
-    FIXME("(%p)->(%s)\n", This, wine_dbgstr_w(v));
-    return E_NOTIMPL;
+    nsAString str;
+    nsresult nsres;
+
+    TRACE("(%p)->(%s)\n", This, wine_dbgstr_w(v));
+
+    nsAString_InitDepend(&str, v);
+
+    nsres = nsIDOMHTMLFormElement_SetTarget(This->nsform, &str);
+
+    nsAString_Finish(&str);
+    if (NS_FAILED(nsres)) {
+        ERR("Set Target(%s) failed: %08x\n", wine_dbgstr_w(v), nsres);
+        return E_FAIL;
+    }
+
+    return S_OK;
 }
 
 static HRESULT WINAPI HTMLFormElement_get_target(IHTMLFormElement *iface, BSTR *p)
 {
     HTMLFormElement *This = impl_from_IHTMLFormElement(iface);
-    FIXME("(%p)->(%p)\n", This, p);
-    return E_NOTIMPL;
+    nsAString str;
+    nsresult nsres;
+
+    TRACE("(%p)->(%p)\n", This, p);
+
+    nsAString_Init(&str, NULL);
+    nsres = nsIDOMHTMLFormElement_GetTarget(This->nsform, &str);
+
+    return return_nsstr(nsres, &str, p);
 }
 
 static HRESULT WINAPI HTMLFormElement_put_name(IHTMLFormElement *iface, BSTR v)
@@ -364,24 +367,90 @@ static HRESULT WINAPI HTMLFormElement_get_onreset(IHTMLFormElement *iface, VARIA
 static HRESULT WINAPI HTMLFormElement_submit(IHTMLFormElement *iface)
 {
     HTMLFormElement *This = impl_from_IHTMLFormElement(iface);
+    HTMLOuterWindow *window = NULL, *this_window = NULL;
+    nsIInputStream *post_stream;
+    nsAString action_uri_str, target_str;
+    IUri *uri;
     nsresult nsres;
+    HRESULT hres;
 
     TRACE("(%p)->()\n", This);
 
-    nsres = nsIDOMHTMLFormElement_Submit(This->nsform);
-    if(NS_FAILED(nsres)) {
-        ERR("Submit failed: %08x\n", nsres);
-        return E_FAIL;
+    if(This->element.node.doc) {
+        HTMLDocumentNode *doc = This->element.node.doc;
+        if(doc->window && doc->window->base.outer_window)
+            this_window = doc->window->base.outer_window;
+    }
+    if(!this_window) {
+        TRACE("No outer window\n");
+        return S_OK;
     }
 
-    return S_OK;
+    nsAString_Init(&target_str, NULL);
+    nsres = nsIDOMHTMLFormElement_GetTarget(This->nsform, &target_str);
+    if(NS_SUCCEEDED(nsres)) {
+        BOOL use_new_window;
+        window = get_target_window(this_window, &target_str, &use_new_window);
+        if(use_new_window)
+            FIXME("submit to new window is not supported\n");
+    }
+    nsAString_Finish(&target_str);
+    if(!window)
+        return S_OK;
+
+    /*
+     * FIXME: We currently don't use our submit implementation for sub-windows because
+     * load_nsuri can't support post data. We should fix it.
+     */
+    if(!window->doc_obj || window->doc_obj->basedoc.window != window) {
+        nsres = nsIDOMHTMLFormElement_Submit(This->nsform);
+        IHTMLWindow2_Release(&window->base.IHTMLWindow2_iface);
+        if(NS_FAILED(nsres)) {
+            ERR("Submit failed: %08x\n", nsres);
+            return E_FAIL;
+        }
+
+        return S_OK;
+    }
+
+    nsAString_Init(&action_uri_str, NULL);
+    nsres = nsIDOMHTMLFormElement_GetFormData(This->nsform, NULL, &action_uri_str, &post_stream);
+    if(NS_SUCCEEDED(nsres)) {
+        const PRUnichar *action_uri;
+
+        nsAString_GetData(&action_uri_str, &action_uri);
+        hres = create_uri(action_uri, 0, &uri);
+    }else {
+        ERR("GetFormData failed: %08x\n", nsres);
+        hres = E_FAIL;
+    }
+    nsAString_Finish(&action_uri_str);
+    if(SUCCEEDED(hres)) {
+        window->readystate_locked++;
+        hres = submit_form(window, uri, post_stream);
+        window->readystate_locked--;
+        IUri_Release(uri);
+    }
+
+    IHTMLWindow2_Release(&window->base.IHTMLWindow2_iface);
+    if(post_stream)
+        nsIInputStream_Release(post_stream);
+    return hres;
 }
 
 static HRESULT WINAPI HTMLFormElement_reset(IHTMLFormElement *iface)
 {
     HTMLFormElement *This = impl_from_IHTMLFormElement(iface);
-    FIXME("(%p)->()\n", This);
-    return E_NOTIMPL;
+    nsresult nsres;
+
+    TRACE("(%p)->()\n", This);
+    nsres = nsIDOMHTMLFormElement_Reset(This->nsform);
+    if (NS_FAILED(nsres)) {
+        ERR("Reset failed: %08x\n", nsres);
+        return E_FAIL;
+    }
+
+    return S_OK;
 }
 
 static HRESULT WINAPI HTMLFormElement_put_length(IHTMLFormElement *iface, LONG v)
@@ -512,7 +581,7 @@ static HRESULT HTMLFormElement_get_dispid(HTMLDOMNode *iface,
 {
     HTMLFormElement *This = impl_from_HTMLDOMNode(iface);
     nsIDOMHTMLCollection *elements;
-    nsAString nsname, nsstr;
+    nsAString nsstr, name_str;
     UINT32 len, i;
     nsresult nsres;
     HRESULT hres = DISP_E_UNKNOWNNAME;
@@ -548,7 +617,6 @@ static HRESULT HTMLFormElement_get_dispid(HTMLDOMNode *iface,
         }
     }
 
-    nsAString_InitDepend(&nsname, nameW);
     nsAString_Init(&nsstr, NULL);
     for(i = 0; i < len; ++i) {
         nsIDOMNode *nsitem;
@@ -588,21 +656,22 @@ static HRESULT HTMLFormElement_get_dispid(HTMLDOMNode *iface,
         }
 
         /* compare by name attr */
-        nsres = nsIDOMHTMLElement_GetAttribute(nshtml_elem, &nsname, &nsstr);
+        nsres = get_elem_attr_value(nshtml_elem, nameW, &name_str, &str);
         nsIDOMHTMLElement_Release(nshtml_elem);
-        nsAString_GetData(&nsstr, &str);
-        if(!strcmpiW(str, name)) {
-            /* FIXME: using index for dispid */
-            *pid = MSHTML_DISPID_CUSTOM_MIN + i;
-            hres = S_OK;
-            break;
+        if(NS_SUCCEEDED(nsres)) {
+            if(!strcmpiW(str, name)) {
+                nsAString_Finish(&name_str);
+                /* FIXME: using index for dispid */
+                *pid = MSHTML_DISPID_CUSTOM_MIN + i;
+                hres = S_OK;
+                break;
+            }
+            nsAString_Finish(&name_str);
         }
     }
-    nsAString_Finish(&nsname);
+
     nsAString_Finish(&nsstr);
-
     nsIDOMHTMLCollection_Release(elements);
-
     return hres;
 }
 
@@ -629,12 +698,24 @@ static HRESULT HTMLFormElement_invoke(HTMLDOMNode *iface,
     return S_OK;
 }
 
+static HRESULT HTMLFormElement_handle_event(HTMLDOMNode *iface, eventid_t eid, nsIDOMEvent *event, BOOL *prevent_default)
+{
+    HTMLFormElement *This = impl_from_HTMLDOMNode(iface);
+
+    if(eid == EVENTID_SUBMIT) {
+        *prevent_default = TRUE;
+        return IHTMLFormElement_submit(&This->IHTMLFormElement_iface);
+    }
+
+    return HTMLElement_handle_event(&This->element.node, eid, event, prevent_default);
+}
+
 static const NodeImplVtbl HTMLFormElementImplVtbl = {
     HTMLFormElement_QI,
     HTMLElement_destructor,
     HTMLElement_cpc,
     HTMLElement_clone,
-    HTMLElement_handle_event,
+    HTMLFormElement_handle_event,
     HTMLElement_get_attr_col,
     NULL,
     NULL,

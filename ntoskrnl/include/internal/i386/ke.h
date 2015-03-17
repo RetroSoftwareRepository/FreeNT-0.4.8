@@ -504,6 +504,7 @@ VOID
 NTAPI
 KiDispatchExceptionFromTrapFrame(
     IN NTSTATUS Code,
+    IN ULONG Flags,
     IN ULONG_PTR Address,
     IN ULONG ParameterCount,
     IN ULONG_PTR Parameter1,
@@ -553,10 +554,11 @@ extern CHAR KiSystemCallExit2[];
 //
 // Returns a thread's FPU save area
 //
-PFX_SAVE_AREA
 FORCEINLINE
+PFX_SAVE_AREA
 KiGetThreadNpxArea(IN PKTHREAD Thread)
 {
+    ASSERT((ULONG_PTR)Thread->InitialStack % 16 == 0);
     return (PFX_SAVE_AREA)((ULONG_PTR)Thread->InitialStack - sizeof(FX_SAVE_AREA));
 }
 
@@ -614,38 +616,38 @@ Ke386SanitizeDr(IN PVOID DrAddress,
 //
 // Exception with no arguments
 //
-VOID
 FORCEINLINE
 DECLSPEC_NORETURN
+VOID
 KiDispatchException0Args(IN NTSTATUS Code,
                          IN ULONG_PTR Address,
                          IN PKTRAP_FRAME TrapFrame)
 {
     /* Helper for exceptions with no arguments */
-    KiDispatchExceptionFromTrapFrame(Code, Address, 0, 0, 0, 0, TrapFrame);
+    KiDispatchExceptionFromTrapFrame(Code, 0, Address, 0, 0, 0, 0, TrapFrame);
 }
 
 //
 // Exception with one argument
 //
-VOID
 FORCEINLINE
 DECLSPEC_NORETURN
+VOID
 KiDispatchException1Args(IN NTSTATUS Code,
                          IN ULONG_PTR Address,
                          IN ULONG P1,
                          IN PKTRAP_FRAME TrapFrame)
 {
     /* Helper for exceptions with no arguments */
-    KiDispatchExceptionFromTrapFrame(Code, Address, 1, P1, 0, 0, TrapFrame);
+    KiDispatchExceptionFromTrapFrame(Code, 0, Address, 1, P1, 0, 0, TrapFrame);
 }
 
 //
 // Exception with two arguments
 //
-VOID
 FORCEINLINE
 DECLSPEC_NORETURN
+VOID
 KiDispatchException2Args(IN NTSTATUS Code,
                          IN ULONG_PTR Address,
                          IN ULONG P1,
@@ -653,7 +655,7 @@ KiDispatchException2Args(IN NTSTATUS Code,
                          IN PKTRAP_FRAME TrapFrame)
 {
     /* Helper for exceptions with no arguments */
-    KiDispatchExceptionFromTrapFrame(Code, Address, 2, P1, P2, 0, TrapFrame);
+    KiDispatchExceptionFromTrapFrame(Code, 0, Address, 2, P1, P2, 0, TrapFrame);
 }
 
 //
@@ -676,8 +678,8 @@ KiDispatchException2Args(IN NTSTATUS Code,
      *
      */
 #ifdef __GNUC__
-NTSTATUS
 FORCEINLINE
+NTSTATUS
 KiSystemCallTrampoline(IN PVOID Handler,
                        IN PVOID Arguments,
                        IN ULONG StackBytes)
@@ -686,13 +688,13 @@ KiSystemCallTrampoline(IN PVOID Handler,
 
     __asm__ __volatile__
     (
-        "subl %1, %%esp\n"
-        "movl %%esp, %%edi\n"
-        "movl %2, %%esi\n"
-        "shrl $2, %1\n"
-        "rep movsd\n"
-        "call *%3\n"
-        "movl %%eax, %0\n"
+        "subl %1, %%esp\n\t"
+        "movl %%esp, %%edi\n\t"
+        "movl %2, %%esi\n\t"
+        "shrl $2, %1\n\t"
+        "rep movsd\n\t"
+        "call *%3\n\t"
+        "movl %%eax, %0"
         : "=r"(Result)
         : "c"(StackBytes),
           "d"(Arguments),
@@ -702,8 +704,8 @@ KiSystemCallTrampoline(IN PVOID Handler,
     return Result;
 }
 #elif defined(_MSC_VER)
-NTSTATUS
 FORCEINLINE
+NTSTATUS
 KiSystemCallTrampoline(IN PVOID Handler,
                        IN PVOID Arguments,
                        IN ULONG StackBytes)
@@ -729,8 +731,8 @@ KiSystemCallTrampoline(IN PVOID Handler,
 //
 // Checks for pending APCs
 //
-VOID
 FORCEINLINE
+VOID
 KiCheckForApcDelivery(IN PKTRAP_FRAME TrapFrame)
 {
     PKTHREAD Thread;
@@ -767,10 +769,11 @@ KiCheckForApcDelivery(IN PKTRAP_FRAME TrapFrame)
 // Converts a base thread to a GUI thread
 //
 #ifdef __GNUC__
-NTSTATUS
 FORCEINLINE
+NTSTATUS
 KiConvertToGuiThread(VOID)
 {
+    NTSTATUS NTAPI PsConvertToGuiThread(VOID);
     NTSTATUS Result;
     PVOID StackFrame;
 
@@ -798,7 +801,7 @@ KiConvertToGuiThread(VOID)
         "addl %%esp, %1\n\t"
         "movl %1, %%ebp"
         : "=a"(Result), "=r"(StackFrame)
-        :
+        : "p"(PsConvertToGuiThread)
         : "%esp", "%ecx", "%edx", "memory"
     );
     return Result;
@@ -814,26 +817,28 @@ KiConvertToGuiThread(VOID);
 //
 // Switches from boot loader to initial kernel stack
 //
-VOID
 FORCEINLINE
+VOID
 KiSwitchToBootStack(IN ULONG_PTR InitialStack)
 {
+    VOID NTAPI KiSystemStartupBootStack(VOID);
+
     /* We have to switch to a new stack before continuing kernel initialization */
 #ifdef __GNUC__
     __asm__
     (
-        "movl %0, %%esp\n"
-        "subl %1, %%esp\n"
-        "pushl %2\n"
-        "jmp _KiSystemStartupBootStack@0\n"
+        "movl %0, %%esp\n\t"
+        "subl %1, %%esp\n\t"
+        "pushl %2\n\t"
+        "jmp _KiSystemStartupBootStack@0"
         :
         : "c"(InitialStack),
           "i"(NPX_FRAME_LENGTH + KTRAP_FRAME_ALIGN + KTRAP_FRAME_LENGTH),
-          "i"(CR0_EM | CR0_TS | CR0_MP)
+          "i"(CR0_EM | CR0_TS | CR0_MP),
+          "p"(KiSystemStartupBootStack)
         : "%esp"
     );
 #elif defined(_MSC_VER)
-    VOID NTAPI KiSystemStartupBootStack(VOID);
     __asm
     {
         mov esp, InitialStack
@@ -849,15 +854,15 @@ KiSwitchToBootStack(IN ULONG_PTR InitialStack)
 //
 // Emits the iret instruction for C code
 //
+FORCEINLINE
 DECLSPEC_NORETURN
 VOID
-FORCEINLINE
 KiIret(VOID)
 {
 #if defined(__GNUC__)
     __asm__ __volatile__
     (
-        "iret\n"
+        "iret"
     );
 #elif defined(_MSC_VER)
     __asm
@@ -874,8 +879,8 @@ KiIret(VOID)
 // Normally this is done by the HAL, but on x86 as an optimization, the kernel
 // initiates the end by calling back into the HAL and exiting the trap here.
 //
-VOID
 FORCEINLINE
+VOID
 KiEndInterrupt(IN KIRQL Irql,
                IN PKTRAP_FRAME TrapFrame)
 {
@@ -890,8 +895,8 @@ KiEndInterrupt(IN KIRQL Irql,
 //
 // PERF Code
 //
-VOID
 FORCEINLINE
+VOID
 Ki386PerfEnd(VOID)
 {
     extern ULONGLONG BootCyclesEnd, BootCycles;

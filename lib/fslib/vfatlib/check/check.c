@@ -10,6 +10,8 @@
 #define NDEBUG
 #include <debug.h>
 
+#include "lfn.h"
+
 static DOS_FILE *root;
 
 /* get start field of a dir entry */
@@ -836,7 +838,7 @@ static int subdirs(DOS_FS *fs,DOS_FILE *parent,FDSC **cp)
 int scan_root(DOS_FS *fs)
 {
     DOS_FILE **chain;
-    int i;
+    ULONG i;
 
     root = NULL;
     chain = &root;

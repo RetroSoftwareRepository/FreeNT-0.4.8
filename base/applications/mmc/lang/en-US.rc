@@ -4,11 +4,10 @@ IDM_CONSOLE_SMALL MENU
 BEGIN
     POPUP "&File"
     BEGIN
-        MENUITEM "New\tStrg+N", IDM_FILE_NEW
+        MENUITEM "New\tCtrl+N", IDM_FILE_NEW
         MENUITEM SEPARATOR
         MENUITEM "E&xit\tAlt+F4", IDM_FILE_EXIT
     END
-
     POPUP "&Help"
     BEGIN
         MENUITEM "&About ReactOS Management Console...", IDM_HELP_ABOUT
@@ -19,16 +18,14 @@ IDM_CONSOLE_LARGE MENU
 BEGIN
     POPUP "&File"
     BEGIN
-        MENUITEM "New\tStrg+N", IDM_FILE_NEW
+        MENUITEM "New\tCtrl+N", IDM_FILE_NEW
         MENUITEM SEPARATOR
         MENUITEM "E&xit\tAlt+F4", IDM_FILE_EXIT
     END
-
     POPUP "&Windows"
     BEGIN
         MENUITEM "List", IDM_WINDOWS_LIST
     END
-
     POPUP "&Help"
     BEGIN
         MENUITEM "&About ReactOS Management Console...", IDM_HELP_ABOUT

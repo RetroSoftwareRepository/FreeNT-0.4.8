@@ -20,45 +20,11 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define NONAMELESSUNION
-
-#include <config.h>
-
-//#include <sys/types.h>
-//#include <fcntl.h>
-#ifdef HAVE_SYS_STAT_H
-# include <sys/stat.h>
-#endif
-#ifdef HAVE_SYS_MMAN_H
-#include <sys/mman.h>
-#endif
-//#include <limits.h>
-//#include <stdlib.h>
-//#include <string.h>
-#ifdef HAVE_UNISTD_H
-# include <unistd.h>
-#endif
-//#include <stdio.h>
-#include <assert.h>
-#include <stdarg.h>
+#include "dbghelp_private.h"
 
 #ifdef HAVE_ZLIB
 #include <zlib.h>
 #endif
-
-//#include "windef.h"
-//#include "winbase.h"
-//#include "winuser.h"
-//#include "ole2.h"
-//#include "oleauto.h"
-
-#ifndef DBGHELP_STATIC_LIB
-#include <winternl.h>
-#include <wine/debug.h>
-#endif
-
-#include "dbghelp_private.h"
-#include "image_private.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(dbghelp_dwarf);
 
@@ -547,7 +513,7 @@ static void dwarf2_fill_attr(const dwarf2_parse_context_t* ctx,
         break;
     
     case DW_FORM_ref8:
-        FIXME("Unhandled 64 bit support\n");
+        FIXME("Unhandled 64-bit support\n");
         break;
 
     case DW_FORM_sdata:
@@ -1442,6 +1408,9 @@ static struct symt* dwarf2_parse_udt_type(dwarf2_parse_context_t* ctx,
 
         switch (child->abbrev->tag)
         {
+        case DW_TAG_array_type:
+            dwarf2_parse_array_type(ctx, di);
+            break;
         case DW_TAG_member:
             /* FIXME: should I follow the sibling stuff ?? */
             dwarf2_parse_udt_member(ctx, child, (struct symt_udt*)di->symt);
@@ -1712,7 +1681,10 @@ static void dwarf2_parse_subprogram_label(dwarf2_subprogram_t* subpgm,
 
 static void dwarf2_parse_subprogram_block(dwarf2_subprogram_t* subpgm,
                                           struct symt_block* parent_block,
-					  dwarf2_debug_info_t* di);
+                      dwarf2_debug_info_t* di);
+
+static struct symt* dwarf2_parse_subroutine_type(dwarf2_parse_context_t* ctx,
+                                                 dwarf2_debug_info_t* di);
 
 static void dwarf2_parse_inlined_subroutine(dwarf2_subprogram_t* subpgm,
                                             struct symt_block* parent_block,
@@ -1802,6 +1774,12 @@ static void dwarf2_parse_subprogram_block(dwarf2_subprogram_t* subpgm,
             break;
         case DW_TAG_variable:
             dwarf2_parse_variable(subpgm, block, child);
+            break;
+        case DW_TAG_pointer_type:
+            dwarf2_parse_pointer_type(subpgm->ctx, di);
+            break;
+        case DW_TAG_subroutine_type:
+            dwarf2_parse_subroutine_type(subpgm->ctx, di);
             break;
         case DW_TAG_lexical_block:
             dwarf2_parse_subprogram_block(subpgm, block, child);
@@ -1933,6 +1911,9 @@ static struct symt* dwarf2_parse_subprogram(dwarf2_parse_context_t* ctx,
             break;
         case DW_TAG_inlined_subroutine:
             dwarf2_parse_inlined_subroutine(&subpgm, NULL, child);
+            break;
+        case DW_TAG_pointer_type:
+            dwarf2_parse_pointer_type(subpgm.ctx, di);
             break;
         case DW_TAG_subprogram:
             /* FIXME: likely a declaration (to be checked)
@@ -2400,7 +2381,17 @@ static BOOL dwarf2_parse_compilation_unit(const dwarf2_section_t* sections,
         }
         if (dwarf2_find_attribute(&ctx, di, DW_AT_stmt_list, &stmt_list))
         {
+#if defined(__REACTOS__) && defined(__clang__)
+            unsigned long stmt_list_val = stmt_list.u.uvalue;
+            if (stmt_list_val > module->module.BaseOfImage)
+            {
+                /* FIXME: Clang is recording this as an address, not an offset */
+                stmt_list_val -= module->module.BaseOfImage + sections[section_line].rva;
+            }
+            if (dwarf2_parse_line_numbers(sections, &ctx, comp_dir.u.string, stmt_list_val))
+#else
             if (dwarf2_parse_line_numbers(sections, &ctx, comp_dir.u.string, stmt_list.u.uvalue))
+#endif
                 module->module.LineNumbers = TRUE;
         }
         ret = TRUE;

@@ -8,6 +8,8 @@
 /* INCLUDES **************************************************************/
 
 #include "Mke2fs.h"
+
+#include <fmifs/fmifs.h>
 #include <debug.h>
 
 /* GLOBALS ***************************************************************/
@@ -985,16 +987,10 @@ clean_up:
     ext2_free_block_bitmap(&FileSys);
     ext2_free_inode_bitmap(&FileSys);
 
-    if (!bRet)
+    if(bLocked)
     {
         Ext2DisMountVolume(&FileSys);
-    }
-    else
-    {
-        if(bLocked)
-        {
-            Ext2UnLockVolume(&FileSys);
-        }
+        Ext2UnLockVolume(&FileSys);
     }
 
     Ext2CloseDevice(&FileSys);

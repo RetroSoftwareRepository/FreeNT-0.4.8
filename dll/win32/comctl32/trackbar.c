@@ -30,21 +30,6 @@
  * 
  */
 
-#include <stdarg.h>
-//#include <stdio.h>
-#include <stdlib.h>
-//#include <string.h>
-
-#include <windef.h>
-#include <winbase.h>
-#include <wingdi.h>
-#include <winuser.h>
-//#include "winnls.h"
-//#include "commctrl.h"
-#include <uxtheme.h>
-#include <vssym32.h>
-#include <wine/debug.h>
-
 #include "comctl32.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(trackbar);
@@ -612,7 +597,6 @@ TRACKBAR_DrawTics (const TRACKBAR_INFO *infoPtr, HDC hdc)
     }
 }
 
-#define POINT_COUNT 6
 static int
 TRACKBAR_FillThumb (const TRACKBAR_INFO *infoPtr, HDC hdc, HBRUSH hbrush)
 {
@@ -1526,11 +1510,13 @@ TRACKBAR_Create (HWND hwnd, const CREATESTRUCTW *lpcs)
                              hwnd, 0, 0, 0);
 
     	if (infoPtr->hwndToolTip) {
-            TTTOOLINFOW ti;	    
+            TTTOOLINFOW ti;
+            WCHAR wEmpty = 0;
             ZeroMemory (&ti, sizeof(ti));
             ti.cbSize   = sizeof(ti);
      	    ti.uFlags   = TTF_IDISHWND | TTF_TRACK | TTF_ABSOLUTE;
 	    ti.hwnd     = hwnd;
+            ti.lpszText = &wEmpty;
 
             SendMessageW (infoPtr->hwndToolTip, TTM_ADDTOOLW, 0, (LPARAM)&ti);
 	 }

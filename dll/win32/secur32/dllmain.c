@@ -7,8 +7,10 @@
  *                  Created 05/08/00
  */
 
-/* INCLUDES ******************************************************************/
 #include "precomp.h"
+
+VOID LsapInitLsaPort(VOID);
+VOID LsapCloseLsaPort(VOID);
 
 /* GLOBALS *******************************************************************/
 
@@ -30,9 +32,11 @@ DllMain(HINSTANCE hInstance,
             {
                 return FALSE;
             }
+            LsapInitLsaPort();
             break;
 
         case DLL_PROCESS_DETACH:
+            LsapCloseLsaPort();
             if (!RtlDestroyHeap(Secur32Heap))
             {
                 return FALSE;

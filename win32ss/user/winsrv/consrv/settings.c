@@ -1,7 +1,7 @@
 /*
  * COPYRIGHT:       See COPYING in the top level directory
  * PROJECT:         ReactOS Console Server DLL
- * FILE:            win32ss/user/winsrv/consrv/settings.c
+ * FILE:            consrv/settings.c
  * PURPOSE:         Console settings management
  * PROGRAMMERS:     Johannes Anderwald
  *                  Hermes Belusca-Maito (hermes.belusca@sfr.fr)
@@ -10,15 +10,11 @@
 /* INCLUDES *******************************************************************/
 
 #include "consrv.h"
-#include "include/conio.h"
-#include "include/term.h"
-#include "include/settings.h"
 
 #include <stdio.h> // for swprintf
 
 #define NDEBUG
 #include <debug.h>
-
 
 /* GLOBALS ********************************************************************/
 
@@ -160,7 +156,7 @@ ConSrvOpenUserSettings(DWORD ProcessId,
     TranslateConsoleName(szBuffer2, ConsoleTitle, MAX_PATH);
 
     /* Create the registry path */
-    wcsncat(szBuffer, szBuffer2, MAX_PATH);
+    wcsncat(szBuffer, szBuffer2, MAX_PATH - wcslen(szBuffer) - 1);
 
     /* Create or open the registry key */
     if (bCreate)
@@ -271,17 +267,17 @@ ConSrvReadUserSettings(IN OUT PCONSOLE_INFO ConsoleInfo,
         }
         else if (!wcscmp(szValueName, L"HistoryNoDup"))
         {
-            ConsoleInfo->HistoryNoDup = (BOOLEAN)Value;
+            ConsoleInfo->HistoryNoDup = !!Value;
             RetVal = TRUE;
         }
         else if (!wcscmp(szValueName, L"QuickEdit"))
         {
-            ConsoleInfo->QuickEdit = (BOOLEAN)Value;
+            ConsoleInfo->QuickEdit = !!Value;
             RetVal = TRUE;
         }
         else if (!wcscmp(szValueName, L"InsertMode"))
         {
-            ConsoleInfo->InsertMode = (BOOLEAN)Value;
+            ConsoleInfo->InsertMode = !!Value;
             RetVal = TRUE;
         }
         else if (!wcscmp(szValueName, L"ScreenBufferSize"))
@@ -355,7 +351,7 @@ do {                                                                            
          * or we are saving settings for a particular console, which differs
          * from the default ones.
          */
-        swprintf(szValueName, L"ColorTable%02d", i);
+        swprintf(szValueName, L"ColorTable%02u", i);
         SetConsoleSetting(szValueName, REG_DWORD, sizeof(DWORD), &ConsoleInfo->Colors[i], s_Colors[i]);
     }
 
@@ -408,7 +404,7 @@ ConSrvGetDefaultSettings(IN OUT PCONSOLE_INFO ConsoleInfo,
 
     ConsoleInfo->QuickEdit  = FALSE;
     ConsoleInfo->InsertMode = TRUE;
-    // ConsoleInfo->InputBufferSize;
+    // ConsoleInfo->InputBufferSize = 0;
 
     // Rule: ScreenBufferSize >= ConsoleSize
     ConsoleInfo->ScreenBufferSize.X = 80;
@@ -425,7 +421,7 @@ ConSrvGetDefaultSettings(IN OUT PCONSOLE_INFO ConsoleInfo,
 
     memcpy(ConsoleInfo->Colors, s_Colors, sizeof(s_Colors));
 
-    // ConsoleInfo->CodePage;
+    ConsoleInfo->CodePage = 0;
 
     ConsoleInfo->ConsoleTitle[0] = L'\0';
 
@@ -440,7 +436,11 @@ ConSrvGetDefaultSettings(IN OUT PCONSOLE_INFO ConsoleInfo,
     }
 }
 
-
+NTSTATUS NTAPI
+ConDrvChangeScreenBufferAttributes(IN PCONSOLE Console,
+                                   IN PTEXTMODE_SCREEN_BUFFER Buffer,
+                                   IN USHORT NewScreenAttrib,
+                                   IN USHORT NewPopupAttrib);
 /*
  * NOTE: This function explicitely references Console->ActiveBuffer.
  * It is possible that it should go into some frontend...
@@ -459,25 +459,9 @@ ConSrvApplyUserSettings(IN PCONSOLE Console,
     Console->QuickEdit  = ConsoleInfo->QuickEdit;
     Console->InsertMode = ConsoleInfo->InsertMode;
 
-    /*
-     * Apply foreground and background colors for both screen and popup
-     * and copy the new palette.
-     */
-    if (GetType(ActiveBuffer) == TEXTMODE_BUFFER)
-    {
-        PTEXTMODE_SCREEN_BUFFER Buffer = (PTEXTMODE_SCREEN_BUFFER)ActiveBuffer;
-
-        Buffer->ScreenDefaultAttrib = ConsoleInfo->ScreenAttrib;
-        Buffer->PopupDefaultAttrib  = ConsoleInfo->PopupAttrib;
-    }
-    else // if (Console->ActiveBuffer->Header.Type == GRAPHICS_BUFFER)
-    {
-    }
-
+    /* Copy the new console palette */
     // FIXME: Possible buffer overflow if s_colors is bigger than pConInfo->Colors.
     memcpy(Console->Colors, ConsoleInfo->Colors, sizeof(s_Colors));
-
-    // TODO: Really update the screen attributes as FillConsoleOutputAttribute does.
 
     /* Apply cursor size */
     ActiveBuffer->CursorInfo.bVisible = (ConsoleInfo->CursorSize != 0);
@@ -541,6 +525,12 @@ ConSrvApplyUserSettings(IN PCONSOLE Console,
 
             if (SizeChanged) TermResizeTerminal(Console);
         }
+
+        /* Apply foreground and background colors for both screen and popup */
+        ConDrvChangeScreenBufferAttributes(Console,
+                                           Buffer,
+                                           ConsoleInfo->ScreenAttrib,
+                                           ConsoleInfo->PopupAttrib);
     }
     else // if (GetType(ActiveBuffer) == GRAPHICS_BUFFER)
     {

@@ -101,6 +101,7 @@ SHCoCreateInstance(
 
 HPSXA        WINAPI SHCreatePropSheetExtArray(_In_ HKEY, _In_opt_ LPCWSTR, UINT);
 HPSXA        WINAPI SHCreatePropSheetExtArrayEx(HKEY,LPCWSTR,UINT,IDataObject*);
+HRESULT      WINAPI SHCreateQueryCancelAutoPlayMoniker(IMoniker**);
 
 HRESULT
 WINAPI
@@ -465,6 +466,8 @@ typedef struct
 #define FCIDM_SHVIEW_INSERT     0x701A
 #define FCIDM_SHVIEW_UNDO       0x701B
 #define FCIDM_SHVIEW_INSERTLINK 0x701C
+#define FCIDM_SHVIEW_COPYTO     0x701E
+#define FCIDM_SHVIEW_MOVETO     0x701F
 #define FCIDM_SHVIEW_SELECTALL  0x7021
 #define FCIDM_SHVIEW_INVERTSELECTION 0x7022
 
@@ -749,7 +752,7 @@ DECLARE_INTERFACE_(IShellFolderView, IUnknown)
     STDMETHOD(RefreshObject) (THIS_ _In_ PITEMID_CHILD pidl, _Out_ UINT *puItem) PURE;
     STDMETHOD(SetRedraw) (THIS_ BOOL bRedraw) PURE;
     STDMETHOD(GetSelectedCount) (THIS_ _Out_ UINT *puSelected) PURE;
-    STDMETHOD(GetSelectedObjects) (THIS_ _Outptr_result_buffer_(*puItems) PCITEMID_CHILD **pppidl, _Out_ UINT *puItems) PURE;
+    STDMETHOD(GetSelectedObjects) (THIS_ _Outptr_result_buffer_(*puItems) PCUITEMID_CHILD **pppidl, _Out_ UINT *puItems) PURE;
     STDMETHOD(IsDropOnSource) (THIS_ _In_opt_ IDropTarget *pDropTarget) PURE;
     STDMETHOD(GetDragPoint) (THIS_ _Out_ POINT *ppt) PURE;
     STDMETHOD(GetDropPoint) (THIS_ _Out_ POINT *ppt) PURE;
@@ -2305,39 +2308,6 @@ DECLARE_INTERFACE_(IDockingWindowSite, IOleWindow)
 #define IDockingWindowSite_GetBorderDW(p,a,b)            (p)->lpVtbl->GetBorderDW(p,a,b)
 #define IDockingWindowSite_RequestBorderSpaceDW(p,a,b)   (p)->lpVtbl->RequestBorderSpaceDW(p,a,b)
 #define IDockingWindowSite_SetBorderSpaceDW(p,a,b)       (p)->lpVtbl->SetBorderSpaceDW(p,a,b)
-#endif
-
-/*****************************************************************************
- * IShellTaskScheduler interface
- */
-#define REFTASKOWNERID REFGUID
-
-#define INTERFACE IShellTaskScheduler
-DECLARE_INTERFACE_(IShellTaskScheduler, IUnknown)
-{
-    // *** IUnknown methods ***
-    STDMETHOD(QueryInterface)(THIS_ REFIID riid, void **ppv) PURE;
-    STDMETHOD_(ULONG, AddRef)(THIS) PURE;
-    STDMETHOD_(ULONG, Release)(THIS) PURE;
-
-    // *** IShellTaskScheduler methods ***
-    STDMETHOD(AddTask)(THIS_ IRunnableTask *pTask, REFTASKOWNERID rtoid, DWORD_PTR lParam, DWORD dwPriority) PURE;
-    STDMETHOD(RemoveTasks)(THIS_ REFTASKOWNERID rtoid, DWORD_PTR lParam, BOOL fWaitIfRunning) PURE;
-    STDMETHOD_(UINT, CountTasks)(THIS_ REFTASKOWNERID rtoid) PURE;
-    STDMETHOD(Status)(THIS_ DWORD dwReleaseStatus, DWORD dwThreadTimeout) PURE;
-};
-#undef INTERFACE
-
-#if !defined(__cplusplus) || defined(CINTERFACE)
-/*** IUnknown methods ***/
-#define IShellTaskScheduler_QueryInterface(p,a,b)  (p)->lpVtbl->QueryInterface(p,a,b)
-#define IShellTaskScheduler_AddRef(p)              (p)->lpVtbl->AddRef(p)
-#define IShellTaskScheduler_Release(p)             (p)->lpVtbl->Release(p)
-/*** IShellTaskScheduler methods ***/
-#define IShellTaskScheduler_AddTask(p,a,b,c,d)     (p)->lpVtbl->AddTask(p,a,b,c,d)
-#define IShellTaskScheduler_RemoveTasks(p,a,b,c)   (p)->lpVtbl->RemoveTasks(p,a,b,c)
-#define IShellTaskScheduler_CountTasks(p,a)        (p)->lpVtbl->CountTasks(p,a)
-#define IShellTaskScheduler_Status(p,a,b)          (p)->lpVtbl->Status(p,a,b)
 #endif
 
 typedef void (CALLBACK *PFNASYNCICONTASKBALLBACK)(LPCITEMIDLIST pidl, LPVOID pvData, LPVOID pvHint, INT iIconIndex, INT iOpenIconIndex);

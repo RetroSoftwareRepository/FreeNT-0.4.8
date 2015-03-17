@@ -24,10 +24,9 @@
  * UPDATE HISTORY:
  *      04-04-2004  Created
  */
+
 #include "precomp.h"
 
-#define NDEBUG
-#include <debug.h>
 
 typedef struct _HWDEVINFO
 {
@@ -313,8 +312,8 @@ BuildDevicesList(IN PHARDWARE_PAGE_DATA hpd)
                     }
                     else
                     {
-                        DPRINT1("Unable to allocate memory for %d SP_DEVINFO_DATA structures!\n",
-                                ClassDevInfo->ItemCount + 1);
+                        ERR("Unable to allocate memory for %d SP_DEVINFO_DATA structures!\n",
+                            ClassDevInfo->ItemCount + 1);
                         break;
                     }
                 }
@@ -325,7 +324,7 @@ BuildDevicesList(IN PHARDWARE_PAGE_DATA hpd)
                                                         sizeof(HWDEVINFO));
                     if (ClassDevInfo->HwDevInfo == NULL)
                     {
-                        DPRINT1("Unable to allocate memory for a SP_DEVINFO_DATA structures!\n");
+                        ERR("Unable to allocate memory for a SP_DEVINFO_DATA structures!\n");
                         break;
                     }
                 }
@@ -1066,6 +1065,7 @@ DeviceCreateHardwarePageEx(IN HWND hWndParent,
                                  (LPARAM)hpd);
         if (hWnd != NULL)
         {
+            HeapFree(GetProcessHeap(), 0, hpd);
             return hWnd;
         }
         else

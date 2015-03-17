@@ -16,6 +16,8 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#include "res.h"
+
 #define WINE_FILEDESCRIPTION_STR "Wine Messaging API"
 #define WINE_FILENAME_STR "mapi32.dll"
 #define WINE_FILEVERSION 1,0,0,0
@@ -24,6 +26,10 @@
 #define WINE_PRODUCTVERSION_STR "1.0.0.0"
 
 #include "wine/wine_common_ver.rc"
+
+
+/* UTF-8 */
+#pragma code_page(65001)
 
 #ifdef LANGUAGE_DA_DK
     #include "lang/Da.rc"
@@ -34,11 +40,6 @@
 #ifdef LANGUAGE_EN_US
     #include "lang/En.rc"
 #endif
-#ifdef LANGUAGE_PL_PL
-    #include "lang/Pl.rc"
-#endif
-
-/* UTF-8 */
 #ifdef LANGUAGE_ES_ES
     #include "lang/Es.rc"
 #endif
@@ -69,6 +70,9 @@
 #ifdef LANGUAGE_NO_NO
     #include "lang/No.rc"
 #endif
+#ifdef LANGUAGE_PL_PL
+    #include "lang/Pl.rc"
+#endif
 #ifdef LANGUAGE_PT_PT
     #include "lang/Pt.rc"
 #endif
@@ -80,6 +84,12 @@
 #endif
 #ifdef LANGUAGE_SL_SI
     #include "lang/Si.rc"
+#endif
+#ifdef LANGUAGE_SQ_AL
+    #include "lang/Sq.rc"
+#endif
+#ifdef LANGUAGE_TR_TR
+    #include "lang/Tr.rc"
 #endif
 #ifdef LANGUAGE_UK_UA
     #include "lang/Uk.rc"

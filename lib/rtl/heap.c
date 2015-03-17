@@ -1,4 +1,5 @@
-/* COPYRIGHT:       See COPYING in the top level directory
+/*
+ * COPYRIGHT:       See COPYING in the top level directory
  * PROJECT:         ReactOS system libraries
  * FILE:            lib/rtl/heap.c
  * PURPOSE:         RTL Heap backend allocator
@@ -46,7 +47,8 @@ UCHAR RtlpBitsClearLow[] =
     4,0,1,0,2,0,1,0,3,0,1,0,2,0,1,0
 };
 
-UCHAR FORCEINLINE
+FORCEINLINE
+UCHAR
 RtlpFindLeastSetBit(ULONG Bits)
 {
     if (Bits & 0xFFFF)
@@ -203,7 +205,8 @@ RtlpInitializeHeap(OUT PHEAP Heap,
     return STATUS_SUCCESS;
 }
 
-VOID FORCEINLINE
+FORCEINLINE
+VOID
 RtlpSetFreeListsBit(PHEAP Heap,
                     PHEAP_FREE_ENTRY FreeEntry)
 {
@@ -222,7 +225,8 @@ RtlpSetFreeListsBit(PHEAP Heap,
     Heap->u.FreeListsInUseBytes[Index] |= Bit;
 }
 
-VOID FORCEINLINE
+FORCEINLINE
+VOID
 RtlpClearFreeListsBit(PHEAP Heap,
                       PHEAP_FREE_ENTRY FreeEntry)
 {

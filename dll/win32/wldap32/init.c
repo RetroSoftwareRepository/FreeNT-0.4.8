@@ -18,22 +18,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <config.h>
-//#include "wine/port.h"
-
-//#include <stdio.h>
-//#include <stdarg.h>
-#ifdef HAVE_LDAP_H
-#include <ldap.h>
-#endif
-
-#include <windef.h>
-//#include "winbase.h"
-//#include "winnls.h"
-
 #include "winldap_private.h"
-//#include "wldap32.h"
-#include <wine/debug.h>
 
 #ifdef HAVE_LDAP
 /* Should eventually be determined by the algorithm documented on MSDN. */
@@ -113,13 +98,12 @@ oom:
 }
 
 /* Determine if a URL starts with a known LDAP scheme */
-static int has_ldap_scheme( char *url )
+static BOOL has_ldap_scheme( char *url )
 {
-    if (!strncasecmp( url, "ldap://", 7 ) || 
-        !strncasecmp( url, "ldaps://", 8 ) ||
-        !strncasecmp( url, "ldapi://", 8 ) ||
-        !strncasecmp( url, "cldap://", 8 )) return 1;
-    return 0;
+    return !strncasecmp( url, "ldap://", 7 )  ||
+           !strncasecmp( url, "ldaps://", 8 ) ||
+           !strncasecmp( url, "ldapi://", 8 ) ||
+           !strncasecmp( url, "cldap://", 8 );
 }
 
 /* Flatten an array of hostnames into a space separated string of URLs.
@@ -204,8 +188,6 @@ static char *urlify_hostnames( const char *scheme, char *hostnames, ULONG port )
     return url;
 }
 #endif
-
-WINE_DEFAULT_DEBUG_CHANNEL(wldap32);
 
 /***********************************************************************
  *      cldap_openA     (WLDAP32.@)

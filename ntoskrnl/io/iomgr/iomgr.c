@@ -30,7 +30,6 @@ IopTimerDispatch(
 POBJECT_TYPE IoDeviceObjectType = NULL;
 POBJECT_TYPE IoFileObjectType = NULL;
 extern POBJECT_TYPE IoControllerObjectType;
-extern UNICODE_STRING NtSystemRoot;
 BOOLEAN IoCountOperations = TRUE;
 ULONG IoReadOperationCount = 0;
 LARGE_INTEGER IoReadTransferCount = {{0, 0}};
@@ -54,6 +53,7 @@ extern KSPIN_LOCK ShutdownListLock;
 extern POBJECT_TYPE IoAdapterObjectType;
 extern ERESOURCE IopDatabaseResource;
 ERESOURCE IopSecurityResource;
+extern ERESOURCE IopDriverLoadResource;
 extern KGUARDED_MUTEX PnpNotifyListLock;
 extern LIST_ENTRY IopDiskFileSystemQueueHead;
 extern LIST_ENTRY IopCdRomFileSystemQueueHead;
@@ -110,7 +110,7 @@ IopInitLookasideLists(VOID)
                                     IOC_TAG1,
                                     32,
                                     &ExSystemLookasideListHead);
-    
+
     /* Initialize the Lookaside List for Large IRPs */
     ExInitializeSystemLookasideList(&IoLargeIrpLookaside,
                                     NonPagedPool,
@@ -137,11 +137,11 @@ IopInitLookasideLists(VOID)
                                     &ExSystemLookasideListHead);
 
     /* Allocate the global lookaside list buffer */
-    CurrentList = ExAllocatePoolWithTag(NonPagedPool, 
+    CurrentList = ExAllocatePoolWithTag(NonPagedPool,
                                         4 * KeNumberProcessors *
                                         sizeof(GENERAL_LOOKASIDE),
                                         TAG_IO);
-    
+
     /* Loop all processors */
     for (i = 0; i < KeNumberProcessors; i++)
     {
@@ -165,13 +165,13 @@ IopInitLookasideLists(VOID)
                                             &ExSystemLookasideListHead);
             Prcb->PPLookasideList[LookasideCompletionList].P = CurrentList;
             CurrentList++;
-            
+
         }
         else
         {
             Prcb->PPLookasideList[LookasideCompletionList].P = &IoCompletionPacketLookaside;
         }
-        
+
         /* Set the Large IRP List */
         Prcb->PPLookasideList[LookasideLargeIrpList].L = &IoLargeIrpLookaside;
         if (CurrentList)
@@ -185,7 +185,7 @@ IopInitLookasideLists(VOID)
                                             &ExSystemLookasideListHead);
             Prcb->PPLookasideList[LookasideLargeIrpList].P = CurrentList;
             CurrentList++;
-            
+
         }
         else
         {
@@ -205,7 +205,7 @@ IopInitLookasideLists(VOID)
                                             &ExSystemLookasideListHead);
             Prcb->PPLookasideList[LookasideSmallIrpList].P = CurrentList;
             CurrentList++;
-            
+
         }
         else
         {
@@ -223,10 +223,10 @@ IopInitLookasideLists(VOID)
                                             TAG_MDL,
                                             128,
                                             &ExSystemLookasideListHead);
-            
+
             Prcb->PPLookasideList[LookasideMdlList].P = CurrentList;
             CurrentList++;
-            
+
         }
         else
         {
@@ -272,7 +272,7 @@ IopCreateObjectTypes(VOID)
     ObjectTypeInitializer.DefaultNonPagedPoolCharge = sizeof(DEVICE_OBJECT);
     ObjectTypeInitializer.DeleteProcedure = IopDeleteDevice;
     ObjectTypeInitializer.ParseProcedure = IopParseDevice;
-    ObjectTypeInitializer.SecurityProcedure = IopSecurityFile;
+    ObjectTypeInitializer.SecurityProcedure = IopGetSetSecurityObject;
     ObjectTypeInitializer.CaseInsensitive = TRUE;
     if (!NT_SUCCESS(ObCreateObjectType(&Name,
                                        &ObjectTypeInitializer,
@@ -311,7 +311,7 @@ IopCreateObjectTypes(VOID)
     ObjectTypeInitializer.GenericMapping = IopFileMapping;
     ObjectTypeInitializer.CloseProcedure = IopCloseFile;
     ObjectTypeInitializer.DeleteProcedure = IopDeleteFile;
-    ObjectTypeInitializer.SecurityProcedure = IopSecurityFile;
+    ObjectTypeInitializer.SecurityProcedure = IopGetSetSecurityObject;
     ObjectTypeInitializer.QueryNameProcedure = IopQueryNameFile;
     ObjectTypeInitializer.ParseProcedure = IopParseFile;
     ObjectTypeInitializer.UseDefaultObject = FALSE;
@@ -332,6 +332,7 @@ IopCreateRootDirectories()
     OBJECT_ATTRIBUTES ObjectAttributes;
     UNICODE_STRING DirName;
     HANDLE Handle;
+    NTSTATUS Status;
 
     /* Create the '\Driver' object directory */
     RtlInitUnicodeString(&DirName, L"\\Driver");
@@ -340,9 +341,14 @@ IopCreateRootDirectories()
                                OBJ_PERMANENT,
                                NULL,
                                NULL);
-    if (!NT_SUCCESS(NtCreateDirectoryObject(&Handle,
-                                            DIRECTORY_ALL_ACCESS,
-                                            &ObjectAttributes))) return FALSE;
+    Status = NtCreateDirectoryObject(&Handle,
+                                     DIRECTORY_ALL_ACCESS,
+                                     &ObjectAttributes);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("Failed to create \\Driver directory: 0x%lx\n", Status);
+        return FALSE;
+    }
     NtClose(Handle);
 
     /* Create the '\FileSystem' object directory */
@@ -352,9 +358,31 @@ IopCreateRootDirectories()
                                OBJ_PERMANENT,
                                NULL,
                                NULL);
-    if (!NT_SUCCESS(NtCreateDirectoryObject(&Handle,
-                                            DIRECTORY_ALL_ACCESS,
-                                            &ObjectAttributes))) return FALSE;
+    Status = NtCreateDirectoryObject(&Handle,
+                                     DIRECTORY_ALL_ACCESS,
+                                     &ObjectAttributes);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("Failed to create \\FileSystem directory: 0x%lx\n", Status);
+        return FALSE;
+    }
+    NtClose(Handle);
+
+    /* Create the '\FileSystem' object directory */
+    RtlInitUnicodeString(&DirName, L"\\FileSystem\\Filters");
+    InitializeObjectAttributes(&ObjectAttributes,
+                               &DirName,
+                               OBJ_PERMANENT,
+                               NULL,
+                               NULL);
+    Status = NtCreateDirectoryObject(&Handle,
+                                     DIRECTORY_ALL_ACCESS,
+                                     &ObjectAttributes);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("Failed to create \\FileSystem\\Filters directory: 0x%lx\n", Status);
+        return FALSE;
+    }
     NtClose(Handle);
 
     /* Return success */
@@ -448,8 +476,9 @@ IoInitSystem(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     IopInitLookasideLists();
 
     /* Initialize all locks and lists */
-    ExInitializeResource(&IopDatabaseResource);
-    ExInitializeResource(&IopSecurityResource);
+    ExInitializeResourceLite(&IopDatabaseResource);
+    ExInitializeResourceLite(&IopSecurityResource);
+    ExInitializeResourceLite(&IopDriverLoadResource);
     KeInitializeGuardedMutex(&PnpNotifyListLock);
     InitializeListHead(&IopDiskFileSystemQueueHead);
     InitializeListHead(&IopCdRomFileSystemQueueHead);

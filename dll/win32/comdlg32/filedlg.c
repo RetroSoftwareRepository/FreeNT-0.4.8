@@ -45,45 +45,9 @@
  *
  */
 
-// RegGetValueW is supported by Win2k3 SP1 but headers need Win Vista
-#undef _WIN32_WINNT
-#define _WIN32_WINNT 0x0600
-
-#define WIN32_NO_STATUS
-
-#include <config.h>
-//#include "wine/port.h"
-
-//#include <ctype.h>
-//#include <stdlib.h>
-#include <stdarg.h>
-//#include <stdio.h>
-//#include <string.h>
-
-#define COBJMACROS
-#define NONAMELESSUNION
-#define NONAMELESSSTRUCT
-
-#include <windef.h>
-#include <winbase.h>
-#include <winternl.h>
-//#include "winnls.h"
-#include <winreg.h>
-#include <wingdi.h>
-#include <winuser.h>
-#include <commdlg.h>
-#include <dlgs.h>
 #include "cdlg.h"
-#include <cderr.h>
-//#include "shellapi.h"
-//#include "shlobj.h"
-#include "filedlgbrowser.h"
-#include <shlwapi.h>
 
-#include <wine/unicode.h>
-#include <wine/debug.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(commdlg);
+#include <shellapi.h>
 
 #define UNIMPLEMENTED_FLAGS \
 (OFN_DONTADDTORECENT |\
@@ -467,7 +431,7 @@ static BOOL GetFileDialog95A(LPOPENFILENAMEA ofn,UINT iDlgType)
       ret = GetFileName95(&fodInfos);
       break;
     default :
-      ret = 0;
+      ret = FALSE;
   }
 
   if (lpstrSavDir)
@@ -559,7 +523,7 @@ static BOOL GetFileDialog95W(LPOPENFILENAMEW ofn,UINT iDlgType)
       ret = GetFileName95(&fodInfos);
       break;
   default :
-      ret = 0;
+      ret = FALSE;
   }
 
   if (lpstrSavDir)
@@ -1437,9 +1401,9 @@ static inline BOOL filename_is_edit( const FileOpenDlgInfos *info )
  */
 static LRESULT FILEDLG95_InitControls(HWND hwnd)
 {
-  int win2000plus = 0;
-  int win98plus   = 0;
-  int handledPath = FALSE;
+  BOOL win2000plus = FALSE;
+  BOOL win98plus   = FALSE;
+  BOOL handledPath = FALSE;
   OSVERSIONINFOW osVi;
   static const WCHAR szwSlash[] = { '\\', 0 };
   static const WCHAR szwStar[] = { '*',0 };
@@ -1590,12 +1554,11 @@ static LRESULT FILEDLG95_InitControls(HWND hwnd)
   }
 
   /* 2. (All platforms) If initdir is not null, then use it */
-  if ((handledPath == FALSE) && (fodInfos->initdir!=NULL) &&
-                                (*fodInfos->initdir!=0x00))
+  if (!handledPath && fodInfos->initdir && *fodInfos->initdir)
   {
       /* Work out the proper path as supplied one might be relative          */
       /* (Here because supplying '.' as dir browses to My Computer)          */
-      if (handledPath==FALSE) {
+      if (!handledPath) {
           WCHAR tmpBuf[MAX_PATH];
           WCHAR tmpBuf2[MAX_PATH];
           WCHAR *nameBit;
@@ -1630,8 +1593,7 @@ static LRESULT FILEDLG95_InitControls(HWND hwnd)
       }
   }
 
-  if ((handledPath == FALSE) && ((fodInfos->initdir==NULL) ||
-                                 (*fodInfos->initdir==0x00)))
+  if (!handledPath && (!fodInfos->initdir || !*fodInfos->initdir))
   {
       /* 3. All except w2k+: if filename contains a path use it */
       if (!win2000plus && fodInfos->filename &&
@@ -1663,7 +1625,7 @@ static LRESULT FILEDLG95_InitControls(HWND hwnd)
       }
 
       /* 4. Win2000+: Recently used */
-      if (handledPath == FALSE && win2000plus) {
+      if (!handledPath && win2000plus) {
           fodInfos->initdir = MemAlloc(MAX_PATH * sizeof(WCHAR));
           fodInfos->initdir[0] = '\0';
 
@@ -1679,8 +1641,7 @@ static LRESULT FILEDLG95_InitControls(HWND hwnd)
 
       /* 5. win98+ and win2000+ if any files of specified filter types in
             current directory, use it                                      */
-      if ( win98plus && handledPath == FALSE &&
-           fodInfos->filter && *fodInfos->filter) {
+      if (win98plus && !handledPath && fodInfos->filter && *fodInfos->filter) {
 
          LPCWSTR lpstrPos = fodInfos->filter;
          WIN32_FIND_DATAW FindFileData;
@@ -1719,7 +1680,7 @@ static LRESULT FILEDLG95_InitControls(HWND hwnd)
       }
 
       /* 6. Win98+ and 2000+: Use personal files dir, others use current dir */
-      if (handledPath == FALSE && (win2000plus || win98plus)) {
+      if (!handledPath && (win2000plus || win98plus)) {
           fodInfos->initdir = MemAlloc(MAX_PATH*sizeof(WCHAR));
 
           if(!COMDLG32_SHGetFolderPathW(hwnd, CSIDL_PERSONAL, 0, 0, fodInfos->initdir))
@@ -1736,7 +1697,7 @@ static LRESULT FILEDLG95_InitControls(HWND hwnd)
             TRACE("No initial dir specified, using personal files dir of %s\n", debugstr_w(fodInfos->initdir));
           }
           handledPath = TRUE;
-      } else if (handledPath==FALSE) {
+      } else if (!handledPath) {
           fodInfos->initdir = MemAlloc(MAX_PATH*sizeof(WCHAR));
           GetCurrentDirectoryW(MAX_PATH, fodInfos->initdir);
           handledPath = TRUE;
@@ -1815,7 +1776,7 @@ static LRESULT FILEDLG95_ResizeControls(HWND hwnd, WPARAM wParam, LPARAM lParam)
   }
   else
   {
-    /* Resize the height, if open as read only checkbox ad help button are
+    /* Resize the height; if opened as read-only, checkbox and help button are
      * hidden and we are not using a custom template nor a customDialog
      */
     if ( (fodInfos->ofnInfos->Flags & OFN_HIDEREADONLY) &&

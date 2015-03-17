@@ -25,24 +25,17 @@
  *	force feedback
  */
 
-#include <config.h>
-//#include "wine/port.h"
+#include "dinput_private.h"
 
-//#include <stdarg.h>
-//#include <stdio.h>
-//#include <string.h>
-//#include <time.h>
 #ifdef HAVE_UNISTD_H
 # include <unistd.h>
 #endif
 #ifdef HAVE_SYS_TIME_H
 # include <sys/time.h>
 #endif
-//#include <fcntl.h>
 #ifdef HAVE_SYS_IOCTL_H
 # include <sys/ioctl.h>
 #endif
-//#include <errno.h>
 #ifdef HAVE_LINUX_IOCTL_H
 # include <linux/ioctl.h>
 #endif
@@ -53,19 +46,6 @@
 #ifdef HAVE_SYS_POLL_H
 # include <sys/poll.h>
 #endif
-
-#include <wine/debug.h>
-//#include "wine/unicode.h"
-//#include "windef.h"
-//#include "winbase.h"
-//#include "winerror.h"
-//#include "dinput.h"
-
-//#include "dinput_private.h"
-#include "device_private.h"
-//#include "joystick_private.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(dinput);
 
 #ifdef HAVE_LINUX_22_JOYSTICK_API
 
@@ -107,10 +87,7 @@ static inline JoystickImpl *impl_from_IDirectInputDevice8W(IDirectInputDevice8W 
     return CONTAINING_RECORD(CONTAINING_RECORD(CONTAINING_RECORD(iface, IDirectInputDeviceImpl, IDirectInputDevice8W_iface),
            JoystickGenericImpl, base), JoystickImpl, generic);
 }
-static inline IDirectInputDevice8A *IDirectInputDevice8A_from_impl(JoystickImpl *This)
-{
-    return &This->generic.base.IDirectInputDevice8A_iface;
-}
+
 static inline IDirectInputDevice8W *IDirectInputDevice8W_from_impl(JoystickImpl *This)
 {
     return &This->generic.base.IDirectInputDevice8W_iface;
@@ -169,6 +146,9 @@ static INT find_joystick_devices(void)
             WARN("ioctl(%s,JSIOCGAXES) failed: %s, defauting to 2\n", joydev.device, strerror(errno));
             joydev.axis_count = 2;
         }
+#else
+        WARN("reading number of joystick axes unsupported in this platform, defaulting to 2\n");
+        joydev.axis_count = 2;
 #endif
 #ifdef JSIOCGBUTTONS
         if (ioctl(fd, JSIOCGBUTTONS, &joydev.button_count) < 0)
@@ -176,11 +156,14 @@ static INT find_joystick_devices(void)
             WARN("ioctl(%s,JSIOCGBUTTONS) failed: %s, defauting to 2\n", joydev.device, strerror(errno));
             joydev.button_count = 2;
         }
+#else
+        WARN("reading number of joystick buttons unsupported in this platform, defaulting to 2\n");
+        joydev.button_count = 2;
 #endif
 
         if (ioctl(fd, JSIOCGAXMAP, axes_map) < 0)
         {
-            WARN("ioctl(%s,JSIOCGNAME) failed: %s\n", joydev.device, strerror(errno));
+            WARN("ioctl(%s,JSIOCGAXMAP) failed: %s\n", joydev.device, strerror(errno));
             joydev.dev_axes_map = NULL;
         }
         else
@@ -689,8 +672,7 @@ static void joy_polldev(LPDIRECTINPUTDEVICE8A iface)
             }
         }
         if (inst_id >= 0)
-            queue_event(iface, inst_id,
-                        value, jse.time, This->generic.base.dinput->evsequence++);
+            queue_event(iface, inst_id, value, GetCurrentTime(), This->generic.base.dinput->evsequence++);
     }
 }
 

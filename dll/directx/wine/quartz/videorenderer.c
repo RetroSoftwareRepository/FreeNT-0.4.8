@@ -18,29 +18,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <config.h>
-
-#define NONAMELESSSTRUCT
-#define NONAMELESSUNION
 #include "quartz_private.h"
-#include "pin.h"
-
-//#include "uuids.h"
-//#include "vfwmsgs.h"
-//#include "amvideo.h"
-//#include "windef.h"
-//#include "winbase.h"
-//#include "dshow.h"
-//#include "evcode.h"
-//#include "strmif.h"
-//#include "ddraw.h"
-#include <dvdmedia.h>
-
-//#include <assert.h>
-#include <wine/unicode.h>
-#include <wine/debug.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(quartz);
 
 typedef struct VideoRendererImpl
 {
@@ -374,11 +352,11 @@ static HRESULT WINAPI VideoRenderer_EndFlush(BaseRenderer* iface)
     if (This->renderer.pMediaSample) {
         ResetEvent(This->hEvent);
         LeaveCriticalSection(iface->pInputPin->pin.pCritSec);
-        LeaveCriticalSection(&iface->csRenderLock);
         LeaveCriticalSection(&iface->filter.csFilter);
+        LeaveCriticalSection(&iface->csRenderLock);
         WaitForSingleObject(This->hEvent, INFINITE);
-        EnterCriticalSection(&iface->filter.csFilter);
         EnterCriticalSection(&iface->csRenderLock);
+        EnterCriticalSection(&iface->filter.csFilter);
         EnterCriticalSection(iface->pInputPin->pin.pCritSec);
     }
     if (This->renderer.filter.state == State_Paused) {
@@ -1031,7 +1009,7 @@ HRESULT VideoRenderer_create(IUnknown *pUnkOuter, void **ppv)
     pVideoRenderer->IUnknown_inner.lpVtbl = &IInner_VTable;
     pVideoRenderer->IAMFilterMiscFlags_iface.lpVtbl = &IAMFilterMiscFlags_Vtbl;
 
-    pVideoRenderer->init = 0;
+    pVideoRenderer->init = FALSE;
     ZeroMemory(&pVideoRenderer->SourceRect, sizeof(RECT));
     ZeroMemory(&pVideoRenderer->DestRect, sizeof(RECT));
     ZeroMemory(&pVideoRenderer->WindowPos, sizeof(RECT));

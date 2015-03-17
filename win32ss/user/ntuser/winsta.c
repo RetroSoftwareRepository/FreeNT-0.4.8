@@ -2,7 +2,7 @@
  *  COPYRIGHT:        See COPYING in the top level directory
  *  PROJECT:          ReactOS Win32k subsystem
  *  PURPOSE:          Window stations
- *  FILE:             subsystems/win32/win32k/ntuser/winsta.c
+ *  FILE:             win32ss/user/ntuser/winsta.c
  *  PROGRAMER:        Casper S. Hornstrup (chorns@users.sourceforge.net)
  *  TODO:             The process window station is created on
  *                    the first USER32/GDI32 call not related
@@ -95,42 +95,51 @@ UserCreateWinstaDirectory()
 
 /* OBJECT CALLBACKS  **********************************************************/
 
-VOID APIENTRY
-IntWinStaObjectDelete(PWIN32_DELETEMETHOD_PARAMETERS Parameters)
+NTSTATUS
+APIENTRY
+IntWinStaObjectDelete(
+    _In_ PVOID Parameters)
 {
-   PWINSTATION_OBJECT WinSta = (PWINSTATION_OBJECT)Parameters->Object;
+    PWIN32_DELETEMETHOD_PARAMETERS DeleteParameters = Parameters;
+   PWINSTATION_OBJECT WinSta = (PWINSTATION_OBJECT)DeleteParameters->Object;
 
    TRACE("Deleting window station (0x%p)\n", WinSta);
+
+   WinSta->Flags |= WSS_DYING;
 
    UserEmptyClipboardData(WinSta);
 
    RtlDestroyAtomTable(WinSta->AtomTable);
 
    RtlFreeUnicodeString(&WinSta->Name);
+
+   return STATUS_SUCCESS;
 }
 
 NTSTATUS
 APIENTRY
-IntWinStaObjectParse(PWIN32_PARSEMETHOD_PARAMETERS Parameters)
+IntWinStaObjectParse(
+    _In_ PVOID Parameters)
 {
-    PUNICODE_STRING RemainingName = Parameters->RemainingName;
+    PWIN32_PARSEMETHOD_PARAMETERS ParseParameters = Parameters;
+    PUNICODE_STRING RemainingName = ParseParameters->RemainingName;
 
     /* Assume we don't find anything */
-    *Parameters->Object = NULL;
+    *ParseParameters->Object = NULL;
 
     /* Check for an empty name */
     if (!RemainingName->Length)
     {
         /* Make sure this is a window station, can't parse a desktop now */
-        if (Parameters->ObjectType != ExWindowStationObjectType)
+        if (ParseParameters->ObjectType != ExWindowStationObjectType)
         {
             /* Fail */
             return STATUS_OBJECT_TYPE_MISMATCH;
         }
 
         /* Reference the window station and return */
-        ObReferenceObject(Parameters->ParseObject);
-        *Parameters->Object = Parameters->ParseObject;
+        ObReferenceObject(ParseParameters->ParseObject);
+        *ParseParameters->Object = ParseParameters->ParseObject;
         return STATUS_SUCCESS;
     }
 
@@ -153,19 +162,19 @@ IntWinStaObjectParse(PWIN32_PARSEMETHOD_PARAMETERS Parameters)
     /*
      * Check if we are parsing a desktop.
      */
-    if (Parameters->ObjectType == ExDesktopObjectType)
+    if (ParseParameters->ObjectType == ExDesktopObjectType)
     {
         /* Then call the desktop parse routine */
-        return IntDesktopObjectParse(Parameters->ParseObject,
-                                     Parameters->ObjectType,
-                                     Parameters->AccessState,
-                                     Parameters->AccessMode,
-                                     Parameters->Attributes,
-                                     Parameters->CompleteName,
+        return IntDesktopObjectParse(ParseParameters->ParseObject,
+                                     ParseParameters->ObjectType,
+                                     ParseParameters->AccessState,
+                                     ParseParameters->AccessMode,
+                                     ParseParameters->Attributes,
+                                     ParseParameters->CompleteName,
                                      RemainingName,
-                                     Parameters->Context,
-                                     Parameters->SecurityQos,
-                                     Parameters->Object);
+                                     ParseParameters->Context,
+                                     ParseParameters->SecurityQos,
+                                     ParseParameters->Object);
     }
 
     /* Should hopefully never get here */
@@ -174,13 +183,15 @@ IntWinStaObjectParse(PWIN32_PARSEMETHOD_PARAMETERS Parameters)
 
 NTSTATUS
 NTAPI
-IntWinstaOkToClose(PWIN32_OKAYTOCLOSEMETHOD_PARAMETERS Parameters)
+IntWinstaOkToClose(
+    _In_ PVOID Parameters)
 {
+    PWIN32_OKAYTOCLOSEMETHOD_PARAMETERS OkToCloseParameters = Parameters;
     PPROCESSINFO ppi;
 
     ppi = PsGetCurrentProcessWin32Process();
 
-    if(ppi && (Parameters->Handle == ppi->hwinsta))
+    if(ppi && (OkToCloseParameters->Handle == ppi->hwinsta))
     {
         return STATUS_ACCESS_DENIED;
     }
@@ -205,7 +216,8 @@ IntValidateWindowStationHandle(
    HWINSTA WindowStation,
    KPROCESSOR_MODE AccessMode,
    ACCESS_MASK DesiredAccess,
-   PWINSTATION_OBJECT *Object)
+   PWINSTATION_OBJECT *Object,
+   POBJECT_HANDLE_INFORMATION pObjectHandleInfo)
 {
    NTSTATUS Status;
 
@@ -222,7 +234,7 @@ IntValidateWindowStationHandle(
                ExWindowStationObjectType,
                AccessMode,
                (PVOID*)Object,
-               NULL);
+               pObjectHandleInfo);
 
    if (!NT_SUCCESS(Status))
       SetLastNtError(Status);
@@ -282,6 +294,9 @@ co_IntInitializeDesktopGraphics(VOID)
    /* Setup the cursor */
    co_IntLoadDefaultCursors();
 
+   /* Setup the icons */
+   co_IntSetWndIcons();
+
    /* Show the desktop */
    pdesk = IntGetActiveDesktop();
    ASSERT(pdesk);
@@ -308,6 +323,29 @@ IntGetScreenDC(VOID)
 {
    return ScreenDeviceContext;
 }
+
+BOOL FASTCALL
+CheckWinstaAttributeAccess(ACCESS_MASK DesiredAccess)
+{
+   PPROCESSINFO ppi = PsGetCurrentProcessWin32Process();
+   if ( gpidLogon != PsGetCurrentProcessId() )
+   {
+      if (!(ppi->W32PF_flags & W32PF_IOWINSTA))
+      {
+         ERR("Requires Interactive Window Station\n");
+         EngSetLastError(ERROR_REQUIRES_INTERACTIVE_WINDOWSTATION);
+         return FALSE;
+      }
+      if (!RtlAreAllAccessesGranted(ppi->amwinsta, DesiredAccess))
+      {
+         ERR("Access Denied\n");
+         EngSetLastError(ERROR_ACCESS_DENIED);
+         return FALSE;
+      }
+   }
+   return TRUE;
+}
+
 
 /* PUBLIC FUNCTIONS ***********************************************************/
 
@@ -442,19 +480,23 @@ NtUserCreateWindowStation(
    /* Initialize the window station */
    RtlZeroMemory(WindowStationObject, sizeof(WINSTATION_OBJECT));
 
-   KeInitializeSpinLock(&WindowStationObject->Lock);
    InitializeListHead(&WindowStationObject->DesktopListHead);
    Status = RtlCreateAtomTable(37, &WindowStationObject->AtomTable);
-   WindowStationObject->SystemMenuTemplate = (HANDLE)0;
    WindowStationObject->Name = WindowStationName;
    WindowStationObject->dwSessionId = NtCurrentPeb()->SessionId;
 
    if (InputWindowStation == NULL)
    {
-       TRACE("Initializeing input window station\n");
+      ERR("Initializeing input window station\n");
       InputWindowStation = WindowStationObject;
 
+      WindowStationObject->Flags &= ~WSS_NOIO;
+
       InitCursorImpl();
+   }
+   else
+   {
+      WindowStationObject->Flags |= WSS_NOIO;
    }
 
    TRACE("NtUserCreateWindowStation created object %p with name %wZ handle %p\n",
@@ -556,7 +598,8 @@ NtUserCloseWindowStation(
                hWinSta,
                KernelMode,
                0,
-               &Object);
+               &Object,
+               0);
 
    if (!NT_SUCCESS(Status))
    {
@@ -626,11 +669,24 @@ NtUserGetObjectInformation(
    DWORD nLength,
    PDWORD nLengthNeeded)
 {
-   PWINSTATION_OBJECT WinStaObject = NULL;
+   PWINSTATION_OBJECT WinStaObject;
    PDESKTOP DesktopObject = NULL;
    NTSTATUS Status;
    PVOID pvData = NULL;
    DWORD nDataSize = 0;
+
+   _SEH2_TRY
+   {
+      if (nLengthNeeded)
+         ProbeForWrite(nLengthNeeded, sizeof(*nLengthNeeded), 1);
+      ProbeForWrite(pvInformation, nLength, 1);
+   }
+   _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+   {
+      SetLastNtError(_SEH2_GetExceptionCode());
+      return FALSE;
+   }
+   _SEH2_END;
 
    /* try windowstation */
    TRACE("Trying to open window station %p\n", hObject);
@@ -646,6 +702,7 @@ NtUserGetObjectInformation(
    {
       /* try desktop */
       TRACE("Trying to open desktop %p\n", hObject);
+      WinStaObject = NULL;
       Status = IntValidateDesktopHandle(
                   hObject,
                   UserMode,
@@ -656,8 +713,7 @@ NtUserGetObjectInformation(
    if (!NT_SUCCESS(Status))
    {
       ERR("Failed: 0x%x\n", Status);
-      SetLastNtError(Status);
-      return FALSE;
+      goto Exit;
    }
 
    TRACE("WinSta or Desktop opened!!\n");
@@ -714,16 +770,27 @@ NtUserGetObjectInformation(
          break;
    }
 
-   /* try to copy data to caller */
-   if (Status == STATUS_SUCCESS)
+Exit:
+   if (Status == STATUS_SUCCESS && nLength < nDataSize)
+      Status = STATUS_BUFFER_TOO_SMALL;
+
+   _SEH2_TRY
    {
-      TRACE("Trying to copy data to caller (len = %lu, len needed = %lu)\n", nLength, nDataSize);
-      *nLengthNeeded = nDataSize;
-      if (nLength >= nDataSize)
-         Status = MmCopyToCaller(pvInformation, pvData, nDataSize);
-      else
-         Status = STATUS_BUFFER_TOO_SMALL;
+      if (nLengthNeeded)
+         *nLengthNeeded = nDataSize;
+
+      /* try to copy data to caller */
+      if (Status == STATUS_SUCCESS)
+      {
+         TRACE("Trying to copy data to caller (len = %lu, len needed = %lu)\n", nLength, nDataSize);
+         RtlCopyMemory(pvInformation, pvData, nDataSize);
+      }
    }
+   _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+   {
+       Status = _SEH2_GetExceptionCode();
+   }
+   _SEH2_END;
 
    /* release objects */
    if (WinStaObject != NULL)
@@ -822,6 +889,7 @@ UserSetProcessWindowStation(HWINSTA hWindowStation)
     PPROCESSINFO ppi;
     NTSTATUS Status;
     HWINSTA hwinstaOld;
+    OBJECT_HANDLE_INFORMATION ObjectHandleInfo;
     PWINSTATION_OBJECT NewWinSta = NULL, OldWinSta;
 
     ppi = PsGetCurrentProcessWin32Process();
@@ -832,7 +900,8 @@ UserSetProcessWindowStation(HWINSTA hWindowStation)
         Status = IntValidateWindowStationHandle( hWindowStation,
                                                  KernelMode,
                                                  0,
-                                                 &NewWinSta);
+                                                 &NewWinSta,
+                                                 &ObjectHandleInfo);
        if (!NT_SUCCESS(Status))
        {
           TRACE("Validation of window station handle (%p) failed\n",
@@ -865,7 +934,26 @@ UserSetProcessWindowStation(HWINSTA hWindowStation)
 
    ppi->prpwinsta = NewWinSta;
    ppi->hwinsta = hWindowStation;
+   ppi->amwinsta = hWindowStation != NULL ? ObjectHandleInfo.GrantedAccess : 0;
+   TRACE("WS : Granted Access 0x%08lx\n",ppi->amwinsta);
 
+   if (RtlAreAllAccessesGranted(ppi->amwinsta, WINSTA_READSCREEN))
+   {
+      ppi->W32PF_flags |= W32PF_READSCREENACCESSGRANTED;
+   }
+   else
+   {
+      ppi->W32PF_flags &= ~W32PF_READSCREENACCESSGRANTED;
+   }
+
+   if (NewWinSta && !(NewWinSta->Flags & WSS_NOIO) )
+   {
+      ppi->W32PF_flags |= W32PF_IOWINSTA;
+   }
+   else // Might be closed if the handle is null.
+   {
+      ppi->W32PF_flags &= ~W32PF_IOWINSTA;
+   }
    return TRUE;
 }
 
@@ -917,7 +1005,7 @@ NtUserLockWindowStation(HWINSTA hWindowStation)
    TRACE("About to set process window station with handle (%p)\n",
          hWindowStation);
 
-   if(PsGetCurrentProcessWin32Process() != LogonProcess)
+   if (gpidLogon != PsGetCurrentProcessId())
    {
       ERR("Unauthorized process attempted to lock the window station!\n");
       EngSetLastError(ERROR_ACCESS_DENIED);
@@ -928,7 +1016,8 @@ NtUserLockWindowStation(HWINSTA hWindowStation)
                hWindowStation,
                KernelMode,
                0,
-               &Object);
+               &Object,
+               0);
    if (!NT_SUCCESS(Status))
    {
       TRACE("Validation of window station handle (%p) failed\n",
@@ -962,7 +1051,7 @@ NtUserUnlockWindowStation(HWINSTA hWindowStation)
    TRACE("About to set process window station with handle (%p)\n",
          hWindowStation);
 
-   if(PsGetCurrentProcessWin32Process() != LogonProcess)
+   if (gpidLogon != PsGetCurrentProcessId())
    {
       ERR("Unauthorized process attempted to unlock the window station!\n");
       EngSetLastError(ERROR_ACCESS_DENIED);
@@ -973,7 +1062,8 @@ NtUserUnlockWindowStation(HWINSTA hWindowStation)
                hWindowStation,
                KernelMode,
                0,
-               &Object);
+               &Object,
+               0);
    if (!NT_SUCCESS(Status))
    {
       TRACE("Validation of window station handle (%p) failed\n",
@@ -1044,10 +1134,11 @@ BuildWindowStationNameList(
       /* Need a larger buffer, check how large exactly */
       Status = ZwQueryDirectoryObject(DirectoryHandle, NULL, 0, FALSE, TRUE, &Context,
                                       &ReturnLength);
-      if (STATUS_BUFFER_TOO_SMALL == Status)
+      if (!NT_SUCCESS(Status))
       {
+         ERR("ZwQueryDirectoryObject failed\n");
          ObDereferenceObject(DirectoryHandle);
-         return STATUS_NO_MEMORY;
+         return Status;
       }
 
       BufferSize = ReturnLength;
@@ -1172,24 +1263,22 @@ BuildDesktopNameList(
 {
    NTSTATUS Status;
    PWINSTATION_OBJECT WindowStation;
-   KIRQL OldLevel;
    PLIST_ENTRY DesktopEntry;
    PDESKTOP DesktopObject;
    DWORD EntryCount;
    ULONG ReturnLength;
    WCHAR NullWchar;
-   PUNICODE_STRING DesktopName;
+   UNICODE_STRING DesktopName;
 
    Status = IntValidateWindowStationHandle(hWindowStation,
                                            KernelMode,
                                            0,
-                                           &WindowStation);
+                                           &WindowStation,
+                                           0);
    if (! NT_SUCCESS(Status))
    {
       return Status;
    }
-
-   KeAcquireSpinLock(&WindowStation->Lock, &OldLevel);
 
    /*
     * Count the required size of buffer.
@@ -1201,8 +1290,8 @@ BuildDesktopNameList(
          DesktopEntry = DesktopEntry->Flink)
    {
       DesktopObject = CONTAINING_RECORD(DesktopEntry, DESKTOP, ListEntry);
-      DesktopName = GET_DESKTOP_NAME(DesktopObject);
-      if (DesktopName) ReturnLength += DesktopName->Length + sizeof(WCHAR);
+      RtlInitUnicodeString(&DesktopName, DesktopObject->pDeskInfo->szDesktopName);
+      ReturnLength += DesktopName.Length + sizeof(WCHAR);
       EntryCount++;
    }
    TRACE("Required size: %lu Entry count: %lu\n", ReturnLength, EntryCount);
@@ -1211,7 +1300,6 @@ BuildDesktopNameList(
       Status = MmCopyToCaller(pRequiredSize, &ReturnLength, sizeof(ULONG));
       if (! NT_SUCCESS(Status))
       {
-         KeReleaseSpinLock(&WindowStation->Lock, OldLevel);
          ObDereferenceObject(WindowStation);
          return STATUS_BUFFER_TOO_SMALL;
       }
@@ -1222,7 +1310,6 @@ BuildDesktopNameList(
     */
    if (dwSize < ReturnLength)
    {
-      KeReleaseSpinLock(&WindowStation->Lock, OldLevel);
       ObDereferenceObject(WindowStation);
       return STATUS_BUFFER_TOO_SMALL;
    }
@@ -1233,7 +1320,6 @@ BuildDesktopNameList(
    Status = MmCopyToCaller(lpBuffer, &EntryCount, sizeof(DWORD));
    if (! NT_SUCCESS(Status))
    {
-      KeReleaseSpinLock(&WindowStation->Lock, OldLevel);
       ObDereferenceObject(WindowStation);
       return Status;
    }
@@ -1245,22 +1331,17 @@ BuildDesktopNameList(
          DesktopEntry = DesktopEntry->Flink)
    {
       DesktopObject = CONTAINING_RECORD(DesktopEntry, DESKTOP, ListEntry);
-      _PRAGMA_WARNING_SUPPRESS(__WARNING_DEREF_NULL_PTR)
-      DesktopName = GET_DESKTOP_NAME(DesktopObject);/// @todo Don't mess around with the object headers!
-      if (!DesktopName) continue;
-
-      Status = MmCopyToCaller(lpBuffer, DesktopName->Buffer, DesktopName->Length);
+      RtlInitUnicodeString(&DesktopName, DesktopObject->pDeskInfo->szDesktopName);
+      Status = MmCopyToCaller(lpBuffer, DesktopName.Buffer, DesktopName.Length);
       if (! NT_SUCCESS(Status))
       {
-         KeReleaseSpinLock(&WindowStation->Lock, OldLevel);
          ObDereferenceObject(WindowStation);
          return Status;
       }
-      lpBuffer = (PVOID) ((PCHAR)lpBuffer + DesktopName->Length);
+      lpBuffer = (PVOID) ((PCHAR)lpBuffer + DesktopName.Length);
       Status = MmCopyToCaller(lpBuffer, &NullWchar, sizeof(WCHAR));
       if (! NT_SUCCESS(Status))
       {
-         KeReleaseSpinLock(&WindowStation->Lock, OldLevel);
          ObDereferenceObject(WindowStation);
          return Status;
       }
@@ -1268,11 +1349,9 @@ BuildDesktopNameList(
    }
 
    /*
-    * Clean up
+    * Clean up and return
     */
-   KeReleaseSpinLock(&WindowStation->Lock, OldLevel);
    ObDereferenceObject(WindowStation);
-
    return STATUS_SUCCESS;
 }
 
@@ -1321,12 +1400,12 @@ NtUserBuildNameList(
 BOOL APIENTRY
 NtUserSetLogonNotifyWindow(HWND hWnd)
 {
-    if(LogonProcess != PsGetCurrentProcessWin32Process())
+    if (gpidLogon != PsGetCurrentProcessId())
     {
         return FALSE;
     }
 
-    if(!IntIsWindow(hWnd))
+    if (!IntIsWindow(hWnd))
     {
         return FALSE;
     }
@@ -1358,5 +1437,76 @@ NtUserLockWorkStation(VOID)
 
    return ret;
 }
+
+BOOL APIENTRY
+NtUserSetWindowStationUser(
+   HWINSTA hWindowStation,
+   PLUID pluid,
+   PSID psid,
+   DWORD size)
+{
+   NTSTATUS Status;
+   PWINSTATION_OBJECT WindowStation = NULL;
+   BOOL Ret = FALSE;
+
+   UserEnterExclusive();
+
+   if (gpidLogon != PsGetCurrentProcessId())
+   {
+       EngSetLastError(ERROR_ACCESS_DENIED);
+       goto Leave;
+   }
+
+   Status = IntValidateWindowStationHandle(hWindowStation,
+                                           KernelMode,
+                                           0,
+                                           &WindowStation,
+                                           0);
+   if (!NT_SUCCESS(Status))
+   {
+      goto Leave;
+   }
+
+   if (WindowStation->psidUser)
+   {
+      ExFreePoolWithTag(WindowStation->psidUser, USERTAG_SECURITY);
+   }
+
+   WindowStation->psidUser = ExAllocatePoolWithTag(PagedPool, size, USERTAG_SECURITY);
+   if (WindowStation->psidUser == NULL)
+   {
+      EngSetLastError(ERROR_OUTOFMEMORY);
+      goto Leave;
+   }
+
+   _SEH2_TRY
+   {
+      ProbeForRead( psid, size, 1);
+      ProbeForRead( pluid, sizeof(LUID), 1);
+
+      RtlCopyMemory(WindowStation->psidUser, psid, size);
+      WindowStation->luidUser = *pluid;
+   }
+   _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+   {
+      Status = _SEH2_GetExceptionCode();
+   }
+   _SEH2_END;
+
+   if (!NT_SUCCESS(Status))
+   {
+      ExFreePoolWithTag(WindowStation->psidUser, 0);
+      WindowStation->psidUser = 0;
+      goto Leave;
+   }
+
+   Ret = TRUE;
+
+Leave:
+   if (WindowStation) ObDereferenceObject(WindowStation);
+   UserLeave();
+   return Ret;
+}
+
 
 /* EOF */

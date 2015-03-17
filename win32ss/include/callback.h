@@ -13,7 +13,10 @@
 #define USER32_CALLBACK_GETCHARSETINFO        (9)
 #define USER32_CALLBACK_COPYIMAGE             (10)
 #define USER32_CALLBACK_SETWNDICONS           (11)
-#define USER32_CALLBACK_MAXIMUM               (11)
+#define USER32_CALLBACK_DELIVERUSERAPC        (12)
+#define USER32_CALLBACK_DDEPOST               (13)
+#define USER32_CALLBACK_DDEGET                (14)
+#define USER32_CALLBACK_MAXIMUM               (14)
 
 typedef struct _WINDOWPROC_CALLBACK_ARGUMENTS
 {
@@ -54,6 +57,7 @@ typedef struct _HOOKPROC_CALLBACK_ARGUMENTS
   INT Mod;
   ULONG_PTR offPfn;
   BOOLEAN Ansi;
+  LRESULT Result;
   WCHAR ModuleName[512];
 } HOOKPROC_CALLBACK_ARGUMENTS, *PHOOKPROC_CALLBACK_ARGUMENTS;
 
@@ -75,11 +79,14 @@ typedef struct _EVENTPROC_CALLBACK_ARGUMENTS
   DWORD dwEventThread;
   DWORD dwmsEventTime;
   WINEVENTPROC Proc;
+  INT Mod;
+  ULONG_PTR offPfn;
 } EVENTPROC_CALLBACK_ARGUMENTS, *PEVENTPROC_CALLBACK_ARGUMENTS;
 
 typedef struct _LOADMENU_CALLBACK_ARGUMENTS
 {
   HINSTANCE hModule;
+  LPCWSTR InterSource;
   WCHAR MenuName[1];
 } LOADMENU_CALLBACK_ARGUMENTS, *PLOADMENU_CALLBACK_ARGUMENTS;
 
@@ -108,9 +115,23 @@ typedef struct _GET_CHARSET_INFO
 
 typedef struct _SETWNDICONS_CALLBACK_ARGUMENTS
 {
-    HICON hIconSmWindows;
+    HICON hIconSample;
+    HICON hIconHand;
+    HICON hIconQuestion;
+    HICON hIconBang;
+    HICON hIconNote;
     HICON hIconWindows;
+    HICON hIconSmWindows;
 } SETWNDICONS_CALLBACK_ARGUMENTS, *PSETWNDICONS_CALLBACK_ARGUMENTS;
+
+typedef struct _DDEPOSTGET_CALLBACK_ARGUMENTS
+{
+    INT Type;
+    MSG;
+    int size;
+    PVOID pvData;
+    BYTE buffer[1];
+} DDEPOSTGET_CALLBACK_ARGUMENTS, *PDDEPOSTGET_CALLBACK_ARGUMENTS;
 
 NTSTATUS WINAPI
 User32CallCopyImageFromKernel(PVOID Arguments, ULONG ArgumentLength);
@@ -136,4 +157,10 @@ NTSTATUS WINAPI
 User32CallClientLoadLibraryFromKernel(PVOID Arguments, ULONG ArgumentLength);
 NTSTATUS WINAPI
 User32CallGetCharsetInfo(PVOID Arguments, ULONG ArgumentLength);
+NTSTATUS WINAPI
+User32DeliverUserAPC(PVOID Arguments, ULONG ArgumentLength);
+NTSTATUS WINAPI
+User32CallDDEPostFromKernel(PVOID Arguments, ULONG ArgumentLength);
+NTSTATUS WINAPI
+User32CallDDEGetFromKernel(PVOID Arguments, ULONG ArgumentLength);
 #endif /* __INCLUDE_USER32_CALLBACK_H */

@@ -9,12 +9,13 @@
 /* INCLUDES *****************************************************************/
 
 #include <ntdll.h>
+
 #define NDEBUG
 #include <debug.h>
 
 /* GLOBALS *******************************************************************/
 
-PVOID LdrpManifestProberRoutine;
+PLDR_MANIFEST_PROBER_ROUTINE LdrpManifestProberRoutine;
 ULONG LdrpNormalSnap;
 
 /* FUNCTIONS *****************************************************************/
@@ -710,7 +711,7 @@ LdrpWalkImportDescriptor(IN LPWSTR DllPath OPTIONAL,
     if (!NT_SUCCESS(Status))
     {
         /* Exit */
-        DbgPrintEx(51, // DPFLTR_SXS_ID
+        DbgPrintEx(DPFLTR_SXS_ID,
                    DPFLTR_WARNING_LEVEL,
                    "LDR: RtlGetActiveActivationContext() failed; ntstatus = "
                    "0x%08lx\n",

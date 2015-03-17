@@ -22,15 +22,7 @@
  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-
-#include "glheader.h"
-#include "colormac.h"
-#include "context.h"
-#include "fog.h"
-#include "macros.h"
-#include "mtypes.h"
-
-
+#include <precomp.h>
 
 void GLAPIENTRY
 _mesa_Fogf(GLenum pname, GLfloat param)
@@ -206,7 +198,6 @@ void _mesa_init_fog( struct gl_context * ctx )
    ctx->Fog.Density = 1.0;
    ctx->Fog.Start = 0.0;
    ctx->Fog.End = 1.0;
-   ctx->Fog.ColorSumEnabled = GL_FALSE;
    ctx->Fog.FogCoordinateSource = GL_FRAGMENT_DEPTH_EXT;
    ctx->Fog._Scale = 1.0f;
    ctx->Fog.FogDistanceMode = GL_EYE_PLANE_ABSOLUTE_NV;

@@ -29,8 +29,10 @@
 
 #include "netapi32.h"
 
-WINE_DEFAULT_DEBUG_CHANNEL(netapi32);
+#include <ndk/kefuncs.h>
+#include <ndk/obfuncs.h>
 
+WINE_DEFAULT_DEBUG_CHANNEL(netapi32);
 
 typedef struct _ENUM_CONTEXT
 {
@@ -66,10 +68,76 @@ DeltaTimeToSeconds(LARGE_INTEGER DeltaTime)
 
 
 static
-ULONG
-GetAccountFlags(ULONG AccountControl)
+NTSTATUS
+GetAllowedWorldAce(IN PACL Acl,
+                   OUT PACCESS_ALLOWED_ACE *Ace)
 {
+    SID_IDENTIFIER_AUTHORITY WorldAuthority = {SECURITY_WORLD_SID_AUTHORITY};
+    ULONG WorldSid[sizeof(SID) / sizeof(ULONG) + SID_MAX_SUB_AUTHORITIES];
+    ACL_SIZE_INFORMATION AclSize;
+    PVOID LocalAce = NULL;
+    ULONG i;
+    NTSTATUS Status;
+
+    *Ace = NULL;
+
+    RtlInitializeSid((PSID)WorldSid,
+                     &WorldAuthority,
+                     1);
+    *(RtlSubAuthoritySid((PSID)WorldSid, 0)) = SECURITY_WORLD_RID;
+
+    Status = RtlQueryInformationAcl(Acl,
+                                    &AclSize,
+                                    sizeof(AclSize),
+                                    AclSizeInformation);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    for (i = 0; i < AclSize.AceCount; i++)
+    {
+        Status = RtlGetAce(Acl, i, &LocalAce);
+        if (!NT_SUCCESS(Status))
+            return Status;
+
+        if (((PACE_HEADER)LocalAce)->AceType != ACCESS_ALLOWED_ACE_TYPE)
+            continue;
+
+        if (RtlEqualSid((PSID)WorldSid,
+                        (PSID)&((PACCESS_ALLOWED_ACE)LocalAce)->SidStart))
+        {
+            *Ace = (PACCESS_ALLOWED_ACE)LocalAce;
+            return STATUS_SUCCESS;
+        }
+    }
+
+    return STATUS_SUCCESS;
+}
+
+
+static
+ULONG
+GetAccountFlags(ULONG AccountControl,
+                PACL Dacl)
+{
+    PACCESS_ALLOWED_ACE Ace = NULL;
     ULONG Flags = UF_SCRIPT;
+    NTSTATUS Status;
+
+    if (Dacl != NULL)
+    {
+        Status = GetAllowedWorldAce(Dacl, &Ace);
+        if (NT_SUCCESS(Status))
+        {
+            if (Ace == NULL)
+            {
+                Flags |= UF_PASSWD_CANT_CHANGE;
+            }
+            else if ((Ace->Mask & USER_CHANGE_PASSWORD) == 0)
+            {
+                Flags |= UF_PASSWD_CANT_CHANGE;
+            }
+        }
+    }
 
     if (AccountControl & USER_ACCOUNT_DISABLED)
         Flags |= UF_ACCOUNTDISABLE;
@@ -79,8 +147,6 @@ GetAccountFlags(ULONG AccountControl)
 
     if (AccountControl & USER_PASSWORD_NOT_REQUIRED)
         Flags |= UF_PASSWD_NOTREQD;
-
-//    UF_PASSWD_CANT_CHANGE
 
     if (AccountControl & USER_ACCOUNT_AUTO_LOCKED)
         Flags |= UF_LOCKOUT;
@@ -185,1091 +251,103 @@ GetPasswordAge(IN PLARGE_INTEGER PasswordLastSet)
 
 
 static
-NET_API_STATUS
-BuildUserInfoBuffer(PUSER_ALL_INFORMATION UserInfo,
-                    DWORD level,
-                    ULONG RelativeId,
-                    LPVOID *Buffer)
+VOID
+ChangeUserDacl(IN PACL Dacl,
+               IN ULONG Flags)
 {
-    UNICODE_STRING LogonServer = RTL_CONSTANT_STRING(L"\\\\*");
-    LPVOID LocalBuffer = NULL;
-    PUSER_INFO_0 UserInfo0;
-    PUSER_INFO_1 UserInfo1;
-    PUSER_INFO_2 UserInfo2;
-    PUSER_INFO_3 UserInfo3;
-    PUSER_INFO_4 UserInfo4;
-    PUSER_INFO_10 UserInfo10;
-    PUSER_INFO_11 UserInfo11;
-    PUSER_INFO_20 UserInfo20;
-    PUSER_INFO_23 UserInfo23;
-    LPWSTR Ptr;
-    ULONG Size = 0;
-    NET_API_STATUS ApiStatus = NERR_Success;
+    PACCESS_ALLOWED_ACE Ace = NULL;
+    NTSTATUS Status;
 
-    *Buffer = NULL;
+    if (Dacl == NULL)
+        return;
 
-    switch (level)
+    Status = GetAllowedWorldAce(Dacl, &Ace);
+    if (!NT_SUCCESS(Status))
+        return;
+
+    if (Flags & UF_PASSWD_CANT_CHANGE)
+        Ace->Mask &= ~USER_CHANGE_PASSWORD;
+    else
+        Ace->Mask |= USER_CHANGE_PASSWORD;
+}
+
+
+static
+NET_API_STATUS
+GetUserDacl(IN SAM_HANDLE UserHandle,
+            OUT PACL *Dacl)
+{
+    PSECURITY_DESCRIPTOR SecurityDescriptor = NULL;
+    PACL SamDacl;
+    PACL LocalDacl;
+    BOOLEAN Defaulted;
+    BOOLEAN Present;
+    ACL_SIZE_INFORMATION AclSize;
+    NET_API_STATUS ApiStatus;
+    NTSTATUS Status;
+
+    TRACE("(%p %p)\n", UserHandle, Dacl);
+
+    *Dacl = NULL;
+
+    Status = SamQuerySecurityObject(UserHandle,
+                                    DACL_SECURITY_INFORMATION,
+                                    &SecurityDescriptor);
+    if (!NT_SUCCESS(Status))
     {
-        case 0:
-            Size = sizeof(USER_INFO_0) +
-                   UserInfo->UserName.Length + sizeof(WCHAR);
-            break;
-
-        case 1:
-            Size = sizeof(USER_INFO_1) +
-                   UserInfo->UserName.Length + sizeof(WCHAR);
-
-            if (UserInfo->HomeDirectory.Length > 0)
-                Size += UserInfo->HomeDirectory.Length + sizeof(WCHAR);
-
-            if (UserInfo->AdminComment.Length > 0)
-                Size += UserInfo->AdminComment.Length + sizeof(WCHAR);
-
-            if (UserInfo->ScriptPath.Length > 0)
-                Size += UserInfo->ScriptPath.Length + sizeof(WCHAR);
-            break;
-
-        case 2:
-            Size = sizeof(USER_INFO_2) +
-                   UserInfo->UserName.Length + sizeof(WCHAR);
-
-            if (UserInfo->HomeDirectory.Length > 0)
-                Size += UserInfo->HomeDirectory.Length + sizeof(WCHAR);
-
-            if (UserInfo->AdminComment.Length > 0)
-                Size += UserInfo->AdminComment.Length + sizeof(WCHAR);
-
-            if (UserInfo->ScriptPath.Length > 0)
-                Size += UserInfo->ScriptPath.Length + sizeof(WCHAR);
-
-            if (UserInfo->FullName.Length > 0)
-                Size += UserInfo->FullName.Length + sizeof(WCHAR);
-
-            if (UserInfo->UserComment.Length > 0)
-                Size += UserInfo->UserComment.Length + sizeof(WCHAR);
-
-            if (UserInfo->Parameters.Length > 0)
-                Size += UserInfo->Parameters.Length + sizeof(WCHAR);
-
-            if (UserInfo->WorkStations.Length > 0)
-                Size += UserInfo->WorkStations.Length + sizeof(WCHAR);
-
-            if (UserInfo->LogonHours.UnitsPerWeek > 0)
-                Size += (((ULONG)UserInfo->LogonHours.UnitsPerWeek) + 7) / 8;
-
-            if (LogonServer.Length > 0)
-                Size += LogonServer.Length + sizeof(WCHAR);
-            break;
-
-        case 3:
-            Size = sizeof(USER_INFO_3) +
-                   UserInfo->UserName.Length + sizeof(WCHAR);
-
-            if (UserInfo->HomeDirectory.Length > 0)
-                Size += UserInfo->HomeDirectory.Length + sizeof(WCHAR);
-
-            if (UserInfo->AdminComment.Length > 0)
-                Size += UserInfo->AdminComment.Length + sizeof(WCHAR);
-
-            if (UserInfo->ScriptPath.Length > 0)
-                Size += UserInfo->ScriptPath.Length + sizeof(WCHAR);
-
-            if (UserInfo->FullName.Length > 0)
-                Size += UserInfo->FullName.Length + sizeof(WCHAR);
-
-            if (UserInfo->UserComment.Length > 0)
-                Size += UserInfo->UserComment.Length + sizeof(WCHAR);
-
-            if (UserInfo->Parameters.Length > 0)
-                Size += UserInfo->Parameters.Length + sizeof(WCHAR);
-
-            if (UserInfo->WorkStations.Length > 0)
-                Size += UserInfo->WorkStations.Length + sizeof(WCHAR);
-
-            if (UserInfo->LogonHours.UnitsPerWeek > 0)
-                Size += (((ULONG)UserInfo->LogonHours.UnitsPerWeek) + 7) / 8;
-
-            if (LogonServer.Length > 0)
-                Size += LogonServer.Length + sizeof(WCHAR);
-
-            if (UserInfo->ProfilePath.Length > 0)
-                Size += UserInfo->ProfilePath.Length + sizeof(WCHAR);
-
-            if (UserInfo->HomeDirectoryDrive.Length > 0)
-                Size += UserInfo->HomeDirectoryDrive.Length + sizeof(WCHAR);
-            break;
-
-        case 4:
-            Size = sizeof(USER_INFO_4) +
-                   UserInfo->UserName.Length + sizeof(WCHAR);
-
-            if (UserInfo->HomeDirectory.Length > 0)
-                Size += UserInfo->HomeDirectory.Length + sizeof(WCHAR);
-
-            if (UserInfo->AdminComment.Length > 0)
-                Size += UserInfo->AdminComment.Length + sizeof(WCHAR);
-
-            if (UserInfo->ScriptPath.Length > 0)
-                Size += UserInfo->ScriptPath.Length + sizeof(WCHAR);
-
-            if (UserInfo->FullName.Length > 0)
-                Size += UserInfo->FullName.Length + sizeof(WCHAR);
-
-            if (UserInfo->UserComment.Length > 0)
-                Size += UserInfo->UserComment.Length + sizeof(WCHAR);
-
-            if (UserInfo->Parameters.Length > 0)
-                Size += UserInfo->Parameters.Length + sizeof(WCHAR);
-
-            if (UserInfo->WorkStations.Length > 0)
-                Size += UserInfo->WorkStations.Length + sizeof(WCHAR);
-
-            if (UserInfo->LogonHours.UnitsPerWeek > 0)
-                Size += (((ULONG)UserInfo->LogonHours.UnitsPerWeek) + 7) / 8;
-
-            if (LogonServer.Length > 0)
-                Size += LogonServer.Length + sizeof(WCHAR);
-
-            /* FIXME: usri4_user_sid */
-
-            if (UserInfo->ProfilePath.Length > 0)
-                Size += UserInfo->ProfilePath.Length + sizeof(WCHAR);
-
-            if (UserInfo->HomeDirectoryDrive.Length > 0)
-                Size += UserInfo->HomeDirectoryDrive.Length + sizeof(WCHAR);
-            break;
-
-        case 10:
-            Size = sizeof(USER_INFO_10) +
-                   UserInfo->UserName.Length + sizeof(WCHAR);
-
-            if (UserInfo->AdminComment.Length > 0)
-                Size += UserInfo->AdminComment.Length + sizeof(WCHAR);
-
-            if (UserInfo->UserComment.Length > 0)
-                Size += UserInfo->UserComment.Length + sizeof(WCHAR);
-
-            if (UserInfo->FullName.Length > 0)
-                Size += UserInfo->FullName.Length + sizeof(WCHAR);
-            break;
-
-        case 11:
-            Size = sizeof(USER_INFO_11) +
-                   UserInfo->UserName.Length + sizeof(WCHAR);
-
-            if (UserInfo->AdminComment.Length > 0)
-                Size += UserInfo->AdminComment.Length + sizeof(WCHAR);
-
-            if (UserInfo->UserComment.Length > 0)
-                Size += UserInfo->UserComment.Length + sizeof(WCHAR);
-
-            if (UserInfo->FullName.Length > 0)
-                Size += UserInfo->FullName.Length + sizeof(WCHAR);
-
-            if (UserInfo->HomeDirectory.Length > 0)
-                Size += UserInfo->HomeDirectory.Length + sizeof(WCHAR);
-
-            if (UserInfo->Parameters.Length > 0)
-                Size += UserInfo->Parameters.Length + sizeof(WCHAR);
-
-            if (LogonServer.Length > 0)
-                Size += LogonServer.Length + sizeof(WCHAR);
-
-            if (UserInfo->WorkStations.Length > 0)
-                Size += UserInfo->WorkStations.Length + sizeof(WCHAR);
-
-            if (UserInfo->LogonHours.UnitsPerWeek > 0)
-                Size += (((ULONG)UserInfo->LogonHours.UnitsPerWeek) + 7) / 8;
-            break;
-
-        case 20:
-            Size = sizeof(USER_INFO_20) +
-                   UserInfo->UserName.Length + sizeof(WCHAR);
-
-            if (UserInfo->FullName.Length > 0)
-                Size += UserInfo->FullName.Length + sizeof(WCHAR);
-
-            if (UserInfo->AdminComment.Length > 0)
-                Size += UserInfo->AdminComment.Length + sizeof(WCHAR);
-            break;
-
-        case 23:
-            Size = sizeof(USER_INFO_23) +
-                   UserInfo->UserName.Length + sizeof(WCHAR);
-
-            if (UserInfo->FullName.Length > 0)
-                Size += UserInfo->FullName.Length + sizeof(WCHAR);
-
-            if (UserInfo->AdminComment.Length > 0)
-                Size += UserInfo->AdminComment.Length + sizeof(WCHAR);
-
-            /* FIXME: usri23_user_sid */
-            break;
-
-        default:
-            ApiStatus = ERROR_INVALID_LEVEL;
-            goto done;
-    }
-
-    ApiStatus = NetApiBufferAllocate(Size, &LocalBuffer);
-    if (ApiStatus != NERR_Success)
+        TRACE("SamQuerySecurityObject() failed (Status 0x%08lx)\n", Status);
+        ApiStatus = NetpNtStatusToApiStatus(Status);
         goto done;
-
-    ZeroMemory(LocalBuffer, Size);
-
-    switch (level)
-    {
-        case 0:
-            UserInfo0 = (PUSER_INFO_0)LocalBuffer;
-
-            Ptr = (LPWSTR)((ULONG_PTR)UserInfo0 + sizeof(USER_INFO_0));
-            UserInfo0->usri0_name = Ptr;
-
-            memcpy(UserInfo0->usri0_name,
-                   UserInfo->UserName.Buffer,
-                   UserInfo->UserName.Length);
-            UserInfo0->usri0_name[UserInfo->UserName.Length / sizeof(WCHAR)] = UNICODE_NULL;
-            break;
-
-        case 1:
-            UserInfo1 = (PUSER_INFO_1)LocalBuffer;
-
-            Ptr = (LPWSTR)((ULONG_PTR)UserInfo1 + sizeof(USER_INFO_1));
-
-            UserInfo1->usri1_name = Ptr;
-
-            memcpy(UserInfo1->usri1_name,
-                   UserInfo->UserName.Buffer,
-                   UserInfo->UserName.Length);
-            UserInfo1->usri1_name[UserInfo->UserName.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->UserName.Length + sizeof(WCHAR));
-
-            UserInfo1->usri1_password = NULL;
-
-            UserInfo1->usri1_password_age = GetPasswordAge(&UserInfo->PasswordLastSet);
-
-            /* FIXME: UserInfo1->usri1_priv */
-
-            if (UserInfo->HomeDirectory.Length > 0)
-            {
-                UserInfo1->usri1_home_dir = Ptr;
-
-                memcpy(UserInfo1->usri1_home_dir,
-                       UserInfo->HomeDirectory.Buffer,
-                       UserInfo->HomeDirectory.Length);
-                UserInfo1->usri1_home_dir[UserInfo->HomeDirectory.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->HomeDirectory.Length + sizeof(WCHAR));
-            }
-
-            if (UserInfo->AdminComment.Length > 0)
-            {
-                UserInfo1->usri1_comment = Ptr;
-
-                memcpy(UserInfo1->usri1_comment,
-                       UserInfo->AdminComment.Buffer,
-                       UserInfo->AdminComment.Length);
-                UserInfo1->usri1_comment[UserInfo->AdminComment.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->AdminComment.Length + sizeof(WCHAR));
-            }
-
-            UserInfo1->usri1_flags = GetAccountFlags(UserInfo->UserAccountControl);
-
-            if (UserInfo->ScriptPath.Length > 0)
-            {
-                UserInfo1->usri1_script_path = Ptr;
-
-                memcpy(UserInfo1->usri1_script_path,
-                       UserInfo->ScriptPath.Buffer,
-                       UserInfo->ScriptPath.Length);
-                UserInfo1->usri1_script_path[UserInfo->ScriptPath.Length / sizeof(WCHAR)] = UNICODE_NULL;
-            }
-            break;
-
-        case 2:
-            UserInfo2 = (PUSER_INFO_2)LocalBuffer;
-
-            Ptr = (LPWSTR)((ULONG_PTR)UserInfo2 + sizeof(USER_INFO_2));
-
-            UserInfo2->usri2_name = Ptr;
-
-            memcpy(UserInfo2->usri2_name,
-                   UserInfo->UserName.Buffer,
-                   UserInfo->UserName.Length);
-            UserInfo2->usri2_name[UserInfo->UserName.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->UserName.Length + sizeof(WCHAR));
-
-            UserInfo2->usri2_password_age = GetPasswordAge(&UserInfo->PasswordLastSet);
-
-            /* FIXME: usri2_priv */
-
-            if (UserInfo->HomeDirectory.Length > 0)
-            {
-                UserInfo2->usri2_home_dir = Ptr;
-
-                memcpy(UserInfo2->usri2_home_dir,
-                       UserInfo->HomeDirectory.Buffer,
-                       UserInfo->HomeDirectory.Length);
-                UserInfo2->usri2_home_dir[UserInfo->HomeDirectory.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->HomeDirectory.Length + sizeof(WCHAR));
-            }
-
-            if (UserInfo->AdminComment.Length > 0)
-            {
-                UserInfo2->usri2_comment = Ptr;
-
-                memcpy(UserInfo2->usri2_comment,
-                       UserInfo->AdminComment.Buffer,
-                       UserInfo->AdminComment.Length);
-                UserInfo2->usri2_comment[UserInfo->AdminComment.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->AdminComment.Length + sizeof(WCHAR));
-            }
-
-            UserInfo2->usri2_flags = GetAccountFlags(UserInfo->UserAccountControl);
-
-            if (UserInfo->ScriptPath.Length > 0)
-            {
-                UserInfo2->usri2_script_path = Ptr;
-
-                memcpy(UserInfo2->usri2_script_path,
-                       UserInfo->ScriptPath.Buffer,
-                       UserInfo->ScriptPath.Length);
-                UserInfo2->usri2_script_path[UserInfo->ScriptPath.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->ScriptPath.Length + sizeof(WCHAR));
-            }
-
-            /* FIXME: usri2_auth_flags */
-
-            if (UserInfo->FullName.Length > 0)
-            {
-                UserInfo2->usri2_full_name = Ptr;
-
-                memcpy(UserInfo2->usri2_full_name,
-                       UserInfo->FullName.Buffer,
-                       UserInfo->FullName.Length);
-                UserInfo2->usri2_full_name[UserInfo->FullName.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->FullName.Length + sizeof(WCHAR));
-            }
-
-            if (UserInfo->UserComment.Length > 0)
-            {
-                UserInfo2->usri2_usr_comment = Ptr;
-
-                memcpy(UserInfo2->usri2_usr_comment,
-                       UserInfo->UserComment.Buffer,
-                       UserInfo->UserComment.Length);
-                UserInfo2->usri2_usr_comment[UserInfo->UserComment.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->UserComment.Length + sizeof(WCHAR));
-            }
-
-            if (UserInfo->Parameters.Length > 0)
-            {
-                UserInfo2->usri2_parms = Ptr;
-
-                memcpy(UserInfo2->usri2_parms,
-                       UserInfo->Parameters.Buffer,
-                       UserInfo->Parameters.Length);
-                UserInfo2->usri2_parms[UserInfo->Parameters.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->Parameters.Length + sizeof(WCHAR));
-            }
-
-            if (UserInfo->WorkStations.Length > 0)
-            {
-                UserInfo2->usri2_workstations = Ptr;
-
-                memcpy(UserInfo2->usri2_workstations,
-                       UserInfo->WorkStations.Buffer,
-                       UserInfo->WorkStations.Length);
-                UserInfo2->usri2_workstations[UserInfo->WorkStations.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->WorkStations.Length + sizeof(WCHAR));
-            }
-
-            RtlTimeToSecondsSince1970(&UserInfo->LastLogon,
-                                      &UserInfo2->usri2_last_logon);
-
-            RtlTimeToSecondsSince1970(&UserInfo->LastLogoff,
-                                      &UserInfo2->usri2_last_logoff);
-
-            RtlTimeToSecondsSince1970(&UserInfo->AccountExpires,
-                                      &UserInfo2->usri2_acct_expires);
-
-            UserInfo2->usri2_max_storage = USER_MAXSTORAGE_UNLIMITED;
-            UserInfo2->usri2_units_per_week = UserInfo->LogonHours.UnitsPerWeek;
-
-            if (UserInfo->LogonHours.UnitsPerWeek > 0)
-            {
-                UserInfo2->usri2_logon_hours = (PVOID)Ptr;
-
-                memcpy(UserInfo2->usri2_logon_hours,
-                       UserInfo->LogonHours.LogonHours,
-                       (((ULONG)UserInfo->LogonHours.UnitsPerWeek) + 7) / 8);
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + (((ULONG)UserInfo->LogonHours.UnitsPerWeek) + 7) / 8);
-            }
-
-            UserInfo2->usri2_bad_pw_count = UserInfo->BadPasswordCount;
-            UserInfo2->usri2_num_logons = UserInfo->LogonCount;
-
-            if (LogonServer.Length > 0)
-            {
-                UserInfo2->usri2_logon_server = Ptr;
-
-                memcpy(UserInfo2->usri2_logon_server,
-                       LogonServer.Buffer,
-                       LogonServer.Length);
-                UserInfo2->usri2_logon_server[LogonServer.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + LogonServer.Length + sizeof(WCHAR));
-            }
-
-            UserInfo2->usri2_country_code = UserInfo->CountryCode;
-            UserInfo2->usri2_code_page = UserInfo->CodePage;
-            break;
-
-        case 3:
-            UserInfo3 = (PUSER_INFO_3)LocalBuffer;
-
-            Ptr = (LPWSTR)((ULONG_PTR)UserInfo3 + sizeof(USER_INFO_3));
-
-            UserInfo3->usri3_name = Ptr;
-
-            memcpy(UserInfo3->usri3_name,
-                   UserInfo->UserName.Buffer,
-                   UserInfo->UserName.Length);
-            UserInfo3->usri3_name[UserInfo->UserName.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->UserName.Length + sizeof(WCHAR));
-
-            UserInfo3->usri3_password_age = GetPasswordAge(&UserInfo->PasswordLastSet);
-
-            /* FIXME: usri3_priv */
-
-            if (UserInfo->HomeDirectory.Length > 0)
-            {
-                UserInfo3->usri3_home_dir = Ptr;
-
-                memcpy(UserInfo3->usri3_home_dir,
-                       UserInfo->HomeDirectory.Buffer,
-                       UserInfo->HomeDirectory.Length);
-                UserInfo3->usri3_home_dir[UserInfo->HomeDirectory.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->HomeDirectory.Length + sizeof(WCHAR));
-            }
-
-            if (UserInfo->AdminComment.Length > 0)
-            {
-                UserInfo3->usri3_comment = Ptr;
-
-                memcpy(UserInfo3->usri3_comment,
-                       UserInfo->AdminComment.Buffer,
-                       UserInfo->AdminComment.Length);
-                UserInfo3->usri3_comment[UserInfo->AdminComment.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->AdminComment.Length + sizeof(WCHAR));
-            }
-
-            UserInfo3->usri3_flags = GetAccountFlags(UserInfo->UserAccountControl);
-
-            if (UserInfo->ScriptPath.Length > 0)
-            {
-                UserInfo3->usri3_script_path = Ptr;
-
-                memcpy(UserInfo3->usri3_script_path,
-                       UserInfo->ScriptPath.Buffer,
-                       UserInfo->ScriptPath.Length);
-                UserInfo3->usri3_script_path[UserInfo->ScriptPath.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->ScriptPath.Length + sizeof(WCHAR));
-            }
-
-            /* FIXME: usri3_auth_flags */
-
-            if (UserInfo->FullName.Length > 0)
-            {
-                UserInfo3->usri3_full_name = Ptr;
-
-                memcpy(UserInfo3->usri3_full_name,
-                       UserInfo->FullName.Buffer,
-                       UserInfo->FullName.Length);
-                UserInfo3->usri3_full_name[UserInfo->FullName.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->FullName.Length + sizeof(WCHAR));
-            }
-
-            if (UserInfo->UserComment.Length > 0)
-            {
-                UserInfo3->usri3_usr_comment = Ptr;
-
-                memcpy(UserInfo3->usri3_usr_comment,
-                       UserInfo->UserComment.Buffer,
-                       UserInfo->UserComment.Length);
-                UserInfo3->usri3_usr_comment[UserInfo->UserComment.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->UserComment.Length + sizeof(WCHAR));
-            }
-
-            if (UserInfo->Parameters.Length > 0)
-            {
-                UserInfo3->usri3_parms = Ptr;
-
-                memcpy(UserInfo3->usri3_parms,
-                       UserInfo->Parameters.Buffer,
-                       UserInfo->Parameters.Length);
-                UserInfo3->usri3_parms[UserInfo->Parameters.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->Parameters.Length + sizeof(WCHAR));
-            }
-
-            if (UserInfo->WorkStations.Length > 0)
-            {
-                UserInfo3->usri3_workstations = Ptr;
-
-                memcpy(UserInfo3->usri3_workstations,
-                       UserInfo->WorkStations.Buffer,
-                       UserInfo->WorkStations.Length);
-                UserInfo3->usri3_workstations[UserInfo->WorkStations.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->WorkStations.Length + sizeof(WCHAR));
-            }
-
-            RtlTimeToSecondsSince1970(&UserInfo->LastLogon,
-                                      &UserInfo3->usri3_last_logon);
-
-            RtlTimeToSecondsSince1970(&UserInfo->LastLogoff,
-                                      &UserInfo3->usri3_last_logoff);
-
-            RtlTimeToSecondsSince1970(&UserInfo->AccountExpires,
-                                      &UserInfo3->usri3_acct_expires);
-
-            UserInfo3->usri3_max_storage = USER_MAXSTORAGE_UNLIMITED;
-            UserInfo3->usri3_units_per_week = UserInfo->LogonHours.UnitsPerWeek;
-
-            if (UserInfo->LogonHours.UnitsPerWeek > 0)
-            {
-                UserInfo3->usri3_logon_hours = (PVOID)Ptr;
-
-                memcpy(UserInfo3->usri3_logon_hours,
-                       UserInfo->LogonHours.LogonHours,
-                       (((ULONG)UserInfo->LogonHours.UnitsPerWeek) + 7) / 8);
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + (((ULONG)UserInfo->LogonHours.UnitsPerWeek) + 7) / 8);
-            }
-
-            UserInfo3->usri3_bad_pw_count = UserInfo->BadPasswordCount;
-            UserInfo3->usri3_num_logons = UserInfo->LogonCount;
-
-            if (LogonServer.Length > 0)
-            {
-                UserInfo3->usri3_logon_server = Ptr;
-
-                memcpy(UserInfo3->usri3_logon_server,
-                       LogonServer.Buffer,
-                       LogonServer.Length);
-                UserInfo3->usri3_logon_server[LogonServer.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + LogonServer.Length + sizeof(WCHAR));
-            }
-
-            UserInfo3->usri3_country_code = UserInfo->CountryCode;
-            UserInfo3->usri3_code_page = UserInfo->CodePage;
-            UserInfo3->usri3_user_id = RelativeId;
-            UserInfo3->usri3_primary_group_id = UserInfo->PrimaryGroupId;
-
-            if (UserInfo->ProfilePath.Length > 0)
-            {
-                UserInfo3->usri3_profile = Ptr;
-
-                memcpy(UserInfo3->usri3_profile,
-                       UserInfo->ProfilePath.Buffer,
-                       UserInfo->ProfilePath.Length);
-                UserInfo3->usri3_profile[UserInfo->ProfilePath.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->ProfilePath.Length + sizeof(WCHAR));
-            }
-
-            if (UserInfo->HomeDirectoryDrive.Length > 0)
-            {
-                UserInfo3->usri3_home_dir_drive = Ptr;
-
-                memcpy(UserInfo3->usri3_home_dir_drive,
-                       UserInfo->HomeDirectoryDrive.Buffer,
-                       UserInfo->HomeDirectoryDrive.Length);
-                UserInfo3->usri3_home_dir_drive[UserInfo->HomeDirectoryDrive.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->HomeDirectoryDrive.Length + sizeof(WCHAR));
-            }
-
-            UserInfo3->usri3_password_expired = (UserInfo->UserAccountControl & USER_PASSWORD_EXPIRED);
-            break;
-
-        case 4:
-            UserInfo4 = (PUSER_INFO_4)LocalBuffer;
-
-            Ptr = (LPWSTR)((ULONG_PTR)UserInfo4 + sizeof(USER_INFO_4));
-
-            UserInfo4->usri4_name = Ptr;
-
-            memcpy(UserInfo4->usri4_name,
-                   UserInfo->UserName.Buffer,
-                   UserInfo->UserName.Length);
-            UserInfo4->usri4_name[UserInfo->UserName.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->UserName.Length + sizeof(WCHAR));
-
-            UserInfo4->usri4_password = NULL;
-            UserInfo4->usri4_password_age = GetPasswordAge(&UserInfo->PasswordLastSet);
-
-            /* FIXME: usri4_priv */
-
-            if (UserInfo->HomeDirectory.Length > 0)
-            {
-                UserInfo4->usri4_home_dir = Ptr;
-
-                memcpy(UserInfo4->usri4_home_dir,
-                       UserInfo->HomeDirectory.Buffer,
-                       UserInfo->HomeDirectory.Length);
-                UserInfo4->usri4_home_dir[UserInfo->HomeDirectory.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->HomeDirectory.Length + sizeof(WCHAR));
-            }
-
-            if (UserInfo->AdminComment.Length > 0)
-            {
-                UserInfo4->usri4_comment = Ptr;
-
-                memcpy(UserInfo4->usri4_comment,
-                       UserInfo->AdminComment.Buffer,
-                       UserInfo->AdminComment.Length);
-                UserInfo4->usri4_comment[UserInfo->AdminComment.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->AdminComment.Length + sizeof(WCHAR));
-            }
-
-            UserInfo4->usri4_flags = GetAccountFlags(UserInfo->UserAccountControl);
-
-            if (UserInfo->ScriptPath.Length > 0)
-            {
-                UserInfo4->usri4_script_path = Ptr;
-
-                memcpy(UserInfo4->usri4_script_path,
-                       UserInfo->ScriptPath.Buffer,
-                       UserInfo->ScriptPath.Length);
-                UserInfo4->usri4_script_path[UserInfo->ScriptPath.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->ScriptPath.Length + sizeof(WCHAR));
-            }
-
-            /* FIXME: usri4_auth_flags */
-
-            if (UserInfo->FullName.Length > 0)
-            {
-                UserInfo4->usri4_full_name = Ptr;
-
-                memcpy(UserInfo4->usri4_full_name,
-                       UserInfo->FullName.Buffer,
-                       UserInfo->FullName.Length);
-                UserInfo4->usri4_full_name[UserInfo->FullName.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->FullName.Length + sizeof(WCHAR));
-            }
-
-            if (UserInfo->UserComment.Length > 0)
-            {
-                UserInfo4->usri4_usr_comment = Ptr;
-
-                memcpy(UserInfo4->usri4_usr_comment,
-                       UserInfo->UserComment.Buffer,
-                       UserInfo->UserComment.Length);
-                UserInfo4->usri4_usr_comment[UserInfo->UserComment.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->UserComment.Length + sizeof(WCHAR));
-            }
-
-            if (UserInfo->Parameters.Length > 0)
-            {
-                UserInfo4->usri4_parms = Ptr;
-
-                memcpy(UserInfo4->usri4_parms,
-                       UserInfo->Parameters.Buffer,
-                       UserInfo->Parameters.Length);
-                UserInfo4->usri4_parms[UserInfo->Parameters.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->Parameters.Length + sizeof(WCHAR));
-            }
-
-            if (UserInfo->WorkStations.Length > 0)
-            {
-                UserInfo4->usri4_workstations = Ptr;
-
-                memcpy(UserInfo4->usri4_workstations,
-                       UserInfo->WorkStations.Buffer,
-                       UserInfo->WorkStations.Length);
-                UserInfo4->usri4_workstations[UserInfo->WorkStations.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->WorkStations.Length + sizeof(WCHAR));
-            }
-
-            RtlTimeToSecondsSince1970(&UserInfo->LastLogon,
-                                      &UserInfo4->usri4_last_logon);
-
-            RtlTimeToSecondsSince1970(&UserInfo->LastLogoff,
-                                      &UserInfo4->usri4_last_logoff);
-
-            RtlTimeToSecondsSince1970(&UserInfo->AccountExpires,
-                                      &UserInfo4->usri4_acct_expires);
-
-            UserInfo4->usri4_max_storage = USER_MAXSTORAGE_UNLIMITED;
-            UserInfo4->usri4_units_per_week = UserInfo->LogonHours.UnitsPerWeek;
-
-            if (UserInfo->LogonHours.UnitsPerWeek > 0)
-            {
-                UserInfo4->usri4_logon_hours = (PVOID)Ptr;
-
-                memcpy(UserInfo4->usri4_logon_hours,
-                       UserInfo->LogonHours.LogonHours,
-                       (((ULONG)UserInfo->LogonHours.UnitsPerWeek) + 7) / 8);
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + (((ULONG)UserInfo->LogonHours.UnitsPerWeek) + 7) / 8);
-            }
-
-            UserInfo4->usri4_bad_pw_count = UserInfo->BadPasswordCount;
-            UserInfo4->usri4_num_logons = UserInfo->LogonCount;
-
-            if (LogonServer.Length > 0)
-            {
-                UserInfo4->usri4_logon_server = Ptr;
-
-                memcpy(UserInfo4->usri4_logon_server,
-                       LogonServer.Buffer,
-                       LogonServer.Length);
-                UserInfo4->usri4_logon_server[LogonServer.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + LogonServer.Length + sizeof(WCHAR));
-            }
-
-            UserInfo4->usri4_country_code = UserInfo->CountryCode;
-            UserInfo4->usri4_code_page = UserInfo->CodePage;
-
-            /* FIXME: usri4_user_sid */
-
-            UserInfo4->usri4_primary_group_id = UserInfo->PrimaryGroupId;
-
-            if (UserInfo->ProfilePath.Length > 0)
-            {
-                UserInfo4->usri4_profile = Ptr;
-
-                memcpy(UserInfo4->usri4_profile,
-                       UserInfo->ProfilePath.Buffer,
-                       UserInfo->ProfilePath.Length);
-                UserInfo4->usri4_profile[UserInfo->ProfilePath.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->ProfilePath.Length + sizeof(WCHAR));
-            }
-
-            if (UserInfo->HomeDirectoryDrive.Length > 0)
-            {
-                UserInfo4->usri4_home_dir_drive = Ptr;
-
-                memcpy(UserInfo4->usri4_home_dir_drive,
-                       UserInfo->HomeDirectoryDrive.Buffer,
-                       UserInfo->HomeDirectoryDrive.Length);
-                UserInfo4->usri4_home_dir_drive[UserInfo->HomeDirectoryDrive.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->HomeDirectoryDrive.Length + sizeof(WCHAR));
-            }
-
-            UserInfo4->usri4_password_expired = (UserInfo->UserAccountControl & USER_PASSWORD_EXPIRED);
-            break;
-
-        case 10:
-            UserInfo10 = (PUSER_INFO_10)LocalBuffer;
-
-            Ptr = (LPWSTR)((ULONG_PTR)UserInfo10 + sizeof(USER_INFO_10));
-
-            UserInfo10->usri10_name = Ptr;
-
-            memcpy(UserInfo10->usri10_name,
-                   UserInfo->UserName.Buffer,
-                   UserInfo->UserName.Length);
-            UserInfo10->usri10_name[UserInfo->UserName.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->UserName.Length + sizeof(WCHAR));
-
-            if (UserInfo->AdminComment.Length > 0)
-            {
-                UserInfo10->usri10_comment = Ptr;
-
-                memcpy(UserInfo10->usri10_comment,
-                       UserInfo->AdminComment.Buffer,
-                       UserInfo->AdminComment.Length);
-                UserInfo10->usri10_comment[UserInfo->AdminComment.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->AdminComment.Length + sizeof(WCHAR));
-            }
-
-            if (UserInfo->UserComment.Length > 0)
-            {
-                UserInfo10->usri10_usr_comment = Ptr;
-
-                memcpy(UserInfo10->usri10_usr_comment,
-                       UserInfo->UserComment.Buffer,
-                       UserInfo->UserComment.Length);
-                UserInfo10->usri10_usr_comment[UserInfo->UserComment.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->UserComment.Length + sizeof(WCHAR));
-            }
-
-            if (UserInfo->FullName.Length > 0)
-            {
-                UserInfo10->usri10_full_name = Ptr;
-
-                memcpy(UserInfo10->usri10_full_name,
-                       UserInfo->FullName.Buffer,
-                       UserInfo->FullName.Length);
-                UserInfo10->usri10_full_name[UserInfo->FullName.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->FullName.Length + sizeof(WCHAR));
-            }
-            break;
-
-        case 11:
-            UserInfo11 = (PUSER_INFO_11)LocalBuffer;
-
-            Ptr = (LPWSTR)((ULONG_PTR)UserInfo11 + sizeof(USER_INFO_11));
-
-            UserInfo11->usri11_name = Ptr;
-
-            memcpy(UserInfo11->usri11_name,
-                   UserInfo->UserName.Buffer,
-                   UserInfo->UserName.Length);
-            UserInfo11->usri11_name[UserInfo->UserName.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->UserName.Length + sizeof(WCHAR));
-
-            if (UserInfo->AdminComment.Length > 0)
-            {
-                UserInfo11->usri11_comment = Ptr;
-
-                memcpy(UserInfo11->usri11_comment,
-                       UserInfo->AdminComment.Buffer,
-                       UserInfo->AdminComment.Length);
-                UserInfo11->usri11_comment[UserInfo->AdminComment.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->AdminComment.Length + sizeof(WCHAR));
-            }
-
-            if (UserInfo->UserComment.Length > 0)
-            {
-                UserInfo11->usri11_usr_comment = Ptr;
-
-                memcpy(UserInfo11->usri11_usr_comment,
-                       UserInfo->UserComment.Buffer,
-                       UserInfo->UserComment.Length);
-                UserInfo11->usri11_usr_comment[UserInfo->UserComment.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->UserComment.Length + sizeof(WCHAR));
-            }
-
-            if (UserInfo->FullName.Length > 0)
-            {
-                UserInfo11->usri11_full_name = Ptr;
-
-                memcpy(UserInfo11->usri11_full_name,
-                       UserInfo->FullName.Buffer,
-                       UserInfo->FullName.Length);
-                UserInfo11->usri11_full_name[UserInfo->FullName.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->FullName.Length + sizeof(WCHAR));
-            }
-
-            /* FIXME: usri11_priv */
-            /* FIXME: usri11_auth_flags */
-
-            UserInfo11->usri11_password_age = GetPasswordAge(&UserInfo->PasswordLastSet);
-
-            if (UserInfo->HomeDirectory.Length > 0)
-            {
-                UserInfo11->usri11_home_dir = Ptr;
-
-                memcpy(UserInfo11->usri11_home_dir,
-                       UserInfo->HomeDirectory.Buffer,
-                       UserInfo->HomeDirectory.Length);
-                UserInfo11->usri11_home_dir[UserInfo->HomeDirectory.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->HomeDirectory.Length + sizeof(WCHAR));
-            }
-
-            if (UserInfo->Parameters.Length > 0)
-            {
-                UserInfo11->usri11_parms = Ptr;
-
-                memcpy(UserInfo11->usri11_parms,
-                       UserInfo->Parameters.Buffer,
-                       UserInfo->Parameters.Length);
-                UserInfo11->usri11_parms[UserInfo->Parameters.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->Parameters.Length + sizeof(WCHAR));
-            }
-
-            RtlTimeToSecondsSince1970(&UserInfo->LastLogon,
-                                      &UserInfo11->usri11_last_logon);
-
-            RtlTimeToSecondsSince1970(&UserInfo->LastLogoff,
-                                      &UserInfo11->usri11_last_logoff);
-
-            UserInfo11->usri11_bad_pw_count = UserInfo->BadPasswordCount;
-            UserInfo11->usri11_num_logons = UserInfo->LogonCount;
-
-            if (LogonServer.Length > 0)
-            {
-                UserInfo11->usri11_logon_server = Ptr;
-
-                memcpy(UserInfo11->usri11_logon_server,
-                       LogonServer.Buffer,
-                       LogonServer.Length);
-                UserInfo11->usri11_logon_server[LogonServer.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + LogonServer.Length + sizeof(WCHAR));
-            }
-
-            UserInfo11->usri11_country_code = UserInfo->CountryCode;
-
-            if (UserInfo->WorkStations.Length > 0)
-            {
-                UserInfo11->usri11_workstations = Ptr;
-
-                memcpy(UserInfo11->usri11_workstations,
-                       UserInfo->WorkStations.Buffer,
-                       UserInfo->WorkStations.Length);
-                UserInfo11->usri11_workstations[UserInfo->WorkStations.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->WorkStations.Length + sizeof(WCHAR));
-            }
-
-            UserInfo11->usri11_max_storage = USER_MAXSTORAGE_UNLIMITED;
-            UserInfo11->usri11_units_per_week = UserInfo->LogonHours.UnitsPerWeek;
-
-            if (UserInfo->LogonHours.UnitsPerWeek > 0)
-            {
-                UserInfo11->usri11_logon_hours = (PVOID)Ptr;
-
-                memcpy(UserInfo11->usri11_logon_hours,
-                       UserInfo->LogonHours.LogonHours,
-                       (((ULONG)UserInfo->LogonHours.UnitsPerWeek) + 7) / 8);
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + (((ULONG)UserInfo->LogonHours.UnitsPerWeek) + 7) / 8);
-            }
-
-            UserInfo11->usri11_code_page = UserInfo->CodePage;
-            break;
-
-        case 20:
-            UserInfo20 = (PUSER_INFO_20)LocalBuffer;
-
-            Ptr = (LPWSTR)((ULONG_PTR)UserInfo20 + sizeof(USER_INFO_20));
-
-            UserInfo20->usri20_name = Ptr;
-
-            memcpy(UserInfo20->usri20_name,
-                   UserInfo->UserName.Buffer,
-                   UserInfo->UserName.Length);
-            UserInfo20->usri20_name[UserInfo->UserName.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->UserName.Length + sizeof(WCHAR));
-
-            if (UserInfo->FullName.Length > 0)
-            {
-                UserInfo20->usri20_full_name = Ptr;
-
-                memcpy(UserInfo20->usri20_full_name,
-                       UserInfo->FullName.Buffer,
-                       UserInfo->FullName.Length);
-                UserInfo20->usri20_full_name[UserInfo->FullName.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->FullName.Length + sizeof(WCHAR));
-            }
-
-            if (UserInfo->AdminComment.Length > 0)
-            {
-                UserInfo20->usri20_comment = Ptr;
-
-                memcpy(UserInfo20->usri20_comment,
-                       UserInfo->AdminComment.Buffer,
-                       UserInfo->AdminComment.Length);
-                UserInfo20->usri20_comment[UserInfo->AdminComment.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->AdminComment.Length + sizeof(WCHAR));
-            }
-
-            UserInfo20->usri20_flags = GetAccountFlags(UserInfo->UserAccountControl);
-
-            UserInfo20->usri20_user_id = RelativeId;
-            break;
-
-        case 23:
-            UserInfo23 = (PUSER_INFO_23)LocalBuffer;
-
-            Ptr = (LPWSTR)((ULONG_PTR)UserInfo23 + sizeof(USER_INFO_23));
-
-            UserInfo23->usri23_name = Ptr;
-
-            memcpy(UserInfo23->usri23_name,
-                   UserInfo->UserName.Buffer,
-                   UserInfo->UserName.Length);
-            UserInfo23->usri23_name[UserInfo->UserName.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->UserName.Length + sizeof(WCHAR));
-
-            if (UserInfo->FullName.Length > 0)
-            {
-                UserInfo23->usri23_full_name = Ptr;
-
-                memcpy(UserInfo23->usri23_full_name,
-                       UserInfo->FullName.Buffer,
-                       UserInfo->FullName.Length);
-                UserInfo23->usri23_full_name[UserInfo->FullName.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->FullName.Length + sizeof(WCHAR));
-            }
-
-            if (UserInfo->AdminComment.Length > 0)
-            {
-                UserInfo23->usri23_comment = Ptr;
-
-                memcpy(UserInfo23->usri23_comment,
-                       UserInfo->AdminComment.Buffer,
-                       UserInfo->AdminComment.Length);
-                UserInfo23->usri23_comment[UserInfo->AdminComment.Length / sizeof(WCHAR)] = UNICODE_NULL;
-
-                Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->AdminComment.Length + sizeof(WCHAR));
-            }
-
-            UserInfo23->usri23_flags = GetAccountFlags(UserInfo->UserAccountControl);
-
-            /* FIXME: usri23_user_sid */
-           break;
     }
+
+    Status = RtlGetDaclSecurityDescriptor(SecurityDescriptor,
+                                          &Present,
+                                          &SamDacl,
+                                          &Defaulted);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("RtlGetDaclSecurityDescriptor() failed (Status 0x%08lx)\n", Status);
+        ApiStatus = NERR_InternalError;
+        goto done;
+    }
+
+    if (Present == FALSE)
+    {
+        TRACE("No DACL present\n");
+        ApiStatus = NERR_Success;
+        goto done;
+    }
+
+    Status = RtlQueryInformationAcl(SamDacl,
+                                    &AclSize,
+                                    sizeof(AclSize),
+                                    AclSizeInformation);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("RtlQueryInformationAcl() failed (Status 0x%08lx)\n", Status);
+        ApiStatus = NERR_InternalError;
+        goto done;
+    }
+
+    LocalDacl = HeapAlloc(GetProcessHeap(), 0, AclSize.AclBytesInUse);
+    if (LocalDacl == NULL)
+    {
+        TRACE("Memory allocation failed\n");
+        ApiStatus = ERROR_NOT_ENOUGH_MEMORY;
+        goto done;
+    }
+
+    RtlCopyMemory(LocalDacl, SamDacl, AclSize.AclBytesInUse);
+
+    *Dacl = LocalDacl;
+
+    ApiStatus = NERR_Success;
 
 done:
-    if (ApiStatus == NERR_Success)
-    {
-        *Buffer = LocalBuffer;
-    }
-    else
-    {
-        if (LocalBuffer != NULL)
-            NetApiBufferFree(LocalBuffer);
-    }
+    if (SecurityDescriptor != NULL)
+        SamFreeMemory(SecurityDescriptor);
+
+    TRACE("done (ApiStatus: 0x%08lx)\n", ApiStatus);
 
     return ApiStatus;
 }
@@ -1321,6 +399,817 @@ FreeUserInfo(PUSER_ALL_INFORMATION UserInfo)
 
 static
 NET_API_STATUS
+BuildUserInfoBuffer(SAM_HANDLE UserHandle,
+                    DWORD level,
+                    ULONG RelativeId,
+                    LPVOID *Buffer)
+{
+    UNICODE_STRING LogonServer = RTL_CONSTANT_STRING(L"\\\\*");
+    PUSER_ALL_INFORMATION UserInfo = NULL;
+    LPVOID LocalBuffer = NULL;
+    PACL Dacl = NULL;
+    PUSER_INFO_0 UserInfo0;
+    PUSER_INFO_1 UserInfo1;
+    PUSER_INFO_2 UserInfo2;
+    PUSER_INFO_3 UserInfo3;
+    PUSER_INFO_4 UserInfo4;
+    PUSER_INFO_10 UserInfo10;
+    PUSER_INFO_11 UserInfo11;
+    PUSER_INFO_20 UserInfo20;
+    PUSER_INFO_23 UserInfo23;
+    LPWSTR Ptr;
+    ULONG Size = 0;
+    NTSTATUS Status;
+    NET_API_STATUS ApiStatus = NERR_Success;
+
+    *Buffer = NULL;
+
+    Status = SamQueryInformationUser(UserHandle,
+                                     UserAllInformation,
+                                     (PVOID *)&UserInfo);
+    if (!NT_SUCCESS(Status))
+    {
+        ERR("SamQueryInformationUser failed (Status %08lx)\n", Status);
+        ApiStatus = NetpNtStatusToApiStatus(Status);
+        goto done;
+    }
+
+    if ((level == 1) || (level == 2) || (level == 3) ||
+        (level == 4) || (level == 20) || (level == 23))
+    {
+        ApiStatus = GetUserDacl(UserHandle, &Dacl);
+        if (ApiStatus != NERR_Success)
+            goto done;
+    }
+
+    switch (level)
+    {
+        case 0:
+            Size = sizeof(USER_INFO_0) +
+                   UserInfo->UserName.Length + sizeof(WCHAR);
+            break;
+
+        case 1:
+            Size = sizeof(USER_INFO_1) +
+                   UserInfo->UserName.Length + sizeof(WCHAR) +
+                   UserInfo->HomeDirectory.Length + sizeof(WCHAR) +
+                   UserInfo->AdminComment.Length + sizeof(WCHAR) +
+                   UserInfo->ScriptPath.Length + sizeof(WCHAR);
+            break;
+
+        case 2:
+            Size = sizeof(USER_INFO_2) +
+                   UserInfo->UserName.Length + sizeof(WCHAR) +
+                   UserInfo->HomeDirectory.Length + sizeof(WCHAR) +
+                   UserInfo->AdminComment.Length + sizeof(WCHAR) +
+                   UserInfo->ScriptPath.Length + sizeof(WCHAR) +
+                   UserInfo->FullName.Length + sizeof(WCHAR) +
+                   UserInfo->UserComment.Length + sizeof(WCHAR) +
+                   UserInfo->Parameters.Length + sizeof(WCHAR) +
+                   UserInfo->WorkStations.Length + sizeof(WCHAR) +
+                   LogonServer.Length + sizeof(WCHAR);
+
+            if (UserInfo->LogonHours.UnitsPerWeek > 0)
+                Size += (((ULONG)UserInfo->LogonHours.UnitsPerWeek) + 7) / 8;
+            break;
+
+        case 3:
+            Size = sizeof(USER_INFO_3) +
+                   UserInfo->UserName.Length + sizeof(WCHAR) +
+                   UserInfo->HomeDirectory.Length + sizeof(WCHAR) +
+                   UserInfo->AdminComment.Length + sizeof(WCHAR) +
+                   UserInfo->ScriptPath.Length + sizeof(WCHAR) +
+                   UserInfo->FullName.Length + sizeof(WCHAR) +
+                   UserInfo->UserComment.Length + sizeof(WCHAR) +
+                   UserInfo->Parameters.Length + sizeof(WCHAR) +
+                   UserInfo->WorkStations.Length + sizeof(WCHAR) +
+                   LogonServer.Length + sizeof(WCHAR) +
+                   UserInfo->ProfilePath.Length + sizeof(WCHAR) +
+                   UserInfo->HomeDirectoryDrive.Length + sizeof(WCHAR);
+
+            if (UserInfo->LogonHours.UnitsPerWeek > 0)
+                Size += (((ULONG)UserInfo->LogonHours.UnitsPerWeek) + 7) / 8;
+            break;
+
+        case 4:
+            Size = sizeof(USER_INFO_4) +
+                   UserInfo->UserName.Length + sizeof(WCHAR) +
+                   UserInfo->HomeDirectory.Length + sizeof(WCHAR) +
+                   UserInfo->AdminComment.Length + sizeof(WCHAR) +
+                   UserInfo->ScriptPath.Length + sizeof(WCHAR) +
+                   UserInfo->FullName.Length + sizeof(WCHAR) +
+                   UserInfo->UserComment.Length + sizeof(WCHAR) +
+                   UserInfo->Parameters.Length + sizeof(WCHAR) +
+                   UserInfo->WorkStations.Length + sizeof(WCHAR) +
+                   LogonServer.Length + sizeof(WCHAR) +
+                   UserInfo->ProfilePath.Length + sizeof(WCHAR) +
+                   UserInfo->HomeDirectoryDrive.Length + sizeof(WCHAR);
+
+            if (UserInfo->LogonHours.UnitsPerWeek > 0)
+                Size += (((ULONG)UserInfo->LogonHours.UnitsPerWeek) + 7) / 8;
+
+            /* FIXME: usri4_user_sid */
+            break;
+
+        case 10:
+            Size = sizeof(USER_INFO_10) +
+                   UserInfo->UserName.Length + sizeof(WCHAR) +
+                   UserInfo->AdminComment.Length + sizeof(WCHAR) +
+                   UserInfo->UserComment.Length + sizeof(WCHAR) +
+                   UserInfo->FullName.Length + sizeof(WCHAR);
+            break;
+
+        case 11:
+            Size = sizeof(USER_INFO_11) +
+                   UserInfo->UserName.Length + sizeof(WCHAR) +
+                   UserInfo->AdminComment.Length + sizeof(WCHAR) +
+                   UserInfo->UserComment.Length + sizeof(WCHAR) +
+                   UserInfo->FullName.Length + sizeof(WCHAR) +
+                   UserInfo->HomeDirectory.Length + sizeof(WCHAR) +
+                   UserInfo->Parameters.Length + sizeof(WCHAR) +
+                   LogonServer.Length + sizeof(WCHAR) +
+                   UserInfo->WorkStations.Length + sizeof(WCHAR);
+
+            if (UserInfo->LogonHours.UnitsPerWeek > 0)
+                Size += (((ULONG)UserInfo->LogonHours.UnitsPerWeek) + 7) / 8;
+            break;
+
+        case 20:
+            Size = sizeof(USER_INFO_20) +
+                   UserInfo->UserName.Length + sizeof(WCHAR) +
+                   UserInfo->FullName.Length + sizeof(WCHAR) +
+                   UserInfo->AdminComment.Length + sizeof(WCHAR);
+            break;
+
+        case 23:
+            Size = sizeof(USER_INFO_23) +
+                   UserInfo->UserName.Length + sizeof(WCHAR) +
+                   UserInfo->FullName.Length + sizeof(WCHAR) +
+                   UserInfo->AdminComment.Length + sizeof(WCHAR);
+
+            /* FIXME: usri23_user_sid */
+            break;
+
+        default:
+            ApiStatus = ERROR_INVALID_LEVEL;
+            goto done;
+    }
+
+    ApiStatus = NetApiBufferAllocate(Size, &LocalBuffer);
+    if (ApiStatus != NERR_Success)
+        goto done;
+
+    ZeroMemory(LocalBuffer, Size);
+
+    switch (level)
+    {
+        case 0:
+            UserInfo0 = (PUSER_INFO_0)LocalBuffer;
+
+            Ptr = (LPWSTR)((ULONG_PTR)UserInfo0 + sizeof(USER_INFO_0));
+
+            UserInfo0->usri0_name = Ptr;
+
+            memcpy(UserInfo0->usri0_name,
+                   UserInfo->UserName.Buffer,
+                   UserInfo->UserName.Length);
+            UserInfo0->usri0_name[UserInfo->UserName.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            break;
+
+        case 1:
+            UserInfo1 = (PUSER_INFO_1)LocalBuffer;
+
+            Ptr = (LPWSTR)((ULONG_PTR)UserInfo1 + sizeof(USER_INFO_1));
+
+            UserInfo1->usri1_name = Ptr;
+
+            memcpy(UserInfo1->usri1_name,
+                   UserInfo->UserName.Buffer,
+                   UserInfo->UserName.Length);
+            UserInfo1->usri1_name[UserInfo->UserName.Length / sizeof(WCHAR)] = UNICODE_NULL;
+
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->UserName.Length + sizeof(WCHAR));
+
+            UserInfo1->usri1_password = NULL;
+            UserInfo1->usri1_password_age = GetPasswordAge(&UserInfo->PasswordLastSet);
+
+            /* FIXME: usri1_priv */
+
+            UserInfo1->usri1_home_dir = Ptr;
+            memcpy(UserInfo1->usri1_home_dir,
+                   UserInfo->HomeDirectory.Buffer,
+                   UserInfo->HomeDirectory.Length);
+            UserInfo1->usri1_home_dir[UserInfo->HomeDirectory.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->HomeDirectory.Length + sizeof(WCHAR));
+
+            UserInfo1->usri1_comment = Ptr;
+            memcpy(UserInfo1->usri1_comment,
+                   UserInfo->AdminComment.Buffer,
+                   UserInfo->AdminComment.Length);
+            UserInfo1->usri1_comment[UserInfo->AdminComment.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->AdminComment.Length + sizeof(WCHAR));
+
+            UserInfo1->usri1_flags = GetAccountFlags(UserInfo->UserAccountControl,
+                                                     Dacl);
+
+            UserInfo1->usri1_script_path = Ptr;
+            memcpy(UserInfo1->usri1_script_path,
+                   UserInfo->ScriptPath.Buffer,
+                   UserInfo->ScriptPath.Length);
+            UserInfo1->usri1_script_path[UserInfo->ScriptPath.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            break;
+
+        case 2:
+            UserInfo2 = (PUSER_INFO_2)LocalBuffer;
+
+            Ptr = (LPWSTR)((ULONG_PTR)UserInfo2 + sizeof(USER_INFO_2));
+
+            UserInfo2->usri2_name = Ptr;
+
+            memcpy(UserInfo2->usri2_name,
+                   UserInfo->UserName.Buffer,
+                   UserInfo->UserName.Length);
+            UserInfo2->usri2_name[UserInfo->UserName.Length / sizeof(WCHAR)] = UNICODE_NULL;
+
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->UserName.Length + sizeof(WCHAR));
+
+            UserInfo2->usri2_password = NULL;
+            UserInfo2->usri2_password_age = GetPasswordAge(&UserInfo->PasswordLastSet);
+
+            /* FIXME: usri2_priv */
+
+            UserInfo2->usri2_home_dir = Ptr;
+            memcpy(UserInfo2->usri2_home_dir,
+                   UserInfo->HomeDirectory.Buffer,
+                   UserInfo->HomeDirectory.Length);
+            UserInfo2->usri2_home_dir[UserInfo->HomeDirectory.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->HomeDirectory.Length + sizeof(WCHAR));
+
+            UserInfo2->usri2_comment = Ptr;
+            memcpy(UserInfo2->usri2_comment,
+                   UserInfo->AdminComment.Buffer,
+                   UserInfo->AdminComment.Length);
+            UserInfo2->usri2_comment[UserInfo->AdminComment.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->AdminComment.Length + sizeof(WCHAR));
+
+            UserInfo2->usri2_flags = GetAccountFlags(UserInfo->UserAccountControl,
+                                                     Dacl);
+
+            UserInfo2->usri2_script_path = Ptr;
+            memcpy(UserInfo2->usri2_script_path,
+                   UserInfo->ScriptPath.Buffer,
+                   UserInfo->ScriptPath.Length);
+            UserInfo2->usri2_script_path[UserInfo->ScriptPath.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->ScriptPath.Length + sizeof(WCHAR));
+
+            /* FIXME: usri2_auth_flags */
+
+            UserInfo2->usri2_full_name = Ptr;
+            memcpy(UserInfo2->usri2_full_name,
+                   UserInfo->FullName.Buffer,
+                   UserInfo->FullName.Length);
+            UserInfo2->usri2_full_name[UserInfo->FullName.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->FullName.Length + sizeof(WCHAR));
+
+            UserInfo2->usri2_usr_comment = Ptr;
+            memcpy(UserInfo2->usri2_usr_comment,
+                   UserInfo->UserComment.Buffer,
+                   UserInfo->UserComment.Length);
+            UserInfo2->usri2_usr_comment[UserInfo->UserComment.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->UserComment.Length + sizeof(WCHAR));
+
+            UserInfo2->usri2_parms = Ptr;
+            memcpy(UserInfo2->usri2_parms,
+                   UserInfo->Parameters.Buffer,
+                   UserInfo->Parameters.Length);
+            UserInfo2->usri2_parms[UserInfo->Parameters.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->Parameters.Length + sizeof(WCHAR));
+
+            UserInfo2->usri2_workstations = Ptr;
+            memcpy(UserInfo2->usri2_workstations,
+                   UserInfo->WorkStations.Buffer,
+                   UserInfo->WorkStations.Length);
+            UserInfo2->usri2_workstations[UserInfo->WorkStations.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->WorkStations.Length + sizeof(WCHAR));
+
+            RtlTimeToSecondsSince1970(&UserInfo->LastLogon,
+                                      &UserInfo2->usri2_last_logon);
+
+            RtlTimeToSecondsSince1970(&UserInfo->LastLogoff,
+                                      &UserInfo2->usri2_last_logoff);
+
+            RtlTimeToSecondsSince1970(&UserInfo->AccountExpires,
+                                      &UserInfo2->usri2_acct_expires);
+
+            UserInfo2->usri2_max_storage = USER_MAXSTORAGE_UNLIMITED;
+            UserInfo2->usri2_units_per_week = UserInfo->LogonHours.UnitsPerWeek;
+
+            if (UserInfo->LogonHours.UnitsPerWeek > 0)
+            {
+                UserInfo2->usri2_logon_hours = (PVOID)Ptr;
+
+                memcpy(UserInfo2->usri2_logon_hours,
+                       UserInfo->LogonHours.LogonHours,
+                       (((ULONG)UserInfo->LogonHours.UnitsPerWeek) + 7) / 8);
+
+                Ptr = (LPWSTR)((ULONG_PTR)Ptr + (((ULONG)UserInfo->LogonHours.UnitsPerWeek) + 7) / 8);
+            }
+
+            UserInfo2->usri2_bad_pw_count = UserInfo->BadPasswordCount;
+            UserInfo2->usri2_num_logons = UserInfo->LogonCount;
+
+            UserInfo2->usri2_logon_server = Ptr;
+            memcpy(UserInfo2->usri2_logon_server,
+                   LogonServer.Buffer,
+                   LogonServer.Length);
+            UserInfo2->usri2_logon_server[LogonServer.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + LogonServer.Length + sizeof(WCHAR));
+
+            UserInfo2->usri2_country_code = UserInfo->CountryCode;
+            UserInfo2->usri2_code_page = UserInfo->CodePage;
+            break;
+
+        case 3:
+            UserInfo3 = (PUSER_INFO_3)LocalBuffer;
+
+            Ptr = (LPWSTR)((ULONG_PTR)UserInfo3 + sizeof(USER_INFO_3));
+
+            UserInfo3->usri3_name = Ptr;
+
+            memcpy(UserInfo3->usri3_name,
+                   UserInfo->UserName.Buffer,
+                   UserInfo->UserName.Length);
+            UserInfo3->usri3_name[UserInfo->UserName.Length / sizeof(WCHAR)] = UNICODE_NULL;
+
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->UserName.Length + sizeof(WCHAR));
+
+            UserInfo3->usri3_password = NULL;
+            UserInfo3->usri3_password_age = GetPasswordAge(&UserInfo->PasswordLastSet);
+
+            /* FIXME: usri3_priv */
+
+            UserInfo3->usri3_home_dir = Ptr;
+            memcpy(UserInfo3->usri3_home_dir,
+                   UserInfo->HomeDirectory.Buffer,
+                   UserInfo->HomeDirectory.Length);
+            UserInfo3->usri3_home_dir[UserInfo->HomeDirectory.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->HomeDirectory.Length + sizeof(WCHAR));
+
+            UserInfo3->usri3_comment = Ptr;
+            memcpy(UserInfo3->usri3_comment,
+                   UserInfo->AdminComment.Buffer,
+                   UserInfo->AdminComment.Length);
+            UserInfo3->usri3_comment[UserInfo->AdminComment.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->AdminComment.Length + sizeof(WCHAR));
+
+            UserInfo3->usri3_flags = GetAccountFlags(UserInfo->UserAccountControl,
+                                                     Dacl);
+
+            UserInfo3->usri3_script_path = Ptr;
+            memcpy(UserInfo3->usri3_script_path,
+                   UserInfo->ScriptPath.Buffer,
+                   UserInfo->ScriptPath.Length);
+            UserInfo3->usri3_script_path[UserInfo->ScriptPath.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->ScriptPath.Length + sizeof(WCHAR));
+
+            /* FIXME: usri3_auth_flags */
+
+            UserInfo3->usri3_full_name = Ptr;
+            memcpy(UserInfo3->usri3_full_name,
+                   UserInfo->FullName.Buffer,
+                   UserInfo->FullName.Length);
+            UserInfo3->usri3_full_name[UserInfo->FullName.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->FullName.Length + sizeof(WCHAR));
+
+            UserInfo3->usri3_usr_comment = Ptr;
+            memcpy(UserInfo3->usri3_usr_comment,
+                   UserInfo->UserComment.Buffer,
+                   UserInfo->UserComment.Length);
+            UserInfo3->usri3_usr_comment[UserInfo->UserComment.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->UserComment.Length + sizeof(WCHAR));
+
+            UserInfo3->usri3_parms = Ptr;
+            memcpy(UserInfo3->usri3_parms,
+                   UserInfo->Parameters.Buffer,
+                   UserInfo->Parameters.Length);
+            UserInfo3->usri3_parms[UserInfo->Parameters.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->Parameters.Length + sizeof(WCHAR));
+
+            UserInfo3->usri3_workstations = Ptr;
+            memcpy(UserInfo3->usri3_workstations,
+                   UserInfo->WorkStations.Buffer,
+                   UserInfo->WorkStations.Length);
+            UserInfo3->usri3_workstations[UserInfo->WorkStations.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->WorkStations.Length + sizeof(WCHAR));
+
+            RtlTimeToSecondsSince1970(&UserInfo->LastLogon,
+                                      &UserInfo3->usri3_last_logon);
+
+            RtlTimeToSecondsSince1970(&UserInfo->LastLogoff,
+                                      &UserInfo3->usri3_last_logoff);
+
+            RtlTimeToSecondsSince1970(&UserInfo->AccountExpires,
+                                      &UserInfo3->usri3_acct_expires);
+
+            UserInfo3->usri3_max_storage = USER_MAXSTORAGE_UNLIMITED;
+            UserInfo3->usri3_units_per_week = UserInfo->LogonHours.UnitsPerWeek;
+
+            if (UserInfo->LogonHours.UnitsPerWeek > 0)
+            {
+                UserInfo3->usri3_logon_hours = (PVOID)Ptr;
+
+                memcpy(UserInfo3->usri3_logon_hours,
+                       UserInfo->LogonHours.LogonHours,
+                       (((ULONG)UserInfo->LogonHours.UnitsPerWeek) + 7) / 8);
+
+                Ptr = (LPWSTR)((ULONG_PTR)Ptr + (((ULONG)UserInfo->LogonHours.UnitsPerWeek) + 7) / 8);
+            }
+
+            UserInfo3->usri3_bad_pw_count = UserInfo->BadPasswordCount;
+            UserInfo3->usri3_num_logons = UserInfo->LogonCount;
+
+            UserInfo3->usri3_logon_server = Ptr;
+            memcpy(UserInfo3->usri3_logon_server,
+                   LogonServer.Buffer,
+                   LogonServer.Length);
+            UserInfo3->usri3_logon_server[LogonServer.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + LogonServer.Length + sizeof(WCHAR));
+
+            UserInfo3->usri3_country_code = UserInfo->CountryCode;
+            UserInfo3->usri3_code_page = UserInfo->CodePage;
+            UserInfo3->usri3_user_id = RelativeId;
+            UserInfo3->usri3_primary_group_id = UserInfo->PrimaryGroupId;
+
+            UserInfo3->usri3_profile = Ptr;
+            memcpy(UserInfo3->usri3_profile,
+                   UserInfo->ProfilePath.Buffer,
+                   UserInfo->ProfilePath.Length);
+            UserInfo3->usri3_profile[UserInfo->ProfilePath.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->ProfilePath.Length + sizeof(WCHAR));
+
+            UserInfo3->usri3_home_dir_drive = Ptr;
+            memcpy(UserInfo3->usri3_home_dir_drive,
+                   UserInfo->HomeDirectoryDrive.Buffer,
+                   UserInfo->HomeDirectoryDrive.Length);
+            UserInfo3->usri3_home_dir_drive[UserInfo->HomeDirectoryDrive.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->HomeDirectoryDrive.Length + sizeof(WCHAR));
+
+            UserInfo3->usri3_password_expired = (UserInfo->UserAccountControl & USER_PASSWORD_EXPIRED);
+            break;
+
+        case 4:
+            UserInfo4 = (PUSER_INFO_4)LocalBuffer;
+
+            Ptr = (LPWSTR)((ULONG_PTR)UserInfo4 + sizeof(USER_INFO_4));
+
+            UserInfo4->usri4_name = Ptr;
+
+            memcpy(UserInfo4->usri4_name,
+                   UserInfo->UserName.Buffer,
+                   UserInfo->UserName.Length);
+            UserInfo4->usri4_name[UserInfo->UserName.Length / sizeof(WCHAR)] = UNICODE_NULL;
+
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->UserName.Length + sizeof(WCHAR));
+
+            UserInfo4->usri4_password = NULL;
+            UserInfo4->usri4_password_age = GetPasswordAge(&UserInfo->PasswordLastSet);
+
+            /* FIXME: usri4_priv */
+
+            UserInfo4->usri4_home_dir = Ptr;
+            memcpy(UserInfo4->usri4_home_dir,
+                   UserInfo->HomeDirectory.Buffer,
+                   UserInfo->HomeDirectory.Length);
+            UserInfo4->usri4_home_dir[UserInfo->HomeDirectory.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->HomeDirectory.Length + sizeof(WCHAR));
+
+            UserInfo4->usri4_comment = Ptr;
+            memcpy(UserInfo4->usri4_comment,
+                   UserInfo->AdminComment.Buffer,
+                   UserInfo->AdminComment.Length);
+            UserInfo4->usri4_comment[UserInfo->AdminComment.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->AdminComment.Length + sizeof(WCHAR));
+
+            UserInfo4->usri4_flags = GetAccountFlags(UserInfo->UserAccountControl,
+                                                     Dacl);
+
+            UserInfo4->usri4_script_path = Ptr;
+            memcpy(UserInfo4->usri4_script_path,
+                   UserInfo->ScriptPath.Buffer,
+                   UserInfo->ScriptPath.Length);
+            UserInfo4->usri4_script_path[UserInfo->ScriptPath.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->ScriptPath.Length + sizeof(WCHAR));
+
+            /* FIXME: usri4_auth_flags */
+
+            UserInfo4->usri4_full_name = Ptr;
+            memcpy(UserInfo4->usri4_full_name,
+                   UserInfo->FullName.Buffer,
+                   UserInfo->FullName.Length);
+            UserInfo4->usri4_full_name[UserInfo->FullName.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->FullName.Length + sizeof(WCHAR));
+
+            UserInfo4->usri4_usr_comment = Ptr;
+            memcpy(UserInfo4->usri4_usr_comment,
+                   UserInfo->UserComment.Buffer,
+                   UserInfo->UserComment.Length);
+            UserInfo4->usri4_usr_comment[UserInfo->UserComment.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->UserComment.Length + sizeof(WCHAR));
+
+            UserInfo4->usri4_parms = Ptr;
+            memcpy(UserInfo4->usri4_parms,
+                   UserInfo->Parameters.Buffer,
+                   UserInfo->Parameters.Length);
+            UserInfo4->usri4_parms[UserInfo->Parameters.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->Parameters.Length + sizeof(WCHAR));
+
+            UserInfo4->usri4_workstations = Ptr;
+            memcpy(UserInfo4->usri4_workstations,
+                   UserInfo->WorkStations.Buffer,
+                   UserInfo->WorkStations.Length);
+            UserInfo4->usri4_workstations[UserInfo->WorkStations.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->WorkStations.Length + sizeof(WCHAR));
+
+            RtlTimeToSecondsSince1970(&UserInfo->LastLogon,
+                                      &UserInfo4->usri4_last_logon);
+
+            RtlTimeToSecondsSince1970(&UserInfo->LastLogoff,
+                                      &UserInfo4->usri4_last_logoff);
+
+            RtlTimeToSecondsSince1970(&UserInfo->AccountExpires,
+                                      &UserInfo4->usri4_acct_expires);
+
+            UserInfo4->usri4_max_storage = USER_MAXSTORAGE_UNLIMITED;
+            UserInfo4->usri4_units_per_week = UserInfo->LogonHours.UnitsPerWeek;
+
+            if (UserInfo->LogonHours.UnitsPerWeek > 0)
+            {
+                UserInfo4->usri4_logon_hours = (PVOID)Ptr;
+
+                memcpy(UserInfo4->usri4_logon_hours,
+                       UserInfo->LogonHours.LogonHours,
+                       (((ULONG)UserInfo->LogonHours.UnitsPerWeek) + 7) / 8);
+
+                Ptr = (LPWSTR)((ULONG_PTR)Ptr + (((ULONG)UserInfo->LogonHours.UnitsPerWeek) + 7) / 8);
+            }
+
+            UserInfo4->usri4_bad_pw_count = UserInfo->BadPasswordCount;
+            UserInfo4->usri4_num_logons = UserInfo->LogonCount;
+
+            UserInfo4->usri4_logon_server = Ptr;
+            memcpy(UserInfo4->usri4_logon_server,
+                   LogonServer.Buffer,
+                   LogonServer.Length);
+            UserInfo4->usri4_logon_server[LogonServer.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + LogonServer.Length + sizeof(WCHAR));
+
+            UserInfo4->usri4_country_code = UserInfo->CountryCode;
+            UserInfo4->usri4_code_page = UserInfo->CodePage;
+
+            /* FIXME: usri4_user_sid */
+
+            UserInfo4->usri4_primary_group_id = UserInfo->PrimaryGroupId;
+
+            UserInfo4->usri4_profile = Ptr;
+            memcpy(UserInfo4->usri4_profile,
+                   UserInfo->ProfilePath.Buffer,
+                   UserInfo->ProfilePath.Length);
+            UserInfo4->usri4_profile[UserInfo->ProfilePath.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->ProfilePath.Length + sizeof(WCHAR));
+
+            UserInfo4->usri4_home_dir_drive = Ptr;
+            memcpy(UserInfo4->usri4_home_dir_drive,
+                   UserInfo->HomeDirectoryDrive.Buffer,
+                   UserInfo->HomeDirectoryDrive.Length);
+            UserInfo4->usri4_home_dir_drive[UserInfo->HomeDirectoryDrive.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->HomeDirectoryDrive.Length + sizeof(WCHAR));
+
+            UserInfo4->usri4_password_expired = (UserInfo->UserAccountControl & USER_PASSWORD_EXPIRED);
+            break;
+
+        case 10:
+            UserInfo10 = (PUSER_INFO_10)LocalBuffer;
+
+            Ptr = (LPWSTR)((ULONG_PTR)UserInfo10 + sizeof(USER_INFO_10));
+
+            UserInfo10->usri10_name = Ptr;
+
+            memcpy(UserInfo10->usri10_name,
+                   UserInfo->UserName.Buffer,
+                   UserInfo->UserName.Length);
+            UserInfo10->usri10_name[UserInfo->UserName.Length / sizeof(WCHAR)] = UNICODE_NULL;
+
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->UserName.Length + sizeof(WCHAR));
+
+            UserInfo10->usri10_comment = Ptr;
+            memcpy(UserInfo10->usri10_comment,
+                   UserInfo->AdminComment.Buffer,
+                   UserInfo->AdminComment.Length);
+            UserInfo10->usri10_comment[UserInfo->AdminComment.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->AdminComment.Length + sizeof(WCHAR));
+
+            UserInfo10->usri10_usr_comment = Ptr;
+            memcpy(UserInfo10->usri10_usr_comment,
+                   UserInfo->UserComment.Buffer,
+                   UserInfo->UserComment.Length);
+            UserInfo10->usri10_usr_comment[UserInfo->UserComment.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->UserComment.Length + sizeof(WCHAR));
+
+            UserInfo10->usri10_full_name = Ptr;
+            memcpy(UserInfo10->usri10_full_name,
+                   UserInfo->FullName.Buffer,
+                   UserInfo->FullName.Length);
+            UserInfo10->usri10_full_name[UserInfo->FullName.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            break;
+
+        case 11:
+            UserInfo11 = (PUSER_INFO_11)LocalBuffer;
+
+            Ptr = (LPWSTR)((ULONG_PTR)UserInfo11 + sizeof(USER_INFO_11));
+
+            UserInfo11->usri11_name = Ptr;
+
+            memcpy(UserInfo11->usri11_name,
+                   UserInfo->UserName.Buffer,
+                   UserInfo->UserName.Length);
+            UserInfo11->usri11_name[UserInfo->UserName.Length / sizeof(WCHAR)] = UNICODE_NULL;
+
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->UserName.Length + sizeof(WCHAR));
+
+            UserInfo11->usri11_comment = Ptr;
+            memcpy(UserInfo11->usri11_comment,
+                   UserInfo->AdminComment.Buffer,
+                   UserInfo->AdminComment.Length);
+            UserInfo11->usri11_comment[UserInfo->AdminComment.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->AdminComment.Length + sizeof(WCHAR));
+
+            UserInfo11->usri11_usr_comment = Ptr;
+            memcpy(UserInfo11->usri11_usr_comment,
+                   UserInfo->UserComment.Buffer,
+                   UserInfo->UserComment.Length);
+            UserInfo11->usri11_usr_comment[UserInfo->UserComment.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->UserComment.Length + sizeof(WCHAR));
+
+            UserInfo11->usri11_full_name = Ptr;
+            memcpy(UserInfo11->usri11_full_name,
+                   UserInfo->FullName.Buffer,
+                   UserInfo->FullName.Length);
+            UserInfo11->usri11_full_name[UserInfo->FullName.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->FullName.Length + sizeof(WCHAR));
+
+            /* FIXME: usri11_priv */
+            /* FIXME: usri11_auth_flags */
+
+            UserInfo11->usri11_password_age = GetPasswordAge(&UserInfo->PasswordLastSet);
+
+            UserInfo11->usri11_home_dir = Ptr;
+            memcpy(UserInfo11->usri11_home_dir,
+                   UserInfo->HomeDirectory.Buffer,
+                   UserInfo->HomeDirectory.Length);
+            UserInfo11->usri11_home_dir[UserInfo->HomeDirectory.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->HomeDirectory.Length + sizeof(WCHAR));
+
+            UserInfo11->usri11_parms = Ptr;
+            memcpy(UserInfo11->usri11_parms,
+                   UserInfo->Parameters.Buffer,
+                   UserInfo->Parameters.Length);
+            UserInfo11->usri11_parms[UserInfo->Parameters.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->Parameters.Length + sizeof(WCHAR));
+
+            RtlTimeToSecondsSince1970(&UserInfo->LastLogon,
+                                      &UserInfo11->usri11_last_logon);
+
+            RtlTimeToSecondsSince1970(&UserInfo->LastLogoff,
+                                      &UserInfo11->usri11_last_logoff);
+
+            UserInfo11->usri11_bad_pw_count = UserInfo->BadPasswordCount;
+            UserInfo11->usri11_num_logons = UserInfo->LogonCount;
+
+            UserInfo11->usri11_logon_server = Ptr;
+            memcpy(UserInfo11->usri11_logon_server,
+                   LogonServer.Buffer,
+                   LogonServer.Length);
+            UserInfo11->usri11_logon_server[LogonServer.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + LogonServer.Length + sizeof(WCHAR));
+
+            UserInfo11->usri11_country_code = UserInfo->CountryCode;
+
+            UserInfo11->usri11_workstations = Ptr;
+            memcpy(UserInfo11->usri11_workstations,
+                   UserInfo->WorkStations.Buffer,
+                   UserInfo->WorkStations.Length);
+            UserInfo11->usri11_workstations[UserInfo->WorkStations.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->WorkStations.Length + sizeof(WCHAR));
+
+            UserInfo11->usri11_max_storage = USER_MAXSTORAGE_UNLIMITED;
+            UserInfo11->usri11_units_per_week = UserInfo->LogonHours.UnitsPerWeek;
+
+            if (UserInfo->LogonHours.UnitsPerWeek > 0)
+            {
+                UserInfo11->usri11_logon_hours = (PVOID)Ptr;
+
+                memcpy(UserInfo11->usri11_logon_hours,
+                       UserInfo->LogonHours.LogonHours,
+                       (((ULONG)UserInfo->LogonHours.UnitsPerWeek) + 7) / 8);
+
+                Ptr = (LPWSTR)((ULONG_PTR)Ptr + (((ULONG)UserInfo->LogonHours.UnitsPerWeek) + 7) / 8);
+            }
+
+            UserInfo11->usri11_code_page = UserInfo->CodePage;
+            break;
+
+        case 20:
+            UserInfo20 = (PUSER_INFO_20)LocalBuffer;
+
+            Ptr = (LPWSTR)((ULONG_PTR)UserInfo20 + sizeof(USER_INFO_20));
+
+            UserInfo20->usri20_name = Ptr;
+
+            memcpy(UserInfo20->usri20_name,
+                   UserInfo->UserName.Buffer,
+                   UserInfo->UserName.Length);
+            UserInfo20->usri20_name[UserInfo->UserName.Length / sizeof(WCHAR)] = UNICODE_NULL;
+
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->UserName.Length + sizeof(WCHAR));
+
+            UserInfo20->usri20_full_name = Ptr;
+            memcpy(UserInfo20->usri20_full_name,
+                   UserInfo->FullName.Buffer,
+                   UserInfo->FullName.Length);
+            UserInfo20->usri20_full_name[UserInfo->FullName.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->FullName.Length + sizeof(WCHAR));
+
+            UserInfo20->usri20_comment = Ptr;
+            memcpy(UserInfo20->usri20_comment,
+                   UserInfo->AdminComment.Buffer,
+                   UserInfo->AdminComment.Length);
+            UserInfo20->usri20_comment[UserInfo->AdminComment.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->AdminComment.Length + sizeof(WCHAR));
+
+            UserInfo20->usri20_flags = GetAccountFlags(UserInfo->UserAccountControl,
+                                                       Dacl);
+
+            UserInfo20->usri20_user_id = RelativeId;
+            break;
+
+        case 23:
+            UserInfo23 = (PUSER_INFO_23)LocalBuffer;
+
+            Ptr = (LPWSTR)((ULONG_PTR)UserInfo23 + sizeof(USER_INFO_23));
+
+            UserInfo23->usri23_name = Ptr;
+
+            memcpy(UserInfo23->usri23_name,
+                   UserInfo->UserName.Buffer,
+                   UserInfo->UserName.Length);
+            UserInfo23->usri23_name[UserInfo->UserName.Length / sizeof(WCHAR)] = UNICODE_NULL;
+
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->UserName.Length + sizeof(WCHAR));
+
+            UserInfo23->usri23_full_name = Ptr;
+            memcpy(UserInfo23->usri23_full_name,
+                   UserInfo->FullName.Buffer,
+                   UserInfo->FullName.Length);
+            UserInfo23->usri23_full_name[UserInfo->FullName.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->FullName.Length + sizeof(WCHAR));
+
+            UserInfo23->usri23_comment = Ptr;
+            memcpy(UserInfo23->usri23_comment,
+                   UserInfo->AdminComment.Buffer,
+                   UserInfo->AdminComment.Length);
+            UserInfo23->usri23_comment[UserInfo->AdminComment.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            Ptr = (LPWSTR)((ULONG_PTR)Ptr + UserInfo->AdminComment.Length + sizeof(WCHAR));
+
+            UserInfo23->usri23_flags = GetAccountFlags(UserInfo->UserAccountControl,
+                                                       Dacl);
+
+            /* FIXME: usri23_user_sid */
+            break;
+    }
+
+done:
+    if (UserInfo != NULL)
+        FreeUserInfo(UserInfo);
+
+    if (Dacl != NULL)
+        HeapFree(GetProcessHeap(), 0, Dacl);
+
+    if (ApiStatus == NERR_Success)
+    {
+        *Buffer = LocalBuffer;
+    }
+    else
+    {
+        if (LocalBuffer != NULL)
+            NetApiBufferFree(LocalBuffer);
+    }
+
+    return ApiStatus;
+}
+
+
+static
+NET_API_STATUS
 SetUserInfo(SAM_HANDLE UserHandle,
             LPBYTE UserInfo,
             DWORD Level)
@@ -1331,6 +1220,7 @@ SetUserInfo(SAM_HANDLE UserHandle,
     PUSER_INFO_2 UserInfo2;
     PUSER_INFO_3 UserInfo3;
     PUSER_INFO_4 UserInfo4;
+    PUSER_INFO_22 UserInfo22;
     PUSER_INFO_1003 UserInfo1003;
     PUSER_INFO_1006 UserInfo1006;
     PUSER_INFO_1007 UserInfo1007;
@@ -1347,10 +1237,19 @@ SetUserInfo(SAM_HANDLE UserHandle,
     PUSER_INFO_1051 UserInfo1051;
     PUSER_INFO_1052 UserInfo1052;
     PUSER_INFO_1053 UserInfo1053;
+    PACL Dacl = NULL;
     NET_API_STATUS ApiStatus = NERR_Success;
     NTSTATUS Status = STATUS_SUCCESS;
 
     ZeroMemory(&UserAllInfo, sizeof(USER_ALL_INFORMATION));
+
+    if ((Level == 1) || (Level == 2) || (Level == 3) ||
+        (Level == 4) || (Level == 22) || (Level == 1008))
+    {
+        ApiStatus = GetUserDacl(UserHandle, &Dacl);
+        if (ApiStatus != NERR_Success)
+            goto done;
+    }
 
     switch (Level)
     {
@@ -1394,6 +1293,7 @@ SetUserInfo(SAM_HANDLE UserHandle,
                 UserAllInfo.WhichFields |= USER_ALL_ADMINCOMMENT;
             }
 
+            ChangeUserDacl(Dacl, UserInfo1->usri1_flags);
             UserAllInfo.UserAccountControl = GetAccountControl(UserInfo1->usri1_flags);
             UserAllInfo.WhichFields |= USER_ALL_USERACCOUNTCONTROL;
 
@@ -1436,6 +1336,7 @@ SetUserInfo(SAM_HANDLE UserHandle,
                 UserAllInfo.WhichFields |= USER_ALL_ADMINCOMMENT;
             }
 
+            ChangeUserDacl(Dacl, UserInfo2->usri2_flags);
             UserAllInfo.UserAccountControl = GetAccountControl(UserInfo2->usri2_flags);
             UserAllInfo.WhichFields |= USER_ALL_USERACCOUNTCONTROL;
 
@@ -1538,6 +1439,7 @@ SetUserInfo(SAM_HANDLE UserHandle,
                 UserAllInfo.WhichFields |= USER_ALL_ADMINCOMMENT;
             }
 
+            ChangeUserDacl(Dacl, UserInfo3->usri3_flags);
             UserAllInfo.UserAccountControl = GetAccountControl(UserInfo3->usri3_flags);
             UserAllInfo.WhichFields |= USER_ALL_USERACCOUNTCONTROL;
 
@@ -1662,6 +1564,7 @@ SetUserInfo(SAM_HANDLE UserHandle,
                 UserAllInfo.WhichFields |= USER_ALL_ADMINCOMMENT;
             }
 
+            ChangeUserDacl(Dacl, UserInfo4->usri4_flags);
             UserAllInfo.UserAccountControl = GetAccountControl(UserInfo4->usri4_flags);
             UserAllInfo.WhichFields |= USER_ALL_USERACCOUNTCONTROL;
 
@@ -1719,8 +1622,8 @@ SetUserInfo(SAM_HANDLE UserHandle,
 
             // usri4_max_storage ignored
 
-//          UserInfo3->usri4_units_per_week;
-//          UserInfo3->usri4_logon_hours;
+//          UserInfo4->usri4_units_per_week;
+//          UserInfo4->usri4_logon_hours;
 
             // usri4_bad_pw_count ignored
             // usri4_num_logons ignored
@@ -1756,7 +1659,104 @@ SetUserInfo(SAM_HANDLE UserHandle,
             break;
 
 //        case 21:
-//        case 22:
+//            break;
+
+        case 22:
+            UserInfo22 = (PUSER_INFO_22)UserInfo;
+
+            // usri22_name ignored
+
+//          UserInfo22->usri22_password[ENCRYPTED_PWLEN];
+
+            // usri22_password_age ignored
+
+//          UserInfo3->usri3_priv;
+
+            if (UserInfo22->usri22_home_dir != NULL)
+            {
+                RtlInitUnicodeString(&UserAllInfo.HomeDirectory,
+                                     UserInfo22->usri22_home_dir);
+                UserAllInfo.WhichFields |= USER_ALL_HOMEDIRECTORY;
+            }
+
+            if (UserInfo22->usri22_comment != NULL)
+            {
+                RtlInitUnicodeString(&UserAllInfo.AdminComment,
+                                     UserInfo22->usri22_comment);
+                UserAllInfo.WhichFields |= USER_ALL_ADMINCOMMENT;
+            }
+
+            ChangeUserDacl(Dacl, UserInfo22->usri22_flags);
+            UserAllInfo.UserAccountControl = GetAccountControl(UserInfo22->usri22_flags);
+            UserAllInfo.WhichFields |= USER_ALL_USERACCOUNTCONTROL;
+
+            if (UserInfo22->usri22_script_path != NULL)
+            {
+                RtlInitUnicodeString(&UserAllInfo.ScriptPath,
+                                     UserInfo22->usri22_script_path);
+                UserAllInfo.WhichFields |= USER_ALL_SCRIPTPATH;
+            }
+
+//          UserInfo22->usri22_auth_flags;
+
+            if (UserInfo22->usri22_full_name != NULL)
+            {
+                RtlInitUnicodeString(&UserAllInfo.FullName,
+                                     UserInfo22->usri22_full_name);
+                UserAllInfo.WhichFields |= USER_ALL_FULLNAME;
+            }
+
+            if (UserInfo22->usri22_usr_comment != NULL)
+            {
+                RtlInitUnicodeString(&UserAllInfo.UserComment,
+                                     UserInfo22->usri22_usr_comment);
+                UserAllInfo.WhichFields |= USER_ALL_USERCOMMENT;
+            }
+
+            if (UserInfo22->usri22_parms != NULL)
+            {
+                RtlInitUnicodeString(&UserAllInfo.Parameters,
+                                     UserInfo22->usri22_parms);
+                UserAllInfo.WhichFields |= USER_ALL_PARAMETERS;
+            }
+
+            if (UserInfo22->usri22_workstations != NULL)
+            {
+                RtlInitUnicodeString(&UserAllInfo.WorkStations,
+                                     UserInfo22->usri22_workstations);
+                UserAllInfo.WhichFields |= USER_ALL_WORKSTATIONS;
+            }
+
+            // usri22_last_logon ignored
+            // usri22_last_logoff ignored
+
+            if (UserInfo22->usri22_acct_expires == TIMEQ_FOREVER)
+            {
+                UserAllInfo.AccountExpires.LowPart = 0;
+                UserAllInfo.AccountExpires.HighPart = 0;
+            }
+            else
+            {
+                RtlSecondsSince1970ToTime(UserInfo22->usri22_acct_expires,
+                                          &UserAllInfo.AccountExpires);
+            }
+            UserAllInfo.WhichFields |= USER_ALL_ACCOUNTEXPIRES;
+
+            // usri22_max_storage ignored
+
+//          UserInfo22->usri22_units_per_week;
+//          UserInfo22->usri22_logon_hours;
+
+            // usri22_bad_pw_count ignored
+            // usri22_num_logons ignored
+            // usri22_logon_server ignored
+
+            UserAllInfo.CountryCode = UserInfo22->usri22_country_code;
+            UserAllInfo.WhichFields |= USER_ALL_COUNTRYCODE;
+
+            UserAllInfo.CodePage = UserInfo22->usri22_code_page;
+            UserAllInfo.WhichFields |= USER_ALL_CODEPAGE;
+            break;
 
         case 1003:
             UserInfo1003 = (PUSER_INFO_1003)UserInfo;
@@ -1771,6 +1771,7 @@ SetUserInfo(SAM_HANDLE UserHandle,
             break;
 
 //        case 1005:
+//            break;
 
         case 1006:
             UserInfo1006 = (PUSER_INFO_1006)UserInfo;
@@ -1796,6 +1797,7 @@ SetUserInfo(SAM_HANDLE UserHandle,
 
         case 1008:
             UserInfo1008 = (PUSER_INFO_1008)UserInfo;
+            ChangeUserDacl(Dacl, UserInfo1008->usri1008_flags);
             UserAllInfo.UserAccountControl = GetAccountControl(UserInfo1008->usri1008_flags);
             UserAllInfo.WhichFields |= USER_ALL_USERACCOUNTCONTROL;
             break;
@@ -1812,6 +1814,7 @@ SetUserInfo(SAM_HANDLE UserHandle,
             break;
 
 //        case 1010:
+//            break;
 
         case 1011:
             UserInfo1011 = (PUSER_INFO_1011)UserInfo;
@@ -1884,6 +1887,7 @@ SetUserInfo(SAM_HANDLE UserHandle,
             break;
 
 //        case 1020:
+//            break;
 
         case 1024:
             UserInfo1024 = (PUSER_INFO_1024)UserInfo;
@@ -1944,6 +1948,9 @@ SetUserInfo(SAM_HANDLE UserHandle,
     }
 
 done:
+    if (Dacl != NULL)
+        HeapFree(GetProcessHeap(), 0, Dacl);
+
     return ApiStatus;
 }
 
@@ -2403,8 +2410,6 @@ NetUserEnum(LPCWSTR servername,
     LPVOID Buffer = NULL;
     ULONG i;
     SAM_HANDLE UserHandle = NULL;
-    PUSER_ALL_INFORMATION UserInfo = NULL;
-
     NET_API_STATUS ApiStatus = NERR_Success;
     NTSTATUS Status = STATUS_SUCCESS;
 
@@ -2517,7 +2522,7 @@ NetUserEnum(LPCWSTR servername,
         TRACE("RID: %lu\n", CurrentUser->RelativeId);
 
         Status = SamOpenUser(EnumContext->AccountDomainHandle, //BuiltinDomainHandle,
-                             USER_READ_GENERAL | USER_READ_PREFERENCES | USER_READ_LOGON | USER_READ_ACCOUNT,
+                             READ_CONTROL | USER_READ_GENERAL | USER_READ_PREFERENCES | USER_READ_LOGON | USER_READ_ACCOUNT,
                              CurrentUser->RelativeId,
                              &UserHandle);
         if (!NT_SUCCESS(Status))
@@ -2527,20 +2532,7 @@ NetUserEnum(LPCWSTR servername,
             goto done;
         }
 
-        Status = SamQueryInformationUser(UserHandle,
-                                         UserAllInformation,
-                                         (PVOID *)&UserInfo);
-        if (!NT_SUCCESS(Status))
-        {
-            ERR("SamQueryInformationUser failed (Status %08lx)\n", Status);
-            ApiStatus = NetpNtStatusToApiStatus(Status);
-            goto done;
-        }
-
-        SamCloseHandle(UserHandle);
-        UserHandle = NULL;
-
-        ApiStatus = BuildUserInfoBuffer(UserInfo,
+        ApiStatus = BuildUserInfoBuffer(UserHandle,
                                         level,
                                         CurrentUser->RelativeId,
                                         &Buffer);
@@ -2550,11 +2542,8 @@ NetUserEnum(LPCWSTR servername,
             goto done;
         }
 
-        if (UserInfo != NULL)
-        {
-            FreeUserInfo(UserInfo);
-            UserInfo = NULL;
-        }
+        SamCloseHandle(UserHandle);
+        UserHandle = NULL;
 
         EnumContext->Index++;
 
@@ -2598,9 +2587,6 @@ done:
 
     if (UserHandle != NULL)
         SamCloseHandle(UserHandle);
-
-    if (UserInfo != NULL)
-        FreeUserInfo(UserInfo);
 
     if (resume_handle != NULL)
         *resume_handle = (DWORD_PTR)EnumContext;
@@ -2775,14 +2761,6 @@ done:
 //    *bufptr = (LPBYTE)Buffer;
 
     return ApiStatus;
-
-#if 0
-    *bufptr = NULL;
-    *entriesread = 0;
-    *totalentries = 0;
-
-    return ERROR_INVALID_LEVEL;
-#endif
 }
 
 
@@ -2803,7 +2781,6 @@ NetUserGetInfo(LPCWSTR servername,
     SAM_HANDLE UserHandle = NULL;
     PULONG RelativeIds = NULL;
     PSID_NAME_USE Use = NULL;
-    PUSER_ALL_INFORMATION UserInfo = NULL;
     LPVOID Buffer = NULL;
     NET_API_STATUS ApiStatus = NERR_Success;
     NTSTATUS Status = STATUS_SUCCESS;
@@ -2868,7 +2845,7 @@ NetUserGetInfo(LPCWSTR servername,
 
     /* Open the user object */
     Status = SamOpenUser(AccountDomainHandle,
-                         USER_READ_GENERAL | USER_READ_PREFERENCES | USER_READ_LOGON | USER_READ_ACCOUNT,
+                         READ_CONTROL | USER_READ_GENERAL | USER_READ_PREFERENCES | USER_READ_LOGON | USER_READ_ACCOUNT,
                          RelativeIds[0],
                          &UserHandle);
     if (!NT_SUCCESS(Status))
@@ -2878,17 +2855,7 @@ NetUserGetInfo(LPCWSTR servername,
         goto done;
     }
 
-    Status = SamQueryInformationUser(UserHandle,
-                                     UserAllInformation,
-                                     (PVOID *)&UserInfo);
-    if (!NT_SUCCESS(Status))
-    {
-        ERR("SamQueryInformationUser failed (Status %08lx)\n", Status);
-        ApiStatus = NetpNtStatusToApiStatus(Status);
-        goto done;
-    }
-
-    ApiStatus = BuildUserInfoBuffer(UserInfo,
+    ApiStatus = BuildUserInfoBuffer(UserHandle,
                                     level,
                                     RelativeIds[0],
                                     &Buffer);
@@ -2899,9 +2866,6 @@ NetUserGetInfo(LPCWSTR servername,
     }
 
 done:
-    if (UserInfo != NULL)
-        FreeUserInfo(UserInfo);
-
     if (UserHandle != NULL)
         SamCloseHandle(UserHandle);
 
@@ -3450,7 +3414,7 @@ NetUserModalsGet(LPCWSTR servername,
             umi0 = (PUSER_MODALS_INFO_0)*bufptr;
 
             umi0->usrmod0_min_passwd_len = PasswordInfo->MinPasswordLength;
-            umi0->usrmod0_max_passwd_age = (ULONG)(PasswordInfo->MaxPasswordAge.QuadPart / 10000000);
+            umi0->usrmod0_max_passwd_age = (ULONG)(-PasswordInfo->MaxPasswordAge.QuadPart / 10000000);
             umi0->usrmod0_min_passwd_age =
                 DeltaTimeToSeconds(PasswordInfo->MinPasswordAge);
             umi0->usrmod0_force_logoff =
@@ -3463,10 +3427,6 @@ NetUserModalsGet(LPCWSTR servername,
 
             switch (ServerRoleInfo->DomainServerRole)
             {
-
-                    umi1->usrmod1_role = UAS_ROLE_STANDALONE;
-                    umi1->usrmod1_role = UAS_ROLE_MEMBER;
-
                 case DomainServerRolePrimary:
                     umi1->usrmod1_role = UAS_ROLE_PRIMARY;
                     break;
@@ -3610,9 +3570,9 @@ NetUserSetInfo(LPCWSTR servername,
         case 1:
         case 2:
         case 3:
-//        case 4:
+        case 4:
 //        case 21:
-//        case 22:
+        case 22:
         case 1003:
 //        case 1005:
         case 1006:
@@ -3624,8 +3584,8 @@ NetUserSetInfo(LPCWSTR servername,
         case 1012:
         case 1013:
         case 1014:
-//        case 1017:
-//        case 1018:
+        case 1017:
+        case 1018:
 //        case 1020:
         case 1024:
         case 1025:

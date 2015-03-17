@@ -14,19 +14,25 @@ HvpWriteLog(
    PHHIVE RegistryHive)
 {
    ULONG FileOffset;
-   ULONG BufferSize;
-   ULONG BitmapSize;
+   UINT32 BufferSize;
+   UINT32 BitmapSize;
    PUCHAR Buffer;
    PUCHAR Ptr;
    ULONG BlockIndex;
    ULONG LastIndex;
    PVOID BlockPtr;
    BOOLEAN Success;
+   static ULONG PrintCount = 0;
 
-   UNIMPLEMENTED;
+   if (PrintCount++ == 0)
+   {
+      UNIMPLEMENTED;
+   }
    return TRUE;
 
    ASSERT(RegistryHive->ReadOnly == FALSE);
+   ASSERT(RegistryHive->BaseBlock->Length ==
+          RegistryHive->Storage[Stable].Length * HV_BLOCK_SIZE);
 
    DPRINT("HvpWriteLog called\n");
 
@@ -40,7 +46,7 @@ HvpWriteLog(
    BufferSize = HV_LOG_HEADER_SIZE + sizeof(ULONG) + BitmapSize;
    BufferSize = ROUND_UP(BufferSize, HV_BLOCK_SIZE);
 
-   DPRINT("Bitmap size %lu  buffer size: %lu\n", BitmapSize, BufferSize);
+   DPRINT("Bitmap size %u  buffer size: %u\n", BitmapSize, BufferSize);
 
    Buffer = RegistryHive->Allocate(BufferSize, TRUE, TAG_CM);
    if (Buffer == NULL)
@@ -113,7 +119,7 @@ HvpWriteLog(
       DPRINT("FileFlush failed\n");
    }
 
-   /* Update first and second update counter and CheckSum. */
+   /* Update second update counter and CheckSum. */
    RegistryHive->BaseBlock->Sequence2++;
    RegistryHive->BaseBlock->CheckSum =
       HvpHiveHeaderChecksum(RegistryHive->BaseBlock);
@@ -150,6 +156,8 @@ HvpWriteHive(
    BOOLEAN Success;
 
    ASSERT(RegistryHive->ReadOnly == FALSE);
+   ASSERT(RegistryHive->BaseBlock->Length ==
+          RegistryHive->Storage[Stable].Length * HV_BLOCK_SIZE);
 
    DPRINT("HvpWriteHive called\n");
 
@@ -261,6 +269,7 @@ HvSyncHive(
 
    /* Clear dirty bitmap. */
    RtlClearAllBits(&RegistryHive->DirtyVector);
+   RegistryHive->DirtyCount = 0;
 
    return TRUE;
 }

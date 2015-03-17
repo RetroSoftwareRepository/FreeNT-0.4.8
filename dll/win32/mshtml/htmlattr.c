@@ -16,24 +16,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-
-#include <stdarg.h>
-#include <assert.h>
-
-#define COBJMACROS
-
-#include <windef.h>
-#include <winbase.h>
-//#include "winuser.h"
-#include <ole2.h>
-
 #include "mshtml_private.h"
-
-#include <wine/debug.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(mshtml);
 
 static inline HTMLDOMAttribute *impl_from_IHTMLDOMAttribute(IHTMLDOMAttribute *iface)
 {
@@ -45,16 +28,16 @@ static HRESULT WINAPI HTMLDOMAttribute_QueryInterface(IHTMLDOMAttribute *iface,
 {
     HTMLDOMAttribute *This = impl_from_IHTMLDOMAttribute(iface);
 
+    TRACE("(%p)->(%s %p)\n", This, debugstr_mshtml_guid(riid), ppv);
+
     if(IsEqualGUID(&IID_IUnknown, riid)) {
-        TRACE("(%p)->(IID_IUnknown %p)\n", This, ppv);
         *ppv = &This->IHTMLDOMAttribute_iface;
     }else if(IsEqualGUID(&IID_IHTMLDOMAttribute, riid)) {
-        TRACE("(%p)->(IID_IHTMLDOMAttribute %p)\n", This, ppv);
         *ppv = &This->IHTMLDOMAttribute_iface;
     }else if(dispex_query_interface(&This->dispex, riid, ppv)) {
         return *ppv ? S_OK : E_NOINTERFACE;
     }else {
-        WARN("(%p)->(%s %p)\n", This, debugstr_guid(riid), ppv);
+        WARN("%s not supported\n", debugstr_mshtml_guid(riid));
         *ppv =  NULL;
         return E_NOINTERFACE;
     }
@@ -140,11 +123,25 @@ static HRESULT WINAPI HTMLDOMAttribute_get_nodeName(IHTMLDOMAttribute *iface, BS
     return IDispatchEx_GetMemberName(&This->elem->node.dispex.IDispatchEx_iface, This->dispid, p);
 }
 
-static HRESULT WINAPI HTMLDOMAttribute_put_nodeName(IHTMLDOMAttribute *iface, VARIANT v)
+static HRESULT WINAPI HTMLDOMAttribute_put_nodeValue(IHTMLDOMAttribute *iface, VARIANT v)
 {
     HTMLDOMAttribute *This = impl_from_IHTMLDOMAttribute(iface);
-    FIXME("(%p)->(%s)\n", This, debugstr_variant(&v));
-    return E_NOTIMPL;
+    DISPID dispidNamed = DISPID_PROPERTYPUT;
+    DISPPARAMS dp = {&v, &dispidNamed, 1, 1};
+    EXCEPINFO ei;
+    VARIANT ret;
+
+    TRACE("(%p)->(%s)\n", This, debugstr_variant(&v));
+
+    if(!This->elem) {
+        FIXME("NULL This->elem\n");
+        return E_UNEXPECTED;
+    }
+
+    memset(&ei, 0, sizeof(ei));
+
+    return IDispatchEx_InvokeEx(&This->elem->node.dispex.IDispatchEx_iface, This->dispid, LOCALE_SYSTEM_DEFAULT,
+            DISPATCH_PROPERTYPUT, &dp, &ret, &ei, NULL);
 }
 
 static HRESULT WINAPI HTMLDOMAttribute_get_nodeValue(IHTMLDOMAttribute *iface, VARIANT *p)
@@ -218,7 +215,7 @@ static const IHTMLDOMAttributeVtbl HTMLDOMAttributeVtbl = {
     HTMLDOMAttribute_GetIDsOfNames,
     HTMLDOMAttribute_Invoke,
     HTMLDOMAttribute_get_nodeName,
-    HTMLDOMAttribute_put_nodeName,
+    HTMLDOMAttribute_put_nodeValue,
     HTMLDOMAttribute_get_nodeValue,
     HTMLDOMAttribute_get_specified
 };

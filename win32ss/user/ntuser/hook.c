@@ -2,7 +2,7 @@
  * COPYRIGHT:        See COPYING in the top level directory
  * PROJECT:          ReactOS kernel
  * PURPOSE:          Window hooks
- * FILE:             subsystems/win32/win32k/ntuser/hook.c
+ * FILE:             win32ss/user/ntuser/hook.c
  * PROGRAMER:        Casper S. Hornstrup (chorns@users.sourceforge.net)
  *                   James Tabor (james.tabor@rectos.org)
  *                   Rafal Harabien (rafalh@reactos.org)
@@ -35,7 +35,7 @@ IntLoadHookModule(int iHookID, HHOOK hHook, BOOL Unload)
 
    ppi = PsGetCurrentProcessWin32Process();
 
-   ERR("IntLoadHookModule. Client PID: %p\n", PsGetProcessId(ppi->peProcess));
+   TRACE("IntLoadHookModule. Client PID: %p\n", PsGetProcessId(ppi->peProcess));
 
     /* Check if this is the api hook */
     if(iHookID == WH_APIHOOK)
@@ -92,7 +92,7 @@ IntHookModuleUnloaded(PDESKTOP pdesk, int iHookID, HHOOK hHook)
     PLIST_ENTRY ListEntry;
     PPROCESSINFO ppiCsr;
 
-    ERR("IntHookModuleUnloaded: iHookID=%d\n", iHookID);
+    TRACE("IntHookModuleUnloaded: iHookID=%d\n", iHookID);
 
     ppiCsr = PsGetProcessWin32Process(gpepCSRSS);
 
@@ -155,7 +155,7 @@ UserRegisterUserApiHook(
         return FALSE;
     }
 
-    ERR("UserRegisterUserApiHook. Server PID: %p\n", PsGetProcessId(pti->ppi->peProcess));
+    TRACE("UserRegisterUserApiHook. Server PID: %p\n", PsGetProcessId(pti->ppi->peProcess));
 
     /* Register the api hook */
     gpsi->dwSRVIFlags |= SRVINFO_APIHOOK;
@@ -222,7 +222,7 @@ UserUnregisterUserApiHook(VOID)
         return FALSE;
     }
 
-    ERR("UserUnregisterUserApiHook. Server PID: %p\n", PsGetProcessId(pti->ppi->peProcess));
+    TRACE("UserUnregisterUserApiHook. Server PID: %p\n", PsGetProcessId(pti->ppi->peProcess));
 
     /* Unregister the api hook */
     gpsi->dwSRVIFlags &= ~SRVINFO_APIHOOK;
@@ -318,7 +318,7 @@ co_IntCallLowLevelHook(PHOOK Hook,
 // Dispatch MsgQueue Hook Call processor!
 //
 LRESULT
-FASTCALL
+APIENTRY
 co_CallHook( INT HookId,
              INT Code,
              WPARAM wParam,
@@ -335,14 +335,13 @@ co_CallHook( INT HookId,
     {
        case WH_JOURNALPLAYBACK:
        case WH_JOURNALRECORD:
-       case WH_KEYBOARD:
        case WH_KEYBOARD_LL:
        case WH_MOUSE_LL:
        case WH_MOUSE:
           lParam = (LPARAM)pHP->pHookStructs;
+       case WH_KEYBOARD:
           break;
     }
-
     /* The odds are high for this to be a Global call. */
     Result = co_IntCallHookProc( HookId,
                                  Code,
@@ -362,7 +361,7 @@ co_CallHook( INT HookId,
 
 static
 LRESULT
-FASTCALL
+APIENTRY
 co_HOOK_CallHookNext( PHOOK Hook,
                       INT Code,
                       WPARAM wParam,
@@ -516,7 +515,7 @@ co_IntCallDebugHook(PHOOK Hook,
 
 static
 LRESULT
-FASTCALL
+APIENTRY
 co_UserCallNextHookEx(PHOOK Hook,
                     int Code,
                     WPARAM wParam,
@@ -721,7 +720,8 @@ co_UserCallNextHookEx(PHOOK Hook,
 
                             if (!IS_ATOM(pcbtcww->lpcs->lpszClass))
                             {
-                               ProbeForRead( pcbtcww->lpcs->lpszClass,
+                                _Analysis_assume_(pcbtcww->lpcs->lpszClass != NULL);
+                                ProbeForRead(pcbtcww->lpcs->lpszClass,
                                              sizeof(CHAR),
                                              1);
                             }
@@ -740,7 +740,8 @@ co_UserCallNextHookEx(PHOOK Hook,
 
                             if (!IS_ATOM(pcbtcww->lpcs->lpszClass))
                             {
-                               ProbeForRead( pcbtcww->lpcs->lpszClass,
+                                _Analysis_assume_(pcbtcww->lpcs->lpszClass != NULL);
+                                ProbeForRead(pcbtcww->lpcs->lpszClass,
                                              sizeof(WCHAR),
                                              1);
                             }
@@ -969,15 +970,16 @@ IntGetGlobalHookHandles(PDESKTOP pdo, int HookId)
       ++cHooks;
 
     pList = ExAllocatePoolWithTag(PagedPool, (cHooks + 1) * sizeof(HHOOK), TAG_HOOK);
-    if(!pList)
+    if (!pList)
     {
         EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
         return NULL;
-}
+    }
 
     for (pElem = pLastHead->Flink; pElem != pLastHead; pElem = pElem->Flink)
-{
+    {
         pHook = CONTAINING_RECORD(pElem, HOOK, Chain);
+        NT_ASSERT(i < cHooks);
         pList[i++] = pHook->head.h;
     }
     pList[i] = NULL;
@@ -1028,14 +1030,13 @@ IntFreeHook(PHOOK Hook)
 }
 
 /* Remove a hook, freeing it from the chain */
-static
-VOID
-FASTCALL
-IntRemoveHook(PHOOK Hook)
+BOOLEAN
+IntRemoveHook(PVOID Object)
 {
     INT HookId;
     PTHREADINFO pti;
     PDESKTOP pdo;
+    PHOOK Hook = Object;
 
     HookId = Hook->HookId;
 
@@ -1073,72 +1074,15 @@ IntRemoveHook(PHOOK Hook)
           pdo->pDeskInfo->fsHooks &= ~HOOKID_TO_FLAG(HookId);
        }
     }
-}
 
-VOID
-FASTCALL
-HOOK_DestroyThreadHooks(PETHREAD Thread)
-{
-   PTHREADINFO pti;
-   PDESKTOP pdo;
-   int HookId;
-   PHOOK HookObj;
-   PLIST_ENTRY pElem;
-
-   pti = Thread->Tcb.Win32Thread;
-   pdo = IntGetActiveDesktop();
-
-   if (!pti || !pdo)
-   {
-      ERR("Kill Thread Hooks pti %p pdo %p\n", pti, pdo);
-      return;
-   }
-
-// Local Thread cleanup.
-   if (pti->fsHooks)
-   {
-      for (HookId = WH_MINHOOK; HookId <= WH_MAXHOOK; HookId++)
-      {
-         PLIST_ENTRY pLastHead = &pti->aphkStart[HOOKID_TO_INDEX(HookId)];
-
-         pElem = pLastHead->Flink;
-         while (pElem != pLastHead)
-         {
-            HookObj = CONTAINING_RECORD(pElem, HOOK, Chain);
-            pElem = HookObj->Chain.Flink; // get next element before hook is destroyed
-            IntRemoveHook(HookObj);
-         }
-      }
-      pti->fsHooks = 0;
-      pti->pClientInfo->fsHooks = 0;
-   }
-// Global search based on Thread and cleanup.
-   if (pdo->pDeskInfo->fsHooks)
-   {
-      for (HookId = WH_MINHOOK; HookId <= WH_MAXHOOK; HookId++)
-      {
-         PLIST_ENTRY pGLE = &pdo->pDeskInfo->aphkStart[HOOKID_TO_INDEX(HookId)];
-
-         pElem = pGLE->Flink;
-         while (pElem != pGLE)
-         {
-            HookObj = CONTAINING_RECORD(pElem, HOOK, Chain);
-            pElem = HookObj->Chain.Flink; // Get next element before hook is destroyed
-            if (HookObj->head.pti == pti)
-            {
-               IntRemoveHook(HookObj);
-            }
-         }
-      }
-   }
-   return;
+    return TRUE;
 }
 
 /*
   Win32k Kernel Space Hook Caller.
  */
 LRESULT
-FASTCALL
+APIENTRY
 co_HOOK_CallHooks( INT HookId,
                    INT Code,
                    WPARAM wParam,
@@ -1208,6 +1152,8 @@ co_HOOK_CallHooks( INT HookId,
        }
 
        Hook = CONTAINING_RECORD(pLastHead->Flink, HOOK, Chain);
+       ObReferenceObject(pti->pEThread);
+       IntReferenceThreadInfo(pti);
        UserRefObjectCo(Hook, &Ref);
 
        ClientInfo = pti->pClientInfo;
@@ -1237,7 +1183,7 @@ co_HOOK_CallHooks( INT HookId,
                                     wParam,
                                     lParam,
                                     Hook->Proc,
-                                    Hook->ihmod, 
+                                    Hook->ihmod,
                                     Hook->offPfn,
                                     Hook->Ansi,
                                    &Hook->ModuleName);
@@ -1257,6 +1203,8 @@ co_HOOK_CallHooks( INT HookId,
        pti->sphkCurrent = SaveHook;
        Hook->phkNext = NULL;
        UserDerefObjectCo(Hook);
+       IntDereferenceThreadInfo(pti);
+       ObDereferenceObject(pti->pEThread);
     }
 
     if ( Global )
@@ -1282,7 +1230,6 @@ co_HOOK_CallHooks( INT HookId,
               ERR("Invalid hook!\n");
               continue;
           }
-          UserRefObjectCo(Hook, &Ref);
 
          /* Hook->Thread is null, we hax around this with Hook->head.pti. */
           ptiHook = Hook->head.pti;
@@ -1292,6 +1239,7 @@ co_HOOK_CallHooks( INT HookId,
              TRACE("Next Hook %p, %p\n", ptiHook->rpdesk, pdo);
              continue;
           }
+          UserRefObjectCo(Hook, &Ref);
 
           if (ptiHook != pti )
           {
@@ -1306,19 +1254,40 @@ co_HOOK_CallHooks( INT HookId,
                 TRACE("\nGlobal Hook posting to another Thread! %d\n",HookId );
                 Result = co_IntCallLowLevelHook(Hook, Code, wParam, lParam);
              }
+             else if (ptiHook->ppi == pti->ppi)
+             {
+                TRACE("\nGlobal Hook calling to another Thread! %d\n",HookId );
+                ObReferenceObject(ptiHook->pEThread);
+                IntReferenceThreadInfo(ptiHook);
+                Result = co_IntCallHookProc( HookId,
+                                             Code,
+                                             wParam,
+                                             lParam,
+                                             Hook->Proc,
+                                             Hook->ihmod,
+                                             Hook->offPfn,
+                                             Hook->Ansi,
+                                            &Hook->ModuleName);
+                IntDereferenceThreadInfo(ptiHook);
+                ObDereferenceObject(ptiHook->pEThread);
+             }
           }
           else
           { /* Make the direct call. */
-             TRACE("Local Hook calling to Thread! %d\n",HookId );
+             TRACE("Global going Local Hook calling to Thread! %d\n",HookId );
+             ObReferenceObject(pti->pEThread);
+             IntReferenceThreadInfo(pti);
              Result = co_IntCallHookProc( HookId,
                                           Code,
                                           wParam,
                                           lParam,
                                           Hook->Proc,
-                                          Hook->ihmod, 
+                                          Hook->ihmod,
                                           Hook->offPfn,
                                           Hook->Ansi,
                                          &Hook->ModuleName);
+             IntDereferenceThreadInfo(pti);
+             ObDereferenceObject(pti->pEThread);
           }
           UserDerefObjectCo(Hook);
        }
@@ -1352,12 +1321,14 @@ IntUnhookWindowsHook(int HookId, HOOKPROC pfnFilterProc)
        {
           Hook = CONTAINING_RECORD(pElement, HOOK, Chain);
 
+          /* Get the next element now, we might free the hook in what follows */
+          pElement = Hook->Chain.Flink;
+
           if (Hook->Proc == pfnFilterProc)
           {
              if (Hook->head.pti == pti)
              {
                 IntRemoveHook(Hook);
-                UserDereferenceObject(Hook);
                 return TRUE;
              }
              else
@@ -1366,8 +1337,6 @@ IntUnhookWindowsHook(int HookId, HOOKPROC pfnFilterProc)
                 return FALSE;
              }
           }
-
-          pElement = Hook->Chain.Flink;
        }
     }
     return FALSE;
@@ -1460,7 +1429,7 @@ NtUserSetWindowsHookEx( HINSTANCE Mod,
                         BOOL Ansi)
 {
     PWINSTATION_OBJECT WinStaObj;
-    PHOOK Hook;
+    PHOOK Hook = NULL;
     UNICODE_STRING ModuleName;
     NTSTATUS Status;
     HHOOK Handle;
@@ -1492,7 +1461,7 @@ NtUserSetWindowsHookEx( HINSTANCE Mod,
             HookId == WH_MOUSE_LL ||
             HookId == WH_SYSMSGFILTER)
        {
-           ERR("Local hook installing Global HookId: %d\n",HookId);
+           TRACE("Local hook installing Global HookId: %d\n",HookId);
            /* these can only be global */
            EngSetLastError(ERROR_GLOBAL_ONLY_HOOK);
            RETURN( NULL);
@@ -1567,7 +1536,8 @@ NtUserSetWindowsHookEx( HINSTANCE Mod,
     Status = IntValidateWindowStationHandle( PsGetCurrentProcess()->Win32WindowStation,
                                              KernelMode,
                                              0,
-                                            &WinStaObj);
+                                            &WinStaObj,
+                                             0);
 
     if (!NT_SUCCESS(Status))
     {
@@ -1576,7 +1546,7 @@ NtUserSetWindowsHookEx( HINSTANCE Mod,
     }
     ObDereferenceObject(WinStaObj);
 
-    Hook = UserCreateObject(gHandleTable, NULL, NULL, (PHANDLE)&Handle, TYPE_HOOK, sizeof(HOOK));
+    Hook = UserCreateObject(gHandleTable, NULL, ptiHook, (PHANDLE)&Handle, TYPE_HOOK, sizeof(HOOK));
 
     if (!Hook)
     {
@@ -1692,6 +1662,8 @@ NtUserSetWindowsHookEx( HINSTANCE Mod,
     RETURN( Handle);
 
 CLEANUP:
+    if (Hook)
+        UserDereferenceObject(Hook);
     TRACE("Leave NtUserSetWindowsHookEx, ret=%p\n", _ret_);
     UserLeave();
     END_CLEANUP;

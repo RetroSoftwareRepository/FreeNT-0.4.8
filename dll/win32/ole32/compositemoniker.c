@@ -18,29 +18,11 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-
-//#include <assert.h>
-#include <stdarg.h>
-//#include <string.h>
-
-#define COBJMACROS
-#define NONAMELESSUNION
-#define NONAMELESSSTRUCT
-
-#include <windef.h>
-#include <winbase.h>
-//#include "winuser.h"
-//#include "winerror.h"
-#include <wine/debug.h>
-#include <wine/unicode.h>
-#include <ole2.h>
-#include "moniker.h"
+#include "precomp.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(ole);
 
-#define  BLOCK_TAB_SIZE 5 /* represent the first size table and it's increment block size */
+#define  BLOCK_TAB_SIZE 5 /* represent the first size table and its increment block size */
 
 /* CompositeMoniker data structure */
 typedef struct CompositeMonikerImpl{
@@ -159,7 +141,7 @@ CompositeMonikerImpl_Release(IMoniker* iface)
 
     ref = InterlockedDecrement(&This->ref);
 
-    /* destroy the object if there's no more reference on it */
+    /* destroy the object if there are no more references to it */
     if (ref == 0){
 
         /* release all the components before destroying this object */
@@ -1545,7 +1527,7 @@ EnumMonikerImpl_Release(IEnumMoniker* iface)
 
     ref = InterlockedDecrement(&This->ref);
 
-    /* destroy the object if there's no more reference on it */
+    /* destroy the object if there are no more references to it */
     if (ref == 0) {
 
         for(i=0;i<This->tabSize;i++)
@@ -1941,10 +1923,12 @@ CreateGenericComposite(IMoniker *pmkFirst, IMoniker *pmkRest, IMoniker **ppmkCom
     if (pmkFirst==NULL && pmkRest!=NULL){
 
         *ppmkComposite=pmkRest;
+        IMoniker_AddRef(pmkRest);
         return S_OK;
     }
     else if (pmkFirst!=NULL && pmkRest==NULL){
         *ppmkComposite=pmkFirst;
+        IMoniker_AddRef(pmkFirst);
         return S_OK;
     }
     else  if (pmkFirst==NULL && pmkRest==NULL)

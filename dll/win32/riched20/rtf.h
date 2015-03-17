@@ -1,16 +1,6 @@
 #ifndef _RTF
 #define _RTF
 
-//#include <stdarg.h>
-//#include <stdio.h>
-
-//#include "windef.h"
-//#include "winbase.h"
-//#include "wingdi.h"
-//#include "winuser.h"
-//#include "richedit.h"
-
-
 /*
  * rtf.h - RTF document processing stuff.  Release 1.10.
  */
@@ -1139,7 +1129,7 @@ struct _RTF_Info {
     char *pushedTextBuf;
 
     int	prevChar;
-    int	bumpLine;
+    BOOL bumpLine;
 
     /* Document-wide attributes */
     RTFFont	*fontList;	/* these lists MUST be */

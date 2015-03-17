@@ -52,26 +52,10 @@
  *   -- ICC_WIN95_CLASSES
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-#define COM_NO_WINDOWS_H
+#include "comctl32.h"
 
-#include <stdarg.h>
-//#include <string.h>
-//#include <stdlib.h>
-
-#include <windef.h>
-#include <winbase.h>
-//#include "wingdi.h"
-//#include "winuser.h"
-#include <winnls.h>
-//#include "commctrl.h"
-//#include "winerror.h"
-#include <winreg.h>
 #define NO_SHLWAPI_STREAM
 #include <shlwapi.h>
-#include "comctl32.h"
-#include <wine/debug.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(commctrl);
 
@@ -119,7 +103,7 @@ static BOOL create_manifest(BOOL install)
     HANDLE hFile;
     BOOL bRet = FALSE;
 
-    hResInfo = FindResourceW(COMCTL32_hModule, L"WINE_MANIFEST", RT_MANIFEST);
+    hResInfo = FindResourceW(COMCTL32_hModule, L"WINE_MANIFEST", (LPWSTR)RT_MANIFEST);
     if (!hResInfo)
         return FALSE;
 
@@ -945,7 +929,7 @@ CreateMappedBitmap (HINSTANCE hInstance, INT_PTR idBitmap, UINT wFlags,
  *     Failure: 0
  *
  * NOTES
- *     Do not use this functions anymore. Use CreateToolbarEx instead.
+ *     Do not use this function anymore. Use CreateToolbarEx instead.
  */
 
 HWND WINAPI
@@ -1576,7 +1560,7 @@ void COMCTL32_GetFontMetrics(HFONT hFont, TEXTMETRICW *ptm)
  * identifies them.
  *
  * Some of the codes are in the CCM_FIRST..CCM_LAST range, but there is no
- * colision with defined CCM_ codes.
+ * collision with defined CCM_ codes.
  */
 BOOL COMCTL32_IsReflectedMessage(UINT uMsg)
 {
@@ -1625,7 +1609,7 @@ BOOL WINAPI MirrorIcon(HICON *phicon1, HICON *phicon2)
     return FALSE;
 }
 
-static inline int IsDelimiter(WCHAR c)
+static inline BOOL IsDelimiter(WCHAR c)
 {
     switch(c)
     {

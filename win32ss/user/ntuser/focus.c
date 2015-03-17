@@ -25,6 +25,9 @@ IsFGLocked(VOID)
    return (gppiLockSFW || guSFWLockCount);
 }
 
+/*
+  Get capture window via foreground Queue.
+*/
 HWND FASTCALL
 IntGetCaptureWindow(VOID)
 {
@@ -102,24 +105,27 @@ co_IntSendActivateMessages(PWND WindowPrev, PWND Window, BOOL MouseActivate, BOO
    PTHREADINFO pti, ptiOld, ptiNew;
    BOOL InAAPM = FALSE;
 
+   //ERR("SendActivateMessages\n");
+
+   pti = PsGetCurrentThreadWin32Thread();
+
    if (Window)
    {
-      pti = PsGetCurrentThreadWin32Thread();
-
       UserRefObjectCo(Window, &Ref);
 
       if (WindowPrev) UserRefObjectCo(WindowPrev, &RefPrev);
 
       /* Send palette messages */
       if (gpsi->PUSIFlags & PUSIF_PALETTEDISPLAY &&
-          co_IntPostOrSendMessage(UserHMGetHandle(Window), WM_QUERYNEWPALETTE, 0, 0))
+          //co_IntPostOrSendMessage(UserHMGetHandle(Window), WM_QUERYNEWPALETTE, 0, 0))
+          co_IntSendMessage(UserHMGetHandle(Window), WM_QUERYNEWPALETTE, 0, 0))
       {
          UserSendNotifyMessage( HWND_BROADCAST,
                                 WM_PALETTEISCHANGING,
                                (WPARAM)UserHMGetHandle(Window),
                                 0);
       }
-      //// Fixes bug 7089.
+      //// Fixes CORE-6434.
       if (!(Window->style & WS_CHILD))
       {
          PWND pwndTemp = co_GetDesktopWindow(Window)->spwndChild;
@@ -138,55 +144,87 @@ co_IntSendActivateMessages(PWND WindowPrev, PWND Window, BOOL MouseActivate, BOO
          }
       }
       ////
-      OldTID = WindowPrev ? IntGetWndThreadId(WindowPrev) : NULL;
-      NewTID = IntGetWndThreadId(Window);
-      ptiOld = WindowPrev ? WindowPrev->head.pti : NULL;
-      ptiNew = Window->head.pti;
-
-      //ERR("SendActivateMessage Old -> %x, New -> %x\n", OldTID, NewTID);
-
-      if (!(pti->TIF_flags & TIF_INACTIVATEAPPMSG) &&
-           (!WindowPrev || OldTID != NewTID) )
+      //// CORE-1161 and CORE-6651
+      if (Window->spwndPrev)
       {
-         PWND cWindow;
-         HWND *List, *phWnd;
+         HWND *phwndTopLevel, *phwndCurrent;
+         PWND pwndCurrent, pwndDesktop;
 
-         List = IntWinListChildren(UserGetDesktopWindow());
-         if ( List )
+         pwndDesktop = co_GetDesktopWindow(Window);//UserGetDesktopWindow();
+         if (Window->spwndParent == pwndDesktop )
          {
-            if ( OldTID )
+            phwndTopLevel = IntWinListChildren(pwndDesktop);
+            phwndCurrent = phwndTopLevel;
+            while(*phwndCurrent)
             {
-               ptiOld->TIF_flags |= TIF_INACTIVATEAPPMSG;
-               // Note: Do not set pci flags, this does crash!
-               for (phWnd = List; *phWnd; ++phWnd)
-               {
-                  cWindow = ValidateHwndNoErr(*phWnd);
-                  if (cWindow && cWindow->head.pti == ptiOld)
-                  {  // FALSE if the window is being deactivated,
-                     // ThreadId that owns the window being activated.
-                    co_IntSendMessageNoWait(*phWnd, WM_ACTIVATEAPP, FALSE, (LPARAM)NewTID);
-                  }
-               }
-               ptiOld->TIF_flags &= ~TIF_INACTIVATEAPPMSG;
+                pwndCurrent = UserGetWindowObject(*phwndCurrent);
+
+                if (pwndCurrent && pwndCurrent->spwndOwner == Window )
+                {
+                    co_WinPosSetWindowPos(pwndCurrent, HWND_TOP, 0, 0, 0, 0, SWP_NOSIZE|SWP_NOMOVE|SWP_NOACTIVATE);
+                }
+                phwndCurrent++;
             }
-            if ( NewTID )
-            {  //// Prevents a resource crash due to reentrance!
-               InAAPM = TRUE;
-               pti->TIF_flags |= TIF_INACTIVATEAPPMSG;
-               ////
-               for (phWnd = List; *phWnd; ++phWnd)
-               {
-                  cWindow = ValidateHwndNoErr(*phWnd);
-                  if (cWindow && cWindow->head.pti == ptiNew)
-                  { // TRUE if the window is being activated,
-                    // ThreadId that owns the window being deactivated.
-                    co_IntSendMessageNoWait(*phWnd, WM_ACTIVATEAPP, TRUE, (LPARAM)OldTID);
-                  }
-               }
-            }
-            ExFreePool(List);//ExFreePoolWithTag(List, USERTAG_WINDOWLIST);
-         }
+            ExFreePool(phwndTopLevel);
+          }
       }
+      ////
+   }
+
+   OldTID = WindowPrev ? IntGetWndThreadId(WindowPrev) : NULL;
+   NewTID = Window ? IntGetWndThreadId(Window) : NULL;
+   ptiOld = WindowPrev ? WindowPrev->head.pti : NULL;
+   ptiNew = Window ? Window->head.pti : NULL;
+
+   //ERR("SendActivateMessage Old -> %x, New -> %x\n", OldTID, NewTID);
+
+   if (!(pti->TIF_flags & TIF_INACTIVATEAPPMSG) &&
+        (OldTID != NewTID) )
+   {
+      PWND cWindow;
+      HWND *List, *phWnd;
+
+      List = IntWinListChildren(UserGetDesktopWindow());
+      if ( List )
+      {
+         if ( OldTID )
+         {
+            ptiOld->TIF_flags |= TIF_INACTIVATEAPPMSG;
+            // Note: Do not set pci flags, this does crash!
+            for (phWnd = List; *phWnd; ++phWnd)
+            {
+               cWindow = ValidateHwndNoErr(*phWnd);
+               if (cWindow && cWindow->head.pti == ptiOld)
+               { // FALSE if the window is being deactivated,
+                 // ThreadId that owns the window being activated.
+                 //ERR("SendActivateMessage Old\n");
+                 co_IntSendMessageNoWait(*phWnd, WM_ACTIVATEAPP, FALSE, (LPARAM)NewTID);
+               }
+            }
+            ptiOld->TIF_flags &= ~TIF_INACTIVATEAPPMSG;
+         }
+         if ( NewTID )
+         {  //// Prevents a resource crash due to reentrance!
+            InAAPM = TRUE;
+            pti->TIF_flags |= TIF_INACTIVATEAPPMSG;
+            ////
+            for (phWnd = List; *phWnd; ++phWnd)
+            {
+               cWindow = ValidateHwndNoErr(*phWnd);
+               if (cWindow && cWindow->head.pti == ptiNew)
+               { // TRUE if the window is being activated,
+                 // ThreadId that owns the window being deactivated.
+                 //ERR("SendActivateMessage New\n");
+                 co_IntSendMessageNoWait(*phWnd, WM_ACTIVATEAPP, TRUE, (LPARAM)OldTID);
+               }
+            }
+         }
+         ExFreePoolWithTag(List, USERTAG_WINDOWLIST);
+      }
+   }
+
+   if (Window)
+   {
       if (WindowPrev)
          UserDerefObjectCo(WindowPrev); // Now allow the previous window to die.
 
@@ -203,22 +241,27 @@ co_IntSendActivateMessages(PWND WindowPrev, PWND Window, BOOL MouseActivate, BOO
 
       co_IntMakeWindowActive(Window);
 
-      /* FIXME: IntIsWindow */
-
       co_IntSendMessageNoWait( UserHMGetHandle(Window),
                                WM_NCACTIVATE,
                               (WPARAM)(Window == (gpqForeground ? gpqForeground->spwndActive : NULL)),
                                0); //(LPARAM)hWndPrev);
 
-      co_IntSendMessageNoWait( UserHMGetHandle(Window),
-                               WM_ACTIVATE,
-                               MAKEWPARAM(MouseActivate ? WA_CLICKACTIVE : WA_ACTIVE, Window->style & WS_MINIMIZE),
-                              (LPARAM)(WindowPrev ? UserHMGetHandle(WindowPrev) : 0));
+      co_IntSendMessage( UserHMGetHandle(Window),
+                         WM_ACTIVATE,
+                         MAKEWPARAM(MouseActivate ? WA_CLICKACTIVE : WA_ACTIVE, Window->style & WS_MINIMIZE),
+                        (LPARAM)(WindowPrev ? UserHMGetHandle(WindowPrev) : 0));
 
-      if (!Window->spwndOwner && !IntGetParent(Window))
+      if (Window->spwndParent == UserGetDesktopWindow() &&
+          Window->spwndOwner == NULL &&
+          (!(Window->ExStyle & WS_EX_TOOLWINDOW) ||
+           (Window->ExStyle & WS_EX_APPWINDOW)))
       {
          // FIXME lParam; The value is TRUE if the window is in full-screen mode, or FALSE otherwise.
          co_IntShellHookNotify(HSHELL_WINDOWACTIVATED, (WPARAM) UserHMGetHandle(Window), FALSE);
+      }
+      else
+      {
+          co_IntShellHookNotify(HSHELL_WINDOWACTIVATED, 0, FALSE);
       }
 
       Window->state &= ~WNDS_NONCPAINT;
@@ -251,12 +294,14 @@ IntSendFocusMessages( PTHREADINFO pti, PWND pWnd)
    {
       if (pWndPrev)
       {
-         co_IntPostOrSendMessage(UserHMGetHandle(pWndPrev), WM_KILLFOCUS, (WPARAM)UserHMGetHandle(pWnd), 0);
+         //co_IntPostOrSendMessage(UserHMGetHandle(pWndPrev), WM_KILLFOCUS, (WPARAM)UserHMGetHandle(pWnd), 0);
+         co_IntSendMessage(UserHMGetHandle(pWndPrev), WM_KILLFOCUS, (WPARAM)UserHMGetHandle(pWnd), 0);
       }
       if (ThreadQueue->spwndFocus == pWnd)
       {
          IntNotifyWinEvent(EVENT_OBJECT_FOCUS, pWnd, OBJID_CLIENT, CHILDID_SELF, 0);
-         co_IntPostOrSendMessage(UserHMGetHandle(pWnd), WM_SETFOCUS, (WPARAM)(pWndPrev ? UserHMGetHandle(pWndPrev) : NULL), 0);
+         //co_IntPostOrSendMessage(UserHMGetHandle(pWnd), WM_SETFOCUS, (WPARAM)(pWndPrev ? UserHMGetHandle(pWndPrev) : NULL), 0);
+         co_IntSendMessage(UserHMGetHandle(pWnd), WM_SETFOCUS, (WPARAM)(pWndPrev ? UserHMGetHandle(pWndPrev) : NULL), 0);
       }
    }
    else
@@ -264,31 +309,10 @@ IntSendFocusMessages( PTHREADINFO pti, PWND pWnd)
       if (pWndPrev)
       {
          IntNotifyWinEvent(EVENT_OBJECT_FOCUS, NULL, OBJID_CLIENT, CHILDID_SELF, 0);
-         co_IntPostOrSendMessage(UserHMGetHandle(pWndPrev), WM_KILLFOCUS, 0, 0);
+         //co_IntPostOrSendMessage(UserHMGetHandle(pWndPrev), WM_KILLFOCUS, 0, 0);
+         co_IntSendMessage(UserHMGetHandle(pWndPrev), WM_KILLFOCUS, 0, 0);
       }
    }
-}
-
-HWND FASTCALL
-IntFindChildWindowToOwner(PWND Root, PWND Owner)
-{
-   HWND Ret;
-   PWND Child, OwnerWnd;
-
-   for(Child = Root->spwndChild; Child; Child = Child->spwndNext)
-   {
-       OwnerWnd = Child->spwndOwner;
-      if(!OwnerWnd)
-         continue;
-
-      if(OwnerWnd == Owner)
-      {
-         Ret = Child->head.h;
-         return Ret;
-      }
-   }
-
-   return NULL;
 }
 
 VOID FASTCALL
@@ -302,28 +326,22 @@ FindRemoveAsyncMsg(PWND Wnd, WPARAM wParam)
 
    pti = Wnd->head.pti;
 
-   if (!IsListEmpty(&pti->SentMessagesListHead))
+   Entry = pti->SentMessagesListHead.Flink;
+   while (Entry != &pti->SentMessagesListHead)
    {
       // Scan sent queue messages to see if we received async messages.
-      Entry = pti->SentMessagesListHead.Flink;
       Message = CONTAINING_RECORD(Entry, USER_SENT_MESSAGE, ListEntry);
-      do
-      {
-         if (IsListEmpty(Entry)) return;
-         if (!Message) return;
-         Entry = Message->ListEntry.Flink;
+      Entry = Entry->Flink;
 
-         if (Message->Msg.message == WM_ASYNC_SETACTIVEWINDOW &&
-             Message->Msg.hwnd == UserHMGetHandle(Wnd) &&
-             Message->Msg.wParam == wParam )
-         {
-             ERR("ASYNC SAW: Found one in the Sent Msg Queue! %p Activate/Deactivate %d\n", Message->Msg.hwnd,!!wParam);
-             RemoveEntryList(&Message->ListEntry); // Purge the entry.
-             ExFreePoolWithTag(Message, TAG_USRMSG);
-         }
-         Message = CONTAINING_RECORD(Entry, USER_SENT_MESSAGE, ListEntry);
+      if (Message->Msg.message == WM_ASYNC_SETACTIVEWINDOW &&
+          Message->Msg.hwnd == UserHMGetHandle(Wnd) &&
+          Message->Msg.wParam == wParam)
+      {
+         WARN("ASYNC SAW: Found one in the Sent Msg Queue! %p Activate/Deactivate %d\n", Message->Msg.hwnd, !!wParam);
+         RemoveEntryList(&Message->ListEntry); // Purge the entry.
+         ClearMsgBitsMask(pti, Message->QS_Flags);
+         ExFreePoolWithTag(Message, TAG_USRMSG);
       }
-      while (Entry != &pti->SentMessagesListHead);
    }
 }
 
@@ -398,7 +416,7 @@ CanForceFG(PPROCESSINFO ppi)
 static
 BOOL FASTCALL
 co_IntSetForegroundAndFocusWindow(
-    _In_ PWND Wnd,
+    _In_opt_ PWND Wnd,
     _In_ BOOL MouseActivate)
 {
    HWND hWnd = Wnd ? UserHMGetHandle(Wnd) : NULL;
@@ -511,50 +529,10 @@ co_IntSetForegroundAndFocusWindow(
    else
    {
        //ERR("Activate Not same PQ and WQ and Wnd.\n");
-       co_IntSendMessageNoWait(hWnd, WM_ASYNC_SETACTIVEWINDOW, (WPARAM)Wnd, (LPARAM)MouseActivate );
+       co_IntSendMessage(hWnd, WM_ASYNC_SETACTIVEWINDOW, (WPARAM)Wnd, (LPARAM)MouseActivate );
        Ret = TRUE;
    }
    return Ret && fgRet;
-}
-
-BOOL FASTCALL
-co_IntMouseActivateWindow(PWND Wnd)
-{
-   HWND Top;
-   PWND TopWindow;
-   USER_REFERENCE_ENTRY Ref;
-
-   ASSERT_REFS_CO(Wnd);
-
-   if (Wnd->style & WS_DISABLED)
-   {
-      BOOL Ret;
-      PWND TopWnd;
-      PWND DesktopWindow = UserGetDesktopWindow();
-      if (DesktopWindow)
-      {
-         Top = IntFindChildWindowToOwner(DesktopWindow, Wnd);
-         if ((TopWnd = ValidateHwndNoErr(Top)))
-         {
-            UserRefObjectCo(TopWnd, &Ref);
-            Ret = co_IntMouseActivateWindow(TopWnd);
-            UserDerefObjectCo(TopWnd);
-
-            return Ret;
-         }
-      }
-      return FALSE;
-   }
-
-   TopWindow = UserGetAncestor(Wnd, GA_ROOT);
-   //if (TopWindow) {ERR("MAW 2 pWnd %p hWnd %p\n",TopWindow,TopWindow->head.h);}
-   if (!TopWindow) return FALSE;
-
-   /* TMN: Check return value from this function? */
-   UserRefObjectCo(TopWindow, &Ref);
-   co_IntSetForegroundAndFocusWindow(TopWindow, TRUE);
-   UserDerefObjectCo(TopWindow);
-   return TRUE;
 }
 
 BOOL FASTCALL
@@ -678,7 +656,7 @@ co_IntSetActiveWindow(PWND Wnd OPTIONAL, BOOL bMouse, BOOL bFocus, BOOL Async)
         (Wnd && !VerifyWnd(Wnd)) ||
         ThreadQueue != pti->MessageQueue )
    {
-      ERR("SetActiveWindow: Summery ERROR, active state changed!\n");
+      ERR("SetActiveWindow: Summary ERROR, active state changed!\n");
       return FALSE;
    }
 
@@ -702,20 +680,20 @@ co_IntSetActiveWindow(PWND Wnd OPTIONAL, BOOL bMouse, BOOL bFocus, BOOL Async)
    InAAPM = co_IntSendActivateMessages(WndPrev, Wnd, bMouse, Async);
 
    /* now change focus if necessary */
+   //// Fixes CORE-6452 allows setting focus on window.
    if (bFocus && !(ThreadQueue->QF_flags & QF_FOCUSNULLSINCEACTIVE))
    {
       /* Do not change focus if the window is no longer active */
-      if (ThreadQueue->spwndActive == Wnd)
+      if (pti->MessageQueue->spwndActive != IntGetNonChildAncestor(pti->MessageQueue->spwndFocus))
       {
-         if (!ThreadQueue->spwndFocus ||
-             !Wnd ||
-              UserGetAncestor(ThreadQueue->spwndFocus, GA_ROOT) != Wnd)
-         {
-            co_UserSetFocus(Wnd);
-         }
+         PWND pWndSend = pti->MessageQueue->spwndActive;
+         // Clear focus if the active window is minimized.
+         if (pWndSend && pti->MessageQueue->spwndActive->style & WS_MINIMIZE) pWndSend = NULL;
+         // Send focus messages and if so, set the focus.
+         IntSendFocusMessages( pti, pWndSend);
       }
    }
-
+   ////
    if (InAAPM)
    {
       pti->TIF_flags &= ~TIF_INACTIVATEAPPMSG;
@@ -730,8 +708,17 @@ co_IntSetActiveWindow(PWND Wnd OPTIONAL, BOOL bMouse, BOOL bFocus, BOOL Async)
 }
 
 BOOL FASTCALL
+co_IntMouseActivateWindow(PWND Wnd)
+{
+   TRACE("Mouse Active\n");
+   return co_IntSetForegroundAndFocusWindow(Wnd, TRUE);
+}
+
+BOOL FASTCALL
 UserSetActiveWindow(PWND Wnd)
 {
+  PTHREADINFO pti = PsGetCurrentThreadWin32Thread();
+
   if (Wnd) // Must have a window!
   {
      if ((Wnd->style & (WS_POPUP|WS_CHILD)) == WS_CHILD) return FALSE;
@@ -740,7 +727,7 @@ UserSetActiveWindow(PWND Wnd)
   }
   /*
      Yes your eye are not deceiving you~!
-  
+
      First part of wines Win.c test_SetActiveWindow:
 
      flush_events( TRUE );
@@ -749,7 +736,34 @@ UserSetActiveWindow(PWND Wnd)
      SetActiveWindow(0);
      check_wnd_state(0, 0, 0, 0); <-- This should pass if ShowWindow does it's job!!! As of 10/28/2012 it does!
 
+     Now Handle wines Msg.c test_SetActiveWindow( 0 )...
   */
+  TRACE("USAW: Previous active window\n");
+  if (  gpqForegroundPrev &&
+        gpqForegroundPrev->spwndActivePrev &&
+       (gpqForegroundPrev->spwndActivePrev->style & (WS_VISIBLE|WS_DISABLED)) == WS_VISIBLE  &&
+      !(gpqForegroundPrev->spwndActivePrev->state2 & WNDS2_BOTTOMMOST) &&
+       (Wnd = VerifyWnd(gpqForegroundPrev->spwndActivePrev)) != NULL )
+  {
+     TRACE("USAW:PAW hwnd %p\n",Wnd?Wnd->head.h:NULL);
+     return co_IntSetActiveWindow(Wnd, FALSE, TRUE, FALSE);
+  }
+
+  // Activate anyone but the active window.
+  if ( pti->MessageQueue->spwndActive &&
+      (Wnd = VerifyWnd(pti->MessageQueue->spwndActive)) != NULL )
+  {
+      ERR("USAW:AOWM hwnd %p\n",Wnd?Wnd->head.h:NULL);
+      if (!ActivateOtherWindowMin(Wnd))
+      {
+         // Okay, now go find someone else to play with!
+         ERR("USAW: Going to WPAOW\n");
+         co_WinPosActivateOtherWindow(Wnd);
+      }
+      return TRUE;
+  }
+
+  TRACE("USAW: Nothing\n");
   return FALSE;
 }
 
@@ -786,12 +800,14 @@ co_UserSetFocus(PWND Window)
       }
 
       /* Check if we can set the focus to this window */
-      for (pwndTop = Window; pwndTop != NULL; pwndTop = pwndTop->spwndParent)
+      //// Fixes wine win test_SetParent both "todo" line 3710 and 3720...
+      for (pwndTop = Window; pwndTop; pwndTop = pwndTop->spwndParent)
       {
          if (pwndTop->style & (WS_MINIMIZED|WS_DISABLED)) return 0;
          if ((pwndTop->style & (WS_POPUP|WS_CHILD)) != WS_CHILD) break;
+         if (pwndTop->spwndParent == NULL) break;
       }
-
+      ////
       if (co_HOOK_CallHooks( WH_CBT, HCBT_SETFOCUS, (WPARAM)Window->head.h, (LPARAM)hWndPrev))
       {
          ERR("SetFocus 1 WH_CBT Call Hook return!\n");
@@ -913,6 +929,7 @@ co_UserSetCapture(HWND hWnd)
    {
       if (Window->head.pti->MessageQueue != ThreadQueue)
       {
+         ERR("Window Thread dos not match Current!\n");
          return NULL;
       }
    }
@@ -933,12 +950,10 @@ co_UserSetCapture(HWND hWnd)
    {
       if (ThreadQueue->MenuOwner && Window) ThreadQueue->QF_flags |= QF_CAPTURELOCKED;
 
-      co_IntPostOrSendMessage(hWndPrev, WM_CAPTURECHANGED, 0, (LPARAM)hWnd);
+      co_IntSendMessage(hWndPrev, WM_CAPTURECHANGED, 0, (LPARAM)hWnd);
 
       ThreadQueue->QF_flags &= ~QF_CAPTURELOCKED;
    }
-
-   ThreadQueue->spwndCapture = Window;
 
    if (hWnd == NULL) // Release mode.
    {

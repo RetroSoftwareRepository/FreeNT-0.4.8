@@ -20,7 +20,8 @@
  * PROJECT:          ReactOS kernel
  * FILE:             drivers/filesystem/ntfs/dirctl.c
  * PURPOSE:          NTFS filesystem driver
- * PROGRAMMER:       Eric Kohl
+ * PROGRAMMERS:      Eric Kohl
+ *                   Hervé Poussineau (hpoussin@reactos.org)
  */
 
 /* INCLUDES *****************************************************************/
@@ -29,9 +30,6 @@
 
 #define NDEBUG
 #include <debug.h>
-
-/* GLOBALS *****************************************************************/
-
 
 /* FUNCTIONS ****************************************************************/
 
@@ -47,7 +45,7 @@ NtfsGetStandardInformation(PNTFS_FCB Fcb,
 {
     UNREFERENCED_PARAMETER(DeviceObject);
 
-    DPRINT("NtfsGetStandardInformation() called\n");
+    DPRINT1("NtfsGetStandardInformation(%p, %p, %p, %p)\n", Fcb, DeviceObject, StandardInfo, BufferLength);
 
     if (*BufferLength < sizeof(FILE_STANDARD_INFORMATION))
         return STATUS_BUFFER_OVERFLOW;
@@ -61,7 +59,7 @@ NtfsGetStandardInformation(PNTFS_FCB Fcb,
 
     StandardInfo->AllocationSize = Fcb->RFCB.AllocationSize;
     StandardInfo->EndOfFile = Fcb->RFCB.FileSize;
-    StandardInfo->NumberOfLinks = 0;
+    StandardInfo->NumberOfLinks = Fcb->LinkCount;
     StandardInfo->DeletePending = FALSE;
     StandardInfo->Directory = NtfsFCBIsDirectory(Fcb);
 
@@ -77,15 +75,12 @@ NtfsGetPositionInformation(PFILE_OBJECT FileObject,
                            PFILE_POSITION_INFORMATION PositionInfo,
                            PULONG BufferLength)
 {
-    UNREFERENCED_PARAMETER(FileObject);
-
-    DPRINT("NtfsGetPositionInformation() called\n");
+    DPRINT1("NtfsGetPositionInformation(%p, %p, %p)\n", FileObject, PositionInfo, BufferLength);
 
     if (*BufferLength < sizeof(FILE_POSITION_INFORMATION))
         return STATUS_BUFFER_OVERFLOW;
 
-    PositionInfo->CurrentByteOffset.QuadPart = 0;
-//    FileObject->CurrentByteOffset.QuadPart;
+    PositionInfo->CurrentByteOffset.QuadPart = FileObject->CurrentByteOffset.QuadPart;
 
     DPRINT("Getting position %I64x\n",
            PositionInfo->CurrentByteOffset.QuadPart);
@@ -104,29 +99,19 @@ NtfsGetBasicInformation(PFILE_OBJECT FileObject,
                         PFILE_BASIC_INFORMATION BasicInfo,
                         PULONG BufferLength)
 {
-    DPRINT("NtfsGetBasicInformation() called\n");
+    PFILENAME_ATTRIBUTE FileName = &Fcb->Entry;
+
+    DPRINT1("NtfsGetBasicInformation(%p, %p, %p, %p, %p)\n", FileObject, Fcb, DeviceObject, BasicInfo, BufferLength);
 
     if (*BufferLength < sizeof(FILE_BASIC_INFORMATION))
         return STATUS_BUFFER_OVERFLOW;
 
-#if 0
-    CdfsDateTimeToFileTime(Fcb,
-                           &BasicInfo->CreationTime);
-    CdfsDateTimeToFileTime(Fcb,
-                           &BasicInfo->LastAccessTime);
-    CdfsDateTimeToFileTime(Fcb,
-                           &BasicInfo->LastWriteTime);
-    CdfsDateTimeToFileTime(Fcb,
-                           &BasicInfo->ChangeTime);
+    BasicInfo->CreationTime.QuadPart = FileName->CreationTime;
+    BasicInfo->LastAccessTime.QuadPart = FileName->LastAccessTime;
+    BasicInfo->LastWriteTime.QuadPart = FileName->LastWriteTime;
+    BasicInfo->ChangeTime.QuadPart = FileName->ChangeTime;
 
-    CdfsFileFlagsToAttributes(Fcb,
-                              &BasicInfo->FileAttributes);
-#else
-    UNREFERENCED_PARAMETER(FileObject);
-    UNREFERENCED_PARAMETER(Fcb);
-    UNREFERENCED_PARAMETER(DeviceObject);
-    UNREFERENCED_PARAMETER(BasicInfo);
-#endif
+    NtfsFileFlagsToAttributes(FileName->FileAttributes, &BasicInfo->FileAttributes);
 
     *BufferLength -= sizeof(FILE_BASIC_INFORMATION);
 
@@ -145,28 +130,40 @@ NtfsGetNameInformation(PFILE_OBJECT FileObject,
                        PFILE_NAME_INFORMATION NameInfo,
                        PULONG BufferLength)
 {
-    ULONG NameLength;
+    ULONG BytesToCopy;
 
     UNREFERENCED_PARAMETER(FileObject);
     UNREFERENCED_PARAMETER(DeviceObject);
 
-    DPRINT("NtfsGetNameInformation() called\n");
+    DPRINT1("NtfsGetNameInformation(%p, %p, %p, %p, %p)\n", FileObject, Fcb, DeviceObject, NameInfo, BufferLength);
 
     ASSERT(NameInfo != NULL);
     ASSERT(Fcb != NULL);
 
-    NameLength = wcslen(Fcb->PathName) * sizeof(WCHAR);
-//  NameLength = 2;
-    if (*BufferLength < sizeof(FILE_NAME_INFORMATION) + NameLength)
+    /* If buffer can't hold at least the file name length, bail out */
+    if (*BufferLength < (ULONG)FIELD_OFFSET(FILE_NAME_INFORMATION, FileName[0]))
         return STATUS_BUFFER_OVERFLOW;
 
-    NameInfo->FileNameLength = NameLength;
-    memcpy(NameInfo->FileName,
-           Fcb->PathName,
-           NameLength + sizeof(WCHAR));
-//  wcscpy(NameInfo->FileName, L"\\");
+    /* Save file name length, and as much file len, as buffer length allows */
+    NameInfo->FileNameLength = wcslen(Fcb->PathName) * sizeof(WCHAR);
 
-    *BufferLength -= (sizeof(FILE_NAME_INFORMATION) + NameLength + sizeof(WCHAR));
+    /* Calculate amount of bytes to copy not to overflow the buffer */
+    BytesToCopy = min(NameInfo->FileNameLength,
+                      *BufferLength - FIELD_OFFSET(FILE_NAME_INFORMATION, FileName[0]));
+
+    /* Fill in the bytes */
+    RtlCopyMemory(NameInfo->FileName, Fcb->PathName, BytesToCopy);
+
+    /* Check if we could write more but are not able to */
+    if (*BufferLength < NameInfo->FileNameLength + (ULONG)FIELD_OFFSET(FILE_NAME_INFORMATION, FileName[0]))
+    {
+        /* Return number of bytes written */
+        *BufferLength -= FIELD_OFFSET(FILE_NAME_INFORMATION, FileName[0]) + BytesToCopy;
+        return STATUS_BUFFER_OVERFLOW;
+    }
+
+    /* We filled up as many bytes, as needed */
+    *BufferLength -= (FIELD_OFFSET(FILE_NAME_INFORMATION, FileName[0]) + NameInfo->FileNameLength);
 
     return STATUS_SUCCESS;
 }
@@ -178,7 +175,7 @@ NtfsGetInternalInformation(PNTFS_FCB Fcb,
                            PFILE_INTERNAL_INFORMATION InternalInfo,
                            PULONG BufferLength)
 {
-    DPRINT("NtfsGetInternalInformation() called\n");
+    DPRINT1("NtfsGetInternalInformation(%p, %p, %p)\n", Fcb, InternalInfo, BufferLength);
 
     ASSERT(InternalInfo);
     ASSERT(Fcb);
@@ -186,14 +183,40 @@ NtfsGetInternalInformation(PNTFS_FCB Fcb,
     if (*BufferLength < sizeof(FILE_INTERNAL_INFORMATION))
         return STATUS_BUFFER_OVERFLOW;
 
-    /* FIXME: get a real index, that can be used in a create operation */
-    InternalInfo->IndexNumber.QuadPart = 0;
+    InternalInfo->IndexNumber.QuadPart = Fcb->MFTIndex;
 
     *BufferLength -= sizeof(FILE_INTERNAL_INFORMATION);
 
     return STATUS_SUCCESS;
 }
 
+static
+NTSTATUS
+NtfsGetNetworkOpenInformation(PNTFS_FCB Fcb,
+                              PDEVICE_EXTENSION DeviceExt,
+                              PFILE_NETWORK_OPEN_INFORMATION NetworkInfo,
+                              PULONG BufferLength)
+{
+    PFILENAME_ATTRIBUTE FileName = &Fcb->Entry;
+
+    DPRINT1("NtfsGetNetworkOpenInformation(%p, %p, %p, %p)\n", Fcb, DeviceExt, NetworkInfo, BufferLength);
+
+    if (*BufferLength < sizeof(FILE_NETWORK_OPEN_INFORMATION))
+        return(STATUS_BUFFER_OVERFLOW);
+
+    NetworkInfo->CreationTime.QuadPart = FileName->CreationTime;
+    NetworkInfo->LastAccessTime.QuadPart = FileName->LastAccessTime;
+    NetworkInfo->LastWriteTime.QuadPart = FileName->LastWriteTime;
+    NetworkInfo->ChangeTime.QuadPart = FileName->ChangeTime;
+
+    NetworkInfo->EndOfFile.QuadPart = FileName->AllocatedSize;
+    NetworkInfo->AllocationSize.QuadPart = ROUND_UP(FileName->AllocatedSize, DeviceExt->NtfsInfo.BytesPerCluster);
+
+    NtfsFileFlagsToAttributes(FileName->FileAttributes, &NetworkInfo->FileAttributes);
+
+    *BufferLength -= sizeof(FILE_NETWORK_OPEN_INFORMATION);
+    return STATUS_SUCCESS;
+}
 
 /*
  * FUNCTION: Retrieve the specified file information
@@ -211,7 +234,7 @@ NtfsFsdQueryInformation(PDEVICE_OBJECT DeviceObject,
     ULONG BufferLength;
     NTSTATUS Status = STATUS_SUCCESS;
 
-    DPRINT("NtfsQueryInformation() called\n");
+    DPRINT1("NtfsQueryInformation(%p, %p)\n", DeviceObject, Irp);
 
     Stack = IoGetCurrentIrpStackLocation(Irp);
     FileInformationClass = Stack->Parameters.QueryFile.FileInformationClass;
@@ -258,13 +281,21 @@ NtfsFsdQueryInformation(PDEVICE_OBJECT DeviceObject,
                                                 &BufferLength);
             break;
 
+        case FileNetworkOpenInformation:
+            Status = NtfsGetNetworkOpenInformation(Fcb,
+                                                   DeviceObject->DeviceExtension,
+                                                   SystemBuffer,
+                                                   &BufferLength);
+            break;
+
         case FileAlternateNameInformation:
         case FileAllInformation:
+            DPRINT1("Unimplemented information class %u\n", FileInformationClass);
             Status = STATUS_NOT_IMPLEMENTED;
             break;
 
         default:
-            DPRINT("Unimplemented information class %u\n", FileInformationClass);
+            DPRINT1("Unimplemented information class %u\n", FileInformationClass);
             Status = STATUS_INVALID_PARAMETER;
     }
 

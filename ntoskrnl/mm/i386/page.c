@@ -12,11 +12,10 @@
 #include <ntoskrnl.h>
 #define NDEBUG
 #include <debug.h>
-#include "../ARM3/miarm.h"
+#include <mm/ARM3/miarm.h>
 
 #if defined (ALLOC_PRAGMA)
 #pragma alloc_text(INIT, MmInitGlobalKernelPageDirectory)
-#pragma alloc_text(INIT, MiInitPageDirectoryMap)
 #endif
 
 
@@ -40,22 +39,10 @@
 #define PA_ACCESSED  (1 << PA_BIT_ACCESSED)
 #define PA_GLOBAL    (1 << PA_BIT_GLOBAL)
 
-#define HYPERSPACE          (0xc0400000)
-#define IS_HYPERSPACE(v)    (((ULONG)(v) >= HYPERSPACE && (ULONG)(v) < HYPERSPACE + 0x400000))
+#define IS_HYPERSPACE(v)    (((ULONG)(v) >= HYPER_SPACE && (ULONG)(v) <= HYPER_SPACE_END))
 
 #define PTE_TO_PFN(X)  ((X) >> PAGE_SHIFT)
 #define PFN_TO_PTE(X)  ((X) << PAGE_SHIFT)
-
-#if defined(__GNUC__)
-#define PTE_TO_PAGE(X) ((LARGE_INTEGER)(LONGLONG)(PAGE_MASK(X)))
-#else
-__inline LARGE_INTEGER PTE_TO_PAGE(ULONG npage)
-{
-    LARGE_INTEGER dummy;
-    dummy.QuadPart = (LONGLONG)(PAGE_MASK(npage));
-    return dummy;
-}
-#endif
 
 const
 ULONG
@@ -146,7 +133,7 @@ ULONG MmProtectToValue[32] =
 
 /* FUNCTIONS ***************************************************************/
 
-BOOLEAN MmUnmapPageTable(PULONG Pt);
+static BOOLEAN MmUnmapPageTable(PULONG Pt);
 
 VOID
 MiFlushTlb(PULONG Pt, PVOID Address)
@@ -199,8 +186,8 @@ ProtectToPTE(ULONG flProtect)
 }
 
 /* Taken from ARM3/pagfault.c */
-BOOLEAN
 FORCEINLINE
+BOOLEAN
 MiSynchronizeSystemPde(PMMPDE PointerPde)
 {
     MMPDE SystemPde;
@@ -326,7 +313,7 @@ MmGetPageTableForProcess(PEPROCESS Process, PVOID Address, BOOLEAN Create)
     return Pt;
 }
 
-BOOLEAN MmUnmapPageTable(PULONG Pt)
+static BOOLEAN MmUnmapPageTable(PULONG Pt)
 {
     if (!IS_HYPERSPACE(Pt))
     {
@@ -371,70 +358,7 @@ MmGetPfnForProcess(PEPROCESS Process,
 
 VOID
 NTAPI
-MmDisableVirtualMapping(PEPROCESS Process, PVOID Address, BOOLEAN* WasDirty, PPFN_NUMBER Page)
-/*
- * FUNCTION: Delete a virtual mapping
- */
-{
-    BOOLEAN WasValid;
-    ULONG Pte;
-    PULONG Pt;
-
-    Pt = MmGetPageTableForProcess(Process, Address, FALSE);
-    if (Pt == NULL)
-    {
-        KeBugCheck(MEMORY_MANAGEMENT);
-    }
-
-    /*
-     * Atomically disable the present bit and get the old value.
-     */
-    do
-    {
-        Pte = *Pt;
-    } while (Pte != InterlockedCompareExchangePte(Pt, Pte & ~PA_PRESENT, Pte));
-
-    MiFlushTlb(Pt, Address);
-
-    WasValid = (Pte & PA_PRESENT);
-    if (!WasValid)
-    {
-        KeBugCheck(MEMORY_MANAGEMENT);
-    }
-
-    /*
-     * Return some information to the caller
-     */
-    if (WasDirty != NULL)
-    {
-        *WasDirty = Pte & PA_DIRTY;
-    }
-    if (Page != NULL)
-    {
-        *Page = PTE_TO_PFN(Pte);
-    }
-}
-
-VOID
-NTAPI
-MmRawDeleteVirtualMapping(PVOID Address)
-{
-    PULONG Pt;
-
-    Pt = MmGetPageTableForProcess(NULL, Address, FALSE);
-    if (Pt && *Pt)
-    {
-        /*
-         * Set the entry to zero
-         */
-        InterlockedExchangePte(Pt, 0);
-        MiFlushTlb(Pt, Address);
-    }
-}
-
-VOID
-NTAPI
-MmDeleteVirtualMapping(PEPROCESS Process, PVOID Address, BOOLEAN FreePage,
+MmDeleteVirtualMapping(PEPROCESS Process, PVOID Address,
                        BOOLEAN* WasDirty, PPFN_NUMBER Page)
 /*
  * FUNCTION: Delete a virtual mapping
@@ -445,8 +369,8 @@ MmDeleteVirtualMapping(PEPROCESS Process, PVOID Address, BOOLEAN FreePage,
     ULONG Pte;
     PULONG Pt;
 
-    DPRINT("MmDeleteVirtualMapping(%p, %p, %u, %p, %p)\n",
-           Process, Address, FreePage, WasDirty, Page);
+    DPRINT("MmDeleteVirtualMapping(%p, %p, %p, %p)\n",
+           Process, Address, WasDirty, Page);
 
     Pt = MmGetPageTableForProcess(Process, Address, FALSE);
 
@@ -486,12 +410,6 @@ MmDeleteVirtualMapping(PEPROCESS Process, PVOID Address, BOOLEAN FreePage,
 		}
 
         Pfn = PTE_TO_PFN(Pte);
-
-        if (FreePage)
-        {
-            MmReleasePageMemoryConsumer(MC_SYSTEM, Pfn);
-            Pfn = 0;
-        }
     }
     else
     {
@@ -665,35 +583,6 @@ MmSetDirtyPage(PEPROCESS Process, PVOID Address)
          * we do not need to flush the TLB here when setting it */
         MmUnmapPageTable(Pt);
     }
-}
-
-VOID
-NTAPI
-MmEnableVirtualMapping(PEPROCESS Process, PVOID Address)
-{
-    PULONG Pt;
-    ULONG Pte;
-
-    Pt = MmGetPageTableForProcess(Process, Address, FALSE);
-    if (Pt == NULL)
-    {
-        //HACK to get DPH working, waiting for MM rewrite :-/
-        //KeBugCheck(MEMORY_MANAGEMENT);
-        return;
-    }
-
-    /* Do not mark a 0 page as present */
-    if(0 == InterlockedCompareExchangePte(Pt, 0, 0))
-        return;
-
-    do
-    {
-        Pte = *Pt;
-    } while (Pte != InterlockedCompareExchangePte(Pt, Pte | PA_PRESENT, Pte));
-
-    /* We don't need to flush the TLB here because it
-     * won't cache translations for non-present pages */
-    MmUnmapPageTable(Pt);
 }
 
 BOOLEAN
@@ -1002,32 +891,6 @@ MmSetPageProtect(PEPROCESS Process, PVOID Address, ULONG flProtect)
         MiFlushTlb(Pt, Address);
     else
         MmUnmapPageTable(Pt);
-}
-
-/*
- * @implemented
- */
-PHYSICAL_ADDRESS NTAPI
-MmGetPhysicalAddress(PVOID vaddr)
-/*
- * FUNCTION: Returns the physical address corresponding to a virtual address
- */
-{
-    PHYSICAL_ADDRESS p;
-    ULONG Pte;
-
-    DPRINT("MmGetPhysicalAddress(vaddr %p)\n", vaddr);
-    Pte = MmGetPageEntryForProcess(NULL, vaddr);
-    if (Pte != 0 && (Pte & PA_PRESENT))
-    {
-        p.QuadPart = PAGE_MASK(Pte);
-        p.u.LowPart |= (ULONG_PTR)vaddr & (PAGE_SIZE - 1);
-    }
-    else
-    {
-        p.QuadPart = 0;
-    }
-    return p;
 }
 
 VOID

@@ -83,7 +83,10 @@ set_source_files_properties(startup/crtexe.c
 
 if(NOT MSVC)
     target_link_libraries(msvcrtex oldnames)
-    allow_warnings(msvcrtex)
+endif()
+
+if(STACK_PROTECTOR)
+    target_link_libraries(msvcrtex gcc_ssp)
 endif()
 
 add_dependencies(msvcrtex psdk asm)

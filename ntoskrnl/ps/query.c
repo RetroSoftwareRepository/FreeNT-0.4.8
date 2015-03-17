@@ -151,7 +151,7 @@ NtQueryInformationProcess(IN HANDLE ProcessHandle,
                 ProcessBasicInfo->UniqueProcessId = (ULONG_PTR)Process->
                                                     UniqueProcessId;
                 ProcessBasicInfo->InheritedFromUniqueProcessId =
-                    (ULONG)Process->InheritedFromUniqueProcessId;
+                    (ULONG_PTR)Process->InheritedFromUniqueProcessId;
                 ProcessBasicInfo->BasePriority = Process->Pcb.BasePriority;
 
             }
@@ -1528,6 +1528,7 @@ NtSetInformationProcess(IN HANDLE ProcessHandle,
             /* Validate the number */
             if ((BasePriority > HIGH_PRIORITY) || (BasePriority <= LOW_PRIORITY))
             {
+                ObDereferenceObject(Process);
                 return STATUS_INVALID_PARAMETER;
             }
 
@@ -1917,8 +1918,12 @@ NtSetInformationProcess(IN HANDLE ProcessHandle,
              break;
 
         case ProcessQuotaLimits:
-            DPRINT1("Quota Limits not implemented\n");
-            Status = STATUS_NOT_IMPLEMENTED;
+
+            Status = PspSetQuotaLimits(Process,
+                                     1,
+                                     ProcessInformation,
+                                     ProcessInformationLength,
+                                     PreviousMode);
             break;
 
         case ProcessWorkingSetWatch:

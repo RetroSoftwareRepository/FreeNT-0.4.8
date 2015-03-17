@@ -1,11 +1,11 @@
+#ifndef _MMC_PCH_
+#define _MMC_PCH_
+
 #include <stdarg.h>
+
 #include <windef.h>
 #include <winbase.h>
 #include <winuser.h>
-#include <commctrl.h>
-#include <tchar.h>
-
-#include "resource.h"
 
 #define WM_USER_CLOSE_CHILD (WM_USER + 1)
 
@@ -40,3 +40,5 @@ extern HINSTANCE hAppInstance;
 extern HANDLE hAppHeap;
 extern HWND hwndMainConsole;
 extern HWND hwndMDIClient;
+
+#endif /* _MMC_PCH_ */

@@ -18,6 +18,7 @@ list(APPEND SOURCE
 #   binres.idl
     bits.idl
     bits1_5.idl
+    bits3_0.idl
 #   cmdbas.idl
 #   cmdtxt.idl
     comcat.idl
@@ -113,12 +114,14 @@ list(APPEND SOURCE
     vmr9.idl
 #   vmrender.idl
     wbemcli.idl
+    wbemdisp.idl
     wbemprov.idl
     wia_lh.idl
     wia_xp.idl
     wincodec.idl
     wincodecsdk.idl
     winsxs.idl
+    wmiutils.idl
     wtypes.idl
     wuapi.idl
     xmldom.idl

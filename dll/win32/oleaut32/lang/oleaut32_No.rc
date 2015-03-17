@@ -18,8 +18,6 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "resource.h"
-
 LANGUAGE LANG_NORWEGIAN, SUBLANG_NORWEGIAN_BOKMAL
 
 STRINGTABLE
@@ -28,6 +26,6 @@ STRINGTABLE
   IDS_FALSE "Usann"
   IDS_YES   "Ja"
   IDS_NO    "Nei"
-  IDS_ON    "PÕ"
+  IDS_ON    "PÃ•"
   IDS_OFF   "Av"
 }

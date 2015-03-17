@@ -16,23 +16,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <stdarg.h>
-
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-
-#define COBJMACROS
-
-#include <windef.h>
-#include <winbase.h>
-//#include "winuser.h"
-#include <ole2.h>
-
-#include <wine/debug.h>
-
 #include "mshtml_private.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(mshtml);
 
 typedef struct {
     HTMLElement element;
@@ -137,12 +121,12 @@ static HRESULT HTMLTitleElement_QI(HTMLDOMNode *iface, REFIID riid, void **ppv)
 {
     HTMLTitleElement *This = HTMLTitleElement_from_HTMLDOMNode(iface);
 
-    if(IsEqualGUID(&IID_IHTMLTitleElement, riid)) {
-        TRACE("(%p)->(IID_IHTMLTitleElement %p)\n", This, ppv);
+    TRACE("(%p)->(%s %p)\n", This, debugstr_mshtml_guid(riid), ppv);
+
+    if(IsEqualGUID(&IID_IHTMLTitleElement, riid))
         *ppv = &This->IHTMLTitleElement_iface;
-    }else {
+    else
         return HTMLElement_QI(&This->element.node, riid, ppv);
-    }
 
     IUnknown_AddRef((IUnknown*)*ppv);
     return S_OK;
@@ -297,12 +281,12 @@ static HRESULT HTMLHeadElement_QI(HTMLDOMNode *iface, REFIID riid, void **ppv)
 {
     HTMLHeadElement *This = impl_from_HTMLDOMNode(iface);
 
-    if(IsEqualGUID(&IID_IHTMLHeadElement, riid)) {
-        TRACE("(%p)->(IID_IHTMLHeadElement %p)\n", This, ppv);
+    TRACE("(%p)->(%s %p)\n", This, debugstr_mshtml_guid(riid), ppv);
+
+    if(IsEqualGUID(&IID_IHTMLHeadElement, riid))
         *ppv = &This->IHTMLHeadElement_iface;
-    }else {
+    else
         return HTMLElement_QI(&This->element.node, riid, ppv);
-    }
 
     IUnknown_AddRef((IUnknown*)*ppv);
     return S_OK;

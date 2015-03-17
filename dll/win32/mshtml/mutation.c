@@ -16,31 +16,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-
-#include <config.h>
-
-#include <stdarg.h>
-#include <assert.h>
-
-#define COBJMACROS
-
-#include <windef.h>
-#include <winbase.h>
-//#include "winuser.h"
-//#include "winreg.h"
-#include <ole2.h>
-#include <shlguid.h>
-
 #include "mshtml_private.h"
-#include "htmlscript.h"
-#include "htmlevent.h"
-#include "binding.h"
-
-#include <wine/debug.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(mshtml);
 
 #define IE_MAJOR_VERSION 7
 #define IE_MINOR_VERSION 0
@@ -641,16 +617,16 @@ static void NSAPI nsDocumentObserver_BindToDocument(nsIDocumentObserver *iface, 
     nsIDOMHTMLIFrameElement *nsiframe;
     nsIDOMHTMLFrameElement *nsframe;
     nsIDOMHTMLScriptElement *nsscript;
+    nsIDOMHTMLElement *nselem;
     nsIDOMComment *nscomment;
-    nsIDOMElement *nselem;
     nsresult nsres;
 
-    TRACE("(%p)\n", This);
+    TRACE("(%p)->(%p %p)\n", This, aDocument, aContent);
 
-    nsres = nsIContent_QueryInterface(aContent, &IID_nsIDOMElement, (void**)&nselem);
+    nsres = nsIContent_QueryInterface(aContent, &IID_nsIDOMHTMLElement, (void**)&nselem);
     if(NS_SUCCEEDED(nsres)) {
         check_event_attr(This, nselem);
-        nsIDOMElement_Release(nselem);
+        nsIDOMHTMLElement_Release(nselem);
     }
 
     nsres = nsIContent_QueryInterface(aContent, &IID_nsIDOMComment, (void**)&nscomment);

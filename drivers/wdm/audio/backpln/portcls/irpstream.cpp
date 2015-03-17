@@ -8,6 +8,11 @@
 
 #include "private.hpp"
 
+#ifndef YDEBUG
+#define NDEBUG
+#endif
+
+#include <debug.h>
 
 class CIrpQueue : public IIrpQueue
 {
@@ -547,6 +552,7 @@ CIrpQueue::GetMappingWithTag(
     {
         // no irp available
         m_OutOfMapping = TRUE;
+        DPRINT("GetMappingWithTag no mapping available\n");
         return STATUS_NOT_FOUND;
     }
 
@@ -606,6 +612,7 @@ CIrpQueue::GetMappingWithTag(
         StreamData->CurStreamHeader = (PKSSTREAM_HEADER)((ULONG_PTR)StreamData->CurStreamHeader + StreamData->CurStreamHeader->Size);
     }
 
+    DPRINT("GetMappingWithTag Tag %p Buffer %p Flags %lu ByteCount %lx\n", Tag, VirtualAddress, *Flags, *ByteCount);
     // done
     return STATUS_SUCCESS;
 }
@@ -649,6 +656,12 @@ CIrpQueue::ReleaseMappingWithTag(
 
     // remove irp from used list
     CurEntry = ExInterlockedRemoveHeadList(&m_FreeIrpList, &m_IrpListLock);
+    if (CurEntry == NULL)
+    {
+        // this should not happen
+        DPRINT("ReleaseMappingWithTag Tag %p not found\n", Tag);
+        return STATUS_NOT_FOUND;
+    }
 
     // sanity check
     PC_ASSERT(CurEntry);
@@ -737,6 +750,11 @@ CIrpQueue::ReleaseMappingWithTag(
 
         // complete the request
         IoCompleteRequest(Irp, IO_SOUND_INCREMENT);
+    }
+    else
+    {
+        // there are still some headers not consumed
+        ExInterlockedInsertHeadList(&m_FreeIrpList, &Irp->Tail.Overlay.ListEntry, &m_IrpListLock);
     }
 
     return STATUS_SUCCESS;

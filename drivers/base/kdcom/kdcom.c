@@ -3,13 +3,18 @@
  * PROJECT:         ReactOS kernel
  * FILE:            drivers/base/kddll/kdcom.c
  * PURPOSE:         COM port functions for the kernel debugger.
- * PROGRAMMER:      Timo Kreuzer (timo.kreuzer@ewactos.org)
+ * PROGRAMMER:      Timo Kreuzer (timo.kreuzer@reactos.org)
  */
 
 #include "kddll.h"
-#include <cportlib/cportlib.h>
-#include <stdlib.h>
 
+#include <cportlib/cportlib.h>
+#include <arc/arc.h>
+#include <stdlib.h>
+#include <ndk/halfuncs.h>
+
+#define NDEBUG
+#include <debug.h>
 
 /* Serial debug connection */
 #define DEFAULT_DEBUG_PORT      2 /* COM2 */

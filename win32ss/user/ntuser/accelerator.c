@@ -50,8 +50,7 @@ co_IntTranslateAccelerator(
     UINT Mask = 0, nPos;
     HWND hWnd;
     HMENU hMenu, hSubMenu;
-    PMENU_OBJECT MenuObject, SubMenu;
-    PMENU_ITEM MenuItem;
+    PMENU MenuObject;
 
     ASSERT_REFS_CO(Window);
 
@@ -100,17 +99,12 @@ co_IntTranslateAccelerator(
     /* Check if accelerator is associated with menu command */
     hMenu = (Window->style & WS_CHILD) ? 0 : (HMENU)Window->IDMenu;
     hSubMenu = NULL;
-    MenuObject = IntGetMenuObject(hMenu);
+    MenuObject = UserGetMenuObject(hMenu);
+    nPos = pAccel->cmd;
     if (MenuObject)
     {
-        nPos = IntGetMenuItemByFlag(MenuObject,
-                                    pAccel->cmd,
-                                    MF_BYCOMMAND,
-                                    &SubMenu,
-                                    &MenuItem,
-                                    NULL);
-        if (nPos != (UINT) - 1)
-            hSubMenu = SubMenu->head.h;
+        if ((MENU_FindItem (&MenuObject, &nPos, MF_BYPOSITION)))
+            hSubMenu = MenuObject->head.h;
         else
             hMenu = NULL;
     }
@@ -119,17 +113,12 @@ co_IntTranslateAccelerator(
         /* Check system menu now */
         hMenu = Window->SystemMenu;
         hSubMenu = hMenu; /* system menu is a popup menu */
-        MenuObject = IntGetMenuObject(hMenu);
+        MenuObject = UserGetMenuObject(hMenu);
+        nPos = pAccel->cmd;
         if (MenuObject)
         {
-            nPos = IntGetMenuItemByFlag(MenuObject,
-                                        pAccel->cmd,
-                                        MF_BYCOMMAND,
-                                        &SubMenu,
-                                        &MenuItem,
-                                        NULL);
-            if (nPos != (UINT) - 1)
-                hSubMenu = SubMenu->head.h;
+            if ((MENU_FindItem (&MenuObject, &nPos, MF_BYPOSITION)))
+                hSubMenu = MenuObject->head.h;
             else
                 hMenu = NULL;
         }
@@ -246,6 +235,7 @@ NtUserCreateAcceleratorTable(
     ULONG Index;
     NTSTATUS Status = STATUS_SUCCESS;
     DECLARE_RETURN(HACCEL);
+    PTHREADINFO pti;
 
     TRACE("Enter NtUserCreateAcceleratorTable(Entries %p, EntriesCount %u)\n",
           Entries, EntriesCount);
@@ -257,7 +247,14 @@ NtUserCreateAcceleratorTable(
         RETURN( (HACCEL) NULL );
     }
 
-    Accel = UserCreateObject(gHandleTable, NULL, NULL, (PHANDLE)&hAccel, TYPE_ACCELTABLE, sizeof(ACCELERATOR_TABLE));
+    pti = PsGetCurrentThreadWin32Thread();
+
+    Accel = UserCreateObject(gHandleTable,
+        pti->rpdesk,
+        pti,
+        (PHANDLE)&hAccel,
+        TYPE_ACCELTABLE,
+        sizeof(ACCELERATOR_TABLE));
 
     if (Accel == NULL)
     {
@@ -325,6 +322,21 @@ CLEANUP:
 }
 
 BOOLEAN
+UserDestroyAccelTable(PVOID Object)
+{
+    PACCELERATOR_TABLE Accel = Object;
+
+    if (Accel->Table != NULL)
+    {
+        ExFreePoolWithTag(Accel->Table, USERTAG_ACCEL);
+        Accel->Table = NULL;
+    }
+
+    UserDeleteObject(Accel->head.h, TYPE_ACCELTABLE);
+    return TRUE;
+}
+
+BOOLEAN
 APIENTRY
 NtUserDestroyAcceleratorTable(
     HACCEL hAccel)
@@ -345,13 +357,7 @@ NtUserDestroyAcceleratorTable(
         RETURN( FALSE);
     }
 
-    if (Accel->Table != NULL)
-    {
-        ExFreePoolWithTag(Accel->Table, USERTAG_ACCEL);
-        Accel->Table = NULL;
-    }
-
-    UserDeleteObject(hAccel, TYPE_ACCELTABLE);
+    UserDestroyAccelTable(Accel);
 
     RETURN( TRUE);
 

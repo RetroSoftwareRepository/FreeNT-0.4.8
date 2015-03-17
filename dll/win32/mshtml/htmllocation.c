@@ -16,28 +16,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-
-#include <stdarg.h>
-
-#define COBJMACROS
-
-#include <windef.h>
-#include <winbase.h>
-//#include "winuser.h"
-//#include "winreg.h"
-#include <ole2.h>
-#include <wininet.h>
-//#include "shlwapi.h"
-
-#include <wine/debug.h>
-
 #include "mshtml_private.h"
-#include "binding.h"
-//#include "resource.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(mshtml);
 
 static HRESULT get_url(HTMLLocation *This, const WCHAR **ret)
 {
@@ -84,25 +63,22 @@ static HRESULT WINAPI HTMLLocation_QueryInterface(IHTMLLocation *iface, REFIID r
 {
     HTMLLocation *This = impl_from_IHTMLLocation(iface);
 
-    *ppv = NULL;
+    TRACE("(%p)->(%s %p)\n", This, debugstr_mshtml_guid(riid), ppv);
 
     if(IsEqualGUID(&IID_IUnknown, riid)) {
-        TRACE("(%p)->(IID_IUnknown %p)\n", This, ppv);
         *ppv = &This->IHTMLLocation_iface;
     }else if(IsEqualGUID(&IID_IHTMLLocation, riid)) {
-        TRACE("(%p)->(IID_IHTMLLocation %p)\n", This, ppv);
         *ppv = &This->IHTMLLocation_iface;
     }else if(dispex_query_interface(&This->dispex, riid, ppv)) {
         return *ppv ? S_OK : E_NOINTERFACE;
+    }else {
+        *ppv = NULL;
+        WARN("(%p)->(%s %p)\n", This, debugstr_mshtml_guid(riid), ppv);
+        return E_NOINTERFACE;
     }
 
-    if(*ppv) {
-        IUnknown_AddRef((IUnknown*)*ppv);
-        return S_OK;
-    }
-
-    WARN("(%p)->(%s %p)\n", This, debugstr_guid(riid), ppv);
-    return E_NOINTERFACE;
+    IUnknown_AddRef((IUnknown*)*ppv);
+    return S_OK;
 }
 
 static ULONG WINAPI HTMLLocation_AddRef(IHTMLLocation *iface)
@@ -581,8 +557,8 @@ static HRESULT WINAPI HTMLLocation_replace(IHTMLLocation *iface, BSTR bstr)
 static HRESULT WINAPI HTMLLocation_assign(IHTMLLocation *iface, BSTR bstr)
 {
     HTMLLocation *This = impl_from_IHTMLLocation(iface);
-    FIXME("(%p)->(%s)\n", This, debugstr_w(bstr));
-    return E_NOTIMPL;
+    TRACE("(%p)->(%s)\n", This, debugstr_w(bstr));
+    return IHTMLLocation_put_href(iface, bstr);
 }
 
 static HRESULT WINAPI HTMLLocation_toString(IHTMLLocation *iface, BSTR *String)

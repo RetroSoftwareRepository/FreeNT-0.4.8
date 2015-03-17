@@ -673,9 +673,8 @@ BasePushProcessParameters(IN ULONG ParameterFlags,
     if (lpEnvironment)
     {
         /* Find the environment size */
-        while ((ScanChar[0]) || (ScanChar[1])) ++ScanChar;
-        ScanChar += (2 * sizeof(UNICODE_NULL));
-        EnviroSize = (ULONG_PTR)ScanChar - (ULONG_PTR)lpEnvironment;
+        while (*ScanChar++) while (*ScanChar++);
+        EnviroSize = (ULONG)((ULONG_PTR)ScanChar - (ULONG_PTR)lpEnvironment);
 
         /* Allocate and Initialize new Environment Block */
         Size = EnviroSize;
@@ -727,7 +726,7 @@ BasePushProcessParameters(IN ULONG ParameterFlags,
         ProcessParameters->StandardError = StartupInfo->hStdError;
     }
 
-    /* Use Special Flags for BasepInitConsole in Kernel32 */
+    /* Use Special Flags for ConDllInitialize in Kernel32 */
     if (CreationFlags & DETACHED_PROCESS)
     {
         ProcessParameters->ConsoleHandle = HANDLE_DETACHED_PROCESS;
@@ -2302,7 +2301,7 @@ CreateProcessInternalW(IN HANDLE hUserToken,
     BOOLEAN InJob, SaferNeeded, UseLargePages, HavePrivilege;
     BOOLEAN QuerySection, SkipSaferAndAppCompat;
     CONTEXT Context;
-    BASE_API_MESSAGE CsrMsg;
+    BASE_API_MESSAGE CsrMsg[2];
     PBASE_CREATE_PROCESS CreateProcessMsg;
     PCSR_CAPTURE_BUFFER CaptureBuffer;
     PVOID BaseAddress, PrivilegeState, RealTimePrivilegeState;
@@ -2378,7 +2377,7 @@ CreateProcessInternalW(IN HANDLE hUserToken,
     ANSI_STRING VdmAnsiEnv;
     UNICODE_STRING VdmString, VdmUnicodeEnv;
     BOOLEAN IsWowApp;
-    PBASE_CHECK_VDM VdmMsg;
+    PBASE_CHECK_VDM CheckVdmMsg;
 
     /* Zero out the initial core variables and handles */
     QuerySection = FALSE;
@@ -2432,8 +2431,8 @@ CreateProcessInternalW(IN HANDLE hUserToken,
     IsWowApp = FALSE;
 
     /* Set message structures */
-    CreateProcessMsg = &CsrMsg.Data.CreateProcessRequest;
-    VdmMsg = &CsrMsg.Data.CheckVDMRequest;
+    CreateProcessMsg = &CsrMsg[0].Data.CreateProcessRequest;
+    CheckVdmMsg = &CsrMsg[1].Data.CheckVDMRequest;
 
     /* Clear the more complex structures by zeroing out their entire memory */
     RtlZeroMemory(&Context, sizeof(Context));
@@ -2469,7 +2468,7 @@ CreateProcessInternalW(IN HANDLE hUserToken,
     PolicyPathPair.Nt = &SxsNtPolicyPath.String;
 #endif
 
-    DPRINT("CreateProcessInternalW: %S %S %lx\n", lpApplicationName, lpCommandLine, dwCreationFlags);
+    DPRINT("CreateProcessInternalW: '%S' '%S' %lx\n", lpApplicationName, lpCommandLine, dwCreationFlags);
 
     /* Finally, set our TEB and PEB */
     Teb = NtCurrentTeb();
@@ -3198,7 +3197,7 @@ StartScan:
                     /* Pick which kind of WOW mode we want to run in */
                     VdmBinaryType = (dwCreationFlags &
                                      CREATE_SEPARATE_WOW_VDM) ?
-                                     BINARY_TYPE_WOW : BINARY_TYPE_SEPARATE_WOW;
+                                     BINARY_TYPE_SEPARATE_WOW : BINARY_TYPE_WOW;
 
                     /* Get all the VDM settings and current status */
                     Status = BaseCheckVDM(VdmBinaryType,
@@ -3206,7 +3205,7 @@ StartScan:
                                           lpCommandLine,
                                           lpCurrentDirectory,
                                           &VdmAnsiEnv,
-                                          (PCSR_API_MESSAGE)VdmMsg,
+                                          &CsrMsg[1],
                                           &VdmTask,
                                           dwCreationFlags,
                                           &StartupInfo,
@@ -3232,9 +3231,9 @@ StartScan:
                 }
 
                 /* Check which VDM state we're currently in */
-                switch (VdmMsg->VDMState & (VDM_NOT_LOADED |
-                                            VDM_NOT_READY |
-                                            VDM_READY))
+                switch (CheckVdmMsg->VDMState & (VDM_NOT_LOADED |
+                                                 VDM_NOT_READY |
+                                                 VDM_READY))
                 {
                     case VDM_NOT_LOADED:
                         /* VDM is not fully loaded, so not that much to undo */
@@ -3274,7 +3273,7 @@ StartScan:
                         VdmUndoLevel = VDM_UNDO_REUSE;
 
                         /* Check if CSRSS wants us to wait on VDM */
-                        VdmWaitObject = VdmMsg->WaitObjectForParent;
+                        VdmWaitObject = CheckVdmMsg->WaitObjectForParent;
                         break;
 
                     case VDM_NOT_READY:
@@ -3343,7 +3342,7 @@ StartScan:
                                       lpCommandLine,
                                       lpCurrentDirectory,
                                       &VdmAnsiEnv,
-                                      (PCSR_API_MESSAGE)VdmMsg,
+                                      &CsrMsg[1],
                                       &VdmTask,
                                       dwCreationFlags,
                                       &StartupInfo,
@@ -3358,9 +3357,9 @@ StartScan:
                 };
 
                 /* Handle possible VDM states */
-                switch (VdmMsg->VDMState & (VDM_NOT_LOADED |
-                                            VDM_NOT_READY |
-                                            VDM_READY))
+                switch (CheckVdmMsg->VDMState & (VDM_NOT_LOADED |
+                                                 VDM_NOT_READY |
+                                                 VDM_READY))
                 {
                     case VDM_NOT_LOADED:
                         /* If VDM is not loaded, we'll do a partial undo */
@@ -3397,7 +3396,7 @@ StartScan:
                         VdmUndoLevel = VDM_UNDO_REUSE;
 
                         /* Check if CSRSS wants us to wait on VDM */
-                        VdmWaitObject = VdmMsg->WaitObjectForParent;
+                        VdmWaitObject = CheckVdmMsg->WaitObjectForParent;
                         break;
 
                     case VDM_NOT_READY:
@@ -3762,7 +3761,7 @@ StartScan:
         }
 
         /* Account for the quotes and space between the two */
-        n += ((sizeof('""') * 2) + sizeof(' '));
+        n += sizeof("\" \"") - sizeof(ANSI_NULL);
 
         /* Convert to bytes, and make sure we don't overflow */
         n *= sizeof(WCHAR);
@@ -3875,7 +3874,7 @@ StartScan:
     {
         /* Acquire the required privilege so that the kernel won't fail the call */
         PrivilegeValue = SE_LOCK_MEMORY_PRIVILEGE;
-        Status = RtlAcquirePrivilege(&PrivilegeValue, TRUE, FALSE, &PrivilegeState);
+        Status = RtlAcquirePrivilege(&PrivilegeValue, 1, 0, &PrivilegeState);
         if (NT_SUCCESS(Status))
         {
             /* Remember to release it later */
@@ -3923,7 +3922,7 @@ StartScan:
         RealTimePrivilegeState = NULL;
 
         /* Is realtime priority being requested? */
-        if (PriorityClass.PriorityClass == REALTIME_PRIORITY_CLASS)
+        if (PriorityClass.PriorityClass == PROCESS_PRIORITY_CLASS_REALTIME)
         {
             /* Check if the caller has real-time access, and enable it if so */
             RealTimePrivilegeState = BasepIsRealtimeAllowed(TRUE);
@@ -3967,6 +3966,8 @@ StartScan:
                                     &VdmWaitObject,
                                     VdmTask,
                                     VdmBinaryType);
+
+        if (!Result)
         {
             /* Bail out on failure */
             DPRINT1("Failed to update VDM with wait object\n");
@@ -3991,7 +3992,7 @@ StartScan:
         if (!NT_SUCCESS(Status))
         {
             /* Bail out on failure */
-            DPRINT1("Failed to reserved memory for VDM: %lx\n", Status);
+            DPRINT1("Failed to reserve memory for VDM: %lx\n", Status);
             BaseSetLastNTError(Status);
             Result = FALSE;
             goto Quickie;
@@ -4034,7 +4035,7 @@ StartScan:
     if (lpCurrentDirectory)
     {
         /* Allocate a buffer so we can keep a Unicode copy */
-        DPRINT1("Current directory: %S\n", lpCurrentDirectory);
+        DPRINT("Current directory: %S\n", lpCurrentDirectory);
         CurrentDirectory = RtlAllocateHeap(RtlGetProcessHeap(),
                                            0,
                                            (MAX_PATH * sizeof(WCHAR)) +
@@ -4254,7 +4255,7 @@ StartScan:
     {
         /* IA32, IA64 and AMD64 are supported in Server 2003 */
         case IMAGE_FILE_MACHINE_I386:
-         CreateProcessMsg->ProcessorArchitecture = PROCESSOR_ARCHITECTURE_INTEL;
+            CreateProcessMsg->ProcessorArchitecture = PROCESSOR_ARCHITECTURE_INTEL;
             break;
         case IMAGE_FILE_MACHINE_IA64:
             CreateProcessMsg->ProcessorArchitecture = PROCESSOR_ARCHITECTURE_IA64;
@@ -4336,7 +4337,7 @@ StartScan:
     }
 
     /* We are finally ready to call CSRSS to tell it about our new process! */
-    CsrClientCallServer((PCSR_API_MESSAGE)&CsrMsg,
+    CsrClientCallServer((PCSR_API_MESSAGE)&CsrMsg[0],
                         CaptureBuffer,
                         CSR_CREATE_API_NUMBER(BASESRV_SERVERDLL_INDEX,
                                               BasepCreateProcess),
@@ -4350,12 +4351,12 @@ StartScan:
     }
 
     /* Check if CSRSS failed to accept ownership of the new Windows process */
-    if (!NT_SUCCESS(CsrMsg.Status))
+    if (!NT_SUCCESS(CsrMsg[0].Status))
     {
         /* Terminate the process and enter failure path with the CSRSS status */
         DPRINT1("Failed to tell csrss about new process\n");
-        BaseSetLastNTError(CsrMsg.Status);
-        NtTerminateProcess(ProcessHandle, CsrMsg.Status);
+        BaseSetLastNTError(CsrMsg[0].Status);
+        NtTerminateProcess(ProcessHandle, CsrMsg[0].Status);
         Result = FALSE;
         goto Quickie;
     }
@@ -4606,6 +4607,7 @@ Quickie:
  */
 BOOL
 WINAPI
+DECLSPEC_HOTPATCH
 CreateProcessW(LPCWSTR lpApplicationName,
                LPWSTR lpCommandLine,
                LPSECURITY_ATTRIBUTES lpProcessAttributes,
@@ -4774,6 +4776,7 @@ CreateProcessInternalA(HANDLE hToken,
  */
 BOOL
 WINAPI
+DECLSPEC_HOTPATCH
 CreateProcessA(LPCSTR lpApplicationName,
                LPSTR lpCommandLine,
                LPSECURITY_ATTRIBUTES lpProcessAttributes,

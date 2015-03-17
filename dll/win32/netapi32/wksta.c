@@ -18,28 +18,10 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <config.h>
-//#include "wine/port.h"
+#include "netapi32.h"
 
-#include <stdarg.h>
-//#include <stdlib.h>
-#include <ntstatus.h>
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-#define COM_NO_WINDOWS_H
-#include <windef.h>
-#include <winbase.h>
-//#include "winsock2.h"
-//#include "nb30.h"
-//#include "lmcons.h"
-//#include "lmapibuf.h"
-//#include "lmerr.h"
-//#include "lmwksta.h"
-#include <iphlpapi.h>
-//#include "winerror.h"
-#include <ntsecapi.h>
-#include "netbios.h"
-#include <wine/debug.h>
+#include <lmwksta.h>
+#include <lmjoin.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(netapi32);
 
@@ -48,29 +30,17 @@ WINE_DEFAULT_DEBUG_CHANNEL(netapi32);
  *
  * Checks whether the server name indicates local machine.
  */
-BOOL NETAPI_IsLocalComputer(LMCSTR ServerName)
+DECLSPEC_HIDDEN BOOL NETAPI_IsLocalComputer( LMCSTR name )
 {
-    if (!ServerName)
-    {
-        return TRUE;
-    }
-    else if (ServerName[0] == '\0')
-        return TRUE;
-    else
-    {
-        DWORD dwSize = MAX_COMPUTERNAME_LENGTH + 1;
-        BOOL Result;
-        LPWSTR buf;
+    WCHAR buf[MAX_COMPUTERNAME_LENGTH + 1];
+    DWORD size = sizeof(buf) / sizeof(buf[0]);
+    BOOL ret;
 
-        NetApiBufferAllocate(dwSize * sizeof(WCHAR), (LPVOID *) &buf);
-        Result = GetComputerNameW(buf,  &dwSize);
-        if (Result && (ServerName[0] == '\\') && (ServerName[1] == '\\'))
-            ServerName += 2;
-        Result = Result && !lstrcmpW(ServerName, buf);
-        NetApiBufferFree(buf);
+    if (!name || !name[0]) return TRUE;
 
-        return Result;
-    }
+    ret = GetComputerNameW( buf,  &size );
+    if (ret && name[0] == '\\' && name[1] == '\\') name += 2;
+    return ret && !strcmpiW( name, buf );
 }
 
 static void wprint_mac(WCHAR* buffer, int len, const MIB_IFROW *ifRow)
@@ -306,6 +276,7 @@ NetWkstaTransportEnum(LMSTR ServerName, DWORD level, PBYTE* pbuf,
 /************************************************************
  *                NetWkstaUserGetInfo  (NETAPI32.@)
  */
+#if 0
 NET_API_STATUS WINAPI NetWkstaUserGetInfo(LMSTR reserved, DWORD level,
                                           PBYTE* bufptr)
 {
@@ -443,10 +414,12 @@ NET_API_STATUS WINAPI NetWkstaUserGetInfo(LMSTR reserved, DWORD level,
     }
     return NERR_Success;
 }
+#endif
 
 /************************************************************
  *                NetWkstaUserEnum  (NETAPI32.@)
  */
+#if 0
 NET_API_STATUS WINAPI
 NetWkstaUserEnum(LMSTR servername, DWORD level, LPBYTE* bufptr,
                  DWORD prefmaxlen, LPDWORD entriesread,
@@ -456,6 +429,7 @@ NetWkstaUserEnum(LMSTR servername, DWORD level, LPBYTE* bufptr,
           level, bufptr, prefmaxlen, entriesread, totalentries, resumehandle);
     return ERROR_INVALID_PARAMETER;
 }
+#endif
 
 /************************************************************
  *                NetpGetComputerName  (NETAPI32.@)
@@ -494,6 +468,7 @@ NET_API_STATUS WINAPI I_NetNameValidate(LPVOID p1, LPWSTR wkgrp, LPVOID p3,
     return ERROR_INVALID_PARAMETER;
 }
 
+#if 0
 NET_API_STATUS WINAPI NetWkstaGetInfo( LMSTR servername, DWORD level,
                                        LPBYTE* bufptr)
 {
@@ -588,9 +563,12 @@ NET_API_STATUS NET_API_FUNCTION NetGetJoinInformation(
 {
     FIXME("Stub %s %p %p\n", wine_dbgstr_w(Server), Name, type);
 
+    if (Name == NULL || type == NULL)
+        return ERROR_INVALID_PARAMETER;
+
     *Name = NULL;
     *type = NetSetupUnknownStatus;
 
     return NERR_Success;
 }
-
+#endif

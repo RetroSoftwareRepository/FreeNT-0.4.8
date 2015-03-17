@@ -11,10 +11,12 @@
 
 #include "usersrv.h"
 
+#include <ndk/mmfuncs.h>
+#include <pseh/pseh2.h>
+#include <strsafe.h>
+
 #define NDEBUG
 #include <debug.h>
-
-#include <strsafe.h>
 
 #define IDTRYAGAIN 10
 #define IDCONTINUE 11
@@ -488,7 +490,7 @@ UserpMessageBox(
            Text, Caption, Severity, Type);
 
     /* Display a message box */
-    MessageBoxResponse = MessageBoxW(0, Text, Caption, Type);
+    MessageBoxResponse = MessageBoxW(NULL, Text, Caption, Type);
 
     /* Return response value */
     switch (MessageBoxResponse)
@@ -508,7 +510,7 @@ UserpMessageBox(
 }
 
 VOID
-WINAPI
+NTAPI
 UserServerHardError(
     IN PCSR_THREAD ThreadData,
     IN PHARDERROR_MSG Message)

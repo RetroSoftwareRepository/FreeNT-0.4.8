@@ -5,6 +5,9 @@
  * PURPOSE:     WinSock 2.2 Main Header
  */
 
+#ifndef _WS2_32_NEW_PCH_
+#define _WS2_32_NEW_PCH_
+
 #define WIN32_NO_STATUS
 #define _INC_WINDOWS
 #define COM_NO_WINDOWS_H
@@ -23,11 +26,8 @@
 #include <winreg.h>
 #include <winnls.h>
 #include <winuser.h>
-#include <ws2tcpip.h>
 #include <ws2spi.h>
-//#include <ndk/umtypes.h>
 #include <ndk/rtlfuncs.h>
-//#include <svcguid.h>
 
 /* Winsock Helper Header */
 #include <ws2help.h>
@@ -40,3 +40,5 @@
 
 /* Internal headers */
 #include "ws2_32p.h"
+
+#endif /* _WS2_32_NEW_PCH_ */

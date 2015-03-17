@@ -45,7 +45,7 @@ SleepConditionVariableCS(IN OUT PCONDITION_VARIABLE ConditionVariable,
 
     if (dwMilliseconds != INFINITE)
     {
-        TimeOut.QuadPart = UInt32x32To64(-10000, dwMilliseconds);
+        TimeOut.QuadPart = dwMilliseconds * -10000LL;
         TimeOutPtr = &TimeOut;
     }
 
@@ -80,7 +80,7 @@ SleepConditionVariableSRW(IN OUT PCONDITION_VARIABLE ConditionVariable,
 
     if (dwMilliseconds != INFINITE)
     {
-        TimeOut.QuadPart = UInt32x32To64(-10000, dwMilliseconds);
+        TimeOut.QuadPart = dwMilliseconds * -10000LL;
         TimeOutPtr = &TimeOut;
     }
 
@@ -710,7 +710,6 @@ OpenFileById(IN HANDLE hFile,
     return INVALID_HANDLE_VALUE;
 }
 
-#endif
 
 /*
  * @implemented
@@ -734,6 +733,8 @@ GetTickCount64(VOID)
      return (UInt32x32To64(TickCount.LowPart, SharedUserData->TickCountMultiplier) >> 24) +
             (UInt32x32To64(TickCount.HighPart, SharedUserData->TickCountMultiplier) << 8);
 }
+
+#endif
 
 /*
   Vista+ MUI support functions

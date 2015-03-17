@@ -18,26 +18,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-#define COM_NO_WINDOWS_H
-
-#define COBJMACROS
-
-#include "config.h"
-#include <stdarg.h>
-
-#include "windef.h"
-#include "winbase.h"
-#include "objbase.h"
-#include "oleauto.h"
-#include "wbemcli.h"
-#include "winsvc.h"
-
-#include "wine/debug.h"
 #include "wbemprox_private.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(wbemprox);
 
 static UINT map_error( DWORD error )
 {
@@ -86,7 +67,7 @@ done:
 HRESULT service_pause_service( IWbemClassObject *obj, IWbemClassObject *in, IWbemClassObject **out )
 {
     VARIANT name, retval;
-    IWbemClassObject *sig;
+    IWbemClassObject *sig, *out_params = NULL;
     HRESULT hr;
 
     TRACE("%p, %p, %p\n", obj, in, out);
@@ -100,28 +81,38 @@ HRESULT service_pause_service( IWbemClassObject *obj, IWbemClassObject *in, IWbe
         VariantClear( &name );
         return hr;
     }
-    hr = IWbemClassObject_SpawnInstance( sig, 0, out );
-    if (hr != S_OK)
+    if (out)
     {
-        VariantClear( &name );
-        IWbemClassObject_Release( sig );
-        return hr;
+        hr = IWbemClassObject_SpawnInstance( sig, 0, &out_params );
+        if (hr != S_OK)
+        {
+            VariantClear( &name );
+            IWbemClassObject_Release( sig );
+            return hr;
+        }
     }
     hr = control_service( V_BSTR(&name), SERVICE_CONTROL_PAUSE, &retval );
     if (hr != S_OK) goto done;
-    hr = IWbemClassObject_Put( *out, param_returnvalueW, 0, &retval, CIM_UINT32 );
+
+    if (out_params)
+        hr = IWbemClassObject_Put( out_params, param_returnvalueW, 0, &retval, CIM_UINT32 );
 
 done:
     VariantClear( &name );
     IWbemClassObject_Release( sig );
-    if (hr != S_OK) IWbemClassObject_Release( *out );
+    if (hr == S_OK && out)
+    {
+        *out = out_params;
+        IWbemClassObject_AddRef( out_params );
+    }
+    if (out_params) IWbemClassObject_Release( out_params );
     return hr;
 }
 
 HRESULT service_resume_service( IWbemClassObject *obj, IWbemClassObject *in, IWbemClassObject **out )
 {
     VARIANT name, retval;
-    IWbemClassObject *sig;
+    IWbemClassObject *sig, *out_params = NULL;
     HRESULT hr;
 
     TRACE("%p, %p, %p\n", obj, in, out);
@@ -135,21 +126,31 @@ HRESULT service_resume_service( IWbemClassObject *obj, IWbemClassObject *in, IWb
         VariantClear( &name );
         return hr;
     }
-    hr = IWbemClassObject_SpawnInstance( sig, 0, out );
-    if (hr != S_OK)
+    if (out)
     {
-        VariantClear( &name );
-        IWbemClassObject_Release( sig );
-        return hr;
+        hr = IWbemClassObject_SpawnInstance( sig, 0, &out_params );
+        if (hr != S_OK)
+        {
+            VariantClear( &name );
+            IWbemClassObject_Release( sig );
+            return hr;
+        }
     }
     hr = control_service( V_BSTR(&name), SERVICE_CONTROL_CONTINUE, &retval );
     if (hr != S_OK) goto done;
-    hr = IWbemClassObject_Put( *out, param_returnvalueW, 0, &retval, CIM_UINT32 );
+
+    if (out_params)
+        hr = IWbemClassObject_Put( out_params, param_returnvalueW, 0, &retval, CIM_UINT32 );
 
 done:
     VariantClear( &name );
     IWbemClassObject_Release( sig );
-    if (hr != S_OK) IWbemClassObject_Release( *out );
+    if (hr == S_OK && out)
+    {
+        *out = out_params;
+        IWbemClassObject_AddRef( out_params );
+    }
+    if (out_params) IWbemClassObject_Release( out_params );
     return hr;
 }
 
@@ -180,7 +181,7 @@ done:
 HRESULT service_start_service( IWbemClassObject *obj, IWbemClassObject *in, IWbemClassObject **out )
 {
     VARIANT name, retval;
-    IWbemClassObject *sig;
+    IWbemClassObject *sig, *out_params = NULL;
     HRESULT hr;
 
     TRACE("%p, %p, %p\n", obj, in, out);
@@ -194,28 +195,38 @@ HRESULT service_start_service( IWbemClassObject *obj, IWbemClassObject *in, IWbe
         VariantClear( &name );
         return hr;
     }
-    hr = IWbemClassObject_SpawnInstance( sig, 0, out );
-    if (hr != S_OK)
+    if (out)
     {
-        VariantClear( &name );
-        IWbemClassObject_Release( sig );
-        return hr;
+        hr = IWbemClassObject_SpawnInstance( sig, 0, &out_params );
+        if (hr != S_OK)
+        {
+            VariantClear( &name );
+            IWbemClassObject_Release( sig );
+            return hr;
+        }
     }
     hr = start_service( V_BSTR(&name), &retval );
     if (hr != S_OK) goto done;
-    hr = IWbemClassObject_Put( *out, param_returnvalueW, 0, &retval, CIM_UINT32 );
+
+    if (out_params)
+        hr = IWbemClassObject_Put( out_params, param_returnvalueW, 0, &retval, CIM_UINT32 );
 
 done:
     VariantClear( &name );
     IWbemClassObject_Release( sig );
-    if (hr != S_OK) IWbemClassObject_Release( *out );
+    if (hr == S_OK && out)
+    {
+        *out = out_params;
+        IWbemClassObject_AddRef( out_params );
+    }
+    if (out_params) IWbemClassObject_Release( out_params );
     return hr;
 }
 
 HRESULT service_stop_service( IWbemClassObject *obj, IWbemClassObject *in, IWbemClassObject **out )
 {
     VARIANT name, retval;
-    IWbemClassObject *sig;
+    IWbemClassObject *sig, *out_params = NULL;
     HRESULT hr;
 
     TRACE("%p, %p, %p\n", obj, in, out);
@@ -229,20 +240,30 @@ HRESULT service_stop_service( IWbemClassObject *obj, IWbemClassObject *in, IWbem
         VariantClear( &name );
         return hr;
     }
-    hr = IWbemClassObject_SpawnInstance( sig, 0, out );
-    if (hr != S_OK)
+    if (out)
     {
-        VariantClear( &name );
-        IWbemClassObject_Release( sig );
-        return hr;
+        hr = IWbemClassObject_SpawnInstance( sig, 0, &out_params );
+        if (hr != S_OK)
+        {
+            VariantClear( &name );
+            IWbemClassObject_Release( sig );
+            return hr;
+        }
     }
     hr = control_service( V_BSTR(&name), SERVICE_CONTROL_STOP, &retval );
     if (hr != S_OK) goto done;
-    hr = IWbemClassObject_Put( *out, param_returnvalueW, 0, &retval, CIM_UINT32 );
+
+    if (out_params)
+        hr = IWbemClassObject_Put( out_params, param_returnvalueW, 0, &retval, CIM_UINT32 );
 
 done:
     VariantClear( &name );
     IWbemClassObject_Release( sig );
-    if (hr != S_OK) IWbemClassObject_Release( *out );
+    if (hr == S_OK && out)
+    {
+        *out = out_params;
+        IWbemClassObject_AddRef( out_params );
+    }
+    if (out_params) IWbemClassObject_Release( out_params );
     return hr;
 }

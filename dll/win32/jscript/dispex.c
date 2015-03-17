@@ -16,14 +16,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <assert.h>
-
 #include "jscript.h"
-
-//#include "wine/unicode.h"
-#include <wine/debug.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(jscript);
 
 /*
  * This IID is used to get jsdisp_t objecto from interface.
@@ -1202,7 +1195,7 @@ HRESULT disp_call_value(script_ctx_t *ctx, IDispatch *disp, IDispatch *jsthis, W
         return hres;
     }
 
-    if(r && argc)
+    if(r && argc && flags == DISPATCH_METHOD)
         flags |= DISPATCH_PROPERTYGET;
 
     hres = IDispatch_QueryInterface(disp, &IID_IDispatchEx, (void**)&dispex);

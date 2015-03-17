@@ -292,7 +292,7 @@ BaseFormatTimeOut(OUT PLARGE_INTEGER Timeout,
     if (dwMilliseconds == INFINITE) return NULL;
 
     /* Otherwise, convert the time to NT Format */
-    Timeout->QuadPart = UInt32x32To64(dwMilliseconds, -10000);
+    Timeout->QuadPart = dwMilliseconds * -10000LL;
     return Timeout;
 }
 
@@ -351,8 +351,8 @@ BaseFormatObjectAttributes(OUT POBJECT_ATTRIBUTES ObjectAttributes,
 NTSTATUS
 WINAPI
 BaseCreateStack(HANDLE hProcess,
-                 SIZE_T StackReserve,
                  SIZE_T StackCommit,
+                 SIZE_T StackReserve,
                  PINITIAL_TEB InitialTeb)
 {
     NTSTATUS Status;
@@ -615,6 +615,11 @@ BaseInitializeContext(IN PCONTEXT Context,
 
 /*
  * Checks if the privilege for Real-Time Priority is there
+ * Beware about this function behavior:
+ * - In case Keep is set to FALSE, then the function will only check
+ * whether real time is allowed and won't grant the privilege. In that case
+ * it will return TRUE if allowed, FALSE otherwise. Not a state!
+ * It means you don't have to release privilege when calling with FALSE.
  */
 PVOID
 WINAPI
@@ -627,7 +632,7 @@ BasepIsRealtimeAllowed(IN BOOLEAN Keep)
     Status = RtlAcquirePrivilege(&Privilege, 1, 0, &State);
     if (!NT_SUCCESS(Status)) return NULL;
 
-    if (Keep)
+    if (!Keep)
     {
         RtlReleasePrivilege(State);
         State = (PVOID)TRUE;

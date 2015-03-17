@@ -16,15 +16,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "config.h"
-#include "wine/port.h"
-
 #include "jscript.h"
-#include "regexp.h"
-
-#include <wine/debug.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(jscript);
 
 #define UINT32_MAX 0xffffffff
 
@@ -1645,26 +1637,21 @@ static HRESULT StringConstr_value(script_ctx_t *ctx, vdisp_t *jsthis, WORD flags
         break;
     }
     case DISPATCH_CONSTRUCT: {
+        jsstr_t *str;
         jsdisp_t *ret;
 
         if(argc) {
-            jsstr_t *str;
-
             hres = to_string(ctx, argv[0], &str);
             if(FAILED(hres))
                 return hres;
-
-            hres = create_string(ctx, str, &ret);
-            jsstr_release(str);
         }else {
-            hres = create_string(ctx, jsstr_empty(), &ret);
+            str = jsstr_empty();
         }
 
-        if(FAILED(hres))
-            return hres;
-
-        *r = jsval_obj(ret);
-        break;
+        hres = create_string(ctx, str, &ret);
+        if (SUCCEEDED(hres)) *r = jsval_obj(ret);
+        jsstr_release(str);
+        return hres;
     }
 
     default:

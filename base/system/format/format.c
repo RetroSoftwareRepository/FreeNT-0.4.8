@@ -8,7 +8,7 @@
 #include <winbase.h>
 #include <winnls.h>
 #include <winuser.h>
-#include <winternl.h>
+#include <wine/winternl.h>
 #include <fmifs/fmifs.h>
 #include <tchar.h>
 
@@ -24,7 +24,7 @@ BOOL	CompressDrive = FALSE;
 BOOL	GotALabel = FALSE;
 LPTSTR	Label = _T("");
 LPTSTR	Drive = NULL;
-LPTSTR	Format = _T("FAT");
+LPTSTR	FileSystem = _T("FAT");
 
 TCHAR	RootDirectory[MAX_PATH];
 TCHAR	LabelString[12];
@@ -56,10 +56,10 @@ int LoadStringAndOem(HINSTANCE hInst,
 		UINT uID,
 		LPTSTR szStr,
 		int Siz
-)	
+)
 {
   TCHAR szTmp[RC_STRING_MAX_SIZE];
-  int res = LoadString(hInst, uID, szTmp, sizeof(szTmp)); 
+  int res = LoadString(hInst, uID, szTmp, sizeof(szTmp));
   CharToOem(szTmp, szStr);
   return(res);
 }
@@ -113,7 +113,7 @@ static int ParseCommandLine( int argc, TCHAR *argv[] )
 			if( !_tcsnicmp( &argv[i][1], _T("FS:"), 3 )) {
 
 				if( gotFormat) return -1;
-				Format = &argv[i][4];
+				FileSystem = &argv[i][4];
 				gotFormat = TRUE;
 
 
@@ -238,20 +238,24 @@ FormatExCallback (
 BOOLEAN LoadFMIFSEntryPoints()
 {
 	HMODULE hFmifs = LoadLibrary( _T("fmifs.dll") );
-	if( !(void*) GetProcAddress( hFmifs, "FormatEx" ) ) {
+	if (hFmifs == NULL) {
+		return FALSE;
+	}
 
+	if( !(void*) GetProcAddress( hFmifs, "FormatEx" ) ) {
+		FreeLibrary(hFmifs);
 		return FALSE;
 	}
 
 	if( !((void *) GetProcAddress( hFmifs,
 			"EnableVolumeCompression" )) ) {
-
+		FreeLibrary(hFmifs);
 		return FALSE;
 	}
 
 	if( !((void *) GetProcAddress( hFmifs,
 			"QueryAvailableFileSystemFormat" )) ) {
-
+		FreeLibrary(hFmifs);
 		return FALSE;
 	}
 
@@ -276,7 +280,7 @@ static VOID Usage( LPTSTR ProgramName )
 	WCHAR szFormatW[MAX_PATH];
 	DWORD Index = 0;
 	BYTE dummy;
-	BOOLEAN lastestVersion;
+	BOOLEAN latestVersion;
 
 	LoadStringAndOem( GetModuleHandle(NULL), STRING_HELP, (LPTSTR) szMsg,RC_STRING_MAX_SIZE);
 	if (!LoadFMIFSEntryPoints())
@@ -286,9 +290,9 @@ static VOID Usage( LPTSTR ProgramName )
 	}
 
 	szFormats[0] = 0;
-	while (QueryAvailableFileSystemFormat(Index++, szFormatW, &dummy, &dummy, &lastestVersion))
+	while (QueryAvailableFileSystemFormat(Index++, szFormatW, &dummy, &dummy, &latestVersion))
 	{
-		if (!lastestVersion)
+		if (!latestVersion)
 			continue;
 		if (szFormats[0])
 			_tcscat(szFormats, _T(", "));
@@ -328,7 +332,7 @@ _tmain(int argc, TCHAR *argv[])
 	DWORD flags, maxComponent;
 	ULARGE_INTEGER freeBytesAvailableToCaller, totalNumberOfBytes, totalNumberOfFreeBytes;
 #ifndef UNICODE
-	WCHAR RootDirectoryW[MAX_PATH], FormatW[MAX_PATH], LabelW[MAX_PATH];
+	WCHAR RootDirectoryW[MAX_PATH], FileSystemW[MAX_PATH], LabelW[MAX_PATH];
 #endif
 	TCHAR szMsg[RC_STRING_MAX_SIZE];
 
@@ -522,12 +526,12 @@ _tmain(int argc, TCHAR *argv[])
 	//
 #ifndef UNICODE
 	MultiByteToWideChar(CP_ACP, 0, RootDirectory, -1, RootDirectoryW, MAX_PATH);
-	MultiByteToWideChar(CP_ACP, 0, Format, -1, FormatW, MAX_PATH);
+	MultiByteToWideChar(CP_ACP, 0, FileSystem, -1, FileSystemW, MAX_PATH);
 	MultiByteToWideChar(CP_ACP, 0, Label, -1, LabelW, MAX_PATH);
-	FormatEx( RootDirectoryW, media, FormatW, LabelW, QuickFormat,
+	FormatEx( RootDirectoryW, media, FileSystemW, LabelW, QuickFormat,
 			ClusterSize, FormatExCallback );
 #else
-	FormatEx( RootDirectory, media, Format, Label, QuickFormat,
+	FormatEx( RootDirectory, media, FileSystem, Label, QuickFormat,
 			ClusterSize, FormatExCallback );
 #endif
 	if( Error ) return -1;

@@ -63,6 +63,12 @@ ULONG                    Ext2GroupCount = 0;                // Number of groups 
 ULONG                    Ext2InodesPerBlock = 0;            // Number of inodes in one block
 ULONG                    Ext2GroupDescPerBlock = 0;        // Number of group descriptors in one block
 
+#define TAG_EXT_BLOCK_LIST 'LtxE'
+#define TAG_EXT_FILE 'FtxE'
+#define TAG_EXT_BUFFER  'BtxE'
+#define TAG_EXT_SUPER_BLOCK 'StxE'
+#define TAG_EXT_GROUP_DESC 'GtxE'
+
 BOOLEAN DiskGetBootVolume(PUCHAR DriveNumber, PULONGLONG StartSector, PULONGLONG SectorCount, int *FsType)
 {
     *DriveNumber = 0;
@@ -143,7 +149,7 @@ PEXT2_FILE_INFO Ext2OpenFile(PCSTR FileName)
         {
             if (TempExt2FileInfo.FileBlockList != NULL)
             {
-                MmHeapFree(TempExt2FileInfo.FileBlockList);
+                FrLdrTempFree(TempExt2FileInfo.FileBlockList, TAG_EXT_BLOCK_LIST);
             }
 
             return NULL;
@@ -185,20 +191,20 @@ PEXT2_FILE_INFO Ext2OpenFile(PCSTR FileName)
 
         if (TempExt2FileInfo.FileBlockList != NULL)
         {
-            MmHeapFree(TempExt2FileInfo.FileBlockList);
+            FrLdrTempFree(TempExt2FileInfo.FileBlockList, TAG_EXT_BLOCK_LIST);
         }
 
         return Ext2OpenFile(FullPath);
     }
     else
     {
-        FileHandle = MmHeapAlloc(sizeof(EXT2_FILE_INFO));
+        FileHandle = FrLdrTempAlloc(sizeof(EXT2_FILE_INFO), TAG_EXT_FILE);
 
         if (FileHandle == NULL)
         {
             if (TempExt2FileInfo.FileBlockList != NULL)
             {
-                MmHeapFree(TempExt2FileInfo.FileBlockList);
+                FrLdrTempFree(TempExt2FileInfo.FileBlockList, TAG_EXT_BLOCK_LIST);
             }
 
             return NULL;
@@ -267,11 +273,11 @@ BOOLEAN Ext2LookupFile(PCSTR FileName, PEXT2_FILE_INFO Ext2FileInfoPointer)
         //
         if (!Ext2SearchDirectoryBufferForFile(DirectoryBuffer, (ULONG)Ext2GetInodeFileSize(&InodeData), PathPart, &DirectoryEntry))
         {
-            MmHeapFree(DirectoryBuffer);
+            FrLdrTempFree(DirectoryBuffer, TAG_EXT_BUFFER);
             return FALSE;
         }
 
-        MmHeapFree(DirectoryBuffer);
+        FrLdrTempFree(DirectoryBuffer, TAG_EXT_BUFFER);
 
         DirectoryInode = DirectoryEntry.inode;
     }
@@ -563,8 +569,8 @@ BOOLEAN Ext2ReadVolumeSectors(UCHAR DriveNumber, ULONGLONG SectorNumber, ULONG S
     //{
     //    return FALSE;
     //}
-    //ReturnValue = MachDiskReadLogicalSectors(DriveNumber, SectorNumber + Ext2VolumeStartSector, SectorCount, (PVOID)DISKREADBUFFER);
-    //RtlCopyMemory(Buffer, (PVOID)DISKREADBUFFER, SectorCount * DiskGeometry.BytesPerSector);
+    //ReturnValue = MachDiskReadLogicalSectors(DriveNumber, SectorNumber + Ext2VolumeStartSector, SectorCount, DiskReadBuffer);
+    //RtlCopyMemory(Buffer, DiskReadBuffer, SectorCount * DiskGeometry.BytesPerSector);
     //return ReturnValue;
 
     return CacheReadDiskSectors(DriveNumber, SectorNumber + Ext2VolumeStartSector, SectorCount, Buffer);
@@ -580,7 +586,7 @@ BOOLEAN Ext2ReadSuperBlock(VOID)
     //
     if (Ext2SuperBlock != NULL)
     {
-        MmHeapFree(Ext2SuperBlock);
+        FrLdrTempFree(Ext2SuperBlock, TAG_EXT_SUPER_BLOCK);
 
         Ext2SuperBlock = NULL;
     }
@@ -588,7 +594,7 @@ BOOLEAN Ext2ReadSuperBlock(VOID)
     //
     // Now allocate the memory to hold the super block
     //
-    Ext2SuperBlock = (PEXT2_SUPER_BLOCK)MmHeapAlloc(1024);
+    Ext2SuperBlock = (PEXT2_SUPER_BLOCK)FrLdrTempAlloc(1024, TAG_EXT_SUPER_BLOCK);
 
     //
     // Make sure we got the memory
@@ -601,11 +607,11 @@ BOOLEAN Ext2ReadSuperBlock(VOID)
 
     // Now try to read the super block
     // If this fails then abort
-    if (!MachDiskReadLogicalSectors(Ext2DriveNumber, Ext2VolumeStartSector, 8, (PVOID)DISKREADBUFFER))
+    if (!MachDiskReadLogicalSectors(Ext2DriveNumber, Ext2VolumeStartSector, 8, DiskReadBuffer))
     {
         return FALSE;
     }
-    RtlCopyMemory(Ext2SuperBlock, (PVOID)((ULONG_PTR)DISKREADBUFFER + 1024), 1024);
+    RtlCopyMemory(Ext2SuperBlock, ((PUCHAR)DiskReadBuffer + 1024), 1024);
 
     TRACE("Dumping super block:\n");
     TRACE("total_inodes: %d\n", Ext2SuperBlock->total_inodes);
@@ -731,7 +737,7 @@ BOOLEAN Ext2ReadGroupDescriptors(VOID)
     //
     if (Ext2GroupDescriptors != NULL)
     {
-        MmHeapFree(Ext2GroupDescriptors);
+        FrLdrTempFree(Ext2GroupDescriptors, TAG_EXT_GROUP_DESC);
 
         Ext2GroupDescriptors = NULL;
     }
@@ -740,7 +746,7 @@ BOOLEAN Ext2ReadGroupDescriptors(VOID)
     // Now allocate the memory to hold the group descriptors
     //
     GroupDescBlockCount = ROUND_UP(Ext2GroupCount, Ext2GroupDescPerBlock) / Ext2GroupDescPerBlock;
-    Ext2GroupDescriptors = (PEXT2_GROUP_DESC)MmHeapAlloc(GroupDescBlockCount * Ext2BlockSizeInBytes);
+    Ext2GroupDescriptors = (PEXT2_GROUP_DESC)FrLdrTempAlloc(GroupDescBlockCount * Ext2BlockSizeInBytes, TAG_EXT_GROUP_DESC);
 
     //
     // Make sure we got the memory
@@ -804,14 +810,14 @@ BOOLEAN Ext2ReadDirectory(ULONG Inode, PVOID* DirectoryBuffer, PEXT2_INODE Inode
     // Now allocate the memory to hold the group descriptors
     //
     ASSERT(DirectoryFileInfo.FileSize <= 0xFFFFFFFF);
-    *DirectoryBuffer = (PEXT2_DIR_ENTRY)MmHeapAlloc((ULONG)DirectoryFileInfo.FileSize);
+    *DirectoryBuffer = (PEXT2_DIR_ENTRY)FrLdrTempAlloc((ULONG)DirectoryFileInfo.FileSize, TAG_EXT_BUFFER);
 
     //
     // Make sure we got the memory
     //
     if (*DirectoryBuffer == NULL)
     {
-        MmHeapFree(DirectoryFileInfo.FileBlockList);
+        FrLdrTempFree(DirectoryFileInfo.FileBlockList, TAG_EXT_BLOCK_LIST);
         FileSystemError("Out of memory.");
         return FALSE;
     }
@@ -819,13 +825,13 @@ BOOLEAN Ext2ReadDirectory(ULONG Inode, PVOID* DirectoryBuffer, PEXT2_INODE Inode
     // Now read the root directory data
     if (!Ext2ReadFileBig(&DirectoryFileInfo, DirectoryFileInfo.FileSize, NULL, *DirectoryBuffer))
     {
-        MmHeapFree(*DirectoryBuffer);
+        FrLdrTempFree(*DirectoryBuffer, TAG_EXT_BUFFER);
         *DirectoryBuffer = NULL;
-        MmHeapFree(DirectoryFileInfo.FileBlockList);
+        FrLdrTempFree(DirectoryFileInfo.FileBlockList, TAG_EXT_BLOCK_LIST);
         return FALSE;
     }
 
-    MmHeapFree(DirectoryFileInfo.FileBlockList);
+    FrLdrTempFree(DirectoryFileInfo.FileBlockList, TAG_EXT_BLOCK_LIST);
     return TRUE;
 }
 
@@ -866,9 +872,7 @@ BOOLEAN Ext2ReadPartialBlock(ULONG BlockNumber, ULONG StartingOffset, ULONG Leng
 
     TRACE("Ext2ReadPartialBlock() BlockNumber = %d StartingOffset = %d Length = %d Buffer = 0x%x\n", BlockNumber, StartingOffset, Length, Buffer);
 
-    TempBuffer = FrLdrHeapAllocate(FrLdrTempHeap,
-                                   Ext2BlockSizeInBytes,
-                                   '2TXE');
+    TempBuffer = FrLdrTempAlloc(Ext2BlockSizeInBytes, TAG_EXT_BUFFER);
 
     if (!Ext2ReadBlock(BlockNumber, TempBuffer))
     {
@@ -877,7 +881,7 @@ BOOLEAN Ext2ReadPartialBlock(ULONG BlockNumber, ULONG StartingOffset, ULONG Leng
 
     memcpy(Buffer, ((PUCHAR)TempBuffer + StartingOffset), Length);
 
-    FrLdrHeapFree(FrLdrTempHeap, TempBuffer, '2TXE');
+    FrLdrTempFree(TempBuffer, TAG_EXT_BUFFER);
 
     return TRUE;
 }
@@ -914,7 +918,6 @@ BOOLEAN Ext2ReadInode(ULONG Inode, PEXT2_INODE InodeBuffer)
     ULONG        InodeOffsetInBlock;
     CHAR        ErrorString[80];
     EXT2_GROUP_DESC    GroupDescriptor;
-    BOOLEAN Status;
 
     TRACE("Ext2ReadInode() Inode = %d\n", Inode);
 
@@ -945,11 +948,10 @@ BOOLEAN Ext2ReadInode(ULONG Inode, PEXT2_INODE InodeBuffer)
     TRACE("InodeBlockNumber (after group desc correction) = %d\n", InodeBlockNumber);
 
     // Read the block
-    Status = Ext2ReadPartialBlock(InodeBlockNumber,
-                                  (InodeOffsetInBlock * EXT2_INODE_SIZE(Ext2SuperBlock)),
-                                  sizeof(EXT2_INODE),
-                                  InodeBuffer);
-    if (!Status)
+    if (!Ext2ReadPartialBlock(InodeBlockNumber,
+                              (InodeOffsetInBlock * EXT2_INODE_SIZE(Ext2SuperBlock)),
+                              sizeof(EXT2_INODE),
+                              InodeBuffer))
     {
         return FALSE;
     }
@@ -1029,7 +1031,7 @@ ULONG* Ext2ReadBlockPointerList(PEXT2_INODE Inode)
     BlockCount = (ULONG)(FileSize / Ext2BlockSizeInBytes);
 
     // Allocate the memory for the block list
-    BlockList = MmHeapAlloc(BlockCount * sizeof(ULONG));
+    BlockList = FrLdrTempAlloc(BlockCount * sizeof(ULONG), TAG_EXT_BLOCK_LIST);
     if (BlockList == NULL)
     {
         return NULL;
@@ -1050,7 +1052,7 @@ ULONG* Ext2ReadBlockPointerList(PEXT2_INODE Inode)
     {
         if (!Ext2CopyIndirectBlockPointers(BlockList, &CurrentBlockInList, BlockCount, Inode->blocks.indir_block))
         {
-            MmHeapFree(BlockList);
+            FrLdrTempFree(BlockList, TAG_EXT_BLOCK_LIST);
             return NULL;
         }
     }
@@ -1060,7 +1062,7 @@ ULONG* Ext2ReadBlockPointerList(PEXT2_INODE Inode)
     {
         if (!Ext2CopyDoubleIndirectBlockPointers(BlockList, &CurrentBlockInList, BlockCount, Inode->blocks.double_indir_block))
         {
-            MmHeapFree(BlockList);
+            FrLdrTempFree(BlockList, TAG_EXT_BLOCK_LIST);
             return NULL;
         }
     }
@@ -1070,7 +1072,7 @@ ULONG* Ext2ReadBlockPointerList(PEXT2_INODE Inode)
     {
         if (!Ext2CopyTripleIndirectBlockPointers(BlockList, &CurrentBlockInList, BlockCount, Inode->blocks.tripple_indir_block))
         {
-            MmHeapFree(BlockList);
+            FrLdrTempFree(BlockList, TAG_EXT_BLOCK_LIST);
             return NULL;
         }
     }
@@ -1100,9 +1102,7 @@ BOOLEAN Ext2CopyIndirectBlockPointers(ULONG* BlockList, ULONG* CurrentBlockInLis
 
     BlockPointersPerBlock = Ext2BlockSizeInBytes / sizeof(ULONG);
 
-    BlockBuffer = FrLdrHeapAllocate(FrLdrTempHeap,
-                                    Ext2BlockSizeInBytes,
-                                    '2TXE');
+    BlockBuffer = FrLdrTempAlloc(Ext2BlockSizeInBytes, TAG_EXT_BUFFER);
     if (!BlockBuffer)
     {
         return FALSE;
@@ -1119,7 +1119,7 @@ BOOLEAN Ext2CopyIndirectBlockPointers(ULONG* BlockList, ULONG* CurrentBlockInLis
         (*CurrentBlockInList)++;
     }
 
-    FrLdrHeapFree(FrLdrTempHeap, BlockBuffer, '2TXE');
+    FrLdrTempFree(BlockBuffer, TAG_EXT_BUFFER);
 
     return TRUE;
 }
@@ -1134,7 +1134,7 @@ BOOLEAN Ext2CopyDoubleIndirectBlockPointers(ULONG* BlockList, ULONG* CurrentBloc
 
     BlockPointersPerBlock = Ext2BlockSizeInBytes / sizeof(ULONG);
 
-    BlockBuffer = (ULONG*)MmHeapAlloc(Ext2BlockSizeInBytes);
+    BlockBuffer = (ULONG*)FrLdrTempAlloc(Ext2BlockSizeInBytes, TAG_EXT_BUFFER);
     if (BlockBuffer == NULL)
     {
         return FALSE;
@@ -1142,7 +1142,7 @@ BOOLEAN Ext2CopyDoubleIndirectBlockPointers(ULONG* BlockList, ULONG* CurrentBloc
 
     if (!Ext2ReadBlock(DoubleIndirectBlock, BlockBuffer))
     {
-        MmHeapFree(BlockBuffer);
+        FrLdrTempFree(BlockBuffer, TAG_EXT_BUFFER);
         return FALSE;
     }
 
@@ -1150,12 +1150,12 @@ BOOLEAN Ext2CopyDoubleIndirectBlockPointers(ULONG* BlockList, ULONG* CurrentBloc
     {
         if (!Ext2CopyIndirectBlockPointers(BlockList, CurrentBlockInList, BlockCount, BlockBuffer[CurrentBlock]))
         {
-            MmHeapFree(BlockBuffer);
+            FrLdrTempFree(BlockBuffer, TAG_EXT_BUFFER);
             return FALSE;
         }
     }
 
-    MmHeapFree(BlockBuffer);
+    FrLdrTempFree(BlockBuffer, TAG_EXT_BUFFER);
     return TRUE;
 }
 
@@ -1169,7 +1169,7 @@ BOOLEAN Ext2CopyTripleIndirectBlockPointers(ULONG* BlockList, ULONG* CurrentBloc
 
     BlockPointersPerBlock = Ext2BlockSizeInBytes / sizeof(ULONG);
 
-    BlockBuffer = (ULONG*)MmHeapAlloc(Ext2BlockSizeInBytes);
+    BlockBuffer = (ULONG*)FrLdrTempAlloc(Ext2BlockSizeInBytes, TAG_EXT_BUFFER);
     if (BlockBuffer == NULL)
     {
         return FALSE;
@@ -1177,7 +1177,7 @@ BOOLEAN Ext2CopyTripleIndirectBlockPointers(ULONG* BlockList, ULONG* CurrentBloc
 
     if (!Ext2ReadBlock(TripleIndirectBlock, BlockBuffer))
     {
-        MmHeapFree(BlockBuffer);
+        FrLdrTempFree(BlockBuffer, TAG_EXT_BUFFER);
         return FALSE;
     }
 
@@ -1185,25 +1185,25 @@ BOOLEAN Ext2CopyTripleIndirectBlockPointers(ULONG* BlockList, ULONG* CurrentBloc
     {
         if (!Ext2CopyDoubleIndirectBlockPointers(BlockList, CurrentBlockInList, BlockCount, BlockBuffer[CurrentBlock]))
         {
-            MmHeapFree(BlockBuffer);
+            FrLdrTempFree(BlockBuffer, TAG_EXT_BUFFER);
             return FALSE;
         }
     }
 
-    MmHeapFree(BlockBuffer);
+    FrLdrTempFree(BlockBuffer, TAG_EXT_BUFFER);
     return TRUE;
 }
 
-LONG Ext2Close(ULONG FileId)
+ARC_STATUS Ext2Close(ULONG FileId)
 {
     PEXT2_FILE_INFO FileHandle = FsGetDeviceSpecific(FileId);
 
-    MmHeapFree(FileHandle);
+    FrLdrTempFree(FileHandle, TAG_EXT_FILE);
 
     return ESUCCESS;
 }
 
-LONG Ext2GetFileInformation(ULONG FileId, FILEINFORMATION* Information)
+ARC_STATUS Ext2GetFileInformation(ULONG FileId, FILEINFORMATION* Information)
 {
     PEXT2_FILE_INFO FileHandle = FsGetDeviceSpecific(FileId);
 
@@ -1219,7 +1219,7 @@ LONG Ext2GetFileInformation(ULONG FileId, FILEINFORMATION* Information)
     return ESUCCESS;
 }
 
-LONG Ext2Open(CHAR* Path, OPENMODE OpenMode, ULONG* FileId)
+ARC_STATUS Ext2Open(CHAR* Path, OPENMODE OpenMode, ULONG* FileId)
 {
     PEXT2_FILE_INFO FileHandle;
     //ULONG DeviceId;
@@ -1249,28 +1249,28 @@ LONG Ext2Open(CHAR* Path, OPENMODE OpenMode, ULONG* FileId)
     return ESUCCESS;
 }
 
-LONG Ext2Read(ULONG FileId, VOID* Buffer, ULONG N, ULONG* Count)
+ARC_STATUS Ext2Read(ULONG FileId, VOID* Buffer, ULONG N, ULONG* Count)
 {
     PEXT2_FILE_INFO FileHandle = FsGetDeviceSpecific(FileId);
     ULONGLONG BytesReadBig;
-    BOOLEAN ret;
+    BOOLEAN Success;
 
     //
     // Read data
     //
-    ret = Ext2ReadFileBig(FileHandle, N, &BytesReadBig, Buffer);
+    Success = Ext2ReadFileBig(FileHandle, N, &BytesReadBig, Buffer);
     *Count = (ULONG)BytesReadBig;
 
     //
     // Check for success
     //
-    if (ret)
+    if (Success)
         return ESUCCESS;
     else
         return EIO;
 }
 
-LONG Ext2Seek(ULONG FileId, LARGE_INTEGER* Position, SEEKMODE SeekMode)
+ARC_STATUS Ext2Seek(ULONG FileId, LARGE_INTEGER* Position, SEEKMODE SeekMode)
 {
     PEXT2_FILE_INFO FileHandle = FsGetDeviceSpecific(FileId);
 
@@ -1302,18 +1302,18 @@ const DEVVTBL* Ext2Mount(ULONG DeviceId)
     EXT2_SUPER_BLOCK SuperBlock;
     LARGE_INTEGER Position;
     ULONG Count;
-    LONG ret;
+    ARC_STATUS Status;
 
     //
     // Read the SuperBlock
     //
     Position.HighPart = 0;
     Position.LowPart = 2 * 512;
-    ret = ArcSeek(DeviceId, &Position, SeekAbsolute);
-    if (ret != ESUCCESS)
+    Status = ArcSeek(DeviceId, &Position, SeekAbsolute);
+    if (Status != ESUCCESS)
         return NULL;
-    ret = ArcRead(DeviceId, &SuperBlock, sizeof(SuperBlock), &Count);
-    if (ret != ESUCCESS || Count != sizeof(SuperBlock))
+    Status = ArcRead(DeviceId, &SuperBlock, sizeof(SuperBlock), &Count);
+    if (Status != ESUCCESS || Count != sizeof(SuperBlock))
         return NULL;
 
     //

@@ -559,7 +559,7 @@ NTSTATUS
 );
 
 typedef
-VOID
+NTSTATUS
 (NTAPI *PKWIN32_DELETEMETHOD_CALLOUT)(
     _In_ struct _WIN32_DELETEMETHOD_PARAMETERS *Parameters
 );
@@ -572,11 +572,19 @@ NTSTATUS
 
 typedef
 NTSTATUS
+(NTAPI *PKWIN32_SESSION_CALLOUT)(
+    _In_ PVOID Parameter
+);
+
+#if (NTDDI_VERSION >= NTDDI_LONGHORN)
+typedef
+NTSTATUS
 (NTAPI *PKWIN32_WIN32DATACOLLECTION_CALLOUT)(
     _In_ struct _EPROCESS *Process,
     _In_ PVOID Callback,
     _In_ PVOID Context
 );
+#endif
 
 //
 // Lego Callback
@@ -1406,16 +1414,18 @@ typedef struct _WIN32_CALLOUTS_FPNS
     PKWIN32_POWERSTATE_CALLOUT PowerStateCallout;
     PKWIN32_JOB_CALLOUT JobCallout;
     PGDI_BATCHFLUSH_ROUTINE BatchFlushRoutine;
-    PKWIN32_OPENMETHOD_CALLOUT DesktopOpenProcedure;
-    PKWIN32_OKTOCLOSEMETHOD_CALLOUT DesktopOkToCloseProcedure;
-    PKWIN32_CLOSEMETHOD_CALLOUT DesktopCloseProcedure;
-    PKWIN32_DELETEMETHOD_CALLOUT DesktopDeleteProcedure;
-    PKWIN32_OKTOCLOSEMETHOD_CALLOUT WindowStationOkToCloseProcedure;
-    PKWIN32_CLOSEMETHOD_CALLOUT WindowStationCloseProcedure;
-    PKWIN32_DELETEMETHOD_CALLOUT WindowStationDeleteProcedure;
-    PKWIN32_PARSEMETHOD_CALLOUT WindowStationParseProcedure;
-    PKWIN32_OPENMETHOD_CALLOUT WindowStationOpenProcedure;
+    PKWIN32_SESSION_CALLOUT DesktopOpenProcedure;
+    PKWIN32_SESSION_CALLOUT DesktopOkToCloseProcedure;
+    PKWIN32_SESSION_CALLOUT DesktopCloseProcedure;
+    PKWIN32_SESSION_CALLOUT DesktopDeleteProcedure;
+    PKWIN32_SESSION_CALLOUT WindowStationOkToCloseProcedure;
+    PKWIN32_SESSION_CALLOUT WindowStationCloseProcedure;
+    PKWIN32_SESSION_CALLOUT WindowStationDeleteProcedure;
+    PKWIN32_SESSION_CALLOUT WindowStationParseProcedure;
+    PKWIN32_SESSION_CALLOUT WindowStationOpenProcedure;
+#if (NTDDI_VERSION >= NTDDI_LONGHORN)
     PKWIN32_WIN32DATACOLLECTION_CALLOUT Win32DataCollectionProcedure;
+#endif
 } WIN32_CALLOUTS_FPNS, *PWIN32_CALLOUTS_FPNS;
 
 #endif // !NTOS_MODE_USER

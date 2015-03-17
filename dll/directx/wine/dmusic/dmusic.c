@@ -19,11 +19,9 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-//#include <stdio.h>
-
 #include "dmusic_private.h"
 
-WINE_DEFAULT_DEBUG_CHANNEL(dmusic);
+#include <winreg.h>
 
 static inline IDirectMusic8Impl *impl_from_IDirectMusic8(IDirectMusic8 *iface)
 {
@@ -61,8 +59,6 @@ static ULONG WINAPI IDirectMusic8Impl_AddRef(LPDIRECTMUSIC8 iface)
 
     TRACE("(%p)->(): new ref = %u\n", This, ref);
 
-    DMUSIC_LockModule();
-
     return ref;
 }
 
@@ -74,12 +70,12 @@ static ULONG WINAPI IDirectMusic8Impl_Release(LPDIRECTMUSIC8 iface)
     TRACE("(%p)->(): new ref = %u\n", This, ref);
 
     if (!ref) {
+        IReferenceClock_Release(&This->pMasterClock->IReferenceClock_iface);
         HeapFree(GetProcessHeap(), 0, This->system_ports);
         HeapFree(GetProcessHeap(), 0, This->ppPorts);
         HeapFree(GetProcessHeap(), 0, This);
+        DMUSIC_UnlockModule();
     }
-
-    DMUSIC_UnlockModule();
 
     return ref;
 }
@@ -212,8 +208,10 @@ static HRESULT WINAPI IDirectMusic8Impl_GetMasterClock(LPDIRECTMUSIC8 iface, LPG
 
     if (guid_clock)
         *guid_clock = This->pMasterClock->pClockInfo.guidClock;
-    if (reference_clock)
-        *reference_clock = (IReferenceClock*)This->pMasterClock;
+    if (reference_clock) {
+        *reference_clock = &This->pMasterClock->IReferenceClock_iface;
+        IReferenceClock_AddRef(*reference_clock);
+    }
 
     return S_OK;
 }
@@ -408,13 +406,15 @@ HRESULT WINAPI DMUSIC_CreateDirectMusicImpl(LPCGUID riid, LPVOID* ret_iface, LPU
     TRACE("(%p,%p,%p)\n", riid, ret_iface, unkouter);
 
     *ret_iface = NULL;
+    if (unkouter)
+        return CLASS_E_NOAGGREGATION;
 
     dmusic = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(IDirectMusic8Impl));
     if (!dmusic)
         return E_OUTOFMEMORY;
 
     dmusic->IDirectMusic8_iface.lpVtbl = &DirectMusic8_Vtbl;
-    dmusic->ref = 0; /* Will be inited by QueryInterface */
+    dmusic->ref = 1;
     dmusic->pMasterClock = NULL;
     dmusic->ppPorts = NULL;
     dmusic->nrofports = 0;
@@ -424,14 +424,11 @@ HRESULT WINAPI DMUSIC_CreateDirectMusicImpl(LPCGUID riid, LPVOID* ret_iface, LPU
         return ret;
     }
 
-    ret = IDirectMusic8Impl_QueryInterface(&dmusic->IDirectMusic8_iface, riid, ret_iface);
-    if (FAILED(ret)) {
-        IReferenceClock_Release(&dmusic->pMasterClock->IReferenceClock_iface);
-        HeapFree(GetProcessHeap(), 0, dmusic);
-        return ret;
-    }
-
     create_system_ports_list(dmusic);
 
-    return S_OK;
+    DMUSIC_LockModule();
+    ret = IDirectMusic8Impl_QueryInterface(&dmusic->IDirectMusic8_iface, riid, ret_iface);
+    IDirectMusic8Impl_Release(&dmusic->IDirectMusic8_iface);
+
+    return ret;
 }

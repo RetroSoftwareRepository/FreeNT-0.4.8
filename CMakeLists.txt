@@ -1,9 +1,14 @@
 
-cmake_minimum_required(VERSION 2.6)
+cmake_minimum_required(VERSION 2.8.12)
 
 if(POLICY CMP0017)
     # Shadow cmake provided modules
     cmake_policy(SET CMP0017 OLD)
+endif()
+
+if(POLICY CMP0026)
+    # Allow use of the LOCATION property
+    cmake_policy(SET CMP0026 OLD)
 endif()
 
 project(REACTOS)
@@ -25,6 +30,11 @@ set(CMAKE_SKIP_PREPROCESSED_SOURCE_RULES TRUE)
 set(CMAKE_SKIP_ASSEMBLY_SOURCE_RULES TRUE)
 set(CMAKE_COLOR_MAKEFILE OFF)
 #set_property(GLOBAL PROPERTY RULE_MESSAGES OFF)
+set(CMAKE_SKIP_INSTALL_RULES ON)
+
+if(NOT CMAKE_VERSION STREQUAL "2.8.12.1-ReactOS")
+    set(CMAKE_DISABLE_NINJA_DEPSLOG TRUE)
+endif()
 
 if(NOT ARCH)
     set(ARCH i386)
@@ -58,6 +68,9 @@ if(NOT CMAKE_CROSSCOMPILING)
         if(ARCH STREQUAL "i386")
             add_definitions(/D_X86_ /DWIN32 /D_WINDOWS)
         endif()
+        if(MSVC_VERSION GREATER 1699)
+            add_definitions(/D_ALLOW_KEYWORD_MACROS)
+        endif()
         add_definitions(/Dinline=__inline)
     else()
         add_compile_flags("-fshort-wchar -Wno-multichar")
@@ -72,9 +85,9 @@ if(NOT CMAKE_CROSSCOMPILING)
     add_subdirectory(lib)
 
     if(NOT MSVC)
-        export(TARGETS bin2c widl gendib cabman cdmake mkhive obj2bin spec2def geninc rsym mkshelllink FILE ${CMAKE_BINARY_DIR}/ImportExecutables.cmake NAMESPACE native- )
+        export(TARGETS bin2c widl gendib cabman cdmake mkhive obj2bin spec2def geninc rsym mkshelllink utf16le FILE ${CMAKE_BINARY_DIR}/ImportExecutables.cmake NAMESPACE native- )
     else()
-        export(TARGETS bin2c widl gendib cabman cdmake mkhive obj2bin spec2def geninc mkshelllink FILE ${CMAKE_BINARY_DIR}/ImportExecutables.cmake NAMESPACE native- )
+        export(TARGETS bin2c widl gendib cabman cdmake mkhive obj2bin spec2def geninc mkshelllink utf16le FILE ${CMAKE_BINARY_DIR}/ImportExecutables.cmake NAMESPACE native- )
     endif()
 
 else()
@@ -88,11 +101,6 @@ else()
 
     #useful stuff!
     include(CMakeParseArguments)
-
-    if(ENABLE_CCACHE)
-        set(CMAKE_C_USE_RESPONSE_FILE_FOR_INCLUDES OFF)
-        set(CMAKE_CXX_USE_RESPONSE_FILE_FOR_INCLUDES OFF)
-    endif()
 
     # Default to Debug for the build type
     set(CMAKE_BUILD_TYPE "Debug" CACHE STRING
@@ -127,6 +135,12 @@ else()
 
     if(_WINKD_)
         add_definitions(-D_WINKD_=1)
+    endif()
+
+    if(CMAKE_VERSION MATCHES "ReactOS")
+        set(PCH 1 CACHE BOOL "Whether to use precompiled headers")
+    else()
+        set(PCH 0 CACHE BOOL "Whether to use precompiled headers")
     endif()
 
     # Version Options
@@ -199,12 +213,6 @@ else()
         include_directories(${REACTOS_SOURCE_DIR}/include/reactos/arm)
     endif()
 
-    if(MSVC)
-        include_directories(include/crt/msc)
-    else()
-        include_directories(include/crt/mingw32)
-    endif()
-
     add_dependency_header()
 
     add_subdirectory(include/psdk)
@@ -213,7 +221,11 @@ else()
     add_subdirectory(include/reactos/mc)
     add_subdirectory(include/asm)
 
-    include(cmake/baseaddress.cmake)
+    if(NO_ROSSYM)
+        include(cmake/baseaddress_dwarf.cmake)
+    else()
+        include(cmake/baseaddress.cmake)
+    endif()
 
     # For MSVC builds, this puts all debug symbols file in the same directory.
     set(CMAKE_PDB_OUTPUT_DIRECTORY "${REACTOS_BINARY_DIR}/msvc_pdb")

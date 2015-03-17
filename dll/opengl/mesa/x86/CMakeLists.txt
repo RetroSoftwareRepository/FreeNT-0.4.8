@@ -4,6 +4,9 @@ list(APPEND SOURCE
     x86_xform.c
     3dnow.c
     sse.c
+    rtasm/x86sse.c)
+
+list(APPEND ASM_SOURCE
     common_x86_asm.S
     x86_xform2.S
     x86_xform3.S
@@ -20,11 +23,10 @@ list(APPEND SOURCE
     sse_xform3.S
     sse_xform4.S
     sse_normal.S
-    read_rgba_span_x86.S
-    rtasm/x86sse.c
-)
+    read_rgba_span_x86.S)
 
-add_library(mesa_x86 STATIC ${SOURCE})
+add_asm_files(mesa_x86_asm ${ASM_SOURCE})
+add_library(mesa_x86 STATIC ${SOURCE} ${mesa_x86_asm})
 
 if(NOT MSVC)
     add_compile_flags("-Wno-format")

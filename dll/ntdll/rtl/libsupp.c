@@ -10,6 +10,7 @@
 /* INCLUDES *****************************************************************/
 
 #include <ntdll.h>
+
 #define NDEBUG
 #include <debug.h>
 
@@ -124,6 +125,15 @@ RtlEnterHeapLock(IN OUT PHEAP_LOCK Lock, IN BOOLEAN Exclusive)
     UNREFERENCED_PARAMETER(Exclusive);
 
     return RtlEnterCriticalSection(&Lock->CriticalSection);
+}
+
+BOOLEAN
+NTAPI
+RtlTryEnterHeapLock(IN OUT PHEAP_LOCK Lock, IN BOOLEAN Exclusive)
+{
+    UNREFERENCED_PARAMETER(Exclusive);
+
+    return RtlTryEnterCriticalSection(&Lock->CriticalSection);
 }
 
 NTSTATUS
@@ -429,6 +439,7 @@ NTSTATUS find_entry( PVOID BaseAddress, LDR_RESOURCE_INFO *info,
 
     root = RtlImageDirectoryEntryToData( BaseAddress, TRUE, IMAGE_DIRECTORY_ENTRY_RESOURCE, &size );
     if (!root) return STATUS_RESOURCE_DATA_NOT_FOUND;
+    if (size < sizeof(*resdirptr)) return STATUS_RESOURCE_DATA_NOT_FOUND;
     resdirptr = root;
 
     if (!level--) goto done;
@@ -610,6 +621,34 @@ RtlpSafeCopyMemory(
     _SEH2_END;
 
     return STATUS_SUCCESS;
+}
+
+/* FIXME: code duplication with kernel32/client/time.c */
+ULONG
+NTAPI
+RtlGetTickCount(VOID)
+{
+    ULARGE_INTEGER TickCount;
+
+#ifdef _WIN64
+    TickCount.QuadPart = *((volatile ULONG64*)&SharedUserData->TickCount);
+#else
+    while (TRUE)
+    {
+        TickCount.HighPart = (ULONG)SharedUserData->TickCount.High1Time;
+        TickCount.LowPart = SharedUserData->TickCount.LowPart;
+
+        if (TickCount.HighPart == (ULONG)SharedUserData->TickCount.High2Time)
+            break;
+
+        YieldProcessor();
+    }
+#endif
+
+    return (ULONG)((UInt32x32To64(TickCount.LowPart,
+                                  SharedUserData->TickCountMultiplier) >> 24) +
+                    UInt32x32To64((TickCount.HighPart << 8) & 0xFFFFFFFF,
+                                  SharedUserData->TickCountMultiplier));
 }
 
 /* EOF */

@@ -58,7 +58,7 @@ UserGetLanguageID(VOID)
   HANDLE KeyHandle;
   OBJECT_ATTRIBUTES ObAttr;
 //  http://support.microsoft.com/kb/324097
-  ULONG Ret = 0x409; // English
+  ULONG Ret = MAKELANGID(LANG_ENGLISH, SUBLANG_DEFAULT);
   PKEY_VALUE_PARTIAL_INFORMATION pKeyInfo;
   ULONG Size = sizeof(KEY_VALUE_PARTIAL_INFORMATION) + MAX_PATH*sizeof(WCHAR);
   UNICODE_STRING Language;
@@ -87,7 +87,10 @@ UserGetLanguageID(VOID)
                                              &Size)) )
       {
         RtlInitUnicodeString(&Language, (PWSTR)pKeyInfo->Data);
-        RtlUnicodeStringToInteger(&Language, 16, &Ret);
+        if (!NT_SUCCESS(RtlUnicodeStringToInteger(&Language, 16, &Ret)))
+        {
+            Ret = MAKELANGID(LANG_ENGLISH, SUBLANG_DEFAULT);
+        }
       }
       ExFreePoolWithTag(pKeyInfo, TAG_STRING);
     }
@@ -223,7 +226,7 @@ NtUserGetThreadState(
          break;
       case THREADSTATE_INSENDMESSAGE:
          {
-           PUSER_SENT_MESSAGE Message = 
+           PUSER_SENT_MESSAGE Message =
                 ((PTHREADINFO)PsGetCurrentThreadWin32Thread())->pusmCurrent;
            ERR("THREADSTATE_INSENDMESSAGE\n");
 
@@ -243,7 +246,7 @@ NtUserGetThreadState(
              if (Message->QS_Flags & QS_SMRESULT) ret |= ISMEX_REPLIED;
            }
 
-           break;         
+           break;
          }
       case THREADSTATE_GETMESSAGETIME:
          ret = ((PTHREADINFO)PsGetCurrentThreadWin32Thread())->timeLast;
@@ -271,6 +274,9 @@ NtUserGetThreadState(
          ret = (DWORD_PTR) (GetW32ThreadInfo()->MessageQueue->CursorObject ?
                             UserHMGetHandle(GetW32ThreadInfo()->MessageQueue->CursorObject) : 0);
          break;
+      case THREADSTATE_GETMESSAGEEXTRAINFO:
+         ret = (DWORD_PTR)MsqGetMessageExtraInfo();
+        break;
    }
 
    TRACE("Leave NtUserGetThreadState, ret=%lu\n", ret);
@@ -289,7 +295,7 @@ NtUserSetThreadState(
    DWORD Ret = 0;
    // Test the only flags user can change.
    if (Set & ~(QF_FF10STATUS|QF_DIALOGACTIVE|QF_TABSWITCHING|QF_FMENUSTATUS|QF_FMENUSTATUSBREAK)) return 0;
-   if (Flags & ~(QF_FF10STATUS|QF_DIALOGACTIVE|QF_TABSWITCHING|QF_FMENUSTATUS|QF_FMENUSTATUSBREAK)) return 0;   
+   if (Flags & ~(QF_FF10STATUS|QF_DIALOGACTIVE|QF_TABSWITCHING|QF_FMENUSTATUS|QF_FMENUSTATUSBREAK)) return 0;
    UserEnterExclusive();
    pti = PsGetCurrentThreadWin32Thread();
    if (pti->MessageQueue)
@@ -448,7 +454,7 @@ NtUserGetGuiResources(
 
    Status = ObReferenceObjectByHandle(hProcess,
                                       PROCESS_QUERY_INFORMATION,
-                                      PsProcessType,
+                                      *PsProcessType,
                                       ExGetPreviousMode(),
                                       (PVOID*)&Process,
                                       NULL);
@@ -656,7 +662,9 @@ void UserDbgAssertThreadInfo(BOOL showCaller)
     ASSERT(pci->ulClientDelta == DesktopHeapGetUserDelta());
     if (pti->pcti && pci->pDeskInfo)
         ASSERT(pci->pClientThreadInfo == (PVOID)((ULONG_PTR)pti->pcti - pci->ulClientDelta));
-    if (pti->KeyboardLayout) 
+    if (pti->pcti && IsListEmpty(&pti->SentMessagesListHead))
+        ASSERT((pti->pcti->fsChangeBits & QS_SENDMESSAGE) == 0);
+    if (pti->KeyboardLayout)
         ASSERT(pci->hKL == pti->KeyboardLayout->hkl);
     if(pti->rpdesk != NULL)
         ASSERT(pti->pDeskInfo == pti->rpdesk->pDeskInfo);
@@ -692,7 +700,7 @@ UserDbgPostServiceHook(ULONG ulSyscallId, ULONG_PTR ulResult)
 {
     /* Make sure that the first syscall is NtUserInitialize */
     /* too bad this fails */
-    //ASSERT(gbInitialized);
+    // ASSERT(gpepCSRSS);
 
     UserDbgAssertThreadInfo(TRUE);
 

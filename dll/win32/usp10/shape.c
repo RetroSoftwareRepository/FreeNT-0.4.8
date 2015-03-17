@@ -18,20 +18,8 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  *
  */
-#include <stdarg.h>
-//#include <stdlib.h>
-
-#include <windef.h>
-#include <winbase.h>
-#include <wingdi.h>
-//#include "winuser.h"
-//#include "winnls.h"
-#include <usp10.h>
-//#include "winternl.h"
 
 #include "usp10_internal.h"
-
-#include <wine/debug.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(uniscribe);
 
@@ -2184,7 +2172,8 @@ static inline int unicode_lex(WCHAR c)
         case 0x0407: return lex_Composed_Vowel;
         case 0x0507: return lex_Matra_above;
         case 0x0607: return lex_Matra_below;
-        case 0x000c: return lex_Ra;
+        case 0x000c:
+        case 0x0015: return lex_Ra;
     };
 }
 

@@ -10,6 +10,7 @@
 /* INCLUDES *****************************************************************/
 
 #include <ntdll.h>
+
 #define NDEBUG
 #include <debug.h>
 
@@ -203,6 +204,7 @@ LdrpFreeUnicodeString(IN PUNICODE_STRING StringIn)
     /* Zero it out */
     RtlInitEmptyUnicodeString(StringIn, NULL, 0);
 }
+
 BOOLEAN
 NTAPI
 LdrpCallInitRoutine(IN PDLL_INIT_ROUTINE EntryPoint,
@@ -222,6 +224,7 @@ LdrpUpdateLoadCount3(IN PLDR_DATA_TABLE_ENTRY LdrEntry,
                      OUT PUNICODE_STRING UpdateString)
 {
     PIMAGE_BOUND_FORWARDER_REF NewImportForwarder;
+    PIMAGE_BOUND_IMPORT_DESCRIPTOR FirstEntry;
     PIMAGE_BOUND_IMPORT_DESCRIPTOR BoundEntry;
     PIMAGE_IMPORT_DESCRIPTOR ImportEntry;
     PIMAGE_THUNK_DATA FirstThunk;
@@ -234,7 +237,7 @@ LdrpUpdateLoadCount3(IN PLDR_DATA_TABLE_ENTRY LdrEntry,
     ULONG i;
 
     /* Check the action we need to perform */
-    if (Flags == LDRP_UPDATE_REFCOUNT)
+    if ((Flags == LDRP_UPDATE_REFCOUNT) || (Flags == LDRP_UPDATE_PIN))
     {
         /* Make sure entry is not being loaded already */
         if (LdrEntry->Flags & LDRP_LOAD_IN_PROGRESS)
@@ -255,12 +258,12 @@ LdrpUpdateLoadCount3(IN PLDR_DATA_TABLE_ENTRY LdrEntry,
     ImportNameUnic = &NtCurrentTeb()->StaticUnicodeString;
 
     /* Try to get the new import entry */
-    BoundEntry = (PIMAGE_BOUND_IMPORT_DESCRIPTOR)RtlImageDirectoryEntryToData(LdrEntry->DllBase,
-                                                                              TRUE,
-                                                                              IMAGE_DIRECTORY_ENTRY_BOUND_IMPORT,
-                                                                              &ImportSize);
+    FirstEntry = RtlImageDirectoryEntryToData(LdrEntry->DllBase,
+                                              TRUE,
+                                              IMAGE_DIRECTORY_ENTRY_BOUND_IMPORT,
+                                              &ImportSize);
 
-    if (BoundEntry)
+    if (FirstEntry)
     {
         /* Set entry flags if refing/derefing */
         if (Flags == LDRP_UPDATE_REFCOUNT)
@@ -268,10 +271,11 @@ LdrpUpdateLoadCount3(IN PLDR_DATA_TABLE_ENTRY LdrEntry,
         else if (Flags == LDRP_UPDATE_DEREFCOUNT)
             LdrEntry->Flags |= LDRP_UNLOAD_IN_PROGRESS;
 
+        BoundEntry = FirstEntry;
         while (BoundEntry->OffsetModuleName)
         {
             /* Get pointer to the current import name */
-            ImportName = (PCHAR)BoundEntry + BoundEntry->OffsetModuleName;
+            ImportName = (LPSTR)FirstEntry + BoundEntry->OffsetModuleName;
 
             RtlInitAnsiString(&ImportNameAnsi, ImportName);
             Status = RtlAnsiStringToUnicodeString(ImportNameUnic, &ImportNameAnsi, FALSE);
@@ -314,9 +318,9 @@ LdrpUpdateLoadCount3(IN PLDR_DATA_TABLE_ENTRY LdrEntry,
 
             /* Go through forwarders */
             NewImportForwarder = (PIMAGE_BOUND_FORWARDER_REF)(BoundEntry + 1);
-            for (i=0; i<BoundEntry->NumberOfModuleForwarderRefs; i++)
+            for (i = 0; i < BoundEntry->NumberOfModuleForwarderRefs; i++)
             {
-                ImportName = (PCHAR)BoundEntry + NewImportForwarder->OffsetModuleName;
+                ImportName = (LPSTR)FirstEntry + NewImportForwarder->OffsetModuleName;
 
                 RtlInitAnsiString(&ImportNameAnsi, ImportName);
                 Status = RtlAnsiStringToUnicodeString(ImportNameUnic, &ImportNameAnsi, FALSE);
@@ -1071,8 +1075,8 @@ LdrpMapDll(IN PWSTR SearchPath OPTIONAL,
         if (!NT_SUCCESS(Status) && (Status != STATUS_DLL_NOT_FOUND))
         {
             /* Failure */
-            DbgPrintEx(81, //DPFLTR_LDR_ID,
-                       0,
+            DbgPrintEx(DPFLTR_LDR_ID,
+                       DPFLTR_ERROR_LEVEL,
                        "LDR: %s - call to LdrpCheckForKnownDll(\"%ws\", ...) failed with status %x\n",
                         __FUNCTION__,
                         DllName,
@@ -1319,7 +1323,7 @@ SkipCheck:
         ImageBase = (ULONG_PTR)NtHeaders->OptionalHeader.ImageBase;
         ImageEnd = ImageBase + ViewSize;
 
-        DPRINT1("LDR: LdrpMapDll Relocating Image Name %ws (%lu -> %p)\n", DllName, ImageBase, ViewBase);
+        DPRINT("LDR: LdrpMapDll Relocating Image Name %ws (%p -> %p)\n", DllName, (PVOID)ImageBase, ViewBase);
 
         /* Scan all the modules */
         ListHead = &Peb->Ldr->InLoadOrderModuleList;
@@ -1358,7 +1362,7 @@ SkipCheck:
             RtlInitUnicodeString(&OverlapDll, L"Dynamically Allocated Memory");
         }
 
-        DPRINT1("Overlapping DLL: %wZ\n", &OverlapDll);
+        DPRINT("Overlapping DLL: %wZ\n", &OverlapDll);
 
         /* Are we dealing with a DLL? */
         if (LdrEntry->Flags & LDRP_IMAGE_DLL)
@@ -1659,8 +1663,8 @@ LdrpResolveFullName(IN PUNICODE_STRING OriginalName,
     /* Display debug output if snaps are on */
     if (ShowSnaps)
     {
-        DbgPrintEx(81, //DPFLTR_LDR_ID,
-                   0,
+        DbgPrintEx(DPFLTR_LDR_ID,
+                   DPFLTR_ERROR_LEVEL,
                    "LDR: %s - Expanding full name of %wZ\n",
                    __FUNCTION__,
                    OriginalName);
@@ -1736,16 +1740,16 @@ Quickie:
         /* Check which output to use -- failure or success */
         if (NT_SUCCESS(Status))
         {
-            DbgPrintEx(81, //DPFLTR_LDR_ID,
-                       0,
+            DbgPrintEx(DPFLTR_LDR_ID,
+                       DPFLTR_ERROR_LEVEL,
                        "LDR: %s - Expanded to %wZ\n",
                        __FUNCTION__,
                        *ExpandedName);
         }
         else
         {
-            DbgPrintEx(81, //DPFLTR_LDR_ID,
-                       0,
+            DbgPrintEx(DPFLTR_LDR_ID,
+                       DPFLTR_ERROR_LEVEL,
                        "LDR: %s - Failed to expand %wZ; 0x%08x\n",
                        __FUNCTION__,
                        OriginalName,
@@ -1783,8 +1787,8 @@ LdrpSearchPath(IN PWCHAR *SearchPath,
     /* Display debug output if snaps are on */
     if (ShowSnaps)
     {
-        DbgPrintEx(81, //DPFLTR_LDR_ID,
-                   0,
+        DbgPrintEx(DPFLTR_LDR_ID,
+                   DPFLTR_ERROR_LEVEL,
                    "LDR: %s - Looking for %ws in %ws\n",
                    __FUNCTION__,
                    DllName,
@@ -1819,7 +1823,7 @@ LdrpSearchPath(IN PWCHAR *SearchPath,
     /* FIXME: Handle relative case semicolon-lookup here */
 
     /* Calculate length */
-    Length += (ULONG)wcslen(DllName) + sizeof(UNICODE_NULL);
+    Length += (ULONG)wcslen(DllName) + 1;
     if (Length > UNICODE_STRING_MAX_CHARS)
     {
         /* Too long, fail */
@@ -1851,8 +1855,8 @@ LdrpSearchPath(IN PWCHAR *SearchPath,
             /* Display debug output if snaps are on */
             if (ShowSnaps)
             {
-                DbgPrintEx(81, //DPFLTR_LDR_ID,
-                           0,
+                DbgPrintEx(DPFLTR_LDR_ID,
+                           DPFLTR_ERROR_LEVEL,
                            "LDR: %s - Looking for %ws\n",
                            __FUNCTION__,
                            Buffer);
@@ -1931,16 +1935,16 @@ Quickie:
         /* Check which output to use -- failure or success */
         if (NT_SUCCESS(Status))
         {
-            DbgPrintEx(81, //DPFLTR_LDR_ID,
-                       0,
+            DbgPrintEx(DPFLTR_LDR_ID,
+                       DPFLTR_ERROR_LEVEL,
                        "LDR: %s - Returning %wZ\n",
                        __FUNCTION__,
                        *ExpandedName);
         }
         else
         {
-            DbgPrintEx(81, //DPFLTR_LDR_ID,
-                       0,
+            DbgPrintEx(DPFLTR_LDR_ID,
+                       DPFLTR_ERROR_LEVEL,
                        "LDR: %s -  Unable to locate %ws in %ws: 0x%08x\n",
                        __FUNCTION__,
                        DllName,
@@ -2053,8 +2057,8 @@ lookinhash:
 
                 if (ShowSnaps)
                 {
-                    DPRINT1("LDR: LdrpCheckForLoadedDll - Unable To Locate %ws: 0x%08x\n",
-                        DllName->Buffer, Length);
+                    DPRINT1("LDR: LdrpCheckForLoadedDll - Unable To Locate %wZ: 0x%08x\n",
+                        &DllName, Length);
                 }
 
                 /* Return failure */
@@ -2266,7 +2270,7 @@ LdrpGetProcedureAddress(IN PVOID BaseAddress,
         }
 
         /* Check if our buffer is large enough */
-        if (Name->Length > sizeof(ImportBuffer))
+        if (Length > sizeof(ImportBuffer))
         {
             /* Allocate from heap, plus 2 bytes for the Hint */
             ImportName = RtlAllocateHeap(RtlGetProcessHeap(),
@@ -2332,7 +2336,8 @@ LdrpGetProcedureAddress(IN PVOID BaseAddress,
 
         if (!ExportDir)
         {
-            DPRINT1("Image %wZ has no exports, but were trying to get procedure %s. BaseAddress asked %p, got entry BA %p\n", &LdrEntry->BaseDllName, Name ? Name->Buffer : NULL, BaseAddress, LdrEntry->DllBase);
+            DPRINT1("Image %wZ has no exports, but were trying to get procedure %Z. BaseAddress asked 0x%p, got entry BA 0x%p\n",
+                    &LdrEntry->BaseDllName, Name, BaseAddress, LdrEntry->DllBase);
             Status = STATUS_PROCEDURE_NOT_FOUND;
             _SEH2_YIELD(goto Quickie;)
         }
@@ -2453,8 +2458,8 @@ LdrpLoadDll(IN BOOLEAN Redirected,
             sizeof(NameBuffer))
         {
             /* No space to add the extension */
-            DbgPrintEx(81, //DPFLTR_LDR_ID,
-                       0,
+            DbgPrintEx(DPFLTR_LDR_ID,
+                       DPFLTR_ERROR_LEVEL,
                        "LDR: %s - Dll name missing extension; with extension "
                        "added the name is too long\n"
                        "   DllName: (@ %p) \"%wZ\"\n"

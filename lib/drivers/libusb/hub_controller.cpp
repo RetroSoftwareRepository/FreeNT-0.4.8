@@ -8,11 +8,12 @@
  *              Johannes Anderwald (johannes.anderwald@reactos.org)
  */
 
-
-#define INITGUID
 #include "libusb.h"
 
-VOID StatusChangeEndpointCallBack(
+#define NDEBUG
+#include <debug.h>
+
+VOID NTAPI StatusChangeEndpointCallBack(
     PVOID Context);
 
 class CHubController : public IHubController,
@@ -47,6 +48,7 @@ public:
     virtual NTSTATUS HandlePnp(IN PDEVICE_OBJECT DeviceObject, IN OUT PIRP Irp);
     virtual NTSTATUS HandlePower(IN PDEVICE_OBJECT DeviceObject, IN OUT PIRP Irp);
     virtual NTSTATUS HandleDeviceControl(IN PDEVICE_OBJECT DeviceObject, IN OUT PIRP Irp);
+    virtual NTSTATUS HandleSystemControl(IN PDEVICE_OBJECT DeviceObject, IN OUT PIRP Irp);
 
     // local functions
     NTSTATUS HandleQueryInterface(PIO_STACK_LOCATION IoStack);
@@ -76,7 +78,7 @@ public:
     NTSTATUS HandleSyncResetAndClearStall(IN OUT PIRP Irp, PURB Urb);
     NTSTATUS HandleAbortPipe(IN OUT PIRP Irp, PURB Urb);
 
-    friend VOID StatusChangeEndpointCallBack(PVOID Context);
+    friend VOID NTAPI StatusChangeEndpointCallBack(PVOID Context);
 
     // constructor / destructor
     CHubController(IUnknown *OuterUnknown){}
@@ -109,7 +111,7 @@ protected:
 
 
     //Internal Functions
-    BOOLEAN QueryStatusChageEndpoint(PIRP Irp);
+    BOOLEAN QueryStatusChangeEndpoint(PIRP Irp);
 };
 
 typedef struct
@@ -284,7 +286,7 @@ CHubController::Initialize(
 // Queries the ports to see if there has been a device connected or removed.
 //
 BOOLEAN
-CHubController::QueryStatusChageEndpoint(
+CHubController::QueryStatusChangeEndpoint(
     PIRP Irp)
 {
     ULONG PortCount, PortId;
@@ -310,7 +312,7 @@ CHubController::QueryStatusChageEndpoint(
     // Get the number of ports and check each one for device connected
     //
     m_Hardware->GetDeviceDetails(NULL, NULL, &PortCount, NULL);
-    DPRINT1("[%s] SCE Request %p TransferBufferLength %lu Flags %x MDL %p\n", m_USBType, Urb->UrbBulkOrInterruptTransfer.TransferBuffer, Urb->UrbBulkOrInterruptTransfer.TransferBufferLength, Urb->UrbBulkOrInterruptTransfer.TransferFlags, Urb->UrbBulkOrInterruptTransfer.TransferBufferMDL);
+    DPRINT("[%s] SCE Request %p TransferBufferLength %lu Flags %x MDL %p\n", m_USBType, Urb->UrbBulkOrInterruptTransfer.TransferBuffer, Urb->UrbBulkOrInterruptTransfer.TransferBufferLength, Urb->UrbBulkOrInterruptTransfer.TransferFlags, Urb->UrbBulkOrInterruptTransfer.TransferBufferMDL);
 
     TransferBuffer = (PUCHAR)Urb->UrbBulkOrInterruptTransfer.TransferBuffer;
 
@@ -321,7 +323,7 @@ CHubController::QueryStatusChageEndpoint(
     {
         m_Hardware->GetPortStatus(PortId, &PortStatus, &PortChange);
 
-        DPRINT1("[%s] Port %d: Status %x, Change %x\n", m_USBType, PortId, PortStatus, PortChange);
+        DPRINT("[%s] Port %d: Status %x, Change %x\n", m_USBType, PortId, PortStatus, PortChange);
 
 
         //
@@ -758,10 +760,23 @@ CHubController::HandlePower(
     IN PDEVICE_OBJECT DeviceObject,
     IN OUT PIRP Irp)
 {
-    UNIMPLEMENTED
-    Irp->IoStatus.Status = STATUS_NOT_IMPLEMENTED;
+    NTSTATUS Status;
+    Status = Irp->IoStatus.Status;
+    PoStartNextPowerIrp(Irp);
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
-    return STATUS_NOT_IMPLEMENTED;
+    return Status;
+}
+
+//-----------------------------------------------------------------------------------------
+NTSTATUS
+CHubController::HandleSystemControl(
+    IN PDEVICE_OBJECT DeviceObject,
+    IN OUT PIRP Irp)
+{
+    NTSTATUS Status;
+    Status = Irp->IoStatus.Status;
+    IoCompleteRequest(Irp, IO_NO_INCREMENT);
+    return Status;
 }
 
 //-----------------------------------------------------------------------------------------
@@ -831,9 +846,11 @@ CHubController::HandleBulkOrInterruptTransfer(
     if (Urb->UrbHeader.UsbdDeviceHandle == PVOID(this)  || Urb->UrbHeader.UsbdDeviceHandle == NULL)
     {
         ASSERT(m_PendingSCEIrp == NULL);
-        if (QueryStatusChageEndpoint(Irp))
+        if (QueryStatusChangeEndpoint(Irp))
         {
-            StatusChangeEndpointCallBack(this);
+            //
+            // We've seen a change already, so return immediately
+            //
             return STATUS_SUCCESS;
         }
 
@@ -1096,7 +1113,7 @@ CHubController::HandleSelectConfiguration(
         // select configuration
         //
         Status = UsbDevice->SelectConfiguration(Urb->UrbSelectConfiguration.ConfigurationDescriptor, &Urb->UrbSelectConfiguration.Interface, &Urb->UrbSelectConfiguration.ConfigurationHandle);
-        if (NT_SUCCESS(Status)) 
+        if (NT_SUCCESS(Status))
         {
             // successfully configured device
             Urb->UrbSelectConfiguration.Hdr.Status = USBD_STATUS_SUCCESS;
@@ -1575,7 +1592,7 @@ CHubController::HandleGetDescriptor(
                 Length = BufferLength > sizeof(USB_CONFIGURATION_DESCRIPTOR) ?
                     sizeof(USB_CONFIGURATION_DESCRIPTOR) : BufferLength;
                 RtlCopyMemory(Buffer, &ROOTHUB2_CONFIGURATION_DESCRIPTOR, Length);
-                
+
                 //
                 // Check if we still have some space left
                 //
@@ -1599,7 +1616,7 @@ CHubController::HandleGetDescriptor(
                 Length = BufferLength > sizeof(USB_INTERFACE_DESCRIPTOR) ?
                     sizeof(USB_INTERFACE_DESCRIPTOR) : BufferLength;
                 RtlCopyMemory(Buffer, &ROOTHUB2_INTERFACE_DESCRIPTOR, Length);
-                
+
                 //
                 // Check if we still have some space left
                 //
@@ -1616,8 +1633,8 @@ CHubController::HandleGetDescriptor(
                 //
                 Buffer += Length;
                 BufferLength -= Length;
-                
-                
+
+
                 //
                 // copy end point descriptor template
                 //
@@ -1650,7 +1667,7 @@ CHubController::HandleGetDescriptor(
                 // get device
                 //
                 UsbDevice = PUSBDEVICE(Urb->UrbHeader.UsbdDeviceHandle);
-                
+
                 //
                 // Allocate temporary buffer
                 //
@@ -1666,14 +1683,14 @@ CHubController::HandleGetDescriptor(
                 // perform work in IUSBDevice
                 //
                 UsbDevice->GetConfigurationDescriptors((PUSB_CONFIGURATION_DESCRIPTOR)Buffer, BufferLength, &Length);
-                
+
                 //
                 // Copy what we can
                 //
-                Length = Urb->UrbControlDescriptorRequest.TransferBufferLength > Length ? 
+                Length = Urb->UrbControlDescriptorRequest.TransferBufferLength > Length ?
                     Length : Urb->UrbControlDescriptorRequest.TransferBufferLength;
                 RtlCopyMemory(Urb->UrbControlDescriptorRequest.TransferBuffer, Buffer, Length);
-                
+
                 //
                 // Free temporary buffer
                 //
@@ -3918,7 +3935,7 @@ CHubController::CreatePDO(
         }
     }
 
-    DPRINT1("CHubController::CreatePDO: DeviceName %wZ\n", &DeviceName);
+    DPRINT("CHubController::CreatePDO: DeviceName %wZ\n", &DeviceName);
 
     //
     // fixup device stack voodoo part #1
@@ -3966,7 +3983,7 @@ CreateHubController(
     return STATUS_SUCCESS;
 }
 
-VOID StatusChangeEndpointCallBack(PVOID Context)
+VOID NTAPI StatusChangeEndpointCallBack(PVOID Context)
 {
     CHubController* This;
     PIRP Irp;
@@ -3982,7 +3999,7 @@ VOID StatusChangeEndpointCallBack(PVOID Context)
     }
 
     This->m_PendingSCEIrp = NULL;
-    This->QueryStatusChageEndpoint(Irp);
+    This->QueryStatusChangeEndpoint(Irp);
 
     Irp->IoStatus.Status = STATUS_SUCCESS;
     Irp->IoStatus.Information = 0;

@@ -103,7 +103,7 @@ WinLdrScanImportDescriptorTable(IN OUT PLIST_ENTRY ModuleListHead,
     PIMAGE_IMPORT_DESCRIPTOR ImportTable;
     ULONG ImportTableSize;
     PCH ImportName;
-    BOOLEAN Status;
+    BOOLEAN Success;
 
     /* Get a pointer to the import table of this image */
     ImportTable = (PIMAGE_IMPORT_DESCRIPTOR)RtlImageDirectoryEntryToData(VaToPa(ScanDTE->DllBase),
@@ -136,31 +136,29 @@ WinLdrScanImportDescriptorTable(IN OUT PLIST_ENTRY ModuleListHead,
         /* Load the DLL if it is not already loaded */
         if (!WinLdrCheckForLoadedDll(ModuleListHead, ImportName, &DataTableEntry))
         {
-            Status = WinLdrpLoadAndScanReferencedDll(ModuleListHead,
-                DirectoryPath,
-                ImportName,
-                &DataTableEntry);
-
-            if (!Status)
+            Success = WinLdrpLoadAndScanReferencedDll(ModuleListHead,
+                                                      DirectoryPath,
+                                                      ImportName,
+                                                      &DataTableEntry);
+            if (!Success)
             {
                 ERR("WinLdrpLoadAndScanReferencedDll() failed\n");
-                return Status;
+                return Success;
             }
         }
 
         /* Scan its import address table */
-        Status = WinLdrpScanImportAddressTable(
-            ModuleListHead,
-            DataTableEntry->DllBase,
-            ScanDTE->DllBase,
-            (PIMAGE_THUNK_DATA)RVA(ScanDTE->DllBase, ImportTable->FirstThunk),
-            DirectoryPath);
+        Success = WinLdrpScanImportAddressTable(ModuleListHead,
+                                                DataTableEntry->DllBase,
+                                                ScanDTE->DllBase,
+                                                (PIMAGE_THUNK_DATA)RVA(ScanDTE->DllBase, ImportTable->FirstThunk),
+                                                DirectoryPath);
 
-        if (!Status)
+        if (!Success)
         {
             ERR("WinLdrpScanImportAddressTable() failed: ImportName = '%s', DirectoryPath = '%s'\n",
                 ImportName, DirectoryPath);
-            return Status;
+            return Success;
         }
     }
 
@@ -183,7 +181,8 @@ WinLdrAllocateDataTableEntry(IN OUT PLIST_ENTRY ModuleListHead,
        BaseDllName, FullDllName, BasePA);
 
     /* Allocate memory for a data table entry, zero-initialize it */
-    DataTableEntry = (PLDR_DATA_TABLE_ENTRY)MmHeapAlloc(sizeof(LDR_DATA_TABLE_ENTRY));
+    DataTableEntry = (PLDR_DATA_TABLE_ENTRY)FrLdrHeapAlloc(sizeof(LDR_DATA_TABLE_ENTRY),
+                                                           TAG_WLDR_DTE);
     if (DataTableEntry == NULL)
         return FALSE;
     RtlZeroMemory(DataTableEntry, sizeof(LDR_DATA_TABLE_ENTRY));
@@ -201,10 +200,10 @@ WinLdrAllocateDataTableEntry(IN OUT PLIST_ENTRY ModuleListHead,
     /* Initialize BaseDllName field (UNICODE_STRING) from the Ansi BaseDllName
        by simple conversion - copying each character */
     Length = (USHORT)(strlen(BaseDllName) * sizeof(WCHAR));
-    Buffer = (PWSTR)MmHeapAlloc(Length);
+    Buffer = (PWSTR)FrLdrHeapAlloc(Length, TAG_WLDR_NAME);
     if (Buffer == NULL)
     {
-        MmHeapFree(DataTableEntry);
+        FrLdrHeapFree(DataTableEntry, TAG_WLDR_DTE);
         return FALSE;
     }
     RtlZeroMemory(Buffer, Length);
@@ -220,10 +219,10 @@ WinLdrAllocateDataTableEntry(IN OUT PLIST_ENTRY ModuleListHead,
     /* Initialize FullDllName field (UNICODE_STRING) from the Ansi FullDllName
        using the same method */
     Length = (USHORT)(strlen(FullDllName) * sizeof(WCHAR));
-    Buffer = (PWSTR)MmHeapAlloc(Length);
+    Buffer = (PWSTR)FrLdrHeapAlloc(Length, TAG_WLDR_NAME);
     if (Buffer == NULL)
     {
-        MmHeapFree(DataTableEntry);
+        FrLdrHeapFree(DataTableEntry, TAG_WLDR_DTE);
         return FALSE;
     }
     RtlZeroMemory(Buffer, Length);
@@ -274,7 +273,7 @@ WinLdrLoadImage(IN PCHAR FileName,
     PIMAGE_NT_HEADERS NtHeaders;
     PIMAGE_SECTION_HEADER SectionHeader;
     ULONG VirtualSize, SizeOfRawData, NumberOfSections;
-    LONG Status;
+    ARC_STATUS Status;
     LARGE_INTEGER Position;
     ULONG i, BytesRead;
     TRACE("WinLdrLoadImage(%s, %ld, *)\n", FileName, MemoryType);
@@ -283,7 +282,7 @@ WinLdrLoadImage(IN PCHAR FileName,
     Status = ArcOpen(FileName, OpenReadOnly, &FileId);
     if (Status != ESUCCESS)
     {
-        //UiMessageBox("Can not open the file");
+        // UiMessageBox("Can not open the file.");
         return FALSE;
     }
 
@@ -291,7 +290,7 @@ WinLdrLoadImage(IN PCHAR FileName,
     Status = ArcRead(FileId, HeadersBuffer, SECTOR_SIZE * 2, &BytesRead);
     if (Status != ESUCCESS)
     {
-        UiMessageBox("Error reading from file");
+        UiMessageBox("Error reading from file.");
         ArcClose(FileId);
         return FALSE;
     }
@@ -300,8 +299,8 @@ WinLdrLoadImage(IN PCHAR FileName,
     NtHeaders = RtlImageNtHeader(HeadersBuffer);
     if (!NtHeaders)
     {
-        //Print(L"Error - no NT header found in %s\n", FileName);
-        UiMessageBox("Error - no NT header found");
+        // Print(L"Error - no NT header found in %s\n", FileName);
+        UiMessageBox("Error - no NT header found.");
         ArcClose(FileId);
         return FALSE;
     }
@@ -309,8 +308,8 @@ WinLdrLoadImage(IN PCHAR FileName,
     /* Ensure this is executable image */
     if (((NtHeaders->FileHeader.Characteristics & IMAGE_FILE_EXECUTABLE_IMAGE) == 0))
     {
-        //Print(L"Not an executable image %s\n", FileName);
-        UiMessageBox("Not an executable image");
+        // Print(L"Not an executable image %s\n", FileName);
+        UiMessageBox("Not an executable image.");
         ArcClose(FileId);
         return FALSE;
     }
@@ -331,8 +330,8 @@ WinLdrLoadImage(IN PCHAR FileName,
 
         if (PhysicalBase == NULL)
         {
-            //Print(L"Failed to alloc pages for image %s\n", FileName);
-            UiMessageBox("Failed to alloc pages for image");
+            // Print(L"Failed to alloc pages for image %s\n", FileName);
+            UiMessageBox("Failed to alloc pages for image.");
             ArcClose(FileId);
             return FALSE;
         }
@@ -348,17 +347,16 @@ WinLdrLoadImage(IN PCHAR FileName,
     Status = ArcSeek(FileId, &Position, SeekAbsolute);
     if (Status != ESUCCESS)
     {
-        UiMessageBox("Error seeking to start of file");
+        UiMessageBox("Error seeking to start of file.");
         ArcClose(FileId);
         return FALSE;
     }
 
     Status = ArcRead(FileId, PhysicalBase, NtHeaders->OptionalHeader.SizeOfHeaders, &BytesRead);
-
     if (Status != ESUCCESS)
     {
-        //Print(L"Error reading headers %s\n", FileName);
-        UiMessageBox("Error reading headers");
+        // Print(L"Error reading headers %s\n", FileName);
+        UiMessageBox("Error reading headers.");
         ArcClose(FileId);
         return FALSE;
     }
@@ -406,7 +404,6 @@ WinLdrLoadImage(IN PCHAR FileName,
 
             /* Read this section from the file, size = SizeOfRawData */
             Status = ArcRead(FileId, (PUCHAR)PhysicalBase + SectionHeader->VirtualAddress, SizeOfRawData, &BytesRead);
-
             if (Status != ESUCCESS)
             {
                 ERR("WinLdrLoadImage(): Error reading section from file!\n");
@@ -437,11 +434,11 @@ WinLdrLoadImage(IN PCHAR FileName,
         WARN("Relocating %p -> %p\n", NtHeaders->OptionalHeader.ImageBase,
              VirtualBase);
         return (BOOLEAN)LdrRelocateImageWithBias(PhysicalBase,
-            (ULONG_PTR)VirtualBase - (ULONG_PTR)PhysicalBase,
-            "FreeLdr",
-            TRUE,
-            TRUE, /* in case of conflict still return success */
-            FALSE);
+                                                 (ULONG_PTR)VirtualBase - (ULONG_PTR)PhysicalBase,
+                                                 "FreeLdr",
+                                                 TRUE,
+                                                 TRUE, /* in case of conflict still return success */
+                                                 FALSE);
     }
 
     TRACE("WinLdrLoadImage() done, PA = %p\n", *ImageBasePA);
@@ -514,7 +511,7 @@ WinLdrpBindImportName(IN OUT PLIST_ENTRY ModuleListHead,
     ULONG Hint;
     PIMAGE_IMPORT_BY_NAME ImportData;
     PCHAR ExportName, ForwarderName;
-    BOOLEAN Status;
+    BOOLEAN Success;
 
     //TRACE("WinLdrpBindImportName(): DllBase 0x%X, ImageBase 0x%X, ThunkData 0x%X, ExportDirectory 0x%X, ExportSize %d, ProcessForwards 0x%X\n",
     //    DllBase, ImageBase, ThunkData, ExportDirectory, ExportSize, ProcessForwards);
@@ -679,14 +676,14 @@ WinLdrpBindImportName(IN OUT PLIST_ENTRY ModuleListHead,
             }
 
             /* Now let's try to load it! */
-            Status = WinLdrpLoadAndScanReferencedDll(ModuleListHead,
-                DirectoryPath,
-                ForwardDllName,
-                &DataTableEntry);
-            if (!Status)
+            Success = WinLdrpLoadAndScanReferencedDll(ModuleListHead,
+                                                      DirectoryPath,
+                                                      ForwardDllName,
+                                                      &DataTableEntry);
+            if (!Success)
             {
                 ERR("WinLdrpLoadAndScanReferencedDll() failed to load forwarder dll.\n");
-                return Status;
+                return Success;
             }
         }
 
@@ -721,21 +718,20 @@ WinLdrpBindImportName(IN OUT PLIST_ENTRY ModuleListHead,
             RefThunkData.u1.AddressOfData = (ULONG_PTR)ImportByName;
 
             /* And recursively call ourselves */
-            Status = WinLdrpBindImportName(
-                ModuleListHead,
-                DataTableEntry->DllBase,
-                ImageBase,
-                &RefThunkData,
-                RefExportDirectory,
-                RefExportSize,
-                TRUE,
-                DirectoryPath);
+            Success = WinLdrpBindImportName(ModuleListHead,
+                                            DataTableEntry->DllBase,
+                                            ImageBase,
+                                            &RefThunkData,
+                                            RefExportDirectory,
+                                            RefExportSize,
+                                            TRUE,
+                                            DirectoryPath);
 
             /* Fill out the ThunkData with data from RefThunkData */
             ThunkData->u1 = RefThunkData.u1;
 
             /* Return what we got from the recursive call */
-            return Status;
+            return Success;
         }
         else
         {
@@ -755,7 +751,7 @@ WinLdrpLoadAndScanReferencedDll(PLIST_ENTRY ModuleListHead,
                                 PLDR_DATA_TABLE_ENTRY *DataTableEntry)
 {
     CHAR FullDllName[256];
-    BOOLEAN Status;
+    BOOLEAN Success;
     PVOID BasePA = NULL;
 
     /* Prepare the full path to the file to be loaded */
@@ -766,33 +762,33 @@ WinLdrpLoadAndScanReferencedDll(PLIST_ENTRY ModuleListHead,
     //Print(L"Loading referenced DLL: %s\n", FullDllName);
 
     /* Load the image */
-    Status = WinLdrLoadImage(FullDllName, LoaderBootDriver, &BasePA);
-    if (!Status)
+    Success = WinLdrLoadImage(FullDllName, LoaderBootDriver, &BasePA);
+    if (!Success)
     {
         ERR("WinLdrLoadImage() failed\n");
-        return Status;
+        return Success;
     }
 
     /* Allocate DTE for newly loaded DLL */
-    Status = WinLdrAllocateDataTableEntry(ModuleListHead,
-        ImportName,
-        FullDllName,
-        BasePA,
-        DataTableEntry);
-    if (!Status)
+    Success = WinLdrAllocateDataTableEntry(ModuleListHead,
+                                           ImportName,
+                                           FullDllName,
+                                           BasePA,
+                                           DataTableEntry);
+    if (!Success)
     {
         ERR("WinLdrAllocateDataTableEntry() failed\n");
-        return Status;
+        return Success;
     }
 
     /* Scan its dependencies too */
     TRACE("WinLdrScanImportDescriptorTable() calling ourselves for %S\n",
         VaToPa((*DataTableEntry)->BaseDllName.Buffer));
-    Status = WinLdrScanImportDescriptorTable(ModuleListHead, DirectoryPath, *DataTableEntry);
-    if (!Status)
+    Success = WinLdrScanImportDescriptorTable(ModuleListHead, DirectoryPath, *DataTableEntry);
+    if (!Success)
     {
         ERR("WinLdrScanImportDescriptorTable() failed\n");
-        return Status;
+        return Success;
     }
 
     return TRUE;
@@ -806,7 +802,7 @@ WinLdrpScanImportAddressTable(IN OUT PLIST_ENTRY ModuleListHead,
                               IN PCSTR DirectoryPath)
 {
     PIMAGE_EXPORT_DIRECTORY ExportDirectory = NULL;
-    BOOLEAN Status;
+    BOOLEAN Success;
     ULONG ExportSize;
 
     TRACE("WinLdrpScanImportAddressTable(): DllBase 0x%X, "
@@ -840,22 +836,21 @@ WinLdrpScanImportAddressTable(IN OUT PLIST_ENTRY ModuleListHead,
     while (((PIMAGE_THUNK_DATA)VaToPa(ThunkData))->u1.AddressOfData != 0)
     {
         /* Bind it */
-        Status = WinLdrpBindImportName(
-            ModuleListHead,
-            DllBase,
-            ImageBase,
-            ThunkData,
-            ExportDirectory,
-            ExportSize,
-            FALSE,
-            DirectoryPath);
+        Success = WinLdrpBindImportName(ModuleListHead,
+                                        DllBase,
+                                        ImageBase,
+                                        ThunkData,
+                                        ExportDirectory,
+                                        ExportSize,
+                                        FALSE,
+                                        DirectoryPath);
 
         /* Move to the next entry */
         ThunkData++;
 
         /* Return error if binding was unsuccessful */
-        if (!Status)
-            return Status;
+        if (!Success)
+            return Success;
     }
 
     /* Return success */

@@ -19,14 +19,27 @@
 #ifndef _WINE_WINHTTP_PRIVATE_H_
 #define _WINE_WINHTTP_PRIVATE_H_
 
-#ifndef __WINE_CONFIG_H
-# error You must include config.h to use this header
-#endif
+#include <wine/config.h>
+
+#include <stdarg.h>
+
+#define WIN32_NO_STATUS
+#define _INC_WINDOWS
+#define COM_NO_WINDOWS_H
+
+#define COBJMACROS
+#define NONAMELESSUNION
+
+#include <windef.h>
+#include <winbase.h>
+#include <objbase.h>
+#include <oleauto.h>
+#include <winsock2.h>
+#include <winhttp.h>
 
 #include <wine/list.h>
 #include <wine/unicode.h>
 
-//#include <sys/types.h>
 #ifdef HAVE_SYS_SOCKET_H
 # include <sys/socket.h>
 #endif
@@ -42,8 +55,11 @@
 # define closesocket close
 # define ioctlsocket ioctl
 #endif
-#include <ole2.h>
+
 #include <sspi.h>
+
+#include <wine/debug.h>
+WINE_DEFAULT_DEBUG_CHANNEL(winhttp);
 
 static const WCHAR getW[]    = {'G','E','T',0};
 static const WCHAR postW[]   = {'P','O','S','T',0};
@@ -186,9 +202,11 @@ typedef struct
     int send_timeout;
     int recv_timeout;
     LPWSTR status_text;
-    DWORD content_length; /* total number of bytes to be read (per chunk) */
+    DWORD content_length; /* total number of bytes to be read */
     DWORD content_read;   /* bytes read so far */
     BOOL  read_chunked;   /* are we reading in chunked mode? */
+    BOOL  read_chunked_eof;  /* end of stream in chunked mode */
+    BOOL  read_chunked_size; /* chunk size remaining */
     DWORD read_pos;       /* current read position in read_buf */
     DWORD read_size;      /* valid data size in read_buf */
     char  read_buf[4096]; /* buffer for already read but not returned data */
@@ -263,7 +281,7 @@ BOOL netconn_connected( netconn_t * ) DECLSPEC_HIDDEN;
 BOOL netconn_create( netconn_t *, int, int, int ) DECLSPEC_HIDDEN;
 BOOL netconn_init( netconn_t * ) DECLSPEC_HIDDEN;
 void netconn_unload( void ) DECLSPEC_HIDDEN;
-BOOL netconn_query_data_available( netconn_t *, DWORD * ) DECLSPEC_HIDDEN;
+ULONG netconn_query_data_available( netconn_t * ) DECLSPEC_HIDDEN;
 BOOL netconn_recv( netconn_t *, void *, size_t, int, int * ) DECLSPEC_HIDDEN;
 BOOL netconn_resolve( WCHAR *, INTERNET_PORT, struct sockaddr *, socklen_t *, int ) DECLSPEC_HIDDEN;
 BOOL netconn_secure_connect( netconn_t *, WCHAR * ) DECLSPEC_HIDDEN;
@@ -279,38 +297,7 @@ void delete_domain( domain_t * ) DECLSPEC_HIDDEN;
 BOOL set_server_for_hostname( connect_t *, LPCWSTR, INTERNET_PORT ) DECLSPEC_HIDDEN;
 void destroy_authinfo( struct authinfo * ) DECLSPEC_HIDDEN;
 
-extern HRESULT WinHttpRequest_create( IUnknown *, void ** ) DECLSPEC_HIDDEN;
-
-static inline const char *debugstr_variant( const VARIANT *v )
-{
-    if (!v) return "(null)";
-    switch (V_VT(v))
-    {
-    case VT_EMPTY:
-        return "{VT_EMPTY}";
-    case VT_NULL:
-        return "{VT_NULL}";
-    case VT_I4:
-        return wine_dbg_sprintf( "{VT_I4: %d}", V_I4(v) );
-    case VT_R8:
-        return wine_dbg_sprintf( "{VT_R8: %lf}", V_R8(v) );
-    case VT_BSTR:
-        return wine_dbg_sprintf( "{VT_BSTR: %s}", debugstr_w(V_BSTR(v)) );
-    case VT_DISPATCH:
-        return wine_dbg_sprintf( "{VT_DISPATCH: %p}", V_DISPATCH(v) );
-    case VT_BOOL:
-        return wine_dbg_sprintf( "{VT_BOOL: %x}", V_BOOL(v) );
-    case VT_UNKNOWN:
-        return wine_dbg_sprintf( "{VT_UNKNOWN: %p}", V_UNKNOWN(v) );
-    case VT_UINT:
-        return wine_dbg_sprintf( "{VT_UINT: %u}", V_UINT(v) );
-    case VT_BSTR|VT_BYREF:
-        return wine_dbg_sprintf( "{VT_BSTR|VT_BYREF: ptr %p, data %s}",
-            V_BSTRREF(v), V_BSTRREF(v) ? debugstr_w( *V_BSTRREF(v) ) : NULL );
-    default:
-        return wine_dbg_sprintf( "{vt %d}", V_VT(v) );
-    }
-}
+extern HRESULT WinHttpRequest_create( void ** ) DECLSPEC_HIDDEN;
 
 static inline void *heap_alloc( SIZE_T size )
 {

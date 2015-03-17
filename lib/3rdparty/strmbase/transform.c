@@ -18,31 +18,12 @@
  * License along with this library; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
-#include "config.h"
-#include <stdarg.h>
 
-#define COBJMACROS
-
-#include "windef.h"
-#include "winbase.h"
-#include "dshow.h"
-#include "amvideo.h"
-#include "strmif.h"
-#include "vfw.h"
-
-#include <assert.h>
-
-#include "wine/unicode.h"
-#include "wine/debug.h"
-#include "wine/strmbase.h"
 #include "strmbase_private.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(strmbase);
 
 static const WCHAR wcsInputPinName[] = {'i','n','p','u','t',' ','p','i','n',0};
 static const WCHAR wcsOutputPinName[] = {'o','u','t','p','u','t',' ','p','i','n',0};
 
-static const IBaseFilterVtbl TransformFilter_Vtbl;
 static const IPinVtbl TransformFilter_InputPin_Vtbl;
 static const IPinVtbl TransformFilter_OutputPin_Vtbl;
 static const IQualityControlVtbl TransformFilter_QualityControl_Vtbl;
@@ -175,25 +156,23 @@ static const BaseFilterFuncTable tfBaseFuncTable = {
     TransformFilter_GetPinCount
 };
 
-static const  BasePinFuncTable tf_input_BaseFuncTable = {
-    TransformFilter_Input_CheckMediaType,
-    NULL,
-    BasePinImpl_GetMediaTypeVersion,
-    BasePinImpl_GetMediaType
-};
-
 static const BaseInputPinFuncTable tf_input_BaseInputFuncTable = {
+    {
+        TransformFilter_Input_CheckMediaType,
+        NULL,
+        BasePinImpl_GetMediaTypeVersion,
+        BasePinImpl_GetMediaType
+    },
     TransformFilter_Input_Receive
 };
 
-static const  BasePinFuncTable tf_output_BaseFuncTable = {
-    NULL,
-    BaseOutputPinImpl_AttemptConnection,
-    BasePinImpl_GetMediaTypeVersion,
-    TransformFilter_Output_GetMediaType
-};
-
 static const BaseOutputPinFuncTable tf_output_BaseOutputFuncTable = {
+    {
+        NULL,
+        BaseOutputPinImpl_AttemptConnection,
+        BasePinImpl_GetMediaTypeVersion,
+        TransformFilter_Output_GetMediaType
+    },
     TransformFilter_Output_DecideBufferSize,
     BaseOutputPinImpl_DecideAllocator,
     BaseOutputPinImpl_BreakConnect
@@ -225,11 +204,12 @@ static HRESULT TransformFilter_Init(const IBaseFilterVtbl *pVtbl, const CLSID* p
     piOutput.pFilter = &pTransformFilter->filter.IBaseFilter_iface;
     lstrcpynW(piOutput.achName, wcsOutputPinName, sizeof(piOutput.achName) / sizeof(piOutput.achName[0]));
 
-    hr = BaseInputPin_Construct(&TransformFilter_InputPin_Vtbl, &piInput, &tf_input_BaseFuncTable, &tf_input_BaseInputFuncTable, &pTransformFilter->filter.csFilter, NULL, &pTransformFilter->ppPins[0]);
+    hr = BaseInputPin_Construct(&TransformFilter_InputPin_Vtbl, sizeof(BaseInputPin), &piInput,
+            &tf_input_BaseInputFuncTable, &pTransformFilter->filter.csFilter, NULL, &pTransformFilter->ppPins[0]);
 
     if (SUCCEEDED(hr))
     {
-        hr = BaseOutputPin_Construct(&TransformFilter_OutputPin_Vtbl, sizeof(BaseOutputPin), &piOutput, &tf_output_BaseFuncTable, &tf_output_BaseOutputFuncTable, &pTransformFilter->filter.csFilter, &pTransformFilter->ppPins[1]);
+        hr = BaseOutputPin_Construct(&TransformFilter_OutputPin_Vtbl, sizeof(BaseOutputPin), &piOutput, &tf_output_BaseOutputFuncTable, &pTransformFilter->filter.csFilter, &pTransformFilter->ppPins[1]);
 
         if (FAILED(hr))
             ERR("Cannot create output pin (%x)\n", hr);
@@ -314,7 +294,7 @@ HRESULT WINAPI TransformFilterImpl_QueryInterface(IBaseFilter * iface, REFIID ri
 ULONG WINAPI TransformFilterImpl_Release(IBaseFilter * iface)
 {
     TransformFilter *This = impl_from_IBaseFilter(iface);
-    ULONG refCount = BaseFilterImpl_Release(iface);
+    ULONG refCount = InterlockedDecrement(&This->filter.refCount);
 
     TRACE("(%p/%p)->() Release from %d\n", This, iface, refCount + 1);
 
@@ -344,6 +324,7 @@ ULONG WINAPI TransformFilterImpl_Release(IBaseFilter * iface)
         FreeMediaType(&This->pmt);
         QualityControlImpl_Destroy(This->qcimpl);
         IUnknown_Release(This->seekthru_unk);
+        BaseFilter_Destroy(&This->filter);
         CoTaskMemFree(This);
 
         return 0;
@@ -405,7 +386,7 @@ HRESULT WINAPI TransformFilterImpl_Run(IBaseFilter * iface, REFERENCE_TIME tStar
     {
         if (This->filter.state == State_Stopped)
         {
-            impl_BaseInputPin_from_IPin(This->ppPins[0])->end_of_stream = 0;
+            impl_BaseInputPin_from_IPin(This->ppPins[0])->end_of_stream = FALSE;
             if (This->pFuncsTable->pfnStartStreaming)
                 hr = This->pFuncsTable->pfnStartStreaming(This);
             if (SUCCEEDED(hr))
@@ -438,25 +419,6 @@ HRESULT WINAPI TransformFilterImpl_FindPin(IBaseFilter * iface, LPCWSTR Id, IPin
 
     return E_NOTIMPL;
 }
-
-static const IBaseFilterVtbl TransformFilter_Vtbl =
-{
-    TransformFilterImpl_QueryInterface,
-    BaseFilterImpl_AddRef,
-    TransformFilterImpl_Release,
-    BaseFilterImpl_GetClassID,
-    TransformFilterImpl_Stop,
-    TransformFilterImpl_Pause,
-    TransformFilterImpl_Run,
-    BaseFilterImpl_GetState,
-    BaseFilterImpl_SetSyncSource,
-    BaseFilterImpl_GetSyncSource,
-    BaseFilterImpl_EnumPins,
-    TransformFilterImpl_FindPin,
-    BaseFilterImpl_QueryFilterInfo,
-    BaseFilterImpl_JoinFilterGraph,
-    BaseFilterImpl_QueryVendorInfo
-};
 
 static HRESULT WINAPI TransformFilter_InputPin_EndOfStream(IPin * iface)
 {

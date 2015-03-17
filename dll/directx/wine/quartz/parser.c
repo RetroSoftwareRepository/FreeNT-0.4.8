@@ -20,20 +20,6 @@
  */
 
 #include "quartz_private.h"
-#include "pin.h"
-
-//#include "vfwmsgs.h"
-//#include "amvideo.h"
-
-#include <wine/unicode.h>
-#include <wine/debug.h>
-
-//#include <math.h>
-#include <assert.h>
-
-#include "parser.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(quartz);
 
 static const WCHAR wcsInputPinName[] = {'i','n','p','u','t',' ','p','i','n',0};
 static const IMediaSeekingVtbl Parser_Seeking_Vtbl;
@@ -170,6 +156,7 @@ void Parser_Destroy(ParserImpl *This)
 {
     IPin *connected = NULL;
     ULONG pinref;
+    HRESULT hr;
 
     assert(!This->filter.refCount);
     PullPin_WaitForStateChange(This->pInputPin, INFINITE);
@@ -178,9 +165,11 @@ void Parser_Destroy(ParserImpl *This)
     IPin_ConnectedTo(&This->pInputPin->pin.IPin_iface, &connected);
     if (connected)
     {
-        assert(IPin_Disconnect(connected) == S_OK);
+        hr = IPin_Disconnect(connected);
+        assert(hr == S_OK);
         IPin_Release(connected);
-        assert(IPin_Disconnect(&This->pInputPin->pin.IPin_iface) == S_OK);
+        hr = IPin_Disconnect(&This->pInputPin->pin.IPin_iface);
+        assert(hr == S_OK);
     }
     pinref = IPin_Release(&This->pInputPin->pin.IPin_iface);
     if (pinref)
@@ -194,6 +183,7 @@ void Parser_Destroy(ParserImpl *This)
     }
 
     CoTaskMemFree(This->ppPins);
+    BaseFilter_Destroy(&This->filter);
 
     TRACE("Destroying parser\n");
     CoTaskMemFree(This);
@@ -202,7 +192,7 @@ void Parser_Destroy(ParserImpl *This)
 ULONG WINAPI Parser_Release(IBaseFilter * iface)
 {
     ParserImpl *This = impl_from_IBaseFilter(iface);
-    ULONG refCount = BaseFilterImpl_Release(iface);
+    ULONG refCount = InterlockedDecrement(&This->filter.refCount);
 
     TRACE("(%p)->() Release from %d\n", This, refCount + 1);
 
@@ -419,14 +409,13 @@ HRESULT WINAPI Parser_QueryVendorInfo(IBaseFilter * iface, LPWSTR *pVendorInfo)
     return BaseFilterImpl_QueryVendorInfo(iface, pVendorInfo);
 }
 
-static const  BasePinFuncTable output_BaseFuncTable = {
-    NULL,
-    BaseOutputPinImpl_AttemptConnection,
-    BasePinImpl_GetMediaTypeVersion,
-    Parser_OutputPin_GetMediaType
-};
-
 static const BaseOutputPinFuncTable output_BaseOutputFuncTable = {
+    {
+        NULL,
+        BaseOutputPinImpl_AttemptConnection,
+        BasePinImpl_GetMediaTypeVersion,
+        Parser_OutputPin_GetMediaType
+    },
     Parser_OutputPin_DecideBufferSize,
     Parser_OutputPin_DecideAllocator,
     Parser_OutputPin_BreakConnect
@@ -442,7 +431,7 @@ HRESULT Parser_AddPin(ParserImpl * This, const PIN_INFO * piOutput, ALLOCATOR_PR
     This->ppPins = CoTaskMemAlloc((This->cStreams + 2) * sizeof(IPin *));
     memcpy(This->ppPins, ppOldPins, (This->cStreams + 1) * sizeof(IPin *));
 
-    hr = BaseOutputPin_Construct(&Parser_OutputPin_Vtbl, sizeof(Parser_OutputPin), piOutput, &output_BaseFuncTable, &output_BaseOutputFuncTable, &This->filter.csFilter, This->ppPins + (This->cStreams + 1));
+    hr = BaseOutputPin_Construct(&Parser_OutputPin_Vtbl, sizeof(Parser_OutputPin), piOutput, &output_BaseOutputFuncTable, &This->filter.csFilter, This->ppPins + (This->cStreams + 1));
 
     if (SUCCEEDED(hr))
     {

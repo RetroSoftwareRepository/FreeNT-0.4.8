@@ -53,9 +53,9 @@
 // Notifications flags
 //
 #define WATCH_TREE         0x01
-#define INVALIDATE_BUFFERS 0x02
+#define NOTIFY_IMMEDIATELY 0x02
 #define CLEANUP_IN_PROCESS 0x04
-#define ENUMERATE_DIR      0x08
+#define NOTIFY_LATER       0x08
 #define WATCH_ROOT         0x10
 #define DELETE_IN_PROCESS  0x20
 
@@ -133,5 +133,4 @@ FsRtlInitSystem(
 // Global data inside the File System Runtime Library
 //
 extern PERESOURCE FsRtlPagingIoResources;
-extern PUCHAR _FsRtlLegalAnsiCharacterArray;
 extern PAGED_LOOKASIDE_LIST FsRtlFileLockLookasideList;

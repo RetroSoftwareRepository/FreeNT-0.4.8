@@ -66,23 +66,7 @@ USE OR OTHER DEALINGS IN THE SOFTWARE.
  * Vertex commands are issued within a single primitive.
  */
 
-
-#include "main/glheader.h"
-#include "main/bufferobj.h"
-#include "main/context.h"
-#include "main/dlist.h"
-#include "main/enums.h"
-#include "main/eval.h"
-#include "main/macros.h"
-#include "main/mfeatures.h"
-#include "main/api_validate.h"
-#include "main/api_arrayelt.h"
-#include "main/vtxfmt.h"
-#include "main/dispatch.h"
-
-#include "vbo_context.h"
-#include "vbo_noop.h"
-
+#include <precomp.h>
 
 #if FEATURE_dlist
 
@@ -746,8 +730,6 @@ _save_Materialfv(GLenum face, GLenum pname, const GLfloat *params)
       _mesa_compile_error(ctx, GL_INVALID_ENUM, "glMaterial(face)");
       return;
    }
-   
-   __debugbreak();
 
    switch (pname) {
    case GL_EMISSION:
@@ -967,21 +949,6 @@ _save_DrawElements(GLenum mode, GLsizei count, GLenum type,
 
 
 static void GLAPIENTRY
-_save_DrawRangeElements(GLenum mode, GLuint start, GLuint end,
-                        GLsizei count, GLenum type, const GLvoid * indices)
-{
-   GET_CURRENT_CONTEXT(ctx);
-   (void) mode;
-   (void) start;
-   (void) end;
-   (void) count;
-   (void) type;
-   (void) indices;
-   _mesa_compile_error(ctx, GL_INVALID_OPERATION, "glDrawRangeElements");
-}
-
-
-static void GLAPIENTRY
 _save_DrawArrays(GLenum mode, GLint start, GLsizei count)
 {
    GET_CURRENT_CONTEXT(ctx);
@@ -1100,9 +1067,8 @@ _save_OBE_DrawElements(GLenum mode, GLsizei count, GLenum type,
 
    _ae_map_vbos(ctx);
 
-   if (_mesa_is_bufferobj(ctx->Array.ArrayObj->ElementArrayBufferObj))
-      indices =
-         ADD_POINTERS(ctx->Array.ArrayObj->ElementArrayBufferObj->Pointer, indices);
+   if (_mesa_is_bufferobj(ctx->Array.ElementArrayBufferObj))
+      indices =  ADD_POINTERS(ctx->Array.ElementArrayBufferObj->Pointer, indices);
 
    vbo_save_NotifyBegin(ctx, (mode | VBO_SAVE_PRIM_WEAK |
                               VBO_SAVE_PRIM_NO_CURRENT_UPDATE));
@@ -1131,25 +1097,6 @@ _save_OBE_DrawElements(GLenum mode, GLsizei count, GLenum type,
 }
 
 
-static void GLAPIENTRY
-_save_OBE_DrawRangeElements(GLenum mode, GLuint start, GLuint end,
-                            GLsizei count, GLenum type,
-                            const GLvoid * indices)
-{
-   GET_CURRENT_CONTEXT(ctx);
-   struct vbo_save_context *save = &vbo_context(ctx)->save;
-
-   if (!_mesa_validate_DrawRangeElements(ctx, mode,
-                                         start, end, count, type, indices))
-      return;
-
-   if (save->out_of_memory)
-      return;
-
-   _save_OBE_DrawElements(mode, count, type, indices);
-}
-
-
 static void
 _save_vtxfmt_init(struct gl_context *ctx)
 {
@@ -1172,8 +1119,6 @@ _save_vtxfmt_init(struct gl_context *ctx)
    vfmt->Materialfv = _save_Materialfv;
    vfmt->Normal3f = _save_Normal3f;
    vfmt->Normal3fv = _save_Normal3fv;
-   vfmt->SecondaryColor3fEXT = _save_SecondaryColor3fEXT;
-   vfmt->SecondaryColor3fvEXT = _save_SecondaryColor3fvEXT;
    vfmt->TexCoord1f = _save_TexCoord1f;
    vfmt->TexCoord1fv = _save_TexCoord1fv;
    vfmt->TexCoord2f = _save_TexCoord2f;
@@ -1211,7 +1156,6 @@ _save_vtxfmt_init(struct gl_context *ctx)
    vfmt->Rectf = _save_Rectf;
    vfmt->DrawArrays = _save_DrawArrays;
    vfmt->DrawElements = _save_DrawElements;
-   vfmt->DrawRangeElements = _save_DrawRangeElements;
 }
 
 
@@ -1412,7 +1356,6 @@ vbo_save_api_init(struct vbo_save_context *save)
    ctx->ListState.ListVtxfmt.Rectf = _save_OBE_Rectf;
    ctx->ListState.ListVtxfmt.DrawArrays = _save_OBE_DrawArrays;
    ctx->ListState.ListVtxfmt.DrawElements = _save_OBE_DrawElements;
-   ctx->ListState.ListVtxfmt.DrawRangeElements = _save_OBE_DrawRangeElements;
    _mesa_install_save_vtxfmt(ctx, &ctx->ListState.ListVtxfmt);
 }
 

@@ -17,13 +17,8 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define COBJMACROS
-#include "config.h"
-#include "wine/port.h"
-#include "wine/debug.h"
-#include "wine/unicode.h"
-
 #include "d3dcompiler_private.h"
+#include "wine/unicode.h"
 #include "wine/wpp.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(d3dcompiler);
@@ -145,12 +140,15 @@ static void wpp_warning(const char *file, int line, int col, const char *_near,
 static char *wpp_lookup_mem(const char *filename, int type, const char *parent_name,
                             char **include_path, int include_path_count)
 {
-    /* Here we return always ok. We will maybe fail on the next wpp_open_mem */
+    /* We don't check for file existence here. We will potentially fail on
+     * the following wpp_open_mem(). */
     char *path;
     int i;
 
+    TRACE("Looking for include %s, parent %s.\n", debugstr_a(filename), debugstr_a(parent_name));
+
     parent_include = NULL;
-    if(parent_name[0] != '\0')
+    if (strcmp(parent_name, initial_filename))
     {
         for(i = 0; i < includes_size; i++)
         {
@@ -162,7 +160,7 @@ static char *wpp_lookup_mem(const char *filename, int type, const char *parent_n
         }
         if(parent_include == NULL)
         {
-            ERR("Parent include file missing\n");
+            ERR("Parent include %s missing.\n", debugstr_a(parent_name));
             return NULL;
         }
     }
@@ -178,6 +176,8 @@ static void *wpp_open_mem(const char *filename, int type)
     struct mem_file_desc *desc;
     HRESULT hr;
 
+    TRACE("Opening include %s.\n", debugstr_a(filename));
+
     if(!strcmp(filename, initial_filename))
     {
         current_shader.pos = 0;
@@ -189,11 +189,8 @@ static void *wpp_open_mem(const char *filename, int type)
     if(!desc)
         return NULL;
 
-    hr = ID3DInclude_Open(current_include,
-                          type ? D3D_INCLUDE_LOCAL : D3D_INCLUDE_SYSTEM,
-                          filename, parent_include, (LPCVOID *)&desc->buffer,
-                          &desc->size);
-    if(FAILED(hr))
+    if (FAILED(hr = ID3DInclude_Open(current_include, type ? D3D_INCLUDE_LOCAL : D3D_INCLUDE_SYSTEM,
+            filename, parent_include, (const void **)&desc->buffer, &desc->size)))
     {
         HeapFree(GetProcessHeap(), 0, desc);
         return NULL;

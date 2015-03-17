@@ -7,11 +7,7 @@
  * PROGRAMMERS:     Eric Kohl
  */
 
-/* INCLUDES ******************************************************************/
-
 #include "samsrv.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(samsrv);
 
 /* GLOBALS *******************************************************************/
 
@@ -221,8 +217,97 @@ SamrQuerySecurityObject(IN SAMPR_HANDLE ObjectHandle,
                         IN SECURITY_INFORMATION SecurityInformation,
                         OUT PSAMPR_SR_SECURITY_DESCRIPTOR *SecurityDescriptor)
 {
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
+    PSAM_DB_OBJECT SamObject;
+    PSAMPR_SR_SECURITY_DESCRIPTOR SamSD = NULL;
+    PSECURITY_DESCRIPTOR SdBuffer = NULL;
+    ACCESS_MASK DesiredAccess = 0;
+    ULONG Length = 0;
+    NTSTATUS Status;
+
+    TRACE("(%p %lx %p)\n",
+          ObjectHandle, SecurityInformation, SecurityDescriptor);
+
+    *SecurityDescriptor = NULL;
+
+    RtlAcquireResourceShared(&SampResource,
+                             TRUE);
+
+    if (SecurityInformation & (DACL_SECURITY_INFORMATION |
+                               OWNER_SECURITY_INFORMATION |
+                               GROUP_SECURITY_INFORMATION))
+        DesiredAccess |= READ_CONTROL;
+
+    if (SecurityInformation & SACL_SECURITY_INFORMATION)
+        DesiredAccess |= ACCESS_SYSTEM_SECURITY;
+
+    /* Validate the server handle */
+    Status = SampValidateDbObject(ObjectHandle,
+                                  SamDbIgnoreObject,
+                                  DesiredAccess,
+                                  &SamObject);
+    if (!NT_SUCCESS(Status))
+        goto done;
+
+    SamSD = midl_user_allocate(sizeof(SAMPR_SR_SECURITY_DESCRIPTOR));
+    if (SamSD == NULL)
+    {
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto done;
+    }
+
+    Status = SampGetObjectAttribute(SamObject,
+                                    L"SecDesc",
+                                    NULL,
+                                    NULL,
+                                    &Length);
+    if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW)
+    {
+        TRACE("Status 0x%08lx\n", Status);
+        goto done;
+    }
+
+    TRACE("SD Length: %lu\n", Length);
+
+    SdBuffer = midl_user_allocate(Length);
+    if (SdBuffer == NULL)
+    {
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto done;
+    }
+
+    Status = SampGetObjectAttribute(SamObject,
+                                    L"SecDesc",
+                                    NULL,
+                                    SdBuffer,
+                                    &Length);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("Status 0x%08lx\n", Status);
+        goto done;
+    }
+
+    /* FIXME: Use SecurityInformation to return only the requested information */
+
+    SamSD->Length = Length;
+    SamSD->SecurityDescriptor = SdBuffer;
+
+done:
+    RtlReleaseResource(&SampResource);
+
+    if (NT_SUCCESS(Status))
+    {
+        *SecurityDescriptor = SamSD;
+    }
+    else
+    {
+        if (SdBuffer != NULL)
+            midl_user_free(SdBuffer);
+
+        if (SamSD != NULL)
+            midl_user_free(SamSD);
+    }
+
+    return Status;
 }
 
 
@@ -2094,7 +2179,7 @@ SamrEnumerateGroupsInDomain(IN SAMPR_HANDLE DomainHandle,
         EnumBuffer->Buffer[i].RelativeId = Rid;
 
         EnumBuffer->Buffer[i].Name.Length = (USHORT)NameLength;
-        EnumBuffer->Buffer[i].Name.MaximumLength = (USHORT)(DataLength + sizeof(UNICODE_NULL));
+        EnumBuffer->Buffer[i].Name.MaximumLength = (USHORT)(NameLength + sizeof(UNICODE_NULL));
 
 /* FIXME: Disabled because of bugs in widl and rpcrt4 */
 #if 0
@@ -2705,7 +2790,7 @@ SamrEnumerateUsersInDomain(IN SAMPR_HANDLE DomainHandle,
         EnumBuffer->Buffer[i].RelativeId = Rid;
 
         EnumBuffer->Buffer[i].Name.Length = (USHORT)NameLength;
-        EnumBuffer->Buffer[i].Name.MaximumLength = (USHORT)(DataLength + sizeof(UNICODE_NULL));
+        EnumBuffer->Buffer[i].Name.MaximumLength = (USHORT)(NameLength + sizeof(UNICODE_NULL));
 
 /* FIXME: Disabled because of bugs in widl and rpcrt4 */
 #if 0
@@ -3086,7 +3171,7 @@ SamrEnumerateAliasesInDomain(IN SAMPR_HANDLE DomainHandle,
         EnumBuffer->Buffer[i].RelativeId = Rid;
 
         EnumBuffer->Buffer[i].Name.Length = (USHORT)NameLength;
-        EnumBuffer->Buffer[i].Name.MaximumLength = (USHORT)(DataLength + sizeof(UNICODE_NULL));
+        EnumBuffer->Buffer[i].Name.MaximumLength = (USHORT)(NameLength + sizeof(UNICODE_NULL));
 
 /* FIXME: Disabled because of bugs in widl and rpcrt4 */
 #if 0
@@ -3165,6 +3250,7 @@ SamrGetAliasMembership(IN SAMPR_HANDLE DomainHandle,
     ULONG ValueCount;
     ULONG DataLength;
     ULONG i, j;
+    ULONG RidIndex;
     NTSTATUS Status;
     WCHAR NameBuffer[9];
 
@@ -3249,6 +3335,7 @@ TRACE("Open %S\n", MemberSidString);
         goto done;
     }
 
+    RidIndex = 0;
     for (i = 0; i < SidArray->Count; i++)
     {
         ConvertSidToStringSid(SidArray->Sids[i].SidPointer, &MemberSidString);
@@ -3280,7 +3367,9 @@ TRACE("Open %S\n", MemberSidString);
                                                    NULL);
                     if (NT_SUCCESS(Status))
                     {
-                        RidArray[j] = wcstoul(NameBuffer, NULL, 16);
+                        /* FIXME: Do not return each RID more than once. */
+                        RidArray[RidIndex] = wcstoul(NameBuffer, NULL, 16);
+                        RidIndex++;
                     }
                 }
             }
@@ -5338,9 +5427,21 @@ SamrDeleteUser(IN OUT SAMPR_HANDLE *UserHandle)
         goto done;
     }
 
-    /* FIXME: Remove the user from all groups */
+    /* Remove the user from all groups */
+    Status = SampRemoveUserFromAllGroups(UserObject);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SampRemoveUserFromAllGroups() failed (Status 0x%08lx)\n", Status);
+        goto done;
+    }
 
-    /* FIXME: Remove the user from all aliases */
+    /* Remove the user from all aliases */
+    Status = SampRemoveUserFromAllAliases(UserObject);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SampRemoveUserFromAllAliases() failed (Status 0x%08lx)\n", Status);
+        goto done;
+    }
 
     /* Delete the user from the database */
     Status = SampDeleteAccountDbObject(UserObject);
@@ -7946,10 +8047,10 @@ SamrChangePasswordUser(IN SAMPR_HANDLE UserHandle,
 {
     ENCRYPTED_LM_OWF_PASSWORD StoredLmPassword;
     ENCRYPTED_NT_OWF_PASSWORD StoredNtPassword;
-    PENCRYPTED_LM_OWF_PASSWORD OldLmPassword;
-    PENCRYPTED_LM_OWF_PASSWORD NewLmPassword;
-    PENCRYPTED_NT_OWF_PASSWORD OldNtPassword;
-    PENCRYPTED_NT_OWF_PASSWORD NewNtPassword;
+    ENCRYPTED_LM_OWF_PASSWORD OldLmPassword;
+    ENCRYPTED_LM_OWF_PASSWORD NewLmPassword;
+    ENCRYPTED_NT_OWF_PASSWORD OldNtPassword;
+    ENCRYPTED_NT_OWF_PASSWORD NewNtPassword;
     BOOLEAN StoredLmPresent = FALSE;
     BOOLEAN StoredNtPresent = FALSE;
     BOOLEAN StoredLmEmpty = TRUE;
@@ -7960,6 +8061,10 @@ SamrChangePasswordUser(IN SAMPR_HANDLE UserHandle,
     SAM_DOMAIN_FIXED_DATA DomainFixedData;
     LARGE_INTEGER SystemTime;
     NTSTATUS Status;
+
+    DBG_UNREFERENCED_LOCAL_VARIABLE(StoredLmPresent);
+    DBG_UNREFERENCED_LOCAL_VARIABLE(StoredNtPresent);
+    DBG_UNREFERENCED_LOCAL_VARIABLE(StoredLmEmpty);
 
     TRACE("(%p %u %p %p %u %p %p %u %p %u %p)\n",
           UserHandle, LmPresent, OldLmEncryptedWithNewLm, NewLmEncryptedWithOldLm,
@@ -8052,21 +8157,62 @@ SamrChangePasswordUser(IN SAMPR_HANDLE UserHandle,
         if (!NT_SUCCESS(Status))
         {
             TRACE("SampGetObjectAttribute failed to retrieve the fixed domain data (Status 0x%08lx)\n", Status);
-            return Status;
+            goto done;
         }
 
         if (DomainFixedData.MinPasswordAge.QuadPart > 0)
         {
             if (SystemTime.QuadPart < (UserFixedData.PasswordLastSet.QuadPart + DomainFixedData.MinPasswordAge.QuadPart))
-                return STATUS_ACCOUNT_RESTRICTION;
+            {
+                Status = STATUS_ACCOUNT_RESTRICTION;
+                goto done;
+            }
         }
     }
 
-    /* FIXME: Decrypt passwords */
-    OldLmPassword = OldLmEncryptedWithNewLm;
-    NewLmPassword = NewLmEncryptedWithOldLm;
-    OldNtPassword = OldNtEncryptedWithNewNt;
-    NewNtPassword = NewNtEncryptedWithOldNt;
+    /* Decrypt the LM passwords, if present */
+    if (LmPresent)
+    {
+        Status = SystemFunction013((const BYTE *)NewLmEncryptedWithOldLm,
+                                   (const BYTE *)&StoredLmPassword,
+                                   (LPBYTE)&NewLmPassword);
+        if (!NT_SUCCESS(Status))
+        {
+            TRACE("SystemFunction013 failed (Status 0x%08lx)\n", Status);
+            goto done;
+        }
+
+        Status = SystemFunction013((const BYTE *)OldLmEncryptedWithNewLm,
+                                   (const BYTE *)&NewLmPassword,
+                                   (LPBYTE)&OldLmPassword);
+        if (!NT_SUCCESS(Status))
+        {
+            TRACE("SystemFunction013 failed (Status 0x%08lx)\n", Status);
+            goto done;
+        }
+    }
+
+    /* Decrypt the NT passwords, if present */
+    if (NtPresent)
+    {
+        Status = SystemFunction013((const BYTE *)NewNtEncryptedWithOldNt,
+                                   (const BYTE *)&StoredNtPassword,
+                                   (LPBYTE)&NewNtPassword);
+        if (!NT_SUCCESS(Status))
+        {
+            TRACE("SystemFunction013 failed (Status 0x%08lx)\n", Status);
+            goto done;
+        }
+
+        Status = SystemFunction013((const BYTE *)OldNtEncryptedWithNewNt,
+                                   (const BYTE *)&NewNtPassword,
+                                   (LPBYTE)&OldNtPassword);
+        if (!NT_SUCCESS(Status))
+        {
+            TRACE("SystemFunction013 failed (Status 0x%08lx)\n", Status);
+            goto done;
+        }
+    }
 
     /* Check if the old passwords match the stored ones */
     if (NtPresent)
@@ -8074,7 +8220,7 @@ SamrChangePasswordUser(IN SAMPR_HANDLE UserHandle,
         if (LmPresent)
         {
             if (!RtlEqualMemory(&StoredLmPassword,
-                                OldLmPassword,
+                                &OldLmPassword,
                                 sizeof(ENCRYPTED_LM_OWF_PASSWORD)))
             {
                 TRACE("Old LM Password does not match!\n");
@@ -8083,7 +8229,7 @@ SamrChangePasswordUser(IN SAMPR_HANDLE UserHandle,
             else
             {
                 if (!RtlEqualMemory(&StoredNtPassword,
-                                    OldNtPassword,
+                                    &OldNtPassword,
                                     sizeof(ENCRYPTED_LM_OWF_PASSWORD)))
                 {
                     TRACE("Old NT Password does not match!\n");
@@ -8094,7 +8240,7 @@ SamrChangePasswordUser(IN SAMPR_HANDLE UserHandle,
         else
         {
             if (!RtlEqualMemory(&StoredNtPassword,
-                                OldNtPassword,
+                                &OldNtPassword,
                                 sizeof(ENCRYPTED_LM_OWF_PASSWORD)))
             {
                 TRACE("Old NT Password does not match!\n");
@@ -8107,7 +8253,7 @@ SamrChangePasswordUser(IN SAMPR_HANDLE UserHandle,
         if (LmPresent)
         {
             if (!RtlEqualMemory(&StoredLmPassword,
-                                OldLmPassword,
+                                &OldLmPassword,
                                 sizeof(ENCRYPTED_LM_OWF_PASSWORD)))
             {
                 TRACE("Old LM Password does not match!\n");
@@ -8124,9 +8270,9 @@ SamrChangePasswordUser(IN SAMPR_HANDLE UserHandle,
     if (NT_SUCCESS(Status))
     {
         Status = SampSetUserPassword(UserObject,
-                                     NewNtPassword,
+                                     &NewNtPassword,
                                      NtPresent,
-                                     NewLmPassword,
+                                     &NewLmPassword,
                                      LmPresent);
         if (NT_SUCCESS(Status))
         {

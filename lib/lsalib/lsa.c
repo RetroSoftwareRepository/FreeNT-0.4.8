@@ -36,7 +36,7 @@ LsaDeregisterLogonProcess(HANDLE LsaHandle)
     LSA_API_MSG ApiMessage;
     NTSTATUS Status;
 
-    DPRINT1("LsaDeregisterLogonProcess()\n");
+    DPRINT("LsaDeregisterLogonProcess()\n");
 
     ApiMessage.ApiNumber = LSASS_REQUEST_DEREGISTER_LOGON_PROCESS;
     ApiMessage.h.u1.s1.DataLength = LSA_PORT_DATA_SIZE(ApiMessage.DeregisterLogonProcess);
@@ -60,7 +60,7 @@ LsaDeregisterLogonProcess(HANDLE LsaHandle)
 
     NtClose(LsaHandle);
 
-    DPRINT1("LsaDeregisterLogonProcess() done (Status 0x%08lx)\n", Status);
+    DPRINT("LsaDeregisterLogonProcess() done (Status 0x%08lx)\n", Status);
 
     return Status;
 }
@@ -79,7 +79,7 @@ LsaConnectUntrusted(PHANDLE LsaHandle)
     ULONG ConnectInfoLength = sizeof(ConnectInfo);
     NTSTATUS Status;
 
-    DPRINT1("LsaConnectUntrusted(%p)\n", LsaHandle);
+    DPRINT("LsaConnectUntrusted(%p)\n", LsaHandle);
 
     RtlInitUnicodeString(&PortName,
                          L"\\LsaAuthenticationPort");
@@ -91,6 +91,8 @@ LsaConnectUntrusted(PHANDLE LsaHandle)
 
     RtlZeroMemory(&ConnectInfo,
                   ConnectInfoLength);
+
+    ConnectInfo.CreateContext = TRUE;
 
     Status = ZwConnectPort(LsaHandle,
                            &PortName,
@@ -277,6 +279,8 @@ LsaLogonUser(HANDLE LsaHandle,
         return Status;
     }
 
+    *SubStatus = ApiMessage.LogonUser.Reply.SubStatus;
+
     if (!NT_SUCCESS(ApiMessage.Status))
     {
         return ApiMessage.Status;
@@ -287,7 +291,6 @@ LsaLogonUser(HANDLE LsaHandle,
     *LogonId = ApiMessage.LogonUser.Reply.LogonId;
     *Token = ApiMessage.LogonUser.Reply.Token;
     *Quotas = ApiMessage.LogonUser.Reply.Quotas;
-    *SubStatus = ApiMessage.LogonUser.Reply.SubStatus;
 
     return Status;
 }
@@ -308,7 +311,7 @@ LsaRegisterLogonProcess(PLSA_STRING LsaLogonProcessName,
     ULONG ConnectInfoLength = sizeof(ConnectInfo);
     NTSTATUS Status;
 
-    DPRINT1("LsaRegisterLogonProcess()\n");
+    DPRINT("LsaRegisterLogonProcess()\n");
 
     /* Check the logon process name length */
     if (LsaLogonProcessName->Length > LSASS_MAX_LOGON_PROCESS_NAME_LENGTH)
@@ -327,6 +330,7 @@ LsaRegisterLogonProcess(PLSA_STRING LsaLogonProcessName,
             LsaLogonProcessName->Length);
     ConnectInfo.Length = LsaLogonProcessName->Length;
     ConnectInfo.LogonProcessNameBuffer[ConnectInfo.Length] = '\0';
+    ConnectInfo.CreateContext = TRUE;
 
     Status = ZwConnectPort(Handle,
                            &PortName,
@@ -353,54 +357,3 @@ LsaRegisterLogonProcess(PLSA_STRING LsaLogonProcessName,
     return ConnectInfo.Status;
 }
 
-
-/*
- * @unimplemented
- */
-NTSTATUS
-WINAPI
-LsaEnumerateLogonSessions(PULONG LogonSessionCount,
-                          PLUID *LogonSessionList)
-{
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
-}
-
-
-/*
- * @unimplemented
- */
-NTSTATUS
-WINAPI
-LsaGetLogonSessionData(PLUID LogonId,
-                       PSECURITY_LOGON_SESSION_DATA *ppLogonSessionData)
-{
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
-}
-
-
-/*
- * @unimplemented
- */
-NTSTATUS
-WINAPI
-LsaRegisterPolicyChangeNotification(POLICY_NOTIFICATION_INFORMATION_CLASS InformationClass,
-                                    HANDLE NotificationEventHandle)
-{
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
-}
-
-
-/*
- * @unimplemented
- */
-NTSTATUS
-WINAPI
-LsaUnregisterPolicyChangeNotification(POLICY_NOTIFICATION_INFORMATION_CLASS InformationClass,
-                                      HANDLE NotificationEventHandle)
-{
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
-}

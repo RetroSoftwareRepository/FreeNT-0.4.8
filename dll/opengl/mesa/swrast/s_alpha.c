@@ -27,14 +27,7 @@
  * \brief Functions to apply alpha test.
  */
 
-#include "main/glheader.h"
-#include "main/context.h"
-#include "main/colormac.h"
-#include "main/macros.h"
-
-#include "s_alpha.h"
-#include "s_context.h"
-
+#include <precomp.h>
 
 #define ALPHA_TEST(ALPHA, LOOP_CODE)		\
 do {						\
@@ -123,7 +116,7 @@ _swrast_alpha_test(const struct gl_context *ctx, SWspan *span)
          ALPHA_TEST(rgba[i][ACOMP], ;);
       }
       else {
-         GLfloat (*rgba)[4] = span->array->attribs[FRAG_ATTRIB_COL0];
+         GLfloat (*rgba)[4] = span->array->attribs[FRAG_ATTRIB_COL];
          const GLfloat ref = ctx->Color.AlphaRef;
          ALPHA_TEST(rgba[i][ACOMP], ;);
       }

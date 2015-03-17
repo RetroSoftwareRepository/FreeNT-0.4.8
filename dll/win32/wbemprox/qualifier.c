@@ -16,25 +16,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-#define COM_NO_WINDOWS_H
-
-#define COBJMACROS
-
-#include "config.h"
-#include <stdarg.h>
-
-#include "windef.h"
-#include "winbase.h"
-#include "objbase.h"
-#include "oleauto.h"
-#include "wbemcli.h"
-
-#include "wine/debug.h"
 #include "wbemprox_private.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(wbemprox);
 
 struct qualifier_set
 {
@@ -252,12 +234,11 @@ static const IWbemQualifierSetVtbl qualifier_set_vtbl =
     qualifier_set_EndEnumeration
 };
 
-HRESULT WbemQualifierSet_create(
-    IUnknown *pUnkOuter, const WCHAR *class, const WCHAR *member, LPVOID *ppObj )
+HRESULT WbemQualifierSet_create( const WCHAR *class, const WCHAR *member, LPVOID *ppObj )
 {
     struct qualifier_set *set;
 
-    TRACE("%p, %p\n", pUnkOuter, ppObj);
+    TRACE("%p\n", ppObj);
 
     if (!(set = heap_alloc( sizeof(*set) ))) return E_OUTOFMEMORY;
 

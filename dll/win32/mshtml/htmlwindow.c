@@ -16,35 +16,9 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-
-#include <stdarg.h>
-#include <assert.h>
-
-#define COBJMACROS
-
-#include <windef.h>
-#include <winbase.h>
-//#include "winuser.h"
-#include <ole2.h>
-#include <mshtmdid.h>
-#include <shlguid.h>
-#include <shobjidl.h>
-#include <exdispid.h>
-
-#define NO_SHLWAPI_REG
-#include "shlwapi.h"
-
-#include <wine/debug.h>
-
 #include "mshtml_private.h"
-#include "htmlevent.h"
-#include "htmlscript.h"
-#include "binding.h"
-#include "resource.h"
 
-WINE_DEFAULT_DEBUG_CHANNEL(mshtml);
+#include <exdispid.h>
 
 static struct list window_list = LIST_INIT(window_list);
 
@@ -97,7 +71,7 @@ static inline HRESULT set_window_event(HTMLWindow *window, eventid_t eid, VARIAN
         return E_FAIL;
     }
 
-    return set_event_handler(&window->inner_window->doc->body_event_target, NULL, window->inner_window->doc, eid, var);
+    return set_event_handler(&window->inner_window->doc->body_event_target, window->inner_window->doc, eid, var);
 }
 
 static inline HRESULT get_window_event(HTMLWindow *window, eventid_t eid, VARIANT *var)
@@ -117,8 +91,12 @@ static void detach_inner_window(HTMLInnerWindow *window)
     if(outer_window && outer_window->doc_obj && outer_window == outer_window->doc_obj->basedoc.window)
         window->doc->basedoc.cp_container.forward_container = NULL;
 
-    if(window->doc)
+    if(window->doc) {
         detach_events(window->doc);
+        while(!list_empty(&window->doc->plugin_hosts))
+            detach_plugin_host(LIST_ENTRY(list_head(&window->doc->plugin_hosts), PluginHost, entry));
+    }
+
     abort_window_bindings(window);
     remove_target_tasks(window->task_magic);
     release_script_hosts(window);
@@ -139,59 +117,45 @@ static HRESULT WINAPI HTMLWindow2_QueryInterface(IHTMLWindow2 *iface, REFIID rii
 {
     HTMLWindow *This = impl_from_IHTMLWindow2(iface);
 
-    *ppv = NULL;
+    TRACE("(%p)->(%s %p)\n", This, debugstr_mshtml_guid(riid), ppv);
 
     if(IsEqualGUID(&IID_IUnknown, riid)) {
-        TRACE("(%p)->(IID_IUnknown %p)\n", This, ppv);
         *ppv = &This->IHTMLWindow2_iface;
     }else if(IsEqualGUID(&IID_IDispatch, riid)) {
-        TRACE("(%p)->(IID_IDispatch %p)\n", This, ppv);
         *ppv = &This->IHTMLWindow2_iface;
     }else if(IsEqualGUID(&IID_IDispatchEx, riid)) {
-        TRACE("(%p)->(IID_IDispatchEx %p)\n", This, ppv);
         *ppv = &This->IDispatchEx_iface;
     }else if(IsEqualGUID(&IID_IHTMLFramesCollection2, riid)) {
-        TRACE("(%p)->(IID_IHTMLFramesCollection2 %p)\n", This, ppv);
         *ppv = &This->IHTMLWindow2_iface;
     }else if(IsEqualGUID(&IID_IHTMLWindow2, riid)) {
-        TRACE("(%p)->(IID_IHTMLWindow2 %p)\n", This, ppv);
         *ppv = &This->IHTMLWindow2_iface;
     }else if(IsEqualGUID(&IID_IHTMLWindow3, riid)) {
-        TRACE("(%p)->(IID_IHTMLWindow3 %p)\n", This, ppv);
         *ppv = &This->IHTMLWindow3_iface;
     }else if(IsEqualGUID(&IID_IHTMLWindow4, riid)) {
-        TRACE("(%p)->(IID_IHTMLWindow4 %p)\n", This, ppv);
         *ppv = &This->IHTMLWindow4_iface;
     }else if(IsEqualGUID(&IID_IHTMLWindow5, riid)) {
-        TRACE("(%p)->(IID_IHTMLWindow5 %p)\n", This, ppv);
         *ppv = &This->IHTMLWindow5_iface;
     }else if(IsEqualGUID(&IID_IHTMLWindow6, riid)) {
-        TRACE("(%p)->(IID_IHTMLWindow6 %p)\n", This, ppv);
         *ppv = &This->IHTMLWindow6_iface;
     }else if(IsEqualGUID(&IID_IHTMLPrivateWindow, riid)) {
-        TRACE("(%p)->(IID_IHTMLPrivateWindow %p)\n", This, ppv);
         *ppv = &This->IHTMLPrivateWindow_iface;
     }else if(IsEqualGUID(&IID_IServiceProvider, riid)) {
-        TRACE("(%p)->(IID_IServiceProvider %p)\n", This, ppv);
         *ppv = &This->IServiceProvider_iface;
     }else if(IsEqualGUID(&IID_ITravelLogClient, riid)) {
-        TRACE("(%p)->(IID_ITravelLogClient %p)\n", This, ppv);
         *ppv = &This->ITravelLogClient_iface;
     }else if(IsEqualGUID(&IID_IObjectIdentity, riid)) {
-        TRACE("(%p)->(IID_IObjectIdentity %p)\n", This, ppv);
         *ppv = &This->IObjectIdentity_iface;
     }else if(dispex_query_interface(&This->inner_window->dispex, riid, ppv)) {
         assert(!*ppv);
         return E_NOINTERFACE;
+    }else {
+        *ppv = NULL;
+        WARN("(%p)->(%s %p)\n", This, debugstr_mshtml_guid(riid), ppv);
+        return E_NOINTERFACE;
     }
 
-    if(*ppv) {
-        IUnknown_AddRef((IUnknown*)*ppv);
-        return S_OK;
-    }
-
-    WARN("(%p)->(%s %p)\n", This, debugstr_guid(riid), ppv);
-    return E_NOINTERFACE;
+    IUnknown_AddRef((IUnknown*)*ppv);
+    return S_OK;
 }
 
 static ULONG WINAPI HTMLWindow2_AddRef(IHTMLWindow2 *iface)
@@ -275,6 +239,9 @@ static void release_inner_window(HTMLInnerWindow *This)
         This->history->window = NULL;
         IOmHistory_Release(&This->history->IOmHistory_iface);
     }
+
+    if(This->session_storage)
+        IHTMLStorage_Release(This->session_storage);
 
     if(This->mon)
         IMoniker_Release(This->mon);
@@ -1022,8 +989,10 @@ static HRESULT WINAPI HTMLWindow2_get_window(IHTMLWindow2 *iface, IHTMLWindow2 *
 static HRESULT WINAPI HTMLWindow2_navigate(IHTMLWindow2 *iface, BSTR url)
 {
     HTMLWindow *This = impl_from_IHTMLWindow2(iface);
-    FIXME("(%p)->(%s)\n", This, debugstr_w(url));
-    return E_NOTIMPL;
+
+    TRACE("(%p)->(%s)\n", This, debugstr_w(url));
+
+    return navigate_url(This->outer_window, url, This->outer_window->uri, BINDING_NAVIGATED);
 }
 
 static HRESULT WINAPI HTMLWindow2_put_onfocus(IHTMLWindow2 *iface, VARIANT v)
@@ -1306,8 +1275,17 @@ static HRESULT WINAPI HTMLWindow2_blur(IHTMLWindow2 *iface)
 static HRESULT WINAPI HTMLWindow2_scroll(IHTMLWindow2 *iface, LONG x, LONG y)
 {
     HTMLWindow *This = impl_from_IHTMLWindow2(iface);
-    FIXME("(%p)->(%d %d)\n", This, x, y);
-    return E_NOTIMPL;
+    nsresult nsres;
+
+    TRACE("(%p)->(%d %d)\n", This, x, y);
+
+    nsres = nsIDOMWindow_Scroll(This->outer_window->nswindow, x, y);
+    if(NS_FAILED(nsres)) {
+        ERR("ScrollBy failed: %08x\n", nsres);
+        return E_FAIL;
+    }
+
+    return S_OK;
 }
 
 static HRESULT WINAPI HTMLWindow2_get_clientInformation(IHTMLWindow2 *iface, IOmNavigator **p)
@@ -1615,7 +1593,7 @@ static HRESULT WINAPI HTMLWindow3_attachEvent(IHTMLWindow3 *iface, BSTR event, I
         return E_FAIL;
     }
 
-    return attach_event(&window->doc->body_event_target, NULL, &window->doc->basedoc, event, pDisp, pfResult);
+    return attach_event(&window->doc->body_event_target, &window->doc->basedoc, event, pDisp, pfResult);
 }
 
 static HRESULT WINAPI HTMLWindow3_detachEvent(IHTMLWindow3 *iface, BSTR event, IDispatch *pDisp)
@@ -2182,7 +2160,7 @@ static HRESULT WINAPI HTMLPrivateWindow_SuperNavigate(IHTMLPrivateWindow *iface,
         headers = V_BSTR(headers_var);
     }
 
-    hres = super_navigate(window, uri, BINDING_NAVIGATED, headers, post_data, post_data_size);
+    hres = super_navigate(window, uri, BINDING_NAVIGATED|BINDING_NOFRAG, headers, post_data, post_data_size);
     IUri_Release(uri);
     if(post_data)
         SafeArrayUnaccessData(V_ARRAY(post_data_var));
@@ -2405,8 +2383,7 @@ static HRESULT WINAPI WindowDispEx_GetIDsOfNames(IDispatchEx *iface, REFIID riid
     UINT i;
     HRESULT hres;
 
-    WARN("(%p)->(%s %p %u %u %p)\n", This, debugstr_guid(riid), rgszNames, cNames,
-          lcid, rgDispId);
+    WARN("(%p)->(%s %p %u %u %p)\n", This, debugstr_guid(riid), rgszNames, cNames, lcid, rgDispId);
 
     for(i=0; i < cNames; i++) {
         /* We shouldn't use script's IDispatchEx here, so we shouldn't use GetDispID */
@@ -2684,7 +2661,7 @@ static HRESULT WINAPI HTMLWindowSP_QueryService(IServiceProvider *iface, REFGUID
         return IHTMLWindow2_QueryInterface(&This->IHTMLWindow2_iface, riid, ppv);
     }
 
-    TRACE("(%p)->(%s %s %p)\n", This, debugstr_guid(guidService), debugstr_guid(riid), ppv);
+    TRACE("(%p)->(%s %s %p)\n", This, debugstr_mshtml_guid(guidService), debugstr_mshtml_guid(riid), ppv);
 
     if(!This->outer_window->doc_obj)
         return E_NOINTERFACE;

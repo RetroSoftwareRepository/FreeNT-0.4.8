@@ -22,15 +22,7 @@
  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#include "glheader.h"
-#include "api_validate.h"
-#include "bufferobj.h"
-#include "context.h"
-#include "imports.h"
-#include "mfeatures.h"
-#include "mtypes.h"
-#include "vbo/vbo.h"
-
+#include <precomp.h>
 
 /**
  * \return  number of bytes in array [count] of type.
@@ -109,7 +101,7 @@ check_valid_to_render(struct gl_context *ctx, const char *function)
    /* Draw if we have vertex positions (GL_VERTEX_ARRAY or generic
     * array [0]).
     */
-   return ctx->Array.ArrayObj->VertexAttrib[VERT_ATTRIB_POS].Enabled;
+   return ctx->Array.VertexAttrib[VERT_ATTRIB_POS].Enabled;
 }
 
 
@@ -138,14 +130,14 @@ check_index_bounds(struct gl_context *ctx, GLsizei count, GLenum type,
    memset(&ib, 0, sizeof(ib));
    ib.type = type;
    ib.ptr = indices;
-   ib.obj = ctx->Array.ArrayObj->ElementArrayBufferObj;
+   ib.obj = ctx->Array.ElementArrayBufferObj;
 
    vbo_get_minmax_index(ctx, &prim, &ib, &min, &max);
 
-   if (max >= ctx->Array.ArrayObj->_MaxElement) {
+   if (max >= ctx->Array._MaxElement) {
       /* the max element is out of bounds of one or more enabled arrays */
       _mesa_warning(ctx, "glDrawElements() index=%u is out of bounds (max=%u)",
-                    max, ctx->Array.ArrayObj->_MaxElement);
+                    max, ctx->Array._MaxElement);
       return GL_FALSE;
    }
 
@@ -205,72 +197,11 @@ _mesa_validate_DrawElements(struct gl_context *ctx,
       return GL_FALSE;
 
    /* Vertex buffer object tests */
-   if (_mesa_is_bufferobj(ctx->Array.ArrayObj->ElementArrayBufferObj)) {
+   if (_mesa_is_bufferobj(ctx->Array.ElementArrayBufferObj)) {
       /* use indices in the buffer object */
       /* make sure count doesn't go outside buffer bounds */
-      if (index_bytes(type, count) > ctx->Array.ArrayObj->ElementArrayBufferObj->Size) {
+      if (index_bytes(type, count) > ctx->Array.ElementArrayBufferObj->Size) {
          _mesa_warning(ctx, "glDrawElements index out of buffer bounds");
-         return GL_FALSE;
-      }
-   }
-   else {
-      /* not using a VBO */
-      if (!indices)
-         return GL_FALSE;
-   }
-
-   if (!check_index_bounds(ctx, count, type, indices))
-      return GL_FALSE;
-
-   return GL_TRUE;
-}
-
-
-/**
- * Error checking for glDrawRangeElements().  Includes parameter checking
- * and VBO bounds checking.
- * \return GL_TRUE if OK to render, GL_FALSE if error found
- */
-GLboolean
-_mesa_validate_DrawRangeElements(struct gl_context *ctx, GLenum mode,
-				 GLuint start, GLuint end,
-				 GLsizei count, GLenum type,
-				 const GLvoid *indices)
-{
-   ASSERT_OUTSIDE_BEGIN_END_WITH_RETVAL(ctx, GL_FALSE);
-
-   if (count <= 0) {
-      if (count < 0)
-	 _mesa_error(ctx, GL_INVALID_VALUE, "glDrawRangeElements(count)" );
-      return GL_FALSE;
-   }
-
-   if (!_mesa_valid_prim_mode(ctx, mode)) {
-      _mesa_error(ctx, GL_INVALID_ENUM, "glDrawRangeElements(mode)" );
-      return GL_FALSE;
-   }
-
-   if (end < start) {
-      _mesa_error(ctx, GL_INVALID_VALUE, "glDrawRangeElements(end<start)");
-      return GL_FALSE;
-   }
-
-   if (type != GL_UNSIGNED_INT &&
-       type != GL_UNSIGNED_BYTE &&
-       type != GL_UNSIGNED_SHORT) {
-      _mesa_error(ctx, GL_INVALID_ENUM, "glDrawRangeElements(type)" );
-      return GL_FALSE;
-   }
-
-   if (!check_valid_to_render(ctx, "glDrawRangeElements"))
-      return GL_FALSE;
-
-   /* Vertex buffer object tests */
-   if (_mesa_is_bufferobj(ctx->Array.ArrayObj->ElementArrayBufferObj)) {
-      /* use indices in the buffer object */
-      /* make sure count doesn't go outside buffer bounds */
-      if (index_bytes(type, count) > ctx->Array.ArrayObj->ElementArrayBufferObj->Size) {
-         _mesa_warning(ctx, "glDrawRangeElements index out of buffer bounds");
          return GL_FALSE;
       }
    }
@@ -313,7 +244,7 @@ _mesa_validate_DrawArrays(struct gl_context *ctx,
       return GL_FALSE;
 
    if (ctx->Const.CheckArrayBounds) {
-      if (start + count > (GLint) ctx->Array.ArrayObj->_MaxElement)
+      if (start + count > (GLint) ctx->Array._MaxElement)
          return GL_FALSE;
    }
 

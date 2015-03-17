@@ -27,17 +27,7 @@
  * Antialiased Triangle rasterizers
  */
 
-
-#include "main/glheader.h"
-#include "main/context.h"
-#include "main/colormac.h"
-#include "main/macros.h"
-#include "main/imports.h"
-#include "main/state.h"
-#include "s_aatriangle.h"
-#include "s_context.h"
-#include "s_span.h"
-
+#include <precomp.h>
 
 /*
  * Compute coefficients of a plane using the X,Y coords of the v0, v1, v2
@@ -109,21 +99,6 @@ solve_plane(GLfloat x, GLfloat y, const GLfloat plane[4])
 
 #define SOLVE_PLANE(X, Y, PLANE) \
    ((PLANE[3] + PLANE[0] * (X) + PLANE[1] * (Y)) / -PLANE[2])
-
-
-/*
- * Return 1 / solve_plane().
- */
-static inline GLfloat
-solve_plane_recip(GLfloat x, GLfloat y, const GLfloat plane[4])
-{
-   const GLfloat denom = plane[3] + plane[0] * x + plane[1] * y;
-   if (denom == 0.0F)
-      return 0.0F;
-   else
-      return -plane[2] / denom;
-}
-
 
 /*
  * Solve plane and return clamped GLchan value.
@@ -299,8 +274,7 @@ _swrast_set_aa_triangle_function(struct gl_context *ctx)
    ASSERT(ctx->Polygon.SmoothFlag);
 
    if (ctx->Texture._EnabledCoord
-       || swrast->_FogEnabled
-       || _mesa_need_secondary_color(ctx)) {
+       || swrast->_FogEnabled) {
       SWRAST_CONTEXT(ctx)->Triangle = general_aa_tri;
    }
    else {

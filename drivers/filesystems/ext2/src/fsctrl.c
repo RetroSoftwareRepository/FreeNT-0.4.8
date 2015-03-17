@@ -782,7 +782,13 @@ BOOLEAN Ext2PerformVerifyDiskRead(
 
     if (Status == STATUS_INVALID_PARAMETER) 
 	{
+        DbgPrint("Ext2PerformVerifyDiskRead Invalid Param\n");
+        return FALSE;
+    }
 
+    if (Status == STATUS_NO_MEDIA_IN_DEVICE) 
+	{
+        DebugTrace(DEBUG_TRACE_MOUNT, "NO MEDIA in DEVICE!", 0);
         return FALSE;
     }
 
@@ -792,6 +798,7 @@ BOOLEAN Ext2PerformVerifyDiskRead(
 
     if (!NT_SUCCESS(Status)) 
 	{
+	    DbgPrint("Ext2PerformVerifyDiskRead Fail Status %x\n",Status);
             return FALSE;
     }
 

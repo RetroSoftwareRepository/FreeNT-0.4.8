@@ -20,10 +20,6 @@
 
 #include "quartz_private.h"
 
-#include <wine/debug.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(quartz);
-
 typedef struct IEnumFiltersImpl
 {
     IEnumFilters IEnumFilters_iface;
@@ -117,6 +113,7 @@ static ULONG WINAPI IEnumFiltersImpl_Release(IEnumFilters * iface)
     if (!refCount)
     {
         IGraphVersion_Release(This->pVersionSource);
+        CoTaskMemFree(This);
         return 0;
     }
     else

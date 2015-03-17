@@ -12,6 +12,8 @@
 
 #include "services.h"
 
+#include <winnls.h>
+
 #define NDEBUG
 #include <debug.h>
 
@@ -1083,6 +1085,9 @@ DWORD RControlService(
     DWORD dwControlsAccepted;
     DWORD dwCurrentState;
     HKEY hServicesKey = NULL;
+    LPCWSTR lpLogStrings[2];
+    WCHAR szLogBuffer[80];
+    UINT uID;
 
     DPRINT("RControlService() called\n");
 
@@ -1238,6 +1243,40 @@ DWORD RControlService(
         RtlCopyMemory(lpServiceStatus,
                       &lpService->Status,
                       sizeof(SERVICE_STATUS));
+    }
+
+    if (dwError == ERROR_SUCCESS)
+    {
+            if (dwControl == SERVICE_CONTROL_STOP ||
+                dwControl == SERVICE_CONTROL_PAUSE ||
+                dwControl == SERVICE_CONTROL_CONTINUE)
+            {
+                /* Log a sucessful send control */
+
+                switch (dwControl)
+                {
+                    case SERVICE_CONTROL_STOP:
+                        uID = IDS_SERVICE_STOP;
+                        break;
+
+                    case SERVICE_CONTROL_PAUSE:
+                        uID = IDS_SERVICE_PAUSE;
+                        break;
+
+                    case SERVICE_CONTROL_CONTINUE:
+                        uID = IDS_SERVICE_RESUME;
+                        break;
+                }
+                LoadStringW(GetModuleHandle(NULL), uID, szLogBuffer, 80);
+
+                lpLogStrings[0] = lpService->lpDisplayName;
+                lpLogStrings[1] = szLogBuffer;
+
+                ScmLogEvent(EVENT_SERVICE_CONTROL_SUCCESS,
+                            EVENTLOG_INFORMATION_TYPE,
+                            2,
+                            lpLogStrings);
+            }
     }
 
     return dwError;
@@ -1615,12 +1654,14 @@ DWORD RSetServiceStatus(
 {
     PSERVICE lpService;
     DWORD dwPreviousState;
-    LPCWSTR lpErrorStrings[2];
-    WCHAR szErrorBuffer[32];
+    DWORD dwPreviousType;
+    LPCWSTR lpLogStrings[2];
+    WCHAR szLogBuffer[80];
+    UINT uID;
 
     DPRINT("RSetServiceStatus() called\n");
     DPRINT("hServiceStatus = %lu\n", hServiceStatus);
-    DPRINT("dwServiceType = %lu\n", lpServiceStatus->dwServiceType);
+    DPRINT("dwServiceType = 0x%lx\n", lpServiceStatus->dwServiceType);
     DPRINT("dwCurrentState = %lu\n", lpServiceStatus->dwCurrentState);
     DPRINT("dwControlsAccepted = %lu\n", lpServiceStatus->dwControlsAccepted);
     DPRINT("dwWin32ExitCode = %lu\n", lpServiceStatus->dwWin32ExitCode);
@@ -1658,33 +1699,79 @@ DWORD RSetServiceStatus(
         return ERROR_INVALID_DATA;
     }
 
+    /* Set the wait hint and check point only if the service is in a pending state,
+       otherwise they should be 0 */
+    if (lpServiceStatus->dwCurrentState == SERVICE_STOPPED ||
+        lpServiceStatus->dwCurrentState == SERVICE_PAUSED ||
+        lpServiceStatus->dwCurrentState == SERVICE_RUNNING)
+    {
+        lpServiceStatus->dwWaitHint = 0;
+        lpServiceStatus->dwCheckPoint = 0;
+    }
+
     /* Lock the service database exclusively */
     ScmLockDatabaseExclusive();
 
     /* Save the current service state */
     dwPreviousState = lpService->Status.dwCurrentState;
 
+    /* Save the current service type */
+    dwPreviousType = lpService->Status.dwServiceType;
+
+    /* Update the service status */
     RtlCopyMemory(&lpService->Status,
                   lpServiceStatus,
                   sizeof(SERVICE_STATUS));
 
+    /* Restore the previous service type */
+    lpService->Status.dwServiceType = dwPreviousType;
+
     /* Unlock the service database */
     ScmUnlockDatabase();
 
-    /* Log a failed service stop */
     if ((lpServiceStatus->dwCurrentState == SERVICE_STOPPED) &&
-        (dwPreviousState != SERVICE_STOPPED))
+        (dwPreviousState != SERVICE_STOPPED) &&
+        (lpServiceStatus->dwWin32ExitCode != ERROR_SUCCESS))
     {
-        if (lpServiceStatus->dwWin32ExitCode != ERROR_SUCCESS)
-        {
-            swprintf(szErrorBuffer, L"%lu", lpServiceStatus->dwWin32ExitCode);
-            lpErrorStrings[0] = lpService->lpDisplayName;
-            lpErrorStrings[1] = szErrorBuffer;
+        /* Log a failed service stop */
+        swprintf(szLogBuffer, L"%lu", lpServiceStatus->dwWin32ExitCode);
+        lpLogStrings[0] = lpService->lpDisplayName;
+        lpLogStrings[1] = szLogBuffer;
 
-            ScmLogError(EVENT_SERVICE_EXIT_FAILED,
-                        2,
-                        lpErrorStrings);
+        ScmLogEvent(EVENT_SERVICE_EXIT_FAILED,
+                    EVENTLOG_ERROR_TYPE,
+                    2,
+                    lpLogStrings);
+    }
+    else if (lpServiceStatus->dwCurrentState != dwPreviousState &&
+             (lpServiceStatus->dwCurrentState == SERVICE_STOPPED ||
+              lpServiceStatus->dwCurrentState == SERVICE_RUNNING ||
+              lpServiceStatus->dwCurrentState == SERVICE_PAUSED))
+    {
+        /* Log a successful service status change */
+        switch(lpServiceStatus->dwCurrentState)
+        {
+            case SERVICE_STOPPED:
+                uID = IDS_SERVICE_STOPPED;
+                break;
+
+            case SERVICE_RUNNING:
+                uID = IDS_SERVICE_RUNNING;
+                break;
+
+            case SERVICE_PAUSED:
+                uID = IDS_SERVICE_PAUSED;
+                break;
         }
+
+        LoadStringW(GetModuleHandle(NULL), uID, szLogBuffer, 80);
+        lpLogStrings[0] = lpService->lpDisplayName;
+        lpLogStrings[1] = szLogBuffer;
+
+        ScmLogEvent(EVENT_SERVICE_STATUS_SUCCESS,
+                    EVENTLOG_INFORMATION_TYPE,
+                    2,
+                    lpLogStrings);
     }
 
     DPRINT("Set %S to %lu\n", lpService->lpDisplayName, lpService->Status.dwCurrentState);
@@ -1753,7 +1840,7 @@ DWORD RChangeServiceConfigW(
     LPWSTR lpImagePathW = NULL;
 
     DPRINT("RChangeServiceConfigW() called\n");
-    DPRINT("dwServiceType = %lu\n", dwServiceType);
+    DPRINT("dwServiceType = 0x%lx\n", dwServiceType);
     DPRINT("dwStartType = %lu\n", dwStartType);
     DPRINT("dwErrorControl = %lu\n", dwErrorControl);
     DPRINT("lpBinaryPathName = %S\n", lpBinaryPathName);
@@ -1997,7 +2084,7 @@ DWORD RCreateServiceW(
     DPRINT("lpServiceName = %S\n", lpServiceName);
     DPRINT("lpDisplayName = %S\n", lpDisplayName);
     DPRINT("dwDesiredAccess = %lx\n", dwDesiredAccess);
-    DPRINT("dwServiceType = %lu\n", dwServiceType);
+    DPRINT("dwServiceType = 0x%lx\n", dwServiceType);
     DPRINT("dwStartType = %lu\n", dwStartType);
     DPRINT("dwErrorControl = %lu\n", dwErrorControl);
     DPRINT("lpBinaryPathName = %S\n", lpBinaryPathName);
@@ -4712,9 +4799,6 @@ Done:
 }
 
 
-//
-// WARNING: This function is untested
-//
 /* Function 36 */
 DWORD RChangeServiceConfig2A(
     SC_RPC_HANDLE hService,
@@ -4731,48 +4815,57 @@ DWORD RChangeServiceConfig2A(
 
     if (InfoW.dwInfoLevel == SERVICE_CONFIG_DESCRIPTION)
     {
-        LPSERVICE_DESCRIPTIONW lpServiceDescriptonW;
-        //LPSERVICE_DESCRIPTIONA lpServiceDescriptonA;
+        LPSERVICE_DESCRIPTIONW lpServiceDescriptionW;
+        //LPSERVICE_DESCRIPTIONA lpServiceDescriptionA;
 
-        //lpServiceDescriptonA = Info.psd;
+        //lpServiceDescriptionA = Info.psd;
 
-        ///if (lpServiceDescriptonA &&
-        ///lpServiceDescriptonA->lpDescription)
+        ///if (lpServiceDescriptionA &&
+        ///lpServiceDescriptionA->lpDescription)
         ///{
             dwLength = (DWORD)((strlen(Info.lpDescription) + 1) * sizeof(WCHAR));
 
-            lpServiceDescriptonW = HeapAlloc(GetProcessHeap(),
-                                             HEAP_ZERO_MEMORY,
-                                             dwLength + sizeof(SERVICE_DESCRIPTIONW));
-            if (!lpServiceDescriptonW)
+            lpServiceDescriptionW = HeapAlloc(GetProcessHeap(),
+                                              HEAP_ZERO_MEMORY,
+                                              dwLength + sizeof(SERVICE_DESCRIPTIONW));
+            if (!lpServiceDescriptionW)
             {
                 return ERROR_NOT_ENOUGH_MEMORY;
             }
 
-            lpServiceDescriptonW->lpDescription = (LPWSTR)(lpServiceDescriptonW + 1);
+            lpServiceDescriptionW->lpDescription = (LPWSTR)(lpServiceDescriptionW + 1);
 
             MultiByteToWideChar(CP_ACP,
                                 0,
                                 Info.lpDescription,
                                 -1,
-                                lpServiceDescriptonW->lpDescription,
+                                lpServiceDescriptionW->lpDescription,
                                 dwLength);
 
-            ptr = lpServiceDescriptonW;
-            InfoW.psd = lpServiceDescriptonW;
+            ptr = lpServiceDescriptionW;
+            InfoW.psd = lpServiceDescriptionW;
         ///}
     }
     else if (Info.dwInfoLevel == SERVICE_CONFIG_FAILURE_ACTIONS)
     {
         LPSERVICE_FAILURE_ACTIONSW lpServiceFailureActionsW;
         LPSERVICE_FAILURE_ACTIONSA lpServiceFailureActionsA;
-        DWORD dwRebootLen = 0;
+        DWORD dwRebootLen  = 0;
         DWORD dwCommandLen = 0;
+        DWORD dwActionArrayLen = 0;
+        LPWSTR lpStr = NULL;
 
         lpServiceFailureActionsA = Info.psfa;
 
         if (lpServiceFailureActionsA)
         {
+            /*
+             * The following code is inspired by the
+             * SERVICE_CONFIG_FAILURE_ACTIONS case of
+             * the RQueryServiceConfig2W function.
+             */
+
+            /* Retrieve the needed length for the two data strings */
             if (lpServiceFailureActionsA->lpRebootMsg)
             {
                 dwRebootLen = (DWORD)((strlen(lpServiceFailureActionsA->lpRebootMsg) + 1) * sizeof(WCHAR));
@@ -4781,8 +4874,22 @@ DWORD RChangeServiceConfig2A(
             {
                 dwCommandLen = (DWORD)((strlen(lpServiceFailureActionsA->lpCommand) + 1) * sizeof(WCHAR));
             }
-            dwLength = dwRebootLen + dwCommandLen + sizeof(SERVICE_FAILURE_ACTIONSW);
 
+            /*
+             * Retrieve the size of the lpsaActions array if needed.
+             * We will copy the lpsaActions array only if there is at
+             * least one action AND that the original array is valid.
+             */
+            if (lpServiceFailureActionsA->cActions > 0 && lpServiceFailureActionsA->lpsaActions)
+            {
+                dwActionArrayLen = lpServiceFailureActionsA->cActions * sizeof(SC_ACTION);
+            }
+
+            /* Compute the total length for the UNICODE structure, including data */
+            dwLength = sizeof(SERVICE_FAILURE_ACTIONSW) +
+                       dwActionArrayLen + dwRebootLen + dwCommandLen;
+
+            /* Allocate the structure */
             lpServiceFailureActionsW = HeapAlloc(GetProcessHeap(),
                                                  HEAP_ZERO_MEMORY,
                                                  dwLength);
@@ -4791,22 +4898,56 @@ DWORD RChangeServiceConfig2A(
                 return ERROR_NOT_ENOUGH_MEMORY;
             }
 
-            lpServiceFailureActionsW->cActions = lpServiceFailureActionsA->cActions;
+            /* Copy the members */
             lpServiceFailureActionsW->dwResetPeriod = lpServiceFailureActionsA->dwResetPeriod;
-            CopyMemory(lpServiceFailureActionsW->lpsaActions, lpServiceFailureActionsA->lpsaActions, sizeof(SC_ACTION));
+            lpServiceFailureActionsW->cActions      = lpServiceFailureActionsA->cActions;
 
-            if (lpServiceFailureActionsA->lpRebootMsg)
+            /* Copy the lpsaActions array if needed */
+            if (dwActionArrayLen > 0)
             {
+                /* The storage zone is just after the end of the SERVICE_FAILURE_ACTIONSW structure */
+                lpServiceFailureActionsW->lpsaActions = (LPSC_ACTION)((ULONG_PTR)(lpServiceFailureActionsW + 1));
+
+                /* dwActionArrayLen == lpServiceFailureActionsW->cActions * sizeof(SC_ACTION) */
+                RtlCopyMemory(lpServiceFailureActionsW->lpsaActions,
+                              lpServiceFailureActionsA->lpsaActions,
+                              dwActionArrayLen);
+            }
+            else
+            {
+                /* No lpsaActions array */
+                lpServiceFailureActionsW->lpsaActions = NULL;
+            }
+            /* The data strings are stored just after the lpsaActions array */
+            lpStr = (LPWSTR)((ULONG_PTR)(lpServiceFailureActionsW + 1) + dwActionArrayLen);
+
+            /*
+             * Convert the data strings to UNICODE
+             */
+
+            lpServiceFailureActionsW->lpRebootMsg = NULL;
+            lpServiceFailureActionsW->lpCommand   = NULL;
+
+            if (dwRebootLen)
+            {
+                /* lpRebootMsg points just after the lpsaActions array */
+                lpServiceFailureActionsW->lpRebootMsg = lpStr;
+
                 MultiByteToWideChar(CP_ACP,
                                     0,
                                     lpServiceFailureActionsA->lpRebootMsg,
                                     -1,
                                     lpServiceFailureActionsW->lpRebootMsg,
                                     dwRebootLen);
+
+                lpStr += dwRebootLen / sizeof(WCHAR);
             }
 
-            if (lpServiceFailureActionsA->lpCommand)
+            if (dwCommandLen)
             {
+                /* lpRebootMsg points just after the lpRebootMsg data string */
+                lpServiceFailureActionsW->lpCommand = lpStr;
+
                 MultiByteToWideChar(CP_ACP,
                                     0,
                                     lpServiceFailureActionsA->lpCommand,
@@ -4815,7 +4956,9 @@ DWORD RChangeServiceConfig2A(
                                     dwCommandLen);
             }
 
+            /* Set the pointers */
             ptr = lpServiceFailureActionsW;
+            InfoW.psfa = lpServiceFailureActionsW;
         }
     }
 

@@ -17,18 +17,9 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "config.h"
-#include <stdarg.h>
-#include <stdio.h>
-
-#include "windef.h"
-#include "winbase.h"
-#include "wincrypt.h"
-#include "winreg.h"
-#include "winuser.h"
-#include "i_cryptasn1tls.h"
 #include "crypt32_private.h"
-#include "wine/debug.h"
+
+#include "i_cryptasn1tls.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(crypt);
 
@@ -42,6 +33,7 @@ BOOL WINAPI DllMain(HINSTANCE hInst, DWORD fdwReason, PVOID pvReserved)
         case DLL_PROCESS_ATTACH:
             hInstance = hInst;
             DisableThreadLibraryCalls(hInst);
+            init_empty_store();
             crypt_oid_init();
             break;
         case DLL_PROCESS_DETACH:

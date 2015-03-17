@@ -19,10 +19,6 @@
 
 #include "urlmon_main.h"
 
-#include <wine/debug.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(urlmon);
-
 static inline HRESULT report_progress(Protocol *protocol, ULONG status_code, LPCWSTR status_text)
 {
     return IInternetProtocolSink_ReportProgress(protocol->protocol_sink, status_code, status_text);
@@ -516,6 +512,7 @@ HRESULT protocol_abort(Protocol *protocol, HRESULT reason)
     if(!protocol->protocol_sink)
         return S_OK;
 
+    /* NOTE: IE10 returns S_OK here */
     if(protocol->flags & FLAG_RESULT_REPORTED)
         return INET_E_RESULT_DISPATCHED;
 

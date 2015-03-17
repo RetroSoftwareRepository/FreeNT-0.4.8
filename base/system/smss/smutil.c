@@ -9,6 +9,9 @@
 /* INCLUDES *******************************************************************/
 
 #include "smss.h"
+
+#include <ndk/sefuncs.h>
+
 #define NDEBUG
 #include <debug.h>
 
@@ -533,7 +536,7 @@ SmpRestoreBootStatusData(IN BOOLEAN BootOkay,
     Status = RtlLockBootStatusData(&BootState);
     if (NT_SUCCESS(Status))
     {
-        /* Write the bootokay and bootshudown values */
+        /* Write the bootokay and bootshutdown values */
         RtlGetSetBootStatusData(BootState,
                                 FALSE,
                                 RtlBsdItemBootGood,

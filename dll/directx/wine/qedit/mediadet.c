@@ -17,20 +17,10 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <assert.h>
-//#include <stdarg.h>
-
-#define COBJMACROS
-
-//#include "windef.h"
-//#include "winbase.h"
-//#include "winuser.h"
-//#include "ole2.h"
-
 #include "qedit_private.h"
-#include <wine/debug.h>
 
-WINE_DEFAULT_DEBUG_CHANNEL(qedit);
+#include <assert.h>
+#include <oleauto.h>
 
 typedef struct MediaDetImpl {
     IUnknown IUnknown_inner;
@@ -357,7 +347,7 @@ static HRESULT GetFilterInfo(IMoniker *pMoniker, GUID *pclsid, VARIANT *pvar)
 
     if (SUCCEEDED(hr))
     {
-        hr = CLSIDFromString(V_UNION(pvar, bstrVal), pclsid);
+        hr = CLSIDFromString(V_BSTR(pvar), pclsid);
         VariantClear(pvar);
         V_VT(pvar) = VT_BSTR;
     }
@@ -366,8 +356,7 @@ static HRESULT GetFilterInfo(IMoniker *pMoniker, GUID *pclsid, VARIANT *pvar)
         hr = IPropertyBag_Read(pPropBagCat, wszFriendlyName, pvar, NULL);
 
     if (SUCCEEDED(hr))
-        TRACE("Moniker = %s - %s\n", debugstr_guid(pclsid),
-              debugstr_w(V_UNION(pvar, bstrVal)));
+        TRACE("Moniker = %s - %s\n", debugstr_guid(pclsid), debugstr_w(V_BSTR(pvar)));
 
     if (pPropBagCat)
         IPropertyBag_Release(pPropBagCat);
@@ -440,8 +429,7 @@ static HRESULT GetSplitter(MediaDetImpl *This)
             continue;
         }
 
-        hr = IGraphBuilder_AddFilter(This->graph, splitter,
-                                     V_UNION(&var, bstrVal));
+        hr = IGraphBuilder_AddFilter(This->graph, splitter, V_BSTR(&var));
         VariantClear(&var);
         This->splitter = splitter;
         if (FAILED(hr))
@@ -660,7 +648,6 @@ HRESULT MediaDet_create(IUnknown * pUnkOuter, LPVOID * ppv) {
     obj->cur_pin = NULL;
     obj->num_streams = -1;
     obj->cur_stream = 0;
-    *ppv = obj;
 
     if (pUnkOuter)
         obj->outer_unk = pUnkOuter;

@@ -23,22 +23,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <assert.h>
-//#include <stdlib.h>
-//#include <stdarg.h>
-//#include <stdio.h>
-//#include <string.h>
-
-#define COBJMACROS
-#define NONAMELESSUNION
-#define NONAMELESSSTRUCT
-
-//#include "windef.h"
-//#include "winbase.h"
-//#include "winerror.h"
-//#include "winternl.h"
-#include <wine/debug.h>
-
+#include "precomp.h"
 #include "storage32.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(storage);
@@ -166,7 +151,7 @@ static HRESULT WINAPI StgStreamImpl_Read(
     /*
      * Advance the pointer for the number of positions read.
      */
-    This->currentPosition.u.LowPart += *pcbRead;
+    This->currentPosition.QuadPart += *pcbRead;
   }
 
   TRACE("<-- %08x\n", res);
@@ -247,12 +232,12 @@ static HRESULT WINAPI StgStreamImpl_Write(
   /*
    * Advance the position pointer for the number of positions written.
    */
-  This->currentPosition.u.LowPart += *pcbWritten;
+  This->currentPosition.QuadPart += *pcbWritten;
 
   if (SUCCEEDED(res))
     res = StorageBaseImpl_Flush(This->parentStorage);
 
-  TRACE("<-- S_OK, written %u\n", *pcbWritten);
+  TRACE("<-- %08x, written %u\n", res, *pcbWritten);
   return res;
 }
 

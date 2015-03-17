@@ -50,7 +50,6 @@
  *   - WM_QUERYNEWPALETTE
  *   - WM_RBUTTONDOWN
  *   - WM_RBUTTONUP
- *   - WM_SYSCOLORCHANGE
  *   - WM_VKEYTOITEM
  *   - WM_WININICHANGE
  *   Notifications:
@@ -77,22 +76,7 @@
  *    at least RB_INSERTBAND
  */
 
-#include <assert.h>
-//#include <stdarg.h>
-#include <stdlib.h>
-//#include <string.h>
-
-//#include "windef.h"
-//#include "winbase.h"
-//#include "wingdi.h"
-//#include "wine/unicode.h"
-//#include "winuser.h"
-//#include "winnls.h"
-//#include "commctrl.h"
 #include "comctl32.h"
-#include <uxtheme.h>
-#include <vssym32.h>
-#include <wine/debug.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(rebar);
 
@@ -1844,15 +1828,23 @@ static LRESULT REBAR_EraseBkGnd (const REBAR_INFO *infoPtr, HDC hdc)
     RECT cr;
     COLORREF old = CLR_NONE, new;
     HTHEME theme = GetWindowTheme (infoPtr->hwndSelf);
+    HRGN hrgn;
 
     GetClientRect (infoPtr->hwndSelf, &cr);
+    hrgn = CreateRectRgn(cr.left, cr.top, cr.right, cr.bottom);
 
     oldrow = -1;
     for(i=0; i<infoPtr->uNumBands; i++) {
         RECT rcBand;
+        RECT rcBandReal;
+        HRGN hrgnBand;
+
         lpBand = REBAR_GetBand(infoPtr, i);
+
 	if (HIDDENBAND(lpBand)) continue;
         translate_rect(infoPtr, &rcBand, &lpBand->rcBand);
+
+        rcBandReal = rcBand;
 
 	/* draw band separator between rows */
 	if (lpBand->iRow != oldrow) {
@@ -1878,6 +1870,7 @@ static LRESULT REBAR_EraseBkGnd (const REBAR_INFO *infoPtr, HDC hdc)
 		}
                 TRACE ("drawing band separator bottom (%s)\n",
                        wine_dbgstr_rect(&rcRowSep));
+        rcBandReal = rcRowSep;
 	    }
 	}
 
@@ -1888,6 +1881,7 @@ static LRESULT REBAR_EraseBkGnd (const REBAR_INFO *infoPtr, HDC hdc)
 	    if (infoPtr->dwStyle & CCS_VERT) {
                 rcSep.bottom = rcSep.top;
 		rcSep.top -= SEP_WIDTH_SIZE;
+        rcBandReal.top -= SEP_WIDTH_SIZE;
                 if (theme)
                     DrawThemeEdge (theme, hdc, RP_BAND, 0, &rcSep, EDGE_ETCHED, BF_BOTTOM, NULL);
                 else
@@ -1896,6 +1890,7 @@ static LRESULT REBAR_EraseBkGnd (const REBAR_INFO *infoPtr, HDC hdc)
 	    else {
                 rcSep.right = rcSep.left;
 		rcSep.left -= SEP_WIDTH_SIZE;
+        rcBandReal.left -= SEP_WIDTH_SIZE;
                 if (theme)
                     DrawThemeEdge (theme, hdc, RP_BAND, 0, &rcSep, EDGE_ETCHED, BF_RIGHT, NULL);
                 else
@@ -1943,7 +1938,21 @@ static LRESULT REBAR_EraseBkGnd (const REBAR_INFO *infoPtr, HDC hdc)
             if (lpBand->clrBack != CLR_NONE)
                 SetBkColor (hdc, old);
         }
+
+        hrgnBand = CreateRectRgn(rcBandReal.left, rcBandReal.top, rcBandReal.right, rcBandReal.bottom);
+        CombineRgn(hrgn, hrgn, hrgnBand, RGN_DIFF);
+        DeleteObject(hrgnBand);
     }
+
+#if 1
+    {
+        //FIXME: Apparently painting the remaining area is a v6 feature
+        HBRUSH hbrush = CreateSolidBrush(new);
+        FillRgn(hdc, hrgn, hbrush);
+        DeleteObject(hbrush);
+        DeleteObject(hrgn);
+    }
+#endif
     return TRUE;
 }
 
@@ -2529,8 +2538,10 @@ REBAR_InsertBandT(REBAR_INFO *infoPtr, INT iIndex, const REBARBANDINFOW *lprbbi,
 
     /* initialize band */
     memset(lpBand, 0, sizeof(*lpBand));
-    lpBand->clrFore = infoPtr->clrText;
-    lpBand->clrBack = infoPtr->clrBk;
+    lpBand->clrFore = infoPtr->clrText == CLR_NONE ? infoPtr->clrBtnText :
+                                                     infoPtr->clrText;
+    lpBand->clrBack = infoPtr->clrBk == CLR_NONE ? infoPtr->clrBtnFace :
+                                                   infoPtr->clrBk;
     lpBand->iImage = -1;
 
     REBAR_CommonSetupBand(infoPtr->hwndSelf, lprbbi, lpBand);
@@ -2917,6 +2928,7 @@ REBAR_SizeToRect (REBAR_INFO *infoPtr, WPARAM flags, RECT *lpRect)
     TRACE("[%s]\n", wine_dbgstr_rect(lpRect));
     REBAR_SizeToHeight(infoPtr, get_rect_cy(infoPtr, lpRect));
 
+#ifdef __REACTOS__
     /* Note that this undocumented flag is available on comctl32 v6 or later */
     if ((flags & RBSTR_CHANGERECT) != 0)
     {
@@ -2924,6 +2936,7 @@ REBAR_SizeToRect (REBAR_INFO *infoPtr, WPARAM flags, RECT *lpRect)
         GetClientRect(infoPtr->hwndSelf, &rcRebar);
         lpRect->bottom = lpRect->top + (rcRebar.bottom - rcRebar.top);
     }
+#endif
     return TRUE;
 }
 
@@ -3391,7 +3404,7 @@ REBAR_NotifyFormat (REBAR_INFO *infoPtr, LPARAM cmd)
 	    ERR("wrong response to WM_NOTIFYFORMAT (%d), assuming ANSI\n", i);
 	    i = NFR_ANSI;
 	}
-        infoPtr->bUnicode = (i == NFR_UNICODE) ? 1 : 0;
+        infoPtr->bUnicode = (i == NFR_UNICODE);
 	return (LRESULT)i;
     }
     return (LRESULT)((infoPtr->bUnicode) ? NFR_UNICODE : NFR_ANSI);
@@ -3764,8 +3777,11 @@ REBAR_WindowProc (HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 
         case WM_SYSCOLORCHANGE:
             COMCTL32_RefreshSysColors();
+#ifdef __REACTOS__
+            /* r51522 - Properly support WM_SYSCOLORCHANGE */
             infoPtr->clrBtnText = comctl32_color.clrBtnText;
             infoPtr->clrBtnFace = comctl32_color.clrBtnFace;
+#endif
             return 0;
 
 /*      case WM_VKEYTOITEM:     supported according to ControlSpy */

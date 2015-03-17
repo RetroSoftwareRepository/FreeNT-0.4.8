@@ -820,12 +820,19 @@ static MUI_ENTRY itITSelectPartitionEntries[] =
     {
         8,
         15,
-        "\x07  Premere C per creare una nuova partizione.",
+        "\x07  Press P to create a primary partition.",
+//        "\x07  Premere C per creare una nuova partizione.",
         TEXT_STYLE_NORMAL
     },
     {
         8,
         17,
+        "\x07  Press E to create an extended partition.",
+        TEXT_STYLE_NORMAL
+    },
+    {
+        8,
+        19,
         "\x07  Premere D per cancellare una partizione esistente.",
         TEXT_STYLE_NORMAL
     },
@@ -1280,6 +1287,10 @@ static MUI_ENTRY itITRegistryEntries[] =
 MUI_ERROR itITErrorEntries[] =
 {
     {
+        // NOT_AN_ERROR
+        "Success\n"
+    },
+    {
         //ERROR_NOT_INSTALLED
         "ReactOS non Š installato completamente nel vostro\n"
         "computer. Se esce adesso, dovr… eseguire il Setup\n"
@@ -1351,7 +1362,7 @@ MUI_ERROR itITErrorEntries[] =
         "\n"
         "Il creare o cancellare partizioni pu• distruggere la tabella delle partizioni.\n"
         "\n"
-        "  \x07  Premere F3 per uscire dal Setup."
+        "  \x07  Premere F3 per uscire dal Setup.\n"
         "  \x07  Premere INVIO per continuare.",
         "F3= Uscire  INVIO = Continuare"
     },
@@ -1484,10 +1495,25 @@ MUI_ERROR itITErrorEntries[] =
         "INVIO = Riavviare il computer"
     },
     {
-        //ERROR_INSUFFICIENT_DISKSPACE,
-        "Lo spazio disponibile nella partizione selezionata Š insufficiente.\n"
+        //ERROR_INSUFFICIENT_PARTITION_SIZE,
+        "The selected partition is not large enough to install ReactOS.\n"
+        "The install partition must have a size of at least %lu MB.\n"
+        "\n"
         "  * Premere un tasto qualsiasi per continuare.",
         NULL
+    },
+    {
+        //ERROR_PARTITION_TABLE_FULL,
+        "You can not create a new primary or extended partition in the\n"
+        "partition table of this disk because the partition table is full.\n"
+        "\n"
+        "  * Press any key to continue."
+    },
+    {
+        //ERROR_ONLY_ONE_EXTENDED,
+        "You can not create more than one extended partition per disk.\n"
+        "\n"
+        "  * Press any key to continue."
     },
     {
         NULL,
@@ -1601,13 +1627,23 @@ MUI_STRING itITStrings[] =
     {STRING_PLEASEWAIT,
      "   Attendere..."},
     {STRING_INSTALLCREATEPARTITION,
-     "   INVIO = Installa   C = Crea Partizione   F3 = Esci"},
+     "   ENTER = Install   P = Create Primary   E = Create Extended   F3 = Quit"},
+//     "   INVIO = Installa   C = Crea Partizione   F3 = Esci"},
+    {STRING_INSTALLCREATELOGICAL,
+     "   ENTER = Install   L = Create Logical Partition   F3 = Quit"},
     {STRING_INSTALLDELETEPARTITION,
      "   INVIO = Installa   D = Rimuovi Partizione   F3 = Esci"},
+    {STRING_DELETEPARTITION,
+     "   D = Delete Partition   F3 = Quit"},
     {STRING_PARTITIONSIZE,
      "Dimensione della nuova partizione:"},
     {STRING_CHOOSENEWPARTITION,
-     "Avete scelto di creare una nuova partizione su"},
+     "You have chosen to create a primary partition on"},
+//     "Avete scelto di creare una nuova partizione su"},
+    {STRING_CHOOSE_NEW_EXTENDED_PARTITION,
+     "You have chosen to create an extended partition on"},
+    {STRING_CHOOSE_NEW_LOGICAL_PARTITION,
+     "You have chosen to create a logical partition on"},
     {STRING_HDDSIZE,
     "Indicare la dimensione della nuova partizione in megabyte."},
     {STRING_CREATEPARTITION,
@@ -1679,7 +1715,7 @@ MUI_STRING itITStrings[] =
     {STRING_HDINFOPARTEXISTS,
     "su Harddisk %lu (%I64u %s), Port=%hu, Bus=%hu, Id=%hu (%wZ)."},
     {STRING_HDDINFOUNK5,
-    "%c%c  Tipo %-3u                         %6lu %s"},
+    "%c%c %c %sTipo %-3u%s                       %6lu %s"},
     {STRING_HDINFOPARTSELECT,
     "%6lu %s  Harddisk %lu  (Port=%hu, Bus=%hu, Id=%hu) su %S"},
     {STRING_HDDINFOUNK6,
@@ -1687,7 +1723,7 @@ MUI_STRING itITStrings[] =
     {STRING_NEWPARTITION,
     "Setup ha creato una nuova partizione su"},
     {STRING_UNPSPACE,
-    "    Spazio non partizionato               %6lu %s"},
+    "    %sSpazio non partizionato%s             %6lu %s"},
     {STRING_MAXSIZE,
     "MB (max. %lu MB)"},
     {STRING_UNFORMATTED,

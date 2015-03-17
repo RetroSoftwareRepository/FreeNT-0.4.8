@@ -20,42 +20,34 @@
 #ifndef __SETUPAPI_PRIVATE_H
 #define __SETUPAPI_PRIVATE_H
 
-#include <fcntl.h>
-#include <share.h>
 #include <wchar.h>
 
 #define WIN32_NO_STATUS
 #define _INC_WINDOWS
 #define COM_NO_WINDOWS_H
+
 #define COBJMACROS
+
 #include <windef.h>
 #include <winbase.h>
 #include <winreg.h>
-#include <winsvc.h>
-#include <winver.h>
 #include <wingdi.h>
+#include <winspool.h>
 #include <wincon.h>
 #include <objbase.h>
-#include <lzexpand.h>
 #include <cfgmgr32.h>
-#include <fdi.h>
 #include <regstr.h>
 #include <sddl.h>
 #include <setupapi.h>
+#include <softpub.h>
+#include <mscat.h>
 #include <shlobj.h>
-#include <wine/debug.h>
 #include <wine/unicode.h>
 #define NTOS_MODE_USER
-#include <ndk/cmfuncs.h>
-#include <ndk/obfuncs.h>
 #include <ndk/rtlfuncs.h>
 
-//#include <pseh/pseh2.h>
-
-#include <pnp_c.h>
-
-#include "rpc_private.h"
-//#include "resource.h"
+#include <wine/debug.h>
+WINE_DEFAULT_DEBUG_CHANNEL(setupapi);
 
 #ifdef __REACTOS__
 #undef __WINESRC__
@@ -180,6 +172,10 @@ struct DeviceInfo /* Element of DeviceInfoSet.ListHead */
     /* Used by SetupDiGetClassInstallParamsW/SetupDiSetClassInstallParamsW */
     struct ClassInstallParams ClassInstallParams;
 
+    /* Device property page provider data */
+    HMODULE hmodDevicePropPageProvider;
+    PVOID pDevicePropPageProvider;
+
     /* Variable size array (contains data for instanceId, UniqueId, DeviceDescription) */
     WCHAR Data[ANYSIZE_ARRAY];
 };
@@ -207,6 +203,10 @@ struct DeviceInfoSet /* HDEVINFO */
 
     /* Used by SetupDiGetClassInstallParamsW/SetupDiSetClassInstallParamsW */
     struct ClassInstallParams ClassInstallParams;
+
+    /* Class property page provider data */
+    HMODULE hmodClassPropPageProvider;
+    PVOID pClassPropPageProvider;
 
     /* Contains the name of the remote computer ('\\COMPUTERNAME' for example),
      * or NULL if related to local machine. Points into szData field at the

@@ -1,8 +1,8 @@
 /*
- *         translated by xrogers
- *         xxrogers@users.sourceforge.net
- *         https://sourceforge.net/projects/reactospl
- *         UTF-8 conversion by Caemyr (May, 2011)
+ *    Translated by xrogers
+ *    xxrogers@users.sourceforge.net
+ *    https://sourceforge.net/projects/reactospl
+ *    UTF-8 conversion by Caemyr (May, 2011)
  */
 
 LANGUAGE LANG_POLISH, SUBLANG_DEFAULT
@@ -11,11 +11,10 @@ IDM_CONSOLE_SMALL MENU
 BEGIN
     POPUP "Pl&ik"
     BEGIN
-        MENUITEM "New\tStrg+N", IDM_FILE_NEW
+        MENUITEM "New\tCtrl+N", IDM_FILE_NEW
         MENUITEM SEPARATOR
         MENUITEM "Za&kończ\tAlt+F4", IDM_FILE_EXIT
     END
-
     POPUP "&Pomoc"
     BEGIN
         MENUITEM "Konsola Zarządzania ReactOS - i&nformacje...", IDM_HELP_ABOUT
@@ -26,16 +25,14 @@ IDM_CONSOLE_LARGE MENU
 BEGIN
     POPUP "Pl&ik"
     BEGIN
-        MENUITEM "New\tStrg+N", IDM_FILE_NEW
+        MENUITEM "New\tCtrl+N", IDM_FILE_NEW
         MENUITEM SEPARATOR
         MENUITEM "Za&kończ\tAlt+F4", IDM_FILE_EXIT
     END
-
     POPUP "&Windows"
     BEGIN
         MENUITEM "List", IDM_WINDOWS_LIST
     END
-
     POPUP "&Pomoc"
     BEGIN
         MENUITEM "Konsola Zarządzania ReactOS - i&nformacje...", IDM_HELP_ABOUT

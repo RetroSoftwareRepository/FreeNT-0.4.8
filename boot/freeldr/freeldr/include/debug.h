@@ -20,16 +20,16 @@
 #ifndef __DEBUG_H
 #define __DEBUG_H
 
-#define DPRINT_NONE         0  // No debug print
-#define DPRINT_WARNING      1  // debugger messages and other misc stuff
-#define DPRINT_MEMORY       2  // memory management messages
-#define DPRINT_FILESYSTEM   3  // file system messages
-#define DPRINT_INIFILE      4  // .ini file messages
-#define DPRINT_UI           5  // user interface messages
-#define DPRINT_DISK         6  // disk messages
-#define DPRINT_CACHE        7 // cache messages
-#define DPRINT_REGISTRY     8  // registry messages
-#define DPRINT_REACTOS      9  // ReactOS messages
+#define DPRINT_NONE         0   // No debug print
+#define DPRINT_WARNING      1   // debugger messages and other misc stuff
+#define DPRINT_MEMORY       2   // memory management messages
+#define DPRINT_FILESYSTEM   3   // file system messages
+#define DPRINT_INIFILE      4   // .ini file messages
+#define DPRINT_UI           5   // user interface messages
+#define DPRINT_DISK         6   // disk messages
+#define DPRINT_CACHE        7   // cache messages
+#define DPRINT_REGISTRY     8   // registry messages
+#define DPRINT_REACTOS      9   // ReactOS messages
 #define DPRINT_LINUX        10  // Linux messages
 #define DPRINT_HWDETECT     11  // hardware detection messages
 #define DPRINT_WINDOWS      12  // messages from Windows loader
@@ -124,12 +124,22 @@ void
 NTAPI
 FrLdrBugCheck(ULONG BugCode);
 
+VOID
+NTAPI
+FrLdrBugCheckWithMessage(
+    ULONG BugCode,
+    PCHAR File,
+    ULONG Line,
+    PSTR Format,
+    ...);
+
 /* Bugcheck codes */
 enum _FRLDR_BUGCHECK_CODES
 {
     TEST_BUGCHECK,
     MISSING_HARDWARE_REQUIREMENTS,
     FREELDR_IMAGE_CORRUPTION,
+    MEMORY_INIT_FAILURE,
 };
 
 extern char *BugCodeStrings[];

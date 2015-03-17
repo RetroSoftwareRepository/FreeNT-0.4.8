@@ -57,11 +57,11 @@ EnumerateRunningServices(VOID)
                                     &dwServiceCount,
                                     &dwResumeHandle))
             {
-                printf("The following services hav been started:\n\n");
+                PrintToConsole(L"The following services hav been started:\n\n");
 
                 for (i = 0; i < dwServiceCount; i++)
                 {
-                    printf("  %S\n", lpServiceBuffer[i].lpDisplayName);
+                    PrintToConsole(L"  %s\n", lpServiceBuffer[i].lpDisplayName);
                 }
             }
 
@@ -162,16 +162,21 @@ done:
 INT
 cmdStart(INT argc, WCHAR **argv)
 {
-    INT nError = 0;
+    INT i;
 
     if (argc == 2)
     {
-        nError = EnumerateRunningServices();
-    }
-    else
-    {
-        nError = StartOneService(argc, argv);
+        return EnumerateRunningServices();
     }
 
-    return nError;
+    for (i = 2; i < argc; i++)
+    {
+        if (_wcsicmp(argv[i], L"/help") == 0)
+        {
+            PrintResourceString(IDS_START_HELP);
+            return 1;
+        }
+    }
+
+    return StartOneService(argc, argv);
 }

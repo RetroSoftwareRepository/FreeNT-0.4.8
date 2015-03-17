@@ -106,25 +106,35 @@ DiskGetBootPath(char *BootPath, unsigned Size)
 {
     static char Path[] = "multi(0)disk(0)";
     char Device[4];
-    char Partition[4];
-    PARTITION_TABLE_ENTRY PartitionEntry;
     MASTER_BOOT_RECORD MasterBootRecord;
 
-    if (FrldrBootDrive < 0x80)
+    /* 0x49 is our magic ramdisk drive, so try to detect it first */
+    if (FrldrBootDrive == 0x49)
+    {
+        /* This is the ramdisk. See ArmDiskGetBootPath too... */
+
+        PCCH RamDiskPath = "ramdisk(0)";
+
+        if (Size < sizeof(RamDiskPath))
+        {
+            return FALSE;
+        }
+
+        strcpy(BootPath, RamDiskPath);
+    }
+    else if (FrldrBootDrive < 0x80)
     {
         /* This is a floppy */
 
-        if (Size <= sizeof(Path) + 7 + strlen(Device))
+        if (Size <= sizeof(Path) + 7 + sizeof(Device))
         {
             return FALSE;
         }
 
         strcpy(BootPath, Path);
 
-        strcat(BootPath, "fdisk");
-
         _itoa(FrldrBootDrive, Device, 10);
-        strcat(BootPath, "(");
+        strcat(BootPath, "fdisk(");
         strcat(BootPath, Device);
         strcat(BootPath, ")");
     }
@@ -132,6 +142,8 @@ DiskGetBootPath(char *BootPath, unsigned Size)
     else if (DiskReadBootRecord(FrldrBootDrive, 0, &MasterBootRecord))
     {
         ULONG BootPartition;
+        PARTITION_TABLE_ENTRY PartitionEntry;
+        char Partition[4];
 
         /* This is a hard disk */
         if (!DiskGetActivePartitionEntry(FrldrBootDrive, &PartitionEntry, &BootPartition))
@@ -142,17 +154,15 @@ DiskGetBootPath(char *BootPath, unsigned Size)
 
         FrldrBootPartition = BootPartition;
 
-        if (Size <= sizeof(Path) + 18 + strlen(Device) + strlen(Partition))
+        if (Size <= sizeof(Path) + 18 + sizeof(Device) + sizeof(Partition))
         {
             return FALSE;
         }
 
         strcpy(BootPath, Path);
 
-        strcat(BootPath, "rdisk");
-
         _itoa(FrldrBootDrive - 0x80, Device, 10);
-        strcat(BootPath, "(");
+        strcat(BootPath, "rdisk(");
         strcat(BootPath, Device);
         strcat(BootPath, ")");
 
@@ -165,17 +175,15 @@ DiskGetBootPath(char *BootPath, unsigned Size)
     {
         /* This is a CD-ROM drive */
 
-        if (Size <= sizeof(Path) + 7 + strlen(Device))
+        if (Size <= sizeof(Path) + 7 + sizeof(Device))
         {
             return FALSE;
         }
 
         strcpy(BootPath, Path);
 
-        strcat(BootPath, "cdrom");
-
         _itoa(FrldrBootDrive - 0x80, Device, 10);
-        strcat(BootPath, "(");
+        strcat(BootPath, "cdrom(");
         strcat(BootPath, Device);
         strcat(BootPath, ")");
     }

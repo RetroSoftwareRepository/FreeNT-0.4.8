@@ -17,21 +17,6 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-//#include <stdarg.h>
-
-//#include "windef.h"
-//#include "winbase.h"
-//#include "wingdi.h"
-//#include "winnls.h"
-//#include "winreg.h"
-#include <wine/debug.h>
-#include <wine/unicode.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL (gdiplus);
-
-//#include "objbase.h"
-
-//#include "gdiplus.h"
 #include "gdiplus_private.h"
 
 /* PANOSE is 10 bytes in size, need to pack the structure properly */
@@ -1127,15 +1112,39 @@ GpStatus WINGDIPAPI GdipDeletePrivateFontCollection(GpFontCollection **fontColle
 /*****************************************************************************
  * GdipPrivateAddFontFile [GDIPLUS.@]
  */
-GpStatus WINGDIPAPI GdipPrivateAddFontFile(GpFontCollection* fontCollection,
-        GDIPCONST WCHAR* filename)
+GpStatus WINGDIPAPI GdipPrivateAddFontFile(GpFontCollection *collection, GDIPCONST WCHAR *name)
 {
-    FIXME("stub: %p, %s\n", fontCollection, debugstr_w(filename));
+    HANDLE file, mapping;
+    LARGE_INTEGER size;
+    void *mem;
+    GpStatus status;
 
-    if (!(fontCollection && filename))
+    TRACE("%p, %s\n", collection, debugstr_w(name));
+
+    if (!collection || !name) return InvalidParameter;
+
+    file = CreateFileW(name, GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, NULL);
+    if (file == INVALID_HANDLE_VALUE) return InvalidParameter;
+
+    if (!GetFileSizeEx(file, &size) || size.u.HighPart)
+    {
+        CloseHandle(file);
         return InvalidParameter;
+    }
 
-    return NotImplemented;
+    mapping = CreateFileMappingW(file, NULL, PAGE_READONLY, 0, 0, NULL);
+    CloseHandle(file);
+    if (!mapping) return InvalidParameter;
+
+    mem = MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, 0);
+    CloseHandle(mapping);
+    if (!mem) return InvalidParameter;
+
+    /* GdipPrivateAddMemoryFont creates a copy of the memory block */
+    status = GdipPrivateAddMemoryFont(collection, mem, size.u.LowPart);
+    UnmapViewOfFile(mem);
+
+    return status;
 }
 
 #define TT_PLATFORM_APPLE_UNICODE   0
@@ -1497,7 +1506,7 @@ GpStatus WINGDIPAPI GdipPrivateAddMemoryFont(GpFontCollection* fontCollection,
 
         if (!EnumFontFamiliesExW(hdc, &lfw, add_font_proc, (LPARAM)fontCollection, 0))
         {
-            ReleaseDC(0, hdc);
+            DeleteDC(hdc);
             return OutOfMemory;
         }
 
@@ -1625,7 +1634,7 @@ GpStatus WINGDIPAPI GdipNewInstalledFontCollection(
         if (!EnumFontFamiliesExW(hdc, &lfw, add_font_proc, (LPARAM)&installedFontCollection, 0))
         {
             free_installed_fonts();
-            ReleaseDC(0, hdc);
+            DeleteDC(hdc);
             return OutOfMemory;
         }
 

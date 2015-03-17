@@ -22,16 +22,7 @@
  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-
-#include "main/glheader.h"
-#include "main/context.h"
-#include "main/imports.h"
-#include "main/macros.h"
-
-#include "s_context.h"
-#include "s_logic.h"
-#include "s_span.h"
-
+#include <precomp.h>
 
 /**
  * We do all logic ops on 4-byte GLuints.
@@ -212,7 +203,7 @@ _swrast_logicop_rgba_span(struct gl_context *ctx, struct gl_renderbuffer *rb,
    }
    else {
       logicop_uint4(ctx, 4 * span->end,
-                    (GLuint *) span->array->attribs[FRAG_ATTRIB_COL0],
+                    (GLuint *) span->array->attribs[FRAG_ATTRIB_COL],
                     (const GLuint *) rbPixels, span->array->mask);
    }
 }

@@ -17,13 +17,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-//#include <limits.h>
-
 #include "urlmon_main.h"
-#include <wine/debug.h>
-
-#define NO_SHLWAPI_REG
-#include <shlwapi.h>
 
 #include <strsafe.h>
 
@@ -41,8 +35,6 @@
 #define RAW_URI_CONVERT_TO_DOS_PATH 0x2
 
 #define COMBINE_URI_FORCE_FLAG_USE  0x1
-
-WINE_DEFAULT_DEBUG_CHANNEL(urlmon);
 
 static const IID IID_IUriObj = {0x4b364760,0x9f51,0x11df,{0x98,0x1c,0x08,0x00,0x20,0x0c,0x9a,0x66}};
 
@@ -348,8 +340,8 @@ static inline BOOL is_hexdigit(WCHAR val) {
             (val >= '0' && val <= '9'));
 }
 
-static inline BOOL is_path_delim(WCHAR val) {
-    return (!val || val == '#' || val == '?');
+static inline BOOL is_path_delim(URL_SCHEME scheme, WCHAR val) {
+    return (!val || (val == '#' && scheme != URL_SCHEME_FILE) || val == '?');
 }
 
 static inline BOOL is_slash(WCHAR c)
@@ -574,7 +566,7 @@ void find_domain_name(const WCHAR *host, DWORD host_len,
         DWORD i;
         /* If the sec_last_tld is 3 characters long it HAS to be on the list of
          * recognized to still be considered part of the TLD name, otherwise
-         * its considered the domain name.
+         * it's considered the domain name.
          *  Ex: www.google.com.uk -> google.com.uk as the domain name.
          *      www.google.foo.uk -> foo.uk as the domain name.
          */
@@ -1618,7 +1610,7 @@ static BOOL parse_ipv6address(const WCHAR **ptr, parse_data *data, DWORD flags) 
                 /* An IPv6 address can have no more than 8 h16 components. */
                 if(ip.h16_count >= 8) {
                     *ptr = start;
-                    TRACE("(%p %p %x): Not a IPv6 address, to many h16 components.\n",
+                    TRACE("(%p %p %x): Not a IPv6 address, too many h16 components.\n",
                         ptr, data, flags);
                     return FALSE;
                 }
@@ -1842,7 +1834,7 @@ static BOOL parse_path_hierarchical(const WCHAR **ptr, parse_data *data, DWORD f
     static const WCHAR slash[] = {'/',0};
     const BOOL is_file = data->scheme_type == URL_SCHEME_FILE;
 
-    if(is_path_delim(**ptr)) {
+    if(is_path_delim(data->scheme_type, **ptr)) {
         if(data->scheme_type == URL_SCHEME_WILDCARD && !data->must_have_path) {
             data->path = NULL;
             data->path_len = 0;
@@ -1852,7 +1844,7 @@ static BOOL parse_path_hierarchical(const WCHAR **ptr, parse_data *data, DWORD f
             data->path_len = 1;
         }
     } else {
-        while(!is_path_delim(**ptr)) {
+        while(!is_path_delim(data->scheme_type, **ptr)) {
             if(**ptr == '%' && data->scheme_type != URL_SCHEME_UNKNOWN && !is_file) {
                 if(!check_pct_encoded(ptr)) {
                     *ptr = start;
@@ -1904,7 +1896,7 @@ static BOOL parse_path_hierarchical(const WCHAR **ptr, parse_data *data, DWORD f
     return TRUE;
 }
 
-/* Parses the path of an opaque URI (much less strict then the parser
+/* Parses the path of an opaque URI (much less strict than the parser
  * for a hierarchical URI).
  *
  * NOTE:
@@ -1927,7 +1919,7 @@ static BOOL parse_path_opaque(const WCHAR **ptr, parse_data *data, DWORD flags) 
     else
         data->path = *ptr;
 
-    while(!is_path_delim(**ptr)) {
+    while(!is_path_delim(data->scheme_type, **ptr)) {
         if(**ptr == '%' && known_scheme) {
             if(!check_pct_encoded(ptr)) {
                 *ptr = data->path;
@@ -2838,7 +2830,7 @@ static BOOL canonicalize_authority(const parse_data *data, Uri *uri, DWORD flags
  *      file:///c:/test%test    -> file:///c:/test%25test
  */
 static DWORD canonicalize_path_hierarchical(const WCHAR *path, DWORD path_len, URL_SCHEME scheme_type, BOOL has_host, DWORD flags,
-        WCHAR *ret_path) {
+        BOOL is_implicit_scheme, WCHAR *ret_path) {
     const BOOL known_scheme = scheme_type != URL_SCHEME_UNKNOWN;
     const BOOL is_file = scheme_type == URL_SCHEME_FILE;
     const BOOL is_res = scheme_type == URL_SCHEME_RES;
@@ -2904,7 +2896,7 @@ static DWORD canonicalize_path_hierarchical(const WCHAR *path, DWORD path_len, U
                 len += 3;
                 do_default_action = FALSE;
             } else if((is_unreserved(val) && known_scheme) ||
-                      (is_file && (is_unreserved(val) || is_reserved(val) ||
+                      (is_file && !is_implicit_scheme && (is_unreserved(val) || is_reserved(val) ||
                       (val && flags&Uri_CREATE_FILE_USE_DOS_PATH && !is_forbidden_dos_path_char(val))))) {
                 if(ret_path)
                     ret_path[len] = val;
@@ -2929,7 +2921,7 @@ static DWORD canonicalize_path_hierarchical(const WCHAR *path, DWORD path_len, U
             }
         } else if(known_scheme && !is_res && !is_unreserved(*ptr) && !is_reserved(*ptr) &&
                   (!(flags & Uri_CREATE_NO_ENCODE_FORBIDDEN_CHARACTERS) || is_file)) {
-            if(!(is_file && (flags & Uri_CREATE_FILE_USE_DOS_PATH))) {
+            if(!is_file || !(flags & Uri_CREATE_FILE_USE_DOS_PATH)) {
                 /* Escape the forbidden character. */
                 if(ret_path)
                     pct_encode_val(*ptr, ret_path+len);
@@ -3122,7 +3114,7 @@ static BOOL canonicalize_hierpart(const parse_data *data, Uri *uri, DWORD flags,
             if(!computeOnly)
                 uri->path_start = uri->canon_len;
             uri->path_len = canonicalize_path_hierarchical(data->path, data->path_len, data->scheme_type, data->host_len != 0,
-                    flags, computeOnly ? NULL : uri->canon_uri+uri->canon_len);
+                    flags, data->has_implicit_scheme, computeOnly ? NULL : uri->canon_uri+uri->canon_len);
             uri->canon_len += uri->path_len;
             if(!computeOnly && !uri->path_len)
                 uri->path_start = -1;
@@ -3889,8 +3881,8 @@ static HRESULT compare_file_paths(const Uri *a, const Uri *b, BOOL *ret)
         return S_OK;
     }
 
-    len_a = canonicalize_path_hierarchical(a->canon_uri+a->path_start, a->path_len, a->scheme_type, FALSE, 0, NULL);
-    len_b = canonicalize_path_hierarchical(b->canon_uri+b->path_start, b->path_len, b->scheme_type, FALSE, 0, NULL);
+    len_a = canonicalize_path_hierarchical(a->canon_uri+a->path_start, a->path_len, a->scheme_type, FALSE, 0, FALSE, NULL);
+    len_b = canonicalize_path_hierarchical(b->canon_uri+b->path_start, b->path_len, b->scheme_type, FALSE, 0, FALSE, NULL);
 
     canon_path_a = heap_alloc(len_a*sizeof(WCHAR));
     if(!canon_path_a)
@@ -3901,8 +3893,8 @@ static HRESULT compare_file_paths(const Uri *a, const Uri *b, BOOL *ret)
         return E_OUTOFMEMORY;
     }
 
-    len_a = canonicalize_path_hierarchical(a->canon_uri+a->path_start, a->path_len, a->scheme_type, FALSE, 0, canon_path_a);
-    len_b = canonicalize_path_hierarchical(b->canon_uri+b->path_start, b->path_len, b->scheme_type, FALSE, 0, canon_path_b);
+    len_a = canonicalize_path_hierarchical(a->canon_uri+a->path_start, a->path_len, a->scheme_type, FALSE, 0, FALSE, canon_path_a);
+    len_b = canonicalize_path_hierarchical(b->canon_uri+b->path_start, b->path_len, b->scheme_type, FALSE, 0, FALSE, canon_path_b);
 
     *ret = len_a == len_b && !memicmpW(canon_path_a, canon_path_b, len_a);
 
@@ -4279,16 +4271,16 @@ static HRESULT WINAPI Uri_GetPropertyBSTR(IUri *iface, Uri_PROPERTY uriProp, BST
         return E_POINTER;
 
     if(uriProp > Uri_PROPERTY_STRING_LAST) {
-        /* Windows allocates an empty BSTR for invalid Uri_PROPERTY's. */
-        *pbstrProperty = SysAllocStringLen(NULL, 0);
-        if(!(*pbstrProperty))
-            return E_OUTOFMEMORY;
-
         /* It only returns S_FALSE for the ZONE property... */
-        if(uriProp == Uri_PROPERTY_ZONE)
+        if(uriProp == Uri_PROPERTY_ZONE) {
+            *pbstrProperty = SysAllocStringLen(NULL, 0);
+            if(!(*pbstrProperty))
+                return E_OUTOFMEMORY;
             return S_FALSE;
-        else
-            return S_OK;
+        }
+
+        *pbstrProperty = NULL;
+        return E_INVALIDARG;
     }
 
     /* Don't have support for flags yet. */
@@ -6039,7 +6031,7 @@ static HRESULT WINAPI UriBuilder_SetIUri(IUriBuilder *iface, IUri *pIUri)
         Uri *uri;
 
         if((uri = get_uri_obj(pIUri))) {
-            /* Only reset the builder if it's Uri isn't the same as
+            /* Only reset the builder if its Uri isn't the same as
              * the Uri passed to the function.
              */
             if(This->uri != uri) {
@@ -6056,7 +6048,7 @@ static HRESULT WINAPI UriBuilder_SetIUri(IUriBuilder *iface, IUri *pIUri)
             return E_NOTIMPL;
         }
     } else if(This->uri)
-        /* Only reset the builder if it's Uri isn't NULL. */
+        /* Only reset the builder if its Uri isn't NULL. */
         reset_builder(This);
 
     return S_OK;
@@ -6542,7 +6534,7 @@ static HRESULT combine_uri(Uri *base, Uri *relative, DWORD flags, IUri **result,
                 data.path_len = proc_uri->path_len;
             } else if(!data.is_opaque) {
                 /* Just set the path as a '/' if the base didn't have
-                 * one and if it's an hierarchical URI.
+                 * one and if it's a hierarchical URI.
                  */
                 static const WCHAR slashW[] = {'/',0};
                 data.path = slashW;

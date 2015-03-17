@@ -7,6 +7,7 @@
  * UPDATE HISTORY:
  * 20040708 Created
  */
+
 #include "afd.h"
 
 static IO_COMPLETION_ROUTINE SendComplete;
@@ -242,7 +243,6 @@ static NTSTATUS NTAPI SendComplete
                           0,
                           FCB->Send.Window,
                           FCB->Send.BytesUsed,
-                          &FCB->SendIrp.Iosb,
                           SendComplete,
                           FCB );
     }
@@ -384,7 +384,6 @@ AfdConnectedSocketWriteData(PDEVICE_OBJECT DeviceObject, PIRP Irp,
                                 SendReq->BufferArray[0].buf,
                                 SendReq->BufferArray[0].len,
                                 TargetAddress,
-                                &FCB->SendIrp.Iosb,
                                 PacketSocketSendComplete,
                                 FCB);
             }
@@ -548,7 +547,6 @@ AfdConnectedSocketWriteData(PDEVICE_OBJECT DeviceObject, PIRP Irp,
                 0,
                 FCB->Send.Window,
                 FCB->Send.BytesUsed,
-                &FCB->SendIrp.Iosb,
                 SendComplete,
                 FCB);
     }
@@ -644,7 +642,6 @@ AfdPacketSocketWriteData(PDEVICE_OBJECT DeviceObject, PIRP Irp,
                             SendReq->BufferArray[0].buf,
                             SendReq->BufferArray[0].len,
                             TargetAddress,
-                            &FCB->SendIrp.Iosb,
                             PacketSocketSendComplete,
                             FCB);
         }
@@ -661,4 +658,3 @@ AfdPacketSocketWriteData(PDEVICE_OBJECT DeviceObject, PIRP Irp,
         return UnlockAndMaybeComplete( FCB, Status, Irp, 0 );
     }
 }
-

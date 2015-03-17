@@ -20,21 +20,7 @@
  * Handle palettes
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-#define COM_NO_WINDOWS_H
-
-#include <stdarg.h>
-//#include <stdio.h>
-//#include <string.h>
-
-#include <windef.h>
-#include <winbase.h>
-#include <wingdi.h>
-//#include "winuser.h"
-#include <vfw.h>
-
-#include <wine/debug.h>
+#include "msvideo_private.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(msvideo);
 
@@ -250,9 +236,18 @@ BOOL VFWAPI DrawDibBegin(HDRAWDIB hdd,
         DWORD dwSize;
         /* No compression */
         TRACE("Not compressed!\n");
-        dwSize = lpbi->biSize + num_colours(lpbi)*sizeof(RGBQUAD);
-        whdd->lpbiOut = HeapAlloc(GetProcessHeap(), 0, dwSize);
-        memcpy(whdd->lpbiOut, lpbi, dwSize);
+        if (lpbi->biHeight <= 0)
+        {
+            /* we don't draw inverted DIBs */
+            TRACE("detected inverted DIB\n");
+            ret = FALSE;
+        }
+        else
+        {
+            dwSize = lpbi->biSize + num_colours(lpbi)*sizeof(RGBQUAD);
+            whdd->lpbiOut = HeapAlloc(GetProcessHeap(), 0, dwSize);
+            memcpy(whdd->lpbiOut, lpbi, dwSize);
+        }
     }
 
     if (ret) 
@@ -336,6 +331,8 @@ BOOL VFWAPI DrawDibDraw(HDRAWDIB hdd, HDC hdc,
     {
         TRACE("Something changed!\n");
         ret = DrawDibBegin(hdd, hdc, dxDst, dyDst, lpbi, dxSrc, dySrc, 0);
+        if (!ret)
+            return ret;
     }
 
 #undef CHANGED
@@ -348,12 +345,6 @@ BOOL VFWAPI DrawDibDraw(HDRAWDIB hdd, HDC hdc,
 
     if (!(wFlags & DDF_UPDATE)) 
     {
-        DWORD biSizeImage = lpbi->biSizeImage;
-
-        /* biSizeImage may be set to 0 for BI_RGB (uncompressed) bitmaps */
-        if ((lpbi->biCompression == BI_RGB) && (biSizeImage == 0))
-            biSizeImage = ((lpbi->biWidth * lpbi->biBitCount + 31) / 32) * 4 * lpbi->biHeight;
-
         if (lpbi->biCompression) 
         {
             DWORD flags = 0;
@@ -367,6 +358,8 @@ BOOL VFWAPI DrawDibDraw(HDRAWDIB hdd, HDC hdc,
         }
         else
         {
+            /* BI_RGB: lpbi->biSizeImage isn't reliable */
+            DWORD biSizeImage = ((lpbi->biWidth * lpbi->biBitCount + 31) / 32) * 4 * lpbi->biHeight;
             memcpy(whdd->lpvbits, lpBits, biSizeImage);
         }
     }

@@ -19,29 +19,12 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define NONAMELESSUNION
-#define NONAMELESSSTRUCT
-
-#include "config.h"
-
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <limits.h>
-#include <sys/types.h>
-#include <assert.h>
-
 #include "dbghelp_private.h"
-
-#ifndef DBGHELP_STATIC_LIB
-#include "wine/debug.h"
-#include "winnls.h"
-#endif
 
 WINE_DEFAULT_DEBUG_CHANNEL(dbghelp);
 WINE_DECLARE_DEBUG_CHANNEL(dbghelp_symt);
 
-static WCHAR    starW[] = {'*','\0'};
+static const WCHAR starW[] = {'*','\0'};
 
 static inline int cmp_addr(ULONG64 a1, ULONG64 a2)
 {
@@ -720,8 +703,8 @@ static void symt_fill_sym_info(struct module_pair* pair,
     if (sym_info->MaxNameLen)
     {
         if (sym->tag != SymTagPublicSymbol || !(dbghelp_options & SYMOPT_UNDNAME) ||
-            (sym_info->NameLen = UnDecorateSymbolName(name, sym_info->Name,
-                                                      sym_info->MaxNameLen, UNDNAME_NAME_ONLY) == 0))
+            ((sym_info->NameLen = UnDecorateSymbolName(name, sym_info->Name,
+                                                       sym_info->MaxNameLen, UNDNAME_NAME_ONLY)) == 0))
         {
             sym_info->NameLen = min(strlen(name), sym_info->MaxNameLen - 1);
             memcpy(sym_info->Name, name, sym_info->NameLen);
@@ -1253,7 +1236,8 @@ BOOL WINAPI SymFromAddr(HANDLE hProcess, DWORD64 Address,
     if ((sym = symt_find_nearest(pair.effective, Address)) == NULL) return FALSE;
 
     symt_fill_sym_info(&pair, NULL, &sym->symt, Symbol);
-    *Displacement = Address - Symbol->Address;
+    if (Displacement)
+        *Displacement = Address - Symbol->Address;
     return TRUE;
 }
 
@@ -1783,6 +1767,7 @@ DWORD WINAPI UnDecorateSymbolName(PCSTR DecoratedName, PSTR UnDecoratedName,
                                   DWORD UndecoratedLength, DWORD Flags)
 {
     /* undocumented from msvcrt */
+    static HANDLE hMsvcrt;
     static char* (CDECL *p_undname)(char*, const char*, int, void* (CDECL*)(size_t), void (CDECL*)(void*), unsigned short);
     static const WCHAR szMsvcrt[] = {'m','s','v','c','r','t','.','d','l','l',0};
 

@@ -1,7 +1,7 @@
 /*
  * COPYRIGHT:       See COPYING in the top level directory
  * PROJECT:         ReactOS Console Server DLL
- * FILE:            win32ss/user/winsrv/consrv/init.c
+ * FILE:            consrv/init.c
  * PURPOSE:         Initialization
  * PROGRAMMERS:     Hermes Belusca-Maito (hermes.belusca@sfr.fr)
  */
@@ -9,11 +9,9 @@
 /* INCLUDES *******************************************************************/
 
 #include "consrv.h"
+
 #include "api.h"
 #include "procinit.h"
-#include "include/conio.h"
-#include "include/console.h"
-#include "console.h"
 
 #define NDEBUG
 #include <debug.h>
@@ -355,9 +353,8 @@ ConSrvNewProcess(PCSR_PROCESS SourceProcess,
     /* Initialize the new (target) process */
     RtlZeroMemory(TargetProcessData, sizeof(*TargetProcessData));
     TargetProcessData->Process = TargetProcess;
-    TargetProcessData->ConsoleEvent = NULL;
-    TargetProcessData->ConsoleHandle = TargetProcessData->ParentConsoleHandle = NULL;
-    TargetProcessData->ConsoleApp = ((TargetProcess->Flags & CsrProcessIsConsoleApp) ? TRUE : FALSE);
+    TargetProcessData->ConsoleHandle = NULL;
+    TargetProcessData->ConsoleApp = FALSE;
 
     /*
      * The handles table gets initialized either when inheriting from
@@ -379,22 +376,21 @@ ConSrvNewProcess(PCSR_PROCESS SourceProcess,
      * handles table: this can happen if it is a GUI application having called
      * AllocConsole), then try to inherit handles from the parent process.
      */
-    if (TargetProcessData->ConsoleApp /* && SourceProcessData->ConsoleApp */)
+    if (TargetProcess->Flags & CsrProcessIsConsoleApp /* && SourceProcessData->ConsoleHandle != NULL */)
     {
         PCONSOLE_PROCESS_DATA SourceProcessData = ConsoleGetPerProcessData(SourceProcess);
-        PCONSOLE SourceConsole;
+        PCONSRV_CONSOLE SourceConsole;
 
         /* Validate and lock the parent's console */
-        if (ConDrvValidateConsole(&SourceConsole,
+        if (ConSrvValidateConsole(&SourceConsole,
                                   SourceProcessData->ConsoleHandle,
                                   CONSOLE_RUNNING, TRUE))
         {
             /* Inherit the parent's handles table */
             Status = ConSrvInheritHandlesTable(SourceProcessData, TargetProcessData);
-            if (NT_SUCCESS(Status))
+            if (!NT_SUCCESS(Status))
             {
-                /* Temporary save the parent's console too */
-                TargetProcessData->ParentConsoleHandle = SourceProcessData->ConsoleHandle;
+                DPRINT1("Inheriting handles table failed\n");
             }
 
             /* Unlock the parent's console */
@@ -421,27 +417,65 @@ ConSrvConnect(IN PCSR_PROCESS CsrProcess,
 
     if ( ConnectionInfo       == NULL ||
          ConnectionInfoLength == NULL ||
-        *ConnectionInfoLength != sizeof(CONSRV_API_CONNECTINFO) )
+        *ConnectionInfoLength != sizeof(*ConnectInfo) )
     {
-        DPRINT1("CONSRV: Connection failed - ConnectionInfo = 0x%p ; ConnectionInfoLength = 0x%p (%lu), wanted %lu\n",
+        DPRINT1("CONSRV: Connection failed - ConnectionInfo = 0x%p ; ConnectionInfoLength = 0x%p (%lu), expected %lu\n",
                 ConnectionInfo,
                 ConnectionInfoLength,
                 ConnectionInfoLength ? *ConnectionInfoLength : (ULONG)-1,
-                sizeof(CONSRV_API_CONNECTINFO));
+                sizeof(*ConnectInfo));
+
         return STATUS_UNSUCCESSFUL;
     }
 
     /* If we don't need a console, then get out of here */
-    if (!ConnectInfo->ConsoleStartInfo.ConsoleNeeded || !ProcessData->ConsoleApp) // In fact, it is for GUI apps.
-    {
-        return STATUS_SUCCESS;
-    }
+    DPRINT("ConnectInfo->IsConsoleApp = %s\n", ConnectInfo->IsConsoleApp ? "True" : "False");
+    if (!ConnectInfo->IsConsoleApp) return STATUS_SUCCESS;
 
-    /* If we don't have a console, then create a new one... */
-    if (!ConnectInfo->ConsoleHandle ||
-         ConnectInfo->ConsoleHandle != ProcessData->ParentConsoleHandle)
+    /* If we don't inherit from an existing console, then create a new one... */
+    if (ConnectInfo->ConsoleStartInfo.ConsoleHandle == NULL)
     {
+        CONSOLE_INIT_INFO ConsoleInitInfo;
+
         DPRINT("ConSrvConnect - Allocate a new console\n");
+
+        /* Initialize the console initialization info structure */
+        ConsoleInitInfo.ConsoleStartInfo = &ConnectInfo->ConsoleStartInfo;
+        ConsoleInitInfo.IsWindowVisible  = ConnectInfo->IsWindowVisible;
+        ConsoleInitInfo.TitleLength      = ConnectInfo->TitleLength;
+        ConsoleInitInfo.ConsoleTitle     = ConnectInfo->ConsoleTitle;
+        ConsoleInitInfo.DesktopLength    = 0;
+        ConsoleInitInfo.Desktop          = NULL;
+        ConsoleInitInfo.AppNameLength    = ConnectInfo->AppNameLength;
+        ConsoleInitInfo.AppName          = ConnectInfo->AppName;
+        ConsoleInitInfo.CurDirLength     = ConnectInfo->CurDirLength;
+        ConsoleInitInfo.CurDir           = ConnectInfo->CurDir;
+
+        /*
+         * Contrary to the case of SrvAllocConsole, the desktop string is
+         * allocated in the process' heap, so we need to retrieve it by
+         * using NtReadVirtualMemory.
+         */
+        if (ConnectInfo->DesktopLength)
+        {
+            ConsoleInitInfo.DesktopLength = ConnectInfo->DesktopLength;
+
+            ConsoleInitInfo.Desktop = ConsoleAllocHeap(HEAP_ZERO_MEMORY,
+                                                       ConsoleInitInfo.DesktopLength);
+            if (ConsoleInitInfo.Desktop == NULL)
+                return STATUS_NO_MEMORY;
+
+            Status = NtReadVirtualMemory(ProcessData->Process->ProcessHandle,
+                                         ConnectInfo->Desktop,
+                                         ConsoleInitInfo.Desktop,
+                                         ConsoleInitInfo.DesktopLength,
+                                         NULL);
+            if (!NT_SUCCESS(Status))
+            {
+                ConsoleFreeHeap(ConsoleInitInfo.Desktop);
+                return Status;
+            }
+        }
 
         /*
          * We are about to create a new console. However when ConSrvNewProcess
@@ -456,10 +490,16 @@ ConSrvConnect(IN PCSR_PROCESS CsrProcess,
 
         /* Initialize a new Console owned by the Console Leader Process */
         Status = ConSrvAllocateConsole(ProcessData,
-                                       &ConnectInfo->InputHandle,
-                                       &ConnectInfo->OutputHandle,
-                                       &ConnectInfo->ErrorHandle,
-                                       &ConnectInfo->ConsoleStartInfo);
+                                       &ConnectInfo->ConsoleStartInfo.InputHandle,
+                                       &ConnectInfo->ConsoleStartInfo.OutputHandle,
+                                       &ConnectInfo->ConsoleStartInfo.ErrorHandle,
+                                       &ConsoleInitInfo);
+
+        /* Free our local desktop string if any */
+        if (ConsoleInitInfo.DesktopLength)
+            ConsoleFreeHeap(ConsoleInitInfo.Desktop);
+
+        /* Check for success */
         if (!NT_SUCCESS(Status))
         {
             DPRINT1("Console allocation failed\n");
@@ -472,11 +512,12 @@ ConSrvConnect(IN PCSR_PROCESS CsrProcess,
 
         /* Reuse our current console */
         Status = ConSrvInheritConsole(ProcessData,
-                                      ConnectInfo->ConsoleHandle,
+                                      ConnectInfo->ConsoleStartInfo.ConsoleHandle,
                                       FALSE,
-                                      NULL,  // &ConnectInfo->InputHandle,
-                                      NULL,  // &ConnectInfo->OutputHandle,
-                                      NULL); // &ConnectInfo->ErrorHandle);
+                                      NULL, // &ConnectInfo->ConsoleStartInfo.InputHandle,
+                                      NULL, // &ConnectInfo->ConsoleStartInfo.OutputHandle,
+                                      NULL, // &ConnectInfo->ConsoleStartInfo.ErrorHandle,
+                                      &ConnectInfo->ConsoleStartInfo);
         if (!NT_SUCCESS(Status))
         {
             DPRINT1("Console inheritance failed\n");
@@ -484,22 +525,18 @@ ConSrvConnect(IN PCSR_PROCESS CsrProcess,
         }
     }
 
-    /* Return the console handle and the input wait handle to the caller */
-    ConnectInfo->ConsoleHandle   = ProcessData->ConsoleHandle;
-    ConnectInfo->InputWaitHandle = ProcessData->ConsoleEvent;
-
     /* Set the Property-Dialog and Control-Dispatcher handlers */
-    ProcessData->PropDispatcher = ConnectInfo->ConsoleStartInfo.PropDispatcher;
-    ProcessData->CtrlDispatcher = ConnectInfo->ConsoleStartInfo.CtrlDispatcher;
+    ProcessData->PropRoutine = ConnectInfo->PropRoutine;
+    ProcessData->CtrlRoutine = ConnectInfo->CtrlRoutine;
 
     return STATUS_SUCCESS;
 }
 
 VOID
 NTAPI
-ConSrvDisconnect(PCSR_PROCESS Process)
+ConSrvDisconnect(IN PCSR_PROCESS CsrProcess)
 {
-    PCONSOLE_PROCESS_DATA ProcessData = ConsoleGetPerProcessData(Process);
+    PCONSOLE_PROCESS_DATA ProcessData = ConsoleGetPerProcessData(CsrProcess);
 
     /**************************************************************************
      * This function is called whenever a new process (GUI or CUI) is destroyed.
@@ -531,6 +568,7 @@ CSR_SERVER_DLL_INIT(ConServerDllInitialization)
 */
 
     ConDrvInitConsoleSupport();
+    ConSrvInitConsoleSupport();
 
     /* Setup the DLL Object */
     LoadedServerDll->ApiBase = CONSRV_FIRST_API_NUMBER;
@@ -545,7 +583,7 @@ CSR_SERVER_DLL_INIT(ConServerDllInitialization)
     LoadedServerDll->DisconnectCallback = ConSrvDisconnect;
     LoadedServerDll->NewProcessCallback = ConSrvNewProcess;
     // LoadedServerDll->HardErrorCallback = ConSrvHardError;
-    LoadedServerDll->ShutdownProcessCallback = NULL;
+    LoadedServerDll->ShutdownProcessCallback = ConsoleClientShutdown;
 
     ConSrvDllInstance = LoadedServerDll->ServerHandle;
 

@@ -16,23 +16,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-#define COM_NO_WINDOWS_H
-
-#include <config.h>
-//#include <stdarg.h>
-
-#include <wine/debug.h>
-//#include "wine/list.h"
-
-//#include "windef.h"
-#include <winbase.h>
-#include <winhttp.h>
-
 #include "winhttp_private.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(winhttp);
 
 static domain_t *add_domain( session_t *session, WCHAR *name )
 {
@@ -138,10 +122,6 @@ static cookie_t *parse_cookie( const WCHAR *string )
     const WCHAR *p;
     int len;
 
-    if (!(cookie = heap_alloc_zero( sizeof(cookie_t) ))) return NULL;
-
-    list_init( &cookie->entry );
-
     if (!(p = strchrW( string, '=' )))
     {
         WARN("no '=' in %s\n", debugstr_w(string));
@@ -152,6 +132,11 @@ static cookie_t *parse_cookie( const WCHAR *string )
         WARN("empty cookie name in %s\n", debugstr_w(string));
         return NULL;
     }
+
+    if (!(cookie = heap_alloc_zero( sizeof(cookie_t) ))) return NULL;
+
+    list_init( &cookie->entry );
+
     len = p - string;
     if (!(cookie->name = heap_alloc( (len + 1) * sizeof(WCHAR) )))
     {

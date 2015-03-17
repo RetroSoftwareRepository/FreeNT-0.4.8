@@ -200,15 +200,7 @@ CdfsGetVolumeData(PDEVICE_OBJECT DeviceObject,
     PVD_HEADER VdHeader;
     ULONG Size;
     ULONG Offset;
-    ULONG i;
-    struct
-    {
-        UCHAR  Length[2];
-        UCHAR  FirstSession;
-        UCHAR  LastSession;
-        TRACK_DATA  TrackData;
-    }
-    Toc;
+    CDROM_TOC Toc;
 
     DPRINT("CdfsGetVolumeData\n");
 
@@ -219,7 +211,7 @@ CdfsGetVolumeData(PDEVICE_OBJECT DeviceObject,
 
     Size = sizeof(Toc);
     Status = CdfsDeviceIoControl(DeviceObject,
-        IOCTL_CDROM_GET_LAST_SESSION,
+        IOCTL_CDROM_READ_TOC,
         NULL,
         0,
         &Toc,
@@ -231,13 +223,17 @@ CdfsGetVolumeData(PDEVICE_OBJECT DeviceObject,
         return Status;
     }
 
-    DPRINT("FirstSession %u, LastSession %u, FirstTrack %u\n",
-        Toc.FirstSession, Toc.LastSession, Toc.TrackData.TrackNumber);
+    DPRINT("FirstTrack %u, LastTrack %u, TrackNumber %u\n",
+        Toc.FirstTrack, Toc.LastTrack, Toc.TrackData[0].TrackNumber);
 
-    Offset = 0;
-    for (i = 0; i < 4; i++)
+    Offset =  Toc.TrackData[0].Address[1] * 60 * 75;
+    Offset += Toc.TrackData[0].Address[2] * 75;
+    Offset += Toc.TrackData[0].Address[3];
+    if (Offset >= 150)
     {
-        Offset = (Offset << 8) + Toc.TrackData.Address[i];
+        /* Remove MSF numbering offset of first frame */
+        /* FIXME: should be done only for real cdroms? */
+        Offset -= 150;
     }
     CdInfo->VolumeOffset = Offset;
 
@@ -418,16 +414,28 @@ CdfsMountVolume(PDEVICE_OBJECT DeviceObject,
     Fcb->Entry.ExtentLocationL = 0;
     Fcb->Entry.DataLengthL = (DeviceExt->CdInfo.VolumeSpaceSize + DeviceExt->CdInfo.VolumeOffset) * BLOCKSIZE;
 
-    CcInitializeCacheMap(DeviceExt->StreamFileObject,
-        (PCC_FILE_SIZES)(&Fcb->RFCB.AllocationSize),
-        TRUE,
-        &(CdfsGlobalData->CacheMgrCallbacks),
-        Fcb);
+    _SEH2_TRY
+    {
+        CcInitializeCacheMap(DeviceExt->StreamFileObject,
+            (PCC_FILE_SIZES)(&Fcb->RFCB.AllocationSize),
+            TRUE,
+            &(CdfsGlobalData->CacheMgrCallbacks),
+            Fcb);
+    }
+    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+    {
+        Status = _SEH2_GetExceptionCode();
+        goto ByeBye;
+    }
+    _SEH2_END;
 
     ExInitializeResourceLite(&DeviceExt->VcbResource);
 
     KeInitializeSpinLock(&DeviceExt->FcbListLock);
     InitializeListHead(&DeviceExt->FcbListHead);
+
+    FsRtlNotifyInitializeSync(&DeviceExt->NotifySync);
+    InitializeListHead(&DeviceExt->NotifyList);
 
     Status = STATUS_SUCCESS;
 
@@ -439,8 +447,6 @@ ByeBye:
             ObDereferenceObject(DeviceExt->StreamFileObject);
         if (Fcb)
             ExFreePool(Fcb);
-        if (Ccb)
-            ExFreePool(Ccb);
         if (NewDeviceObject)
             IoDeleteDevice(NewDeviceObject);
     }
@@ -456,34 +462,25 @@ CdfsVerifyVolume(PDEVICE_OBJECT DeviceObject,
                  PIRP Irp)
 {
     PDEVICE_EXTENSION DeviceExt;
-    PDEVICE_OBJECT DeviceToVerify;
     PIO_STACK_LOCATION Stack;
     NTSTATUS Status;
     CDINFO CdInfo;
-
     PLIST_ENTRY Entry;
     PFCB Fcb;
+    PVPB VpbToVerify;
 
     DPRINT1 ("CdfsVerifyVolume() called\n");
-
-#if 0
-    if (DeviceObject != CdfsGlobalData->DeviceObject)
-    {
-        DPRINT1("DeviceObject != CdfsGlobalData->DeviceObject\n");
-        return(STATUS_INVALID_DEVICE_REQUEST);
-    }
-#endif
 
     DeviceExt = DeviceObject->DeviceExtension;
 
     Stack = IoGetCurrentIrpStackLocation (Irp);
-    DeviceToVerify = Stack->Parameters.VerifyVolume.DeviceObject;
+    VpbToVerify = Stack->Parameters.VerifyVolume.Vpb;
 
     FsRtlEnterFileSystem();
     ExAcquireResourceExclusiveLite (&DeviceExt->VcbResource,
         TRUE);
 
-    if (!(DeviceToVerify->Flags & DO_VERIFY_VOLUME))
+    if (!(VpbToVerify->RealDevice->Flags & DO_VERIFY_VOLUME))
     {
         DPRINT1 ("Volume has been verified!\n");
         ExReleaseResourceLite (&DeviceExt->VcbResource);
@@ -491,14 +488,14 @@ CdfsVerifyVolume(PDEVICE_OBJECT DeviceObject,
         return STATUS_SUCCESS;
     }
 
-    DPRINT1 ("Device object %p  Device to verify %p\n", DeviceObject, DeviceToVerify);
+    DPRINT1("Device object %p  Device to verify %p\n", DeviceObject, VpbToVerify->RealDevice);
 
-    Status = CdfsGetVolumeData (DeviceToVerify,
+    Status = CdfsGetVolumeData(VpbToVerify->RealDevice,
         &CdInfo);
     if (NT_SUCCESS(Status) &&
-        CdInfo.SerialNumber == DeviceToVerify->Vpb->SerialNumber &&
-        CdInfo.VolumeLabelLength == DeviceToVerify->Vpb->VolumeLabelLength &&
-        !wcsncmp (CdInfo.VolumeLabel, DeviceToVerify->Vpb->VolumeLabel, CdInfo.VolumeLabelLength))
+        CdInfo.SerialNumber == VpbToVerify->SerialNumber &&
+        CdInfo.VolumeLabelLength == VpbToVerify->VolumeLabelLength &&
+        !wcsncmp(CdInfo.VolumeLabel, VpbToVerify->VolumeLabel, CdInfo.VolumeLabelLength))
     {
         DPRINT1 ("Same volume!\n");
 
@@ -515,7 +512,7 @@ CdfsVerifyVolume(PDEVICE_OBJECT DeviceObject,
         while (Entry != &DeviceExt->FcbListHead)
         {
             Fcb = (PFCB)CONTAINING_RECORD(Entry, FCB, FcbListEntry);
-            DPRINT1("OpenFile %S  RefCount %ld\n", Fcb->PathName, Fcb->RefCount);
+            DPRINT1("OpenFile %wZ  RefCount %ld\n", &Fcb->PathName, Fcb->RefCount);
 
             Entry = Entry->Flink;
         }
@@ -523,7 +520,7 @@ CdfsVerifyVolume(PDEVICE_OBJECT DeviceObject,
         Status = STATUS_WRONG_VOLUME;
     }
 
-    DeviceToVerify->Flags &= ~DO_VERIFY_VOLUME;
+    VpbToVerify->RealDevice->Flags &= ~DO_VERIFY_VOLUME;
 
     ExReleaseResourceLite (&DeviceExt->VcbResource);
     FsRtlExitFileSystem();

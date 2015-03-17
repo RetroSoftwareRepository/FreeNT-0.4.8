@@ -18,16 +18,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define COBJMACROS
-
-#include "dshow.h"
-#include "wine/debug.h"
-#include "wine/unicode.h"
-#include "wine/strmbase.h"
-#include "uuids.h"
-#include <assert.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(strmbase);
+#include "strmbase_private.h"
 
 static inline BaseFilter *impl_from_IBaseFilter(IBaseFilter *iface)
 {
@@ -36,23 +27,15 @@ static inline BaseFilter *impl_from_IBaseFilter(IBaseFilter *iface)
 
 HRESULT WINAPI BaseFilterImpl_QueryInterface(IBaseFilter * iface, REFIID riid, LPVOID * ppv)
 {
-    BaseFilter *This = impl_from_IBaseFilter(iface);
     TRACE("(%p)->(%s, %p)\n", iface, debugstr_guid(riid), ppv);
 
     *ppv = NULL;
 
-    if (IsEqualIID(riid, &IID_IUnknown))
-        *ppv = This;
-    else if (IsEqualIID(riid, &IID_IPersist))
-        *ppv = This;
-    else if (IsEqualIID(riid, &IID_IMediaFilter))
-        *ppv = This;
-    else if (IsEqualIID(riid, &IID_IBaseFilter))
-        *ppv = This;
-
-    if (*ppv)
+    if (IsEqualIID(riid, &IID_IUnknown) || IsEqualIID(riid, &IID_IPersist) ||
+        IsEqualIID(riid, &IID_IMediaFilter) || IsEqualIID(riid, &IID_IBaseFilter))
     {
-        IUnknown_AddRef((IUnknown *)(*ppv));
+        *ppv = iface;
+        IBaseFilter_AddRef(iface);
         return S_OK;
     }
 
@@ -77,14 +60,7 @@ ULONG WINAPI BaseFilterImpl_Release(IBaseFilter * iface)
     TRACE("(%p)->() Release from %d\n", This, refCount + 1);
 
     if (!refCount)
-    {
-        if (This->pClock)
-            IReferenceClock_Release(This->pClock);
-
-        This->IBaseFilter_iface.lpVtbl = NULL;
-        This->csFilter.DebugInfo->Spare[0] = 0;
-        DeleteCriticalSection(&This->csFilter);
-    }
+        BaseFilter_Destroy(This);
 
     return refCount;
 }
@@ -223,6 +199,18 @@ HRESULT WINAPI BaseFilter_Init(BaseFilter * This, const IBaseFilterVtbl *Vtbl, c
     This->pinVersion = 1;
 
     This->pFuncsTable = pBaseFuncsTable;
+
+    return S_OK;
+}
+
+HRESULT WINAPI BaseFilter_Destroy(BaseFilter * This)
+{
+    if (This->pClock)
+        IReferenceClock_Release(This->pClock);
+
+    This->IBaseFilter_iface.lpVtbl = NULL;
+    This->csFilter.DebugInfo->Spare[0] = 0;
+    DeleteCriticalSection(&This->csFilter);
 
     return S_OK;
 }

@@ -21,78 +21,28 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-#define COM_NO_WINDOWS_H
-
-#include <config.h>
-//#include "wine/port.h"
-
-#define NONAMELESSUNION
+#include "internet.h"
 
 #include <sys/types.h>
 #ifdef HAVE_POLL_H
 #include <poll.h>
 #endif
-#ifdef HAVE_SYS_POLL_H
-# include <sys/poll.h>
-#endif
-#ifdef HAVE_SYS_TIME_H
-# include <sys/time.h>
-#endif
-#ifdef HAVE_SYS_SOCKET_H
-# include <sys/socket.h>
-#endif
 #ifdef HAVE_SYS_FILIO_H
 # include <sys/filio.h>
-#endif
-#ifdef HAVE_UNISTD_H
-# include <unistd.h>
-#endif
-#ifdef HAVE_SYS_IOCTL_H
-# include <sys/ioctl.h>
-#endif
-#include <time.h>
-#ifdef HAVE_NETDB_H
-# include <netdb.h>
-#endif
-#ifdef HAVE_NETINET_IN_H
-# include <netinet/in.h>
 #endif
 #ifdef HAVE_NETINET_TCP_H
 # include <netinet/tcp.h>
 #endif
 
-#include <stdarg.h>
-//#include <stdlib.h>
-//#include <string.h>
-//#include <stdio.h>
-//#include <errno.h>
-#include <assert.h>
-
-//#include "wine/library.h"
-#include <windef.h>
-#include <winbase.h>
-#include <wininet.h>
-//#include "winerror.h"
-//#include "wincrypt.h"
-
-#if defined(__MINGW32__) || defined (_MSC_VER)
-#include <ws2tcpip.h>
-#endif
-
-#include <wine/debug.h>
-#include "internet.h"
-
-/* To avoid conflicts with the Unix socket headers. we only need it for
- * the error codes anyway. */
-#define USE_WS_PREFIX
-//#include "winsock2.h"
+#include <errno.h>
 
 #define RESPONSE_TIMEOUT        30            /* FROM internet.c */
 
-
-WINE_DEFAULT_DEBUG_CHANNEL(wininet);
+#ifdef MSG_DONTWAIT
+#define WINE_MSG_DONTWAIT MSG_DONTWAIT
+#else
+#define WINE_MSG_DONTWAIT 0
+#endif
 
 /* FIXME!!!!!!
  *    This should use winsock - To use winsock the functions will have to change a bit
@@ -317,7 +267,7 @@ static DWORD create_netconn_socket(server_t *server, netconn_t *netconn, DWORD t
         if(result == -1)
         {
             if (sock_get_error(errno) == WSAEINPROGRESS) {
-                // ReactOS: use select instead of poll
+                /* ReactOS: use select instead of poll */
                 fd_set outfd;
                 struct timeval tv;
                 int res;
@@ -330,6 +280,7 @@ static DWORD create_netconn_socket(server_t *server, netconn_t *netconn, DWORD t
                 if (!res)
                 {
                     closesocket(netconn->socket);
+                    netconn->socket = -1;
                     return ERROR_INTERNET_CANNOT_CONNECT;
                 }
                 else if (res > 0)
@@ -342,7 +293,10 @@ static DWORD create_netconn_socket(server_t *server, netconn_t *netconn, DWORD t
             }
         }
         if(result == -1)
+        {
             closesocket(netconn->socket);
+            netconn->socket = -1;
+        }
         else {
             flag = 0;
             ioctlsocket(netconn->socket, FIONBIO, &flag);
@@ -374,6 +328,7 @@ DWORD create_netconn(BOOL useSSL, server_t *server, DWORD security_flags, BOOL m
     netconn->security_flags = security_flags | server->security_flags;
     netconn->mask_errors = mask_errors;
     list_init(&netconn->pool_entry);
+    SecInvalidateHandle(&netconn->ssl_ctx);
 
     result = create_netconn_socket(server, netconn, timeout);
     if (result != ERROR_SUCCESS) {
@@ -385,6 +340,17 @@ DWORD create_netconn(BOOL useSSL, server_t *server, DWORD security_flags, BOOL m
     netconn->server = server;
     *ret = netconn;
     return result;
+}
+
+BOOL is_valid_netconn(netconn_t *netconn)
+{
+    return netconn && netconn->socket != -1;
+}
+
+void close_netconn(netconn_t *netconn)
+{
+    closesocket(netconn->socket);
+    netconn->socket = -1;
 }
 
 void free_netconn(netconn_t *netconn)
@@ -401,10 +367,10 @@ void free_netconn(netconn_t *netconn)
         heap_free(netconn->extra_buf);
         netconn->extra_buf = NULL;
         netconn->extra_len = 0;
-        DeleteSecurityContext(&netconn->ssl_ctx);
+        if (SecIsValidHandle(&netconn->ssl_ctx))
+            DeleteSecurityContext(&netconn->ssl_ctx);
     }
 
-    closesocket(netconn->socket);
     heap_free(netconn);
 }
 
@@ -484,7 +450,37 @@ int sock_get_error( int err )
 #endif
     return err;
 }
+#endif /* !__REACTOS__ */
+
+int sock_send(int fd, const void *msg, size_t len, int flags)
+{
+    int ret;
+    do
+    {
+        ret = send(fd, msg, len, flags);
+    }
+    while(ret == -1 && errno == EINTR);
+    return ret;
+}
+
+int sock_recv(int fd, void *msg, size_t len, int flags)
+{
+    int ret;
+    do
+    {
+        ret = recv(fd, msg, len, flags);
+    }
+    while(ret == -1 && errno == EINTR);
+    return ret;
+}
+
+static void set_socket_blocking(int socket, blocking_mode_t mode)
+{
+#if defined(__MINGW32__) || defined (_MSC_VER)
+    ULONG arg = mode == BLOCKING_DISALLOW;
+    ioctlsocket(socket, FIONBIO, &arg);
 #endif
+}
 
 static DWORD netcon_secure_connect_setup(netconn_t *connection, BOOL compat_mode)
 {
@@ -505,7 +501,7 @@ static DWORD netcon_secure_connect_setup(netconn_t *connection, BOOL compat_mode
         |ISC_REQ_SEQUENCE_DETECT|ISC_REQ_REPLAY_DETECT|ISC_REQ_MANUAL_CRED_VALIDATION;
 
     if(!ensure_cred_handle())
-        return FALSE;
+        return ERROR_INTERNET_SECURITY_CHANNEL_ERROR;
 
     if(compat_mode) {
         if(!have_compat_cred_handle)
@@ -528,7 +524,7 @@ static DWORD netcon_secure_connect_setup(netconn_t *connection, BOOL compat_mode
 
             TRACE("sending %u bytes\n", out_buf.cbBuffer);
 
-            size = send(connection->socket, out_buf.pvBuffer, out_buf.cbBuffer, 0);
+            size = sock_send(connection->socket, out_buf.pvBuffer, out_buf.cbBuffer, 0);
             if(size != out_buf.cbBuffer) {
                 ERR("send failed\n");
                 status = ERROR_INTERNET_SECURITY_CHANNEL_ERROR;
@@ -567,7 +563,7 @@ static DWORD netcon_secure_connect_setup(netconn_t *connection, BOOL compat_mode
             read_buf_size += 1024;
         }
 
-        size = recv(connection->socket, read_buf+in_bufs[0].cbBuffer, read_buf_size-in_bufs[0].cbBuffer, 0);
+        size = sock_recv(connection->socket, read_buf+in_bufs[0].cbBuffer, read_buf_size-in_bufs[0].cbBuffer, 0);
         if(size < 1) {
             WARN("recv error\n");
             res = ERROR_INTERNET_SECURITY_CHANNEL_ERROR;
@@ -583,6 +579,10 @@ static DWORD netcon_secure_connect_setup(netconn_t *connection, BOOL compat_mode
         TRACE("InitializeSecurityContext ret %08x\n", status);
 
         if(status == SEC_E_OK) {
+            if(SecIsValidHandle(&connection->ssl_ctx))
+                DeleteSecurityContext(&connection->ssl_ctx);
+            connection->ssl_ctx = ctx;
+
             if(in_bufs[1].BufferType == SECBUFFER_EXTRA)
                 FIXME("SECBUFFER_EXTRA not supported\n");
 
@@ -614,19 +614,16 @@ static DWORD netcon_secure_connect_setup(netconn_t *connection, BOOL compat_mode
         }
     }
 
+    heap_free(read_buf);
 
     if(status != SEC_E_OK || res != ERROR_SUCCESS) {
-        WARN("Failed to initialize security context failed: %08x\n", status);
+        WARN("Failed to establish SSL connection: %08x (%u)\n", status, res);
         heap_free(connection->ssl_buf);
         connection->ssl_buf = NULL;
-        DeleteSecurityContext(&ctx);
         return res ? res : ERROR_INTERNET_SECURITY_CHANNEL_ERROR;
     }
 
-
     TRACE("established SSL connection\n");
-    connection->ssl_ctx = ctx;
-
     connection->secure = TRUE;
     connection->security_flags |= SECURITY_FLAG_SECURE;
 
@@ -699,7 +696,7 @@ static BOOL send_ssl_chunk(netconn_t *conn, const void *msg, size_t size)
         return FALSE;
     }
 
-    if(send(conn->socket, conn->ssl_buf, bufs[0].cbBuffer+bufs[1].cbBuffer+bufs[2].cbBuffer, 0) < 1) {
+    if(sock_send(conn->socket, conn->ssl_buf, bufs[0].cbBuffer+bufs[1].cbBuffer+bufs[2].cbBuffer, 0) < 1) {
         WARN("send failed\n");
         return FALSE;
     }
@@ -717,7 +714,7 @@ DWORD NETCON_send(netconn_t *connection, const void *msg, size_t len, int flags,
 {
     if(!connection->secure)
     {
-	*sent = send(connection->socket, msg, len, flags);
+	*sent = sock_send(connection->socket, msg, len, flags);
 	if (*sent == -1)
 	    return sock_get_error(errno);
         return ERROR_SUCCESS;
@@ -743,16 +740,21 @@ DWORD NETCON_send(netconn_t *connection, const void *msg, size_t len, int flags,
     }
 }
 
-static BOOL read_ssl_chunk(netconn_t *conn, void *buf, SIZE_T buf_size, SIZE_T *ret_size, BOOL *eof)
+static BOOL read_ssl_chunk(netconn_t *conn, void *buf, SIZE_T buf_size, blocking_mode_t mode, SIZE_T *ret_size, BOOL *eof)
 {
     const SIZE_T ssl_buf_size = conn->ssl_sizes.cbHeader+conn->ssl_sizes.cbMaximumMessage+conn->ssl_sizes.cbTrailer;
     SecBuffer bufs[4];
     SecBufferDesc buf_desc = {SECBUFFER_VERSION, sizeof(bufs)/sizeof(*bufs), bufs};
-    SSIZE_T size, buf_len;
+    SSIZE_T size, buf_len = 0;
+    blocking_mode_t tmp_mode;
     int i;
     SECURITY_STATUS res;
 
     assert(conn->extra_len < ssl_buf_size);
+
+    /* BLOCKING_WAITALL is handled by caller */
+    if(mode == BLOCKING_WAITALL)
+        mode = BLOCKING_ALLOW;
 
     if(conn->extra_len) {
         memcpy(conn->ssl_buf, conn->extra_buf, conn->extra_len);
@@ -760,20 +762,31 @@ static BOOL read_ssl_chunk(netconn_t *conn, void *buf, SIZE_T buf_size, SIZE_T *
         conn->extra_len = 0;
         heap_free(conn->extra_buf);
         conn->extra_buf = NULL;
-    }else {
-        buf_len = recv(conn->socket, conn->ssl_buf+conn->extra_len, ssl_buf_size-conn->extra_len, 0);
-        if(buf_len < 0) {
-            WARN("recv failed\n");
-            return FALSE;
-        }
-
-        if(!buf_len) {
-            *eof = TRUE;
-            return TRUE;
-        }
     }
 
-    *ret_size = 0;
+    tmp_mode = buf_len ? BLOCKING_DISALLOW : mode;
+    set_socket_blocking(conn->socket, tmp_mode);
+    size = sock_recv(conn->socket, conn->ssl_buf+buf_len, ssl_buf_size-buf_len, tmp_mode == BLOCKING_ALLOW ? 0 : WINE_MSG_DONTWAIT);
+    if(size < 0) {
+        if(!buf_len) {
+            if(errno == EAGAIN || errno == EWOULDBLOCK) {
+                TRACE("would block\n");
+                return WSAEWOULDBLOCK;
+            }
+            WARN("recv failed\n");
+            return ERROR_INTERNET_CONNECTION_ABORTED;
+        }
+    }else {
+        buf_len += size;
+    }
+
+    *ret_size = buf_len;
+
+    if(!buf_len) {
+        *eof = TRUE;
+        return ERROR_SUCCESS;
+    }
+
     *eof = FALSE;
 
     do {
@@ -789,19 +802,34 @@ static BOOL read_ssl_chunk(netconn_t *conn, void *buf, SIZE_T buf_size, SIZE_T *
         case SEC_I_CONTEXT_EXPIRED:
             TRACE("context expired\n");
             *eof = TRUE;
-            return TRUE;
+            return ERROR_SUCCESS;
         case SEC_E_INCOMPLETE_MESSAGE:
             assert(buf_len < ssl_buf_size);
 
-            size = recv(conn->socket, conn->ssl_buf+buf_len, ssl_buf_size-buf_len, 0);
-            if(size < 1)
-                return FALSE;
+            set_socket_blocking(conn->socket, mode);
+            size = sock_recv(conn->socket, conn->ssl_buf+buf_len, ssl_buf_size-buf_len, mode == BLOCKING_ALLOW ? 0 : WINE_MSG_DONTWAIT);
+            if(size < 1) {
+                if(size < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+                    TRACE("would block\n");
+
+                    /* FIXME: Optimize extra_buf usage. */
+                    conn->extra_buf = heap_alloc(buf_len);
+                    if(!conn->extra_buf)
+                        return ERROR_NOT_ENOUGH_MEMORY;
+
+                    conn->extra_len = buf_len;
+                    memcpy(conn->extra_buf, conn->ssl_buf, conn->extra_len);
+                    return WSAEWOULDBLOCK;
+                }
+
+                return ERROR_INTERNET_CONNECTION_ABORTED;
+            }
 
             buf_len += size;
             continue;
         default:
             WARN("failed: %08x\n", res);
-            return FALSE;
+            return ERROR_INTERNET_CONNECTION_ABORTED;
         }
     } while(res != SEC_E_OK);
 
@@ -813,7 +841,7 @@ static BOOL read_ssl_chunk(netconn_t *conn, void *buf, SIZE_T buf_size, SIZE_T *
                 assert(!conn->peek_len);
                 conn->peek_msg_mem = conn->peek_msg = heap_alloc(bufs[i].cbBuffer - size);
                 if(!conn->peek_msg)
-                    return FALSE;
+                    return ERROR_NOT_ENOUGH_MEMORY;
                 conn->peek_len = bufs[i].cbBuffer-size;
                 memcpy(conn->peek_msg, (char*)bufs[i].pvBuffer+size, conn->peek_len);
             }
@@ -826,14 +854,14 @@ static BOOL read_ssl_chunk(netconn_t *conn, void *buf, SIZE_T buf_size, SIZE_T *
         if(bufs[i].BufferType == SECBUFFER_EXTRA) {
             conn->extra_buf = heap_alloc(bufs[i].cbBuffer);
             if(!conn->extra_buf)
-                return FALSE;
+                return ERROR_NOT_ENOUGH_MEMORY;
 
             conn->extra_len = bufs[i].cbBuffer;
             memcpy(conn->extra_buf, bufs[i].pvBuffer, conn->extra_len);
         }
     }
 
-    return TRUE;
+    return ERROR_SUCCESS;
 }
 
 /******************************************************************************
@@ -841,7 +869,7 @@ static BOOL read_ssl_chunk(netconn_t *conn, void *buf, SIZE_T buf_size, SIZE_T *
  * Basically calls 'recv()' unless we should use SSL
  * number of chars received is put in *recvd
  */
-DWORD NETCON_recv(netconn_t *connection, void *buf, size_t len, int flags, int *recvd)
+DWORD NETCON_recv(netconn_t *connection, void *buf, size_t len, blocking_mode_t mode, int *recvd)
 {
     *recvd = 0;
     if (!len)
@@ -849,13 +877,28 @@ DWORD NETCON_recv(netconn_t *connection, void *buf, size_t len, int flags, int *
 
     if (!connection->secure)
     {
-	*recvd = recv(connection->socket, buf, len, flags);
+        int flags = 0;
+
+        switch(mode) {
+        case BLOCKING_ALLOW:
+            break;
+        case BLOCKING_DISALLOW:
+            flags = WINE_MSG_DONTWAIT;
+            break;
+        case BLOCKING_WAITALL:
+            flags = MSG_WAITALL;
+            break;
+        }
+
+        set_socket_blocking(connection->socket, mode);
+	*recvd = sock_recv(connection->socket, buf, len, flags);
 	return *recvd == -1 ? sock_get_error(errno) :  ERROR_SUCCESS;
     }
     else
     {
         SIZE_T size = 0, cread;
-        BOOL res, eof;
+        BOOL eof;
+        DWORD res;
 
         if(connection->peek_msg) {
             size = min(len, connection->peek_len);
@@ -868,18 +911,23 @@ DWORD NETCON_recv(netconn_t *connection, void *buf, size_t len, int flags, int *
                 connection->peek_msg_mem = connection->peek_msg = NULL;
             }
             /* check if we have enough data from the peek buffer */
-            if(!(flags & MSG_WAITALL) || size == len) {
+            if(mode != BLOCKING_WAITALL || size == len) {
                 *recvd = size;
                 return ERROR_SUCCESS;
             }
+
+            mode = BLOCKING_DISALLOW;
         }
 
         do {
-            res = read_ssl_chunk(connection, (BYTE*)buf+size, len-size, &cread, &eof);
-            if(!res) {
-                WARN("read_ssl_chunk failed\n");
-                if(!size)
-                    return ERROR_INTERNET_CONNECTION_ABORTED;
+            res = read_ssl_chunk(connection, (BYTE*)buf+size, len-size, mode, &cread, &eof);
+            if(res != ERROR_SUCCESS) {
+                if(res == WSAEWOULDBLOCK) {
+                    if(size)
+                        res = ERROR_SUCCESS;
+                }else {
+                    WARN("read_ssl_chunk failed\n");
+                }
                 break;
             }
 
@@ -889,11 +937,11 @@ DWORD NETCON_recv(netconn_t *connection, void *buf, size_t len, int flags, int *
             }
 
             size += cread;
-        }while(!size || ((flags & MSG_WAITALL) && size < len));
+        }while(!size || (mode == BLOCKING_WAITALL && size < len));
 
         TRACE("received %ld bytes\n", size);
         *recvd = size;
-        return ERROR_SUCCESS;
+        return res;
     }
 }
 
@@ -931,7 +979,7 @@ BOOL NETCON_is_alive(netconn_t *netconn)
     ssize_t len;
     BYTE b;
 
-    len = recv(netconn->socket, &b, 1, MSG_PEEK|MSG_DONTWAIT);
+    len = sock_recv(netconn->socket, &b, 1, MSG_PEEK|MSG_DONTWAIT);
     return len == 1 || (len == -1 && errno == EWOULDBLOCK);
 #elif defined(__MINGW32__) || defined(_MSC_VER)
     ULONG mode;
@@ -942,7 +990,7 @@ BOOL NETCON_is_alive(netconn_t *netconn)
     if(!ioctlsocket(netconn->socket, FIONBIO, &mode))
         return FALSE;
 
-    len = recv(netconn->socket, &b, 1, MSG_PEEK);
+    len = sock_recv(netconn->socket, &b, 1, MSG_PEEK);
 
     mode = 0;
     if(!ioctlsocket(netconn->socket, FIONBIO, &mode))
@@ -959,9 +1007,6 @@ LPCVOID NETCON_GetCert(netconn_t *connection)
 {
     const CERT_CONTEXT *ret;
     SECURITY_STATUS res;
-
-    if (!connection->secure)
-        return NULL;
 
     res = QueryContextAttributesW(&connection->ssl_ctx, SECPKG_ATTR_REMOTE_CERT_CONTEXT, (void*)&ret);
     return res == SEC_E_OK ? ret : NULL;

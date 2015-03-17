@@ -107,6 +107,7 @@ DisableThreadLibraryCalls(
  */
 HINSTANCE
 WINAPI
+DECLSPEC_HOTPATCH
 LoadLibraryA(LPCSTR lpLibFileName)
 {
     LPSTR PathBuffer;
@@ -152,6 +153,7 @@ LoadLibraryA(LPCSTR lpLibFileName)
  */
 HINSTANCE
 WINAPI
+DECLSPEC_HOTPATCH
 LoadLibraryExA(LPCSTR lpLibFileName,
                HANDLE hFile,
                DWORD dwFlags)
@@ -171,6 +173,7 @@ LoadLibraryExA(LPCSTR lpLibFileName,
  */
 HINSTANCE
 WINAPI
+DECLSPEC_HOTPATCH
 LoadLibraryW(LPCWSTR lpLibFileName)
 {
     /* Call Ex version of the API */
@@ -279,6 +282,7 @@ BasepLoadLibraryAsDatafile(PWSTR Path, LPCWSTR Name, HMODULE *hModule)
  */
 HINSTANCE
 WINAPI
+DECLSPEC_HOTPATCH
 LoadLibraryExW(LPCWSTR lpLibFileName,
                HANDLE hFile,
                DWORD dwFlags)
@@ -447,7 +451,10 @@ GetProcAddress(HMODULE hModule, LPCSTR lpProcName)
 /*
  * @implemented
  */
-BOOL WINAPI FreeLibrary(HINSTANCE hLibModule)
+BOOL
+WINAPI
+DECLSPEC_HOTPATCH
+FreeLibrary(HINSTANCE hLibModule)
 {
     NTSTATUS Status;
     PIMAGE_NT_HEADERS NtHeaders;
@@ -715,7 +722,7 @@ BasepGetModuleHandleExW(BOOLEAN NoLock, DWORD dwPublicFlags, LPCWSTR lpwModuleNa
 {
     DWORD Cookie;
     NTSTATUS Status = STATUS_SUCCESS, Status2;
-    HANDLE hModule = 0;
+    HANDLE hModule = NULL;
     UNICODE_STRING ModuleNameU;
     DWORD dwValid;
     BOOLEAN Redirected = FALSE; // FIXME
@@ -732,7 +739,7 @@ BasepGetModuleHandleExW(BOOLEAN NoLock, DWORD dwPublicFlags, LPCWSTR lpwModuleNa
         {
             /* Fail */
             BaseSetLastNTError(Status);
-            if (phModule) *phModule = 0;
+            if (phModule) *phModule = NULL;
             return NT_SUCCESS(Status);
         }
     }
@@ -782,11 +789,11 @@ BasepGetModuleHandleExW(BOOLEAN NoLock, DWORD dwPublicFlags, LPCWSTR lpwModuleNa
                               hModule);
     }
 
+quickie:
     /* Set last error in case of failure */
     if (!NT_SUCCESS(Status))
         BaseSetLastNTError(Status);
 
-quickie:
     /* Unlock loader lock if it was acquired */
     if (!NoLock)
     {
@@ -806,6 +813,7 @@ quickie:
  */
 HMODULE
 WINAPI
+DECLSPEC_HOTPATCH
 GetModuleHandleA(LPCSTR lpModuleName)
 {
     PUNICODE_STRING ModuleNameW;
@@ -835,20 +843,20 @@ WINAPI
 GetModuleHandleW(LPCWSTR lpModuleName)
 {
     HMODULE hModule;
-    NTSTATUS Status;
+    BOOLEAN Success;
 
     /* If current module is requested - return it right away */
     if (!lpModuleName)
         return ((HMODULE)NtCurrentPeb()->ImageBaseAddress);
 
     /* Use common helper routine */
-    Status = BasepGetModuleHandleExW(TRUE,
-                                     GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                                     lpModuleName,
-                                     &hModule);
+    Success = BasepGetModuleHandleExW(TRUE,
+                                      GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                                      lpModuleName,
+                                      &hModule);
 
-    /* If it wasn't successful - return 0 */
-    if (!NT_SUCCESS(Status)) hModule = 0;
+    /* If it wasn't successful - return NULL */
+    if (!Success) hModule = NULL;
 
     /* Return the handle */
     return hModule;
@@ -864,9 +872,8 @@ GetModuleHandleExW(IN DWORD dwFlags,
                    IN LPCWSTR lpwModuleName  OPTIONAL,
                    OUT HMODULE* phModule)
 {
-    NTSTATUS Status;
     DWORD dwValid;
-    BOOL Ret = FALSE;
+    BOOL Ret;
 
     /* Validate parameters */
     dwValid = BasepGetModuleHandleExParameterValidation(dwFlags, lpwModuleName, phModule);
@@ -878,13 +885,10 @@ GetModuleHandleExW(IN DWORD dwFlags,
     if (dwValid == BASEP_GET_MODULE_HANDLE_EX_PARAMETER_VALIDATION_SUCCESS) return TRUE;
 
     /* Use common helper routine */
-    Status = BasepGetModuleHandleExW(FALSE,
-                                     dwFlags,
-                                     lpwModuleName,
-                                     phModule);
-
-    /* Return TRUE in case of success */
-    if (NT_SUCCESS(Status)) Ret = TRUE;
+    Ret = BasepGetModuleHandleExW(FALSE,
+                                  dwFlags,
+                                  lpwModuleName,
+                                  phModule);
 
     return Ret;
 }
@@ -900,8 +904,7 @@ GetModuleHandleExA(IN DWORD dwFlags,
 {
     PUNICODE_STRING lpModuleNameW;
     DWORD dwValid;
-    BOOL Ret = FALSE;
-    NTSTATUS Status;
+    BOOL Ret;
 
     /* Validate parameters */
     dwValid = BasepGetModuleHandleExParameterValidation(dwFlags, (LPCWSTR)lpModuleName, phModule);
@@ -916,10 +919,10 @@ GetModuleHandleExA(IN DWORD dwFlags,
     if (dwFlags & GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS)
     {
         /* Call the extended version of the API without conversion */
-        Status = BasepGetModuleHandleExW(FALSE,
-                                         dwFlags,
-                                         (LPCWSTR)lpModuleName,
-                                         phModule);
+        Ret = BasepGetModuleHandleExW(FALSE,
+                                      dwFlags,
+                                      (LPCWSTR)lpModuleName,
+                                      phModule);
     }
     else
     {
@@ -930,15 +933,11 @@ GetModuleHandleExA(IN DWORD dwFlags,
         if (!lpModuleNameW) return FALSE;
 
         /* Call the extended version of the API */
-        Status = BasepGetModuleHandleExW(FALSE,
-                                         dwFlags,
-                                         lpModuleNameW->Buffer,
-                                         phModule);
+        Ret = BasepGetModuleHandleExW(FALSE,
+                                      dwFlags,
+                                      lpModuleNameW->Buffer,
+                                      phModule);
     }
-
-    /* If result was successful - return true */
-    if (NT_SUCCESS(Status))
-        Ret = TRUE;
 
     /* Return result */
     return Ret;

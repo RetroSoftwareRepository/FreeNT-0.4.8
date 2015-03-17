@@ -8,7 +8,7 @@
  */
 #define PUTPIXEL(x,y,BrushInst)        \
   ret = ret && IntEngLineTo(&psurf->SurfObj, \
-       dc->rosdc.CombinedClip,                         \
+       &dc->co.ClipObj,                         \
        &BrushInst.BrushObject,                   \
        x, y, (x)+1, y,                           \
        &RectBounds,                              \
@@ -16,7 +16,7 @@
 
 #define PUTLINE(x1,y1,x2,y2,BrushInst) \
   ret = ret && IntEngLineTo(&psurf->SurfObj, \
-       dc->rosdc.CombinedClip,                         \
+       &dc->co.ClipObj,                         \
        &BrushInst.BrushObject,                   \
        x1, y1, x2, y2,                           \
        &RectBounds,                              \
@@ -79,7 +79,7 @@ IntArc( DC *dc,
         return FALSE;
     }
 
-    PenOrigWidth = PenWidth = pbrPen->ptPenWidth.x;
+    PenOrigWidth = PenWidth = pbrPen->lWidth;
     if (pbrPen->ulPenStyle == PS_NULL) PenWidth = 0;
 
     if (pbrPen->ulPenStyle == PS_INSIDEFRAME)
@@ -93,7 +93,7 @@ IntArc( DC *dc,
     }
 
     if (!PenWidth) PenWidth = 1;
-    pbrPen->ptPenWidth.x = PenWidth;
+    pbrPen->lWidth = PenWidth;
 
     RectBounds.left   = Left;
     RectBounds.right  = Right;
@@ -181,7 +181,7 @@ IntArc( DC *dc,
     if (arctype == GdiTypeChord)
         PUTLINE(EfCx + CenterX, EfCy + CenterY, SfCx + CenterX, SfCy + CenterY, dc->eboLine);
 
-    pbrPen->ptPenWidth.x = PenOrigWidth;
+    pbrPen->lWidth = PenOrigWidth;
     PEN_ShareUnlockPen(pbrPen);
     DPRINT("IntArc Exit.\n");
     return ret;
@@ -317,6 +317,7 @@ NtGdiAngleArc(
   BOOL Ret = FALSE;
   gxf_long worker, worker1;
   KFLOATING_SAVE FloatSave;
+  NTSTATUS status;
 
   pDC = DC_LockDc (hDC);
   if(!pDC)
@@ -331,12 +332,16 @@ NtGdiAngleArc(
     return TRUE;
   }
 
-  KeSaveFloatingPointState(&FloatSave);
+  status = KeSaveFloatingPointState(&FloatSave);
+  if (!NT_SUCCESS(status))
+  {
+      DC_UnlockDc( pDC );
+      return FALSE;
+  }
 
   worker.l  = dwStartAngle;
   worker1.l = dwSweepAngle;
-  DC_vPrepareDCsForBlit(pDC, pDC->rosdc.CombinedClip->rclBounds,
-                           NULL, pDC->rosdc.CombinedClip->rclBounds);
+  DC_vPrepareDCsForBlit(pDC, NULL, NULL, NULL);
   if (pDC->pdcattr->ulDirty_ & (DIRTY_FILL | DC_BRUSH_DIRTY))
     DC_vUpdateFillBrush(pDC);
   if (pDC->pdcattr->ulDirty_ & (DIRTY_LINE | DC_PEN_DIRTY))
@@ -367,6 +372,7 @@ NtGdiArcInternal(
   DC *dc;
   BOOL Ret;
   KFLOATING_SAVE FloatSave;
+  NTSTATUS status;
 
   dc = DC_LockDc (hDC);
   if(!dc)
@@ -381,8 +387,7 @@ NtGdiArcInternal(
     return TRUE;
   }
 
-  DC_vPrepareDCsForBlit(dc, dc->rosdc.CombinedClip->rclBounds,
-                            NULL, dc->rosdc.CombinedClip->rclBounds);
+  DC_vPrepareDCsForBlit(dc, NULL, NULL, NULL);
 
   if (dc->pdcattr->ulDirty_ & (DIRTY_FILL | DC_BRUSH_DIRTY))
     DC_vUpdateFillBrush(dc);
@@ -390,7 +395,12 @@ NtGdiArcInternal(
   if (dc->pdcattr->ulDirty_ & (DIRTY_LINE | DC_PEN_DIRTY))
     DC_vUpdateLineBrush(dc);
 
-  KeSaveFloatingPointState(&FloatSave);
+  status = KeSaveFloatingPointState(&FloatSave);
+  if (!NT_SUCCESS(status))
+  {
+      DC_UnlockDc( dc );
+      return FALSE;
+  }
 
   Ret = IntGdiArcInternal(
                   arctype,

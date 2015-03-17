@@ -7,6 +7,7 @@
  * UPDATE HISTORY:
  * 20040708 Created
  */
+
 #include "afd.h"
 
 static VOID PrintEvents( ULONG Events ) {
@@ -288,7 +289,7 @@ AfdEventSelect( PDEVICE_OBJECT DeviceObject, PIRP Irp,
         Status = ObReferenceObjectByHandle( (PVOID)EventSelectInfo->
                                             EventObject,
                                             EVENT_ALL_ACCESS,
-                                            ExEventObjectType,
+                                            *ExEventObjectType,
                                             UserMode,
                                             (PVOID *)&FCB->EventSelect,
                                             NULL );
@@ -345,7 +346,7 @@ AfdEnumEvents( PDEVICE_OBJECT DeviceObject, PIRP Irp,
 
     Status = ObReferenceObjectByHandle(EnumReq->Event,
                                        EVENT_ALL_ACCESS,
-                                       ExEventObjectType,
+                                       *ExEventObjectType,
                                        UserMode,
                                        (PVOID *)&UserEvent,
                                        NULL);

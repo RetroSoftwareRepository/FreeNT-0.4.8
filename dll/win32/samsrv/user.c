@@ -6,12 +6,7 @@
  * COPYRIGHT:   Copyright 2013 Eric Kohl
  */
 
-/* INCLUDES ****************************************************************/
-
 #include "samsrv.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(samsrv);
-
 
 /* FUNCTIONS ***************************************************************/
 
@@ -366,6 +361,8 @@ SampRemoveUserFromAllGroups(IN PSAM_DB_OBJECT UserObject)
 
         Status = SampRemoveMemberFromGroup(GroupObject,
                                            UserObject->RelativeId);
+        if (Status == STATUS_MEMBER_NOT_IN_GROUP)
+            Status = STATUS_SUCCESS;
 
         SampCloseDbObject(GroupObject);
 
@@ -375,11 +372,26 @@ SampRemoveUserFromAllGroups(IN PSAM_DB_OBJECT UserObject)
         }
     }
 
+    /* Remove all groups from the Groups attribute */
+    Status = SampSetObjectAttribute(UserObject,
+                                    L"Groups",
+                                    REG_BINARY,
+                                    NULL,
+                                    0);
+
 done:
     if (GroupsBuffer != NULL)
         midl_user_free(GroupsBuffer);
 
     return Status;
+}
+
+
+NTSTATUS
+SampRemoveUserFromAllAliases(IN PSAM_DB_OBJECT UserObject)
+{
+    FIXME("(%p)\n", UserObject);
+    return STATUS_SUCCESS;
 }
 
 

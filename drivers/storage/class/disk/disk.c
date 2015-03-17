@@ -310,6 +310,11 @@ ResetScsiBus(
     IN PDEVICE_OBJECT DeviceObject
     );
 
+NTSTATUS
+NTAPI
+ScsiDiskFileSystemControl(PDEVICE_OBJECT DeviceObject,
+                          PIRP Irp);
+
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text(PAGE, DriverEntry)
 #pragma alloc_text(PAGE, FindScsiDisks)
@@ -1183,7 +1188,7 @@ CreatePartitionDeviceObjects(
         // Allocate and zero a partition list.
         //
 
-        partitionList = ExAllocatePool(NonPagedPool, sizeof(*partitionList ));
+        partitionList = ExAllocatePool(NonPagedPool, sizeof(*partitionList));
 
 
         if (partitionList != NULL) {
@@ -1446,6 +1451,10 @@ CreatePartitionDeviceObjects(
 
         ExFreePool(partitionList);
 
+        if (dmSkew) {
+            ExFreePool(dmSkew);
+        }
+
     } else {
 
 CreatePartitionDeviceObjectsExit:
@@ -1455,6 +1464,10 @@ CreatePartitionDeviceObjectsExit:
         }
         if (initData) {
             ExFreePool(initData);
+        }
+
+        if (dmSkew) {
+            ExFreePool(dmSkew);
         }
 
         return status;
@@ -1502,6 +1515,15 @@ Return Value:
     LARGE_INTEGER startingOffset;
 
     //
+    // HACK: How can we end here with null sector size?!
+    //
+
+    if (deviceExtension->DiskGeometry->Geometry.BytesPerSector == 0) {
+        DPRINT1("Hack! Received invalid sector size\n");
+        deviceExtension->DiskGeometry->Geometry.BytesPerSector = 512;
+    }
+
+    //
     // Verify parameters of this request.
     // Check that ending sector is within partition and
     // that number of bytes to transfer is a multiple of
@@ -1535,6 +1557,18 @@ Return Value:
             //
 
             Irp->IoStatus.Status = STATUS_INVALID_PARAMETER;
+        }
+
+        if (startingOffset.QuadPart > deviceExtension->PartitionLength.QuadPart) {
+            DPRINT1("Reading beyond partition end! startingOffset: %I64d, PartitionLength: %I64d\n", startingOffset.QuadPart, deviceExtension->PartitionLength.QuadPart);
+        }
+
+        if (transferByteCount & (deviceExtension->DiskGeometry->Geometry.BytesPerSector - 1)) {
+            DPRINT1("Not reading sectors! TransferByteCount: %lu, BytesPerSector: %lu\n", transferByteCount, deviceExtension->DiskGeometry->Geometry.BytesPerSector);
+        }
+
+        if (Irp->IoStatus.Status == STATUS_DEVICE_NOT_READY) {
+            DPRINT1("Failing due to device not ready!\n");
         }
 
         return STATUS_INVALID_PARAMETER;
@@ -1909,7 +1943,7 @@ Return Value:
                 case EXECUTE_OFFLINE_DIAGS:
                     controlCode = IOCTL_SCSI_MINIPORT_EXECUTE_OFFLINE_DIAGS;
                     break;
-      
+
           default:
                     status = STATUS_INVALID_PARAMETER;
                     break;
@@ -2090,13 +2124,13 @@ Return Value:
             RtlMoveMemory(Irp->AssociatedIrp.SystemBuffer,
                           deviceExtension->DiskGeometry,
                           (irpStack->Parameters.DeviceIoControl.IoControlCode == IOCTL_DISK_GET_DRIVE_GEOMETRY) ?
-                          sizeof(DISK_GEOMETRY) : 
+                          sizeof(DISK_GEOMETRY) :
                           sizeof(DISK_GEOMETRY_EX));
 
             status = STATUS_SUCCESS;
             Irp->IoStatus.Information =
                (irpStack->Parameters.DeviceIoControl.IoControlCode == IOCTL_DISK_GET_DRIVE_GEOMETRY) ?
-               sizeof(DISK_GEOMETRY) : 
+               sizeof(DISK_GEOMETRY) :
                sizeof(DISK_GEOMETRY_EX);
         }
 
@@ -5194,3 +5228,4 @@ Return Value:
     }
 
 } // end UpdateDeviceObjects()
+

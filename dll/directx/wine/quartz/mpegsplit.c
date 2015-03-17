@@ -21,24 +21,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <assert.h>
-//#include <math.h>
-
 #include "quartz_private.h"
-#include "pin.h"
-
-//#include "uuids.h"
-#include <mmreg.h>
-//#include "mmsystem.h"
-
-//#include "winternl.h"
-
-//#include "wine/unicode.h"
-#include <wine/debug.h>
-
-#include "parser.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(quartz);
 
 #define SEQUENCE_HEADER_CODE     0xB3
 #define PACK_START_CODE          0xBA
@@ -96,7 +79,6 @@ static int MPEGSplitter_head_check(const BYTE *header)
 }
 
 static const WCHAR wszAudioStream[] = {'A','u','d','i','o',0};
-static const WCHAR wszVideoStream[] = {'V','i','d','e','o',0};
 
 static const DWORD freqs[10] = { 44100, 48000, 32000, 22050, 24000, 16000, 11025, 12000,  8000, 0 };
 
@@ -709,8 +691,7 @@ static HRESULT MPEGSplitter_first_request(LPVOID iface)
         if (rtSampleStop > pin->rtStop)
             rtSampleStop = MEDIATIME_FROM_BYTES(ALIGNUP(BYTES_FROM_MEDIATIME(pin->rtStop), pin->cbAlign));
 
-        hr = IMediaSample_SetTime(sample, &rtSampleStart, &rtSampleStop);
-
+        IMediaSample_SetTime(sample, &rtSampleStart, &rtSampleStop);
         IMediaSample_SetPreroll(sample, FALSE);
         IMediaSample_SetDiscontinuity(sample, TRUE);
         IMediaSample_SetSyncPoint(sample, 1);

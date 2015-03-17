@@ -18,18 +18,10 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <assert.h>
-
-#ifndef DBGHELP_STATIC_LIB
-#include "ntstatus.h"
-#endif
-
 #include "dbghelp_private.h"
 
 #ifndef DBGHELP_STATIC_LIB
-#include "wine/winbase16.h"
-#include "winternl.h"
-#include "wine/debug.h"
+#include <wine/winbase16.h>
 #endif
 
 WINE_DEFAULT_DEBUG_CHANNEL(dbghelp);
@@ -53,8 +45,8 @@ static ADDRESS_MODE get_selector_type(HANDLE hThread, const CONTEXT* ctx, WORD s
     return -1;
 }
 
-static unsigned i386_build_addr(HANDLE hThread, const CONTEXT* ctx, ADDRESS64* addr,
-                                unsigned seg, unsigned long offset)
+static BOOL i386_build_addr(HANDLE hThread, const CONTEXT* ctx, ADDRESS64* addr,
+                            unsigned seg, unsigned long offset)
 {
     addr->Mode    = AddrModeFlat;
     addr->Segment = seg;
@@ -79,8 +71,8 @@ static unsigned i386_build_addr(HANDLE hThread, const CONTEXT* ctx, ADDRESS64* a
 #endif
 
 #ifndef DBGHELP_STATIC_LIB
-static unsigned i386_get_addr(HANDLE hThread, const CONTEXT* ctx,
-                              enum cpu_addr ca, ADDRESS64* addr)
+static BOOL i386_get_addr(HANDLE hThread, const CONTEXT* ctx,
+                          enum cpu_addr ca, ADDRESS64* addr)
 {
 #ifdef __i386__
     switch (ca)

@@ -24,22 +24,8 @@
 
    It also contains all the helper functions.
 */
-#include <config.h>
 
-//#include <stdarg.h>
-//#include <string.h>
-#include <wine/debug.h>
-#include <wine/unicode.h>
-//#include "windef.h"
-//#include "winbase.h"
-#include <winreg.h>
-#include <winuser.h>
-//#include "winerror.h"
-//#include "dinput.h"
-#include "device_private.h"
-//#include "dinput_private.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(dinput);
+#include "dinput_private.h"
 
 static inline IDirectInputDeviceImpl *impl_from_IDirectInputDevice8A(IDirectInputDevice8A *iface)
 {
@@ -575,7 +561,7 @@ static DWORD semantic_to_obj_id(IDirectInputDeviceImpl* This, DWORD dwSemantic)
     DWORD type = (0x0000ff00 & dwSemantic) >> 8;
     DWORD offset = 0x000000ff & dwSemantic;
     DWORD obj_instance = 0;
-    DWORD found = 0;
+    BOOL found = FALSE;
     int i;
 
     for (i = 0; i < This->data_format.wine_df->dwNumObjs; i++)
@@ -585,7 +571,7 @@ static DWORD semantic_to_obj_id(IDirectInputDeviceImpl* This, DWORD dwSemantic)
         if (odf->dwOfs == offset)
         {
             obj_instance = DIDFT_GETINSTANCE(odf->dwType);
-            found = 1;
+            found = TRUE;
             break;
         }
     }
@@ -719,8 +705,8 @@ HRESULT _build_action_map(LPDIRECTINPUTDEVICE8W iface, LPDIACTIONFORMATW lpdiaf,
     IDirectInputDeviceImpl *This = impl_from_IDirectInputDevice8W(iface);
     WCHAR username[MAX_PATH];
     DWORD username_size = MAX_PATH;
-    int i, has_actions = 0;
-    BOOL load_success = FALSE;
+    int i;
+    BOOL load_success = FALSE, has_actions = FALSE;
 
     /* Unless asked the contrary by these flags, try to load a previous mapping */
     if (!(dwFlags & DIDBAM_HWDEFAULTS))
@@ -760,7 +746,7 @@ HRESULT _build_action_map(LPDIRECTINPUTDEVICE8W iface, LPDIACTIONFORMATW lpdiaf,
                 lpdiaf->rgoAction[i].dwObjID = obj_id;
                 lpdiaf->rgoAction[i].guidInstance = This->guid;
                 lpdiaf->rgoAction[i].dwHow = DIAH_DEFAULT;
-                has_actions = 1;
+                has_actions = TRUE;
             }
         }
         else if (!(dwFlags & DIDBAM_PRESERVE))

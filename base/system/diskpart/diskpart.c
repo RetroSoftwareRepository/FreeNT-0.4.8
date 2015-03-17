@@ -8,7 +8,13 @@
  */
 
 /* INCLUDES ******************************************************************/
+
 #include "diskpart.h"
+
+#include <stdlib.h>
+#include <winbase.h>
+#include <wincon.h>
+#include <winuser.h>
 
 /* FUNCTIONS ******************************************************************/
 VOID
@@ -67,7 +73,10 @@ RunScript(LPCWSTR filename)
     while (fgetws(tmp_string, MAX_STRING_SIZE, script) != NULL)
     {
         if (InterpretScript(tmp_string) == FALSE)
+        {
+            fclose(script);
             return FALSE;
+        }
     }
 
     /* Close the file */

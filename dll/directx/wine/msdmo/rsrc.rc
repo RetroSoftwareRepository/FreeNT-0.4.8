@@ -1,5 +1,5 @@
 /*
- * Copyright 2003 Michael Günnewig
+ * Copyright 2003 Michael GÃ¼nnewig
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -23,4 +23,4 @@
 #define WINE_PRODUCTVERSION 6,5,1,900
 #define WINE_PRODUCTVERSION_STR "6.5"
 
-#include "wine/wine_common_ver.rc"
+#include <wine/wine_common_ver.rc>

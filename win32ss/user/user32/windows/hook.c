@@ -211,8 +211,6 @@ CallNextHookEx(
   PHOOK pHook, phkNext;
   LRESULT lResult = 0;
 
-  //GetConnected();
-
   ClientInfo = GetWin32ClientInfo();
 
   if (!ClientInfo->phkCurrent) return 0;
@@ -359,6 +357,9 @@ SetWinEventHook(
 {
   WCHAR ModuleName[MAX_PATH];
   UNICODE_STRING USModuleName;
+  PUNICODE_STRING pusmodName;
+
+  RtlInitUnicodeString(&USModuleName, NULL);
 
   if ((hmodWinEventProc != NULL) && (dwFlags & WINEVENT_INCONTEXT))
   {
@@ -367,16 +368,17 @@ SetWinEventHook(
           return NULL;
       }
       RtlInitUnicodeString(&USModuleName, ModuleName);
+      pusmodName = &USModuleName;
   }
   else
   {
-      RtlInitUnicodeString(&USModuleName, NULL);
+      pusmodName = NULL;
   }
 
   return NtUserSetWinEventHook(eventMin,
                                eventMax,
                        hmodWinEventProc,
-                          &USModuleName,
+                             pusmodName,
                         pfnWinEventProc,
                               idProcess,
                                idThread,
@@ -571,8 +573,9 @@ User32CallHookProcFromKernel(PVOID Arguments, ULONG ArgumentLength)
   WPARAM wParam = 0;
   LPARAM lParam = 0;
   LRESULT Result = 0;
-  BOOL Hit = FALSE;
+  BOOL Hit = FALSE, Loaded = FALSE;
   HMODULE mod = NULL;
+  NTSTATUS Status = STATUS_SUCCESS;
 
   Common = (PHOOKPROC_CALLBACK_ARGUMENTS) Arguments;
 
@@ -587,10 +590,14 @@ User32CallHookProcFromKernel(PVOID Arguments, ULONG ArgumentLength)
         {
            ERR("Failed to load Hook Module.\n");
         }
+        else
+        {
+           Loaded = TRUE; // Free it only when loaded.
+        }
      }
      if (mod)
      {
-        TRACE("Loading Hook Module.\n");
+        TRACE("Loading Hook Module. %S\n",Common->ModuleName);
         Proc = (HOOKPROC)((char *)mod + Common->offPfn);
      }
   }
@@ -615,14 +622,18 @@ User32CallHookProcFromKernel(PVOID Arguments, ULONG ArgumentLength)
         case HCBT_CLICKSKIPPED:
             pMHook = (PMOUSEHOOKSTRUCT)((PCHAR) Common + Common->lParam);
             lParam = (LPARAM) pMHook;
+            wParam = Common->wParam;
             break;
         case HCBT_MOVESIZE:
             prl = (PRECTL)((PCHAR) Common + Common->lParam);
             lParam = (LPARAM) prl;
+            wParam = Common->wParam;
             break;
         case HCBT_ACTIVATE:
+            //ERR("HCBT_ACTIVATE: hwnd %p\n",Common->wParam);
             pcbtas = (LPCBTACTIVATESTRUCT)((PCHAR) Common + Common->lParam);
             lParam = (LPARAM) pcbtas;
+            wParam = Common->wParam;
             break;
         case HCBT_KEYSKIPPED: /* The rest SEH support */
         case HCBT_MINMAX:
@@ -634,7 +645,7 @@ User32CallHookProcFromKernel(PVOID Arguments, ULONG ArgumentLength)
             lParam = Common->lParam;
             break;
         default:
-          if (mod) FreeLibrary(mod);
+          if (Loaded) FreeLibrary(mod);
           ERR("HCBT_ not supported = %d\n", Common->Code);
           return ZwCallbackReturn(NULL, 0, STATUS_NOT_SUPPORTED);
       }
@@ -758,31 +769,71 @@ User32CallHookProcFromKernel(PVOID Arguments, ULONG ArgumentLength)
       _SEH2_END;
       break;
     default:
-      if (mod) FreeLibrary(mod);
+      if (Loaded) FreeLibrary(mod);
+      ERR("WH_ not supported = %d\n", Common->HookId);
       return ZwCallbackReturn(NULL, 0, STATUS_NOT_SUPPORTED);
   }
   if (Hit)
   {
      ERR("Hook Exception! Id: %d, Code %d, Proc 0x%x\n",Common->HookId,Common->Code,Proc);
+     Status = STATUS_UNSUCCESSFUL;
   }
-  if (mod) FreeLibrary(mod);
-  return ZwCallbackReturn(&Result, sizeof(LRESULT), STATUS_SUCCESS);
+  if (Loaded) FreeLibrary(mod);
+  Common->Result = Result;
+  return ZwCallbackReturn(Arguments, ArgumentLength, Status);
 }
 
 NTSTATUS WINAPI
 User32CallEventProcFromKernel(PVOID Arguments, ULONG ArgumentLength)
 {
   PEVENTPROC_CALLBACK_ARGUMENTS Common;
+  WINEVENTPROC Proc;
+  WCHAR module[MAX_PATH];
+  DWORD len;
+  HMODULE mod = NULL;
+  BOOL Loaded = FALSE;
 
   Common = (PEVENTPROC_CALLBACK_ARGUMENTS) Arguments;
 
-  Common->Proc(Common->hook,
-               Common->event,
-               Common->hwnd,
-               Common->idObject,
-               Common->idChild,
-               Common->dwEventThread,
-               Common->dwmsEventTime);
+  Proc = Common->Proc;
+
+  if (Common->offPfn && Common->Mod)
+  {  // Validate the module again.
+     if (!(len = GetModuleFileNameW((HINSTANCE)Common->Mod, module, MAX_PATH)) || len >= MAX_PATH)
+     {
+        ERR("Error check for module!\n");
+        Common->Mod = 0;
+     }
+
+     if (Common->Mod && !(mod = GetModuleHandleW(module)))
+     {
+        TRACE("Reloading Event Module.\n");
+        if (!(mod = LoadLibraryExW(module, NULL, LOAD_WITH_ALTERED_SEARCH_PATH)))
+        {
+           ERR("Failed to load Event Module.\n");
+        }
+        else
+        {
+           Loaded = TRUE; // Free it only when loaded.
+        }
+     }
+
+     if (mod)
+     {
+        TRACE("Loading Event Module. %S\n",module);
+        Proc = (WINEVENTPROC)((char *)mod + Common->offPfn);
+     }
+  }
+
+  Proc(Common->hook,
+       Common->event,
+       Common->hwnd,
+       Common->idObject,
+       Common->idChild,
+       Common->dwEventThread,
+       Common->dwmsEventTime);
+
+  if (Loaded) FreeLibrary(mod);
 
   return ZwCallbackReturn(NULL, 0, STATUS_SUCCESS);
 }

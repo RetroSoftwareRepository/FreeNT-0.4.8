@@ -16,12 +16,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "config.h"
-#include "wine/port.h"
-
 #include "dxgi_private.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(dxgi);
 
 static inline struct dxgi_output *impl_from_IDXGIOutput(IDXGIOutput *iface)
 {
@@ -68,6 +63,7 @@ static ULONG STDMETHODCALLTYPE dxgi_output_Release(IDXGIOutput *iface)
 
     if (!refcount)
     {
+        wined3d_private_store_cleanup(&This->private_store);
         HeapFree(GetProcessHeap(), 0, This);
     }
 
@@ -79,25 +75,31 @@ static ULONG STDMETHODCALLTYPE dxgi_output_Release(IDXGIOutput *iface)
 static HRESULT STDMETHODCALLTYPE dxgi_output_SetPrivateData(IDXGIOutput *iface,
         REFGUID guid, UINT data_size, const void *data)
 {
-    FIXME("iface %p, guid %s, data_size %u, data %p stub!\n", iface, debugstr_guid(guid), data_size, data);
+    struct dxgi_output *output = impl_from_IDXGIOutput(iface);
 
-    return E_NOTIMPL;
+    TRACE("iface %p, guid %s, data_size %u, data %p.\n", iface, debugstr_guid(guid), data_size, data);
+
+    return dxgi_set_private_data(&output->private_store, guid, data_size, data);
 }
 
 static HRESULT STDMETHODCALLTYPE dxgi_output_SetPrivateDataInterface(IDXGIOutput *iface,
         REFGUID guid, const IUnknown *object)
 {
-    FIXME("iface %p, guid %s, object %p stub!\n", iface, debugstr_guid(guid), object);
+    struct dxgi_output *output = impl_from_IDXGIOutput(iface);
 
-    return E_NOTIMPL;
+    TRACE("iface %p, guid %s, object %p.\n", iface, debugstr_guid(guid), object);
+
+    return dxgi_set_private_data_interface(&output->private_store, guid, object);
 }
 
 static HRESULT STDMETHODCALLTYPE dxgi_output_GetPrivateData(IDXGIOutput *iface,
         REFGUID guid, UINT *data_size, void *data)
 {
-    FIXME("iface %p, guid %s, data_size %p, data %p stub!\n", iface, debugstr_guid(guid), data_size, data);
+    struct dxgi_output *output = impl_from_IDXGIOutput(iface);
 
-    return E_NOTIMPL;
+    TRACE("iface %p, guid %s, data_size %p, data %p.\n", iface, debugstr_guid(guid), data_size, data);
+
+    return dxgi_get_private_data(&output->private_store, guid, data_size, data);
 }
 
 static HRESULT STDMETHODCALLTYPE dxgi_output_GetParent(IDXGIOutput *iface,
@@ -114,9 +116,34 @@ static HRESULT STDMETHODCALLTYPE dxgi_output_GetParent(IDXGIOutput *iface,
 
 static HRESULT STDMETHODCALLTYPE dxgi_output_GetDesc(IDXGIOutput *iface, DXGI_OUTPUT_DESC *desc)
 {
-    FIXME("iface %p, desc %p stub!\n", iface, desc);
+    struct dxgi_output *This = impl_from_IDXGIOutput(iface);
+    struct wined3d *wined3d;
+    MONITORINFOEXW monitor_info;
 
-    return E_NOTIMPL;
+    FIXME("iface %p, desc %p semi-stub!\n", iface, desc);
+
+    if (!desc)
+        return DXGI_ERROR_INVALID_CALL;
+
+    wined3d = This->adapter->parent->wined3d;
+
+    EnterCriticalSection(&dxgi_cs);
+    desc->Monitor = wined3d_get_adapter_monitor(wined3d, This->adapter->ordinal);
+    LeaveCriticalSection(&dxgi_cs);
+
+    if (!desc->Monitor)
+        return DXGI_ERROR_INVALID_CALL;
+
+    monitor_info.cbSize = sizeof(monitor_info);
+    if (!GetMonitorInfoW(desc->Monitor, (MONITORINFO *)&monitor_info))
+        return DXGI_ERROR_INVALID_CALL;
+
+    memcpy(&desc->DeviceName, &monitor_info.szDevice, sizeof(desc->DeviceName));
+    memcpy(&desc->DesktopCoordinates, &monitor_info.rcMonitor, sizeof(RECT));
+    desc->AttachedToDesktop = TRUE;
+    desc->Rotation = DXGI_MODE_ROTATION_IDENTITY;
+
+    return S_OK;
 }
 
 static HRESULT STDMETHODCALLTYPE dxgi_output_GetDisplayModeList(IDXGIOutput *iface,
@@ -132,9 +159,7 @@ static HRESULT STDMETHODCALLTYPE dxgi_output_GetDisplayModeList(IDXGIOutput *ifa
             iface, debug_dxgi_format(format), flags, mode_count, desc);
 
     if (!mode_count)
-    {
-        return S_OK;
-    }
+        return DXGI_ERROR_INVALID_CALL;
 
     if (format == DXGI_FORMAT_UNKNOWN)
     {
@@ -142,7 +167,7 @@ static HRESULT STDMETHODCALLTYPE dxgi_output_GetDisplayModeList(IDXGIOutput *ifa
         return S_OK;
     }
 
-    wined3d = IWineDXGIFactory_get_wined3d(This->adapter->parent);
+    wined3d = This->adapter->parent->wined3d;
     wined3d_format = wined3dformat_from_dxgi_format(format);
 
     EnterCriticalSection(&dxgi_cs);
@@ -151,13 +176,18 @@ static HRESULT STDMETHODCALLTYPE dxgi_output_GetDisplayModeList(IDXGIOutput *ifa
 
     if (!desc)
     {
-        wined3d_decref(wined3d);
         LeaveCriticalSection(&dxgi_cs);
         *mode_count = max_count;
         return S_OK;
     }
 
-    *mode_count = min(*mode_count,max_count);
+    if (max_count > *mode_count)
+    {
+        LeaveCriticalSection(&dxgi_cs);
+        return DXGI_ERROR_MORE_DATA;
+    }
+
+    *mode_count = max_count;
 
     for (i = 0; i < *mode_count; ++i)
     {
@@ -169,7 +199,6 @@ static HRESULT STDMETHODCALLTYPE dxgi_output_GetDisplayModeList(IDXGIOutput *ifa
         if (FAILED(hr))
         {
             WARN("EnumAdapterModes failed, hr %#x.\n", hr);
-            wined3d_decref(wined3d);
             LeaveCriticalSection(&dxgi_cs);
             return hr;
         }
@@ -182,7 +211,6 @@ static HRESULT STDMETHODCALLTYPE dxgi_output_GetDisplayModeList(IDXGIOutput *ifa
         desc[i].ScanlineOrdering = mode.scanline_ordering;
         desc[i].Scaling = DXGI_MODE_SCALING_UNSPECIFIED; /* FIXME */
     }
-    wined3d_decref(wined3d);
     LeaveCriticalSection(&dxgi_cs);
 
     return S_OK;
@@ -288,5 +316,6 @@ void dxgi_output_init(struct dxgi_output *output, struct dxgi_adapter *adapter)
 {
     output->IDXGIOutput_iface.lpVtbl = &dxgi_output_vtbl;
     output->refcount = 1;
+    wined3d_private_store_init(&output->private_store);
     output->adapter = adapter;
 }

@@ -19,36 +19,11 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-#define COM_NO_WINDOWS_H
-
-#include <config.h>
-//#include "wine/port.h"
+#include "precomp.h"
 
 #include <math.h>
-#include <stdarg.h>
-//#include <stdio.h>
-//#include <string.h>
-
-#define NONAMELESSUNION
-#define NONAMELESSSTRUCT
-#include <windef.h>
-#include <winbase.h>
-#define NO_SHLWAPI_REG
-#define NO_SHLWAPI_STREAM
-#include <shlwapi.h>
-//#include "wingdi.h"
-//#include "winuser.h"
-#include <shlobj.h>
 #include <mlang.h>
 #include <ddeml.h>
-#include <wine/unicode.h>
-#include <wine/debug.h>
-
-#include "resource.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(shell);
 
 extern HINSTANCE shlwapi_hInstance;
 
@@ -460,6 +435,47 @@ LPWSTR WINAPI StrCatW(LPWSTR lpszStr, LPCWSTR lpszSrc)
   if (lpszStr && lpszSrc)
     strcatW(lpszStr, lpszSrc);
   return lpszStr;
+}
+
+/*************************************************************************
+ * StrCatChainW	[SHLWAPI.@]
+ *
+ * Concatenates two unicode strings.
+ *
+ * PARAMS
+ *  lpszStr [O] Initial string
+ *  cchMax  [I] Length of destination buffer
+ *  ichAt   [I] Offset from the destination buffer to begin concatenation
+ *  lpszCat [I] String to concatenate
+ *
+ * RETURNS
+ *  The offset from the beginning of pszDst to the terminating NULL.
+ */
+DWORD WINAPI StrCatChainW(LPWSTR lpszStr, DWORD cchMax, DWORD ichAt, LPCWSTR lpszCat)
+{
+  TRACE("(%s,%u,%d,%s)\n", debugstr_w(lpszStr), cchMax, ichAt, debugstr_w(lpszCat));
+
+  if (ichAt == -1)
+    ichAt = strlenW(lpszStr);
+
+  if (!cchMax)
+    return ichAt;
+
+  if (ichAt == cchMax)
+    ichAt--;
+
+  if (lpszCat && ichAt < cchMax)
+  {
+    lpszStr += ichAt;
+    while (ichAt < cchMax - 1 && *lpszCat)
+    {
+      *lpszStr++ = *lpszCat++;
+      ichAt++;
+    }
+    *lpszStr = 0;
+  }
+
+  return ichAt;
 }
 
 /*************************************************************************
@@ -2825,7 +2841,7 @@ HRESULT WINAPI SHLoadIndirectString(LPCWSTR src, LPWSTR dst, UINT dst_len, void 
     TRACE("returning %s\n", debugstr_w(dst));
 end:
     if(hmod) FreeLibrary(hmod);
-    HeapFree(GetProcessHeap(), 0, dllname);
+    LocalFree(dllname);
     return hr;
 }
 

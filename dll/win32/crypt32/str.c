@@ -15,17 +15,8 @@
  * License along with this library; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
-#include <stdarg.h>
 
-#define NONAMELESSUNION
-
-#include "windef.h"
-#include "winbase.h"
-#include "winnls.h"
-#include "winuser.h"
-#include "wincrypt.h"
-#include "wine/debug.h"
-#include "wine/unicode.h"
+#include "crypt32_private.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(crypt);
 
@@ -457,7 +448,7 @@ DWORD WINAPI CertNameToStrA(DWORD dwCertEncodingType, PCERT_NAME_BLOB pName,
             for (j = 0; (!psz || ret < csz) && j < rdn->cRDNAttr; j++)
             {
                 DWORD chars;
-                char prefixBuf[10]; /* big enough for GivenName */
+                char prefixBuf[13]; /* big enough for SERIALNUMBER */
                 LPCSTR prefix = NULL;
 
                 if ((dwStrType & 0x000000ff) == CERT_OID_NAME_STR)
@@ -840,13 +831,14 @@ static BOOL CRYPT_GetNextKeyW(LPCWSTR str, struct X500TokenW *token,
 
 /* Assumes separators are characters in the 0-255 range */
 static BOOL CRYPT_GetNextValueW(LPCWSTR str, DWORD dwFlags, LPCWSTR separators,
- struct X500TokenW *token, LPCWSTR *ppszError)
+ WCHAR *separator_used, struct X500TokenW *token, LPCWSTR *ppszError)
 {
     BOOL ret = TRUE;
 
     TRACE("(%s, %s, %p, %p)\n", debugstr_w(str), debugstr_w(separators), token,
      ppszError);
 
+    *separator_used = 0;
     while (*str && isspaceW(*str))
         str++;
     if (*str)
@@ -886,6 +878,7 @@ static BOOL CRYPT_GetNextValueW(LPCWSTR str, DWORD dwFlags, LPCWSTR separators,
             while (*str && (*str >= 0xff || !map[*str]))
                 str++;
             token->end = str;
+            if (map[*str]) *separator_used = *str;
         }
     }
     else
@@ -1077,6 +1070,7 @@ BOOL WINAPI CertStrToNameW(DWORD dwCertEncodingType, LPCWSTR pszX500,
                     static const WCHAR allSepsWithoutPlus[] = { ',',';','\r','\n',0 };
                     static const WCHAR allSeps[] = { '+',',',';','\r','\n',0 };
                     LPCWSTR sep;
+                    WCHAR sep_used;
 
                     str++;
                     if (dwStrType & CERT_NAME_STR_COMMA_FLAG)
@@ -1089,11 +1083,14 @@ BOOL WINAPI CertStrToNameW(DWORD dwCertEncodingType, LPCWSTR pszX500,
                         sep = allSepsWithoutPlus;
                     else
                         sep = allSeps;
-                    ret = CRYPT_GetNextValueW(str, dwStrType, sep, &token,
+                    ret = CRYPT_GetNextValueW(str, dwStrType, sep, &sep_used, &token,
                      ppszError);
                     if (ret)
                     {
                         str = token.end;
+                        /* if token.end points to the separator, skip it */
+                        if (str && sep_used && *str == sep_used) str++;
+
                         ret = CRYPT_ValueToRDN(dwCertEncodingType, &info,
                          keyOID, &token, dwStrType, ppszError);
                     }

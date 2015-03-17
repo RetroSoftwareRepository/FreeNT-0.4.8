@@ -18,7 +18,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <config.h>
+#include <wine/config.h>
 //#include <assert.h>
 //#include <stdarg.h>
 //#include <string.h>
@@ -61,7 +61,7 @@ HRESULT WINAPI DECLSPEC_HOTPATCH DirectInput8Create(HINSTANCE hinst, DWORD dwVer
     IDirectInputA *pDI;
     HRESULT hr, hrCo;
 
-    TRACE("hInst (%p), dwVersion: %d, riid (%s), punkOuter (%p))\n", hinst, dwVersion, debugstr_guid(riid), punkOuter);
+    TRACE("hInst (%p), dwVersion: %d, riid (%s), punkOuter (%p)\n", hinst, dwVersion, debugstr_guid(riid), punkOuter);
 
     if (!ppDI)
         return E_POINTER;

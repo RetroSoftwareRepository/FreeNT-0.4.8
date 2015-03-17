@@ -237,58 +237,6 @@ MiGetPageEntryForProcess(IN PEPROCESS Process,
     return Pte;
 }
 
-VOID
-NTAPI
-MmDeletePageTable(IN PEPROCESS Process,
-                  IN PVOID Address)
-{
-    PMMPDE_HARDWARE PointerPde;
-
-    //
-    // Not valid for kernel addresses
-    //
-    DPRINT("MmDeletePageTable(%p, %p)\n", Process, Address);
-    ASSERT(Address < MmSystemRangeStart);
-
-    //
-    // Check if this is for a different process
-    //
-    if ((Process) && (Process != PsGetCurrentProcess()))
-    {
-        //
-        // FIXME-USER: Need to attach to the process
-        //
-        ASSERT(FALSE);
-    }
-
-    //
-    // Get the PDE
-    //
-    PointerPde = MiGetPdeAddress(Address);
-
-    //
-    // On ARM, we use a section mapping for the original low-memory mapping
-    //
-    if ((Address) || (PointerPde->u.Hard.Section.Valid == 0))
-    {
-        //
-        // Make sure it's valid
-        //
-        ASSERT(PointerPde->u.Hard.Coarse.Valid == 1);
-    }
-
-    //
-    // Clear the PDE
-    //
-    PointerPde->u.Hard.AsUlong = 0;
-    ASSERT(PointerPde->u.Hard.Coarse.Valid == 0);
-
-    //
-    // Invalidate the TLB entry
-    //
-    MiFlushTlb((PMMPTE)PointerPde, MiGetPteAddress(Address));
-}
-
 BOOLEAN
 NTAPI
 MmCreateProcessAddressSpace(IN ULONG MinWs,
@@ -367,17 +315,6 @@ MmCreateProcessAddressSpace(IN ULONG MinWs,
     return TRUE;
 }
 
-NTSTATUS
-NTAPI
-Mmi386ReleaseMmInfo(IN PEPROCESS Process)
-{
-    //
-    // FIXME-USER: Need to delete address space
-    //
-    UNIMPLEMENTED_DBGBREAK();
-    return STATUS_NOT_IMPLEMENTED;
-}
-
 PULONG
 NTAPI
 MmGetPageDirectory(VOID)
@@ -386,30 +323,6 @@ MmGetPageDirectory(VOID)
     // Return the TTB
     //
     return (PULONG)KeArmTranslationTableRegisterGet().AsUlong;
-}
-
-VOID
-NTAPI
-MmDisableVirtualMapping(IN PEPROCESS Process,
-                        IN PVOID Address,
-                        OUT PBOOLEAN WasDirty,
-                        OUT PPFN_NUMBER Page)
-{
-    //
-    // TODO
-    //
-    UNIMPLEMENTED_DBGBREAK();
-}
-
-VOID
-NTAPI
-MmEnableVirtualMapping(IN PEPROCESS Process,
-                       IN PVOID Address)
-{
-    //
-    // TODO
-    //
-    UNIMPLEMENTED_DBGBREAK();
 }
 
 NTSTATUS
@@ -497,24 +410,6 @@ MmCreateVirtualMappingInternal(IN PEPROCESS Process,
 
 NTSTATUS
 NTAPI
-MmCreateVirtualMappingForKernel(IN PVOID Address,
-                                IN ULONG Protection,
-                                IN PPFN_NUMBER Pages,
-                                IN ULONG PageCount)
-{
-    //
-    // Call the internal version
-    //
-    return MmCreateVirtualMappingInternal(NULL,
-                                          Address,
-                                          Protection,
-                                          Pages,
-                                          PageCount,
-                                          FALSE);
-}
-
-NTSTATUS
-NTAPI
 MmCreateVirtualMappingUnsafe(IN PEPROCESS Process,
                              IN PVOID Address,
                              IN ULONG Protection,
@@ -577,33 +472,8 @@ MmCreateVirtualMapping(IN PEPROCESS Process,
 
 VOID
 NTAPI
-MmRawDeleteVirtualMapping(IN PVOID Address)
-{
-    PMMPTE PointerPte;
-
-    //
-    // Get the PTE
-    //
-    PointerPte = MiGetPageTableForProcess(NULL, Address, FALSE);
-    if ((PointerPte) && (PointerPte->u.Hard.Valid))
-    {
-        //
-        // Destroy it
-        //
-        PointerPte->u.Hard.AsUlong = 0;
-
-        //
-        // Flush the TLB
-        //
-        MiFlushTlb(PointerPte, Address);
-    }
-}
-
-VOID
-NTAPI
 MmDeleteVirtualMapping(IN PEPROCESS Process,
                        IN PVOID Address,
-                       IN BOOLEAN FreePage,
                        OUT PBOOLEAN WasDirty,
                        OUT PPFN_NUMBER Page)
 {
@@ -811,61 +681,6 @@ MmInitGlobalKernelPageDirectory(VOID)
     }
 }
 
-VOID
-NTAPI
-MiInitPageDirectoryMap(VOID)
-{
-    MEMORY_AREA* MemoryArea = NULL;
-    PHYSICAL_ADDRESS BoundaryAddressMultiple;
-    PVOID BaseAddress;
-    NTSTATUS Status;
-
-    //
-    // Create memory area for the PTE area
-    //
-    BoundaryAddressMultiple.QuadPart = 0;
-    BaseAddress = (PVOID)PTE_BASE;
-    Status = MmCreateMemoryArea(MmGetKernelAddressSpace(),
-                                MEMORY_AREA_OWNED_BY_ARM3,
-                                &BaseAddress,
-                                0x1000000,
-                                PAGE_READWRITE,
-                                &MemoryArea,
-                                TRUE,
-                                0,
-                                BoundaryAddressMultiple);
-    ASSERT(NT_SUCCESS(Status));
-
-    //
-    // Create memory area for the PDE area
-    //
-    BaseAddress = (PVOID)PDE_BASE;
-    Status = MmCreateMemoryArea(MmGetKernelAddressSpace(),
-                                MEMORY_AREA_OWNED_BY_ARM3,
-                                &BaseAddress,
-                                0x100000,
-                                PAGE_READWRITE,
-                                &MemoryArea,
-                                TRUE,
-                                0,
-                                BoundaryAddressMultiple);
-    ASSERT(NT_SUCCESS(Status));
-
-    //
-    // And finally, hyperspace
-    //
-    BaseAddress = (PVOID)HYPER_SPACE;
-    Status = MmCreateMemoryArea(MmGetKernelAddressSpace(),
-                                MEMORY_AREA_OWNED_BY_ARM3,
-                                &BaseAddress,
-                                PAGE_SIZE,
-                                PAGE_READWRITE,
-                                &MemoryArea,
-                                TRUE,
-                                0,
-                                BoundaryAddressMultiple);
-    ASSERT(NT_SUCCESS(Status));
-}
 
 /* PUBLIC FUNCTIONS ***********************************************************/
 

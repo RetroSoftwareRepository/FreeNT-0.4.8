@@ -16,29 +16,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <config.h>
-
-#include <stdarg.h>
-#include <assert.h>
-
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-
-#define COBJMACROS
-
-#include <windef.h>
-#include <winbase.h>
-//#include "winuser.h"
-#include <ole2.h>
-//#include "shlobj.h"
-#include <mshtmdid.h>
-
 #include "mshtml_private.h"
-#include "pluginhost.h"
-
-#include <wine/debug.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(mshtml);
 
 const IID IID_HTMLPluginContainer =
     {0xbd7a6050,0xb373,0x4f6f,{0xa4,0x93,0xdd,0x40,0xc5,0x23,0xa8,0x6a}};
@@ -896,6 +874,29 @@ static ULONG WINAPI PHClientSite_AddRef(IOleClientSite *iface)
     return ref;
 }
 
+static void release_plugin_ifaces(PluginHost *This)
+{
+    if(This->disp) {
+        IDispatch_Release(This->disp);
+        This->disp = NULL;
+    }
+
+    if(This->ip_object) {
+        IOleInPlaceObject_Release(This->ip_object);
+        This->ip_object = NULL;
+    }
+
+    if(This->plugin_unk) {
+        IUnknown *unk = This->plugin_unk;
+        LONG ref;
+
+        This->plugin_unk = NULL;
+        ref = IUnknown_Release(unk);
+
+        TRACE("plugin ref = %d\n", ref);
+    }
+}
+
 static ULONG WINAPI PHClientSite_Release(IOleClientSite *iface)
 {
     PluginHost *This = impl_from_IOleClientSite(iface);
@@ -904,10 +905,7 @@ static ULONG WINAPI PHClientSite_Release(IOleClientSite *iface)
     TRACE("(%p) ref=%d\n", This, ref);
 
     if(!ref) {
-        if(This->disp)
-            IDispatch_Release(This->disp);
-        if(This->ip_object)
-            IOleInPlaceObject_Release(This->ip_object);
+        release_plugin_ifaces(This);
         if(This->sink) {
             This->sink->host = NULL;
             IDispatch_Release(&This->sink->IDispatch_iface);
@@ -916,8 +914,6 @@ static ULONG WINAPI PHClientSite_Release(IOleClientSite *iface)
         list_remove(&This->entry);
         if(This->element)
             This->element->plugin_host = NULL;
-        if(This->plugin_unk)
-            IUnknown_Release(This->plugin_unk);
         heap_free(This);
     }
 
@@ -1689,6 +1685,8 @@ void detach_plugin_host(PluginHost *host)
         IDispatch_Release(&host->sink->IDispatch_iface);
         host->sink = NULL;
     }
+
+    release_plugin_ifaces(host);
 
     if(host->element) {
         host->element->plugin_host = NULL;

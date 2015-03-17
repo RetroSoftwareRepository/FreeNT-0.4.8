@@ -3,6 +3,41 @@
  ******************************************************************************/
 
 $if (_WDMDDK_)
+#define FAST_FAIL_LEGACY_GS_VIOLATION           0
+#define FAST_FAIL_VTGUARD_CHECK_FAILURE         1
+#define FAST_FAIL_STACK_COOKIE_CHECK_FAILURE    2
+#define FAST_FAIL_CORRUPT_LIST_ENTRY            3
+#define FAST_FAIL_INCORRECT_STACK               4
+#define FAST_FAIL_INVALID_ARG                   5
+#define FAST_FAIL_GS_COOKIE_INIT                6
+#define FAST_FAIL_FATAL_APP_EXIT                7
+#define FAST_FAIL_RANGE_CHECK_FAILURE           8
+#define FAST_FAIL_UNSAFE_REGISTRY_ACCESS        9
+#define FAST_FAIL_GUARD_ICALL_CHECK_FAILURE     10
+#define FAST_FAIL_GUARD_WRITE_CHECK_FAILURE     11
+#define FAST_FAIL_INVALID_FIBER_SWITCH          12
+#define FAST_FAIL_INVALID_SET_OF_CONTEXT        13
+#define FAST_FAIL_INVALID_REFERENCE_COUNT       14
+#define FAST_FAIL_INVALID_JUMP_BUFFER           18
+#define FAST_FAIL_MRDATA_MODIFIED               19
+#define FAST_FAIL_INVALID_FAST_FAIL_CODE        0xFFFFFFFF
+
+DECLSPEC_NORETURN
+FORCEINLINE
+VOID
+RtlFailFast(
+  _In_ ULONG Code)
+{
+  __fastfail(Code);
+}
+
+#if !defined(NO_KERNEL_LIST_ENTRY_CHECKS) && (defined(_M_CEE_PURE) || defined(_M_CEE_SAFE))
+#define NO_KERNEL_LIST_ENTRY_CHECKS
+#endif
+
+#if !defined(EXTRA_KERNEL_LIST_ENTRY_CHECKS) && defined(__REACTOS__)
+#define EXTRA_KERNEL_LIST_ENTRY_CHECKS
+#endif
 
 #if !defined(MIDL_PASS) && !defined(SORTPP_PASS)
 
@@ -27,6 +62,46 @@ IsListEmpty(
 
 FORCEINLINE
 BOOLEAN
+RemoveEntryListUnsafe(
+  _In_ PLIST_ENTRY Entry)
+{
+  PLIST_ENTRY OldFlink;
+  PLIST_ENTRY OldBlink;
+
+  OldFlink = Entry->Flink;
+  OldBlink = Entry->Blink;
+  OldFlink->Blink = OldBlink;
+  OldBlink->Flink = OldFlink;
+  return (BOOLEAN)(OldFlink == OldBlink);
+}
+
+#if !defined(NO_KERNEL_LIST_ENTRY_CHECKS)
+FORCEINLINE
+VOID
+FatalListEntryError(
+  _In_ PVOID P1,
+  _In_ PVOID P2,
+  _In_ PVOID P3)
+{
+  UNREFERENCED_PARAMETER(P1);
+  UNREFERENCED_PARAMETER(P2);
+  UNREFERENCED_PARAMETER(P3);
+
+  RtlFailFast(FAST_FAIL_CORRUPT_LIST_ENTRY);
+}
+
+FORCEINLINE
+VOID
+RtlpCheckListEntry(
+  _In_ PLIST_ENTRY Entry)
+{
+  if (Entry->Flink->Blink != Entry || Entry->Blink->Flink != Entry)
+    FatalListEntryError(Entry->Blink, Entry, Entry->Flink);
+}
+#endif
+
+FORCEINLINE
+BOOLEAN
 RemoveEntryList(
   _In_ PLIST_ENTRY Entry)
 {
@@ -35,6 +110,14 @@ RemoveEntryList(
 
   OldFlink = Entry->Flink;
   OldBlink = Entry->Blink;
+#if !defined(NO_KERNEL_LIST_ENTRY_CHECKS)
+#ifdef EXTRA_KERNEL_LIST_ENTRY_CHECKS
+  if (OldFlink == Entry || OldBlink == Entry)
+    FatalListEntryError(OldBlink, Entry, OldFlink);
+#endif
+  if (OldFlink->Blink != Entry || OldBlink->Flink != Entry)
+    FatalListEntryError(OldBlink, Entry, OldFlink);
+#endif
   OldFlink->Blink = OldBlink;
   OldBlink->Flink = OldFlink;
   return (BOOLEAN)(OldFlink == OldBlink);
@@ -48,8 +131,19 @@ RemoveHeadList(
   PLIST_ENTRY Flink;
   PLIST_ENTRY Entry;
 
+#if !defined(NO_KERNEL_LIST_ENTRY_CHECKS) && DBG
+  RtlpCheckListEntry(ListHead);
+#ifdef EXTRA_KERNEL_LIST_ENTRY_CHECKS
+  if (ListHead->Flink == ListHead || ListHead->Blink == ListHead)
+    FatalListEntryError(ListHead->Blink, ListHead, ListHead->Flink);
+#endif
+#endif
   Entry = ListHead->Flink;
   Flink = Entry->Flink;
+#if !defined(NO_KERNEL_LIST_ENTRY_CHECKS)
+  if (Entry->Blink != ListHead || Flink->Blink != Entry)
+    FatalListEntryError(ListHead, Entry, Flink);
+#endif
   ListHead->Flink = Flink;
   Flink->Blink = ListHead;
   return Entry;
@@ -63,8 +157,19 @@ RemoveTailList(
   PLIST_ENTRY Blink;
   PLIST_ENTRY Entry;
 
+#if !defined(NO_KERNEL_LIST_ENTRY_CHECKS) && DBG
+  RtlpCheckListEntry(ListHead);
+#ifdef EXTRA_KERNEL_LIST_ENTRY_CHECKS
+  if (ListHead->Flink == ListHead || ListHead->Blink == ListHead)
+    FatalListEntryError(ListHead->Blink, ListHead, ListHead->Flink);
+#endif
+#endif
   Entry = ListHead->Blink;
   Blink = Entry->Blink;
+#if !defined(NO_KERNEL_LIST_ENTRY_CHECKS)
+  if (Blink->Flink != Entry || Entry->Flink != ListHead)
+    FatalListEntryError(Blink, Entry, ListHead);
+#endif
   ListHead->Blink = Blink;
   Blink->Flink = ListHead;
   return Entry;
@@ -77,9 +182,16 @@ InsertTailList(
   _Inout_ __drv_aliasesMem PLIST_ENTRY Entry)
 {
   PLIST_ENTRY OldBlink;
+#if !defined(NO_KERNEL_LIST_ENTRY_CHECKS) && DBG
+  RtlpCheckListEntry(ListHead);
+#endif
   OldBlink = ListHead->Blink;
   Entry->Flink = ListHead;
   Entry->Blink = OldBlink;
+#if !defined(NO_KERNEL_LIST_ENTRY_CHECKS)
+  if (OldBlink->Flink != ListHead)
+    FatalListEntryError(OldBlink->Blink, OldBlink, ListHead);
+#endif
   OldBlink->Flink = Entry;
   ListHead->Blink = Entry;
 }
@@ -91,9 +203,16 @@ InsertHeadList(
   _Inout_ __drv_aliasesMem PLIST_ENTRY Entry)
 {
   PLIST_ENTRY OldFlink;
+#if !defined(NO_KERNEL_LIST_ENTRY_CHECKS) && DBG
+  RtlpCheckListEntry(ListHead);
+#endif
   OldFlink = ListHead->Flink;
   Entry->Flink = OldFlink;
   Entry->Blink = ListHead;
+#if !defined(NO_KERNEL_LIST_ENTRY_CHECKS)
+  if (OldFlink->Blink != ListHead)
+    FatalListEntryError(ListHead, OldFlink, OldFlink->Flink);
+#endif
   OldFlink->Blink = Entry;
   ListHead->Flink = Entry;
 }
@@ -106,6 +225,10 @@ AppendTailList(
 {
   PLIST_ENTRY ListEnd = ListHead->Blink;
 
+#if !defined(NO_KERNEL_LIST_ENTRY_CHECKS)
+  RtlpCheckListEntry(ListHead);
+  RtlpCheckListEntry(ListToAppend);
+#endif
   ListHead->Blink->Flink = ListToAppend;
   ListHead->Blink = ListToAppend->Blink;
   ListToAppend->Blink->Flink = ListHead;
@@ -1104,7 +1227,7 @@ VOID
 NTAPI
 RtlUpperString(
   _Inout_ PSTRING DestinationString,
-  _In_ const PSTRING SourceString);
+  _In_ const STRING *SourceString);
 
 _IRQL_requires_max_(PASSIVE_LEVEL)
 _When_(AllocateDestinationString, _Must_inspect_result_)
@@ -1140,8 +1263,8 @@ NTSYSAPI
 LONG
 NTAPI
 RtlCompareString(
-  _In_ const PSTRING String1,
-  _In_ const PSTRING String2,
+  _In_ const STRING *String1,
+  _In_ const STRING *String2,
   _In_ BOOLEAN CaseInSensitive);
 
 NTSYSAPI
@@ -1149,7 +1272,7 @@ VOID
 NTAPI
 RtlCopyString(
   _Out_ PSTRING DestinationString,
-  _In_opt_ const PSTRING SourceString);
+  _In_opt_ const STRING *SourceString);
 
 _IRQL_requires_max_(PASSIVE_LEVEL)
 _Must_inspect_result_
@@ -1157,8 +1280,8 @@ NTSYSAPI
 BOOLEAN
 NTAPI
 RtlEqualString(
-  _In_ const PSTRING String1,
-  _In_ const PSTRING String2,
+  _In_ const STRING *String1,
+  _In_ const STRING *String2,
   _In_ BOOLEAN CaseInSensitive);
 
 _IRQL_requires_max_(PASSIVE_LEVEL)
@@ -1232,6 +1355,16 @@ RtlCreateUnicodeString(
   _Out_ _At_(DestinationString->Buffer, __drv_allocatesMem(Mem))
     PUNICODE_STRING DestinationString,
   _In_z_ PCWSTR SourceString);
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+_Must_inspect_result_
+NTSYSAPI
+BOOLEAN
+NTAPI
+RtlPrefixString(
+  _In_ const STRING *String1,
+  _In_ const STRING *String2,
+  _In_ BOOLEAN CaseInsensitive);
 
 _IRQL_requires_max_(APC_LEVEL)
 NTSYSAPI
@@ -3076,23 +3209,42 @@ RtlCheckBit(
     DbgPrint("%s(%d): Soft assertion failed\n   Expression: %s\n", __FILE__, __LINE__, #exp), FALSE : TRUE)
 
 #define RTL_SOFT_VERIFYMSG(msg, exp) \
-  (VOID)((!(exp)) ? \
+  ((!(exp)) ? \
     DbgPrint("%s(%d): Soft assertion failed\n   Expression: %s\n   Message: %s\n", __FILE__, __LINE__, #exp, (msg)), FALSE : TRUE)
 
-#define ASSERT(exp) ((void)RTL_VERIFY(exp))
-#define ASSERTMSG(msg, exp) ((void)RTL_VERIFYMSG(msg, exp))
+/* The ASSERTs must be cast to void to avoid warnings about unused results.
+ * We also cannot invoke the VERIFY versions because the indirection messes
+ * with stringify. */
+#define ASSERT(exp) \
+  ((VOID)((!(exp)) ? \
+    RtlAssert( (PVOID)#exp, (PVOID)__FILE__, __LINE__, NULL ), FALSE : TRUE))
 
-#define RTL_SOFT_ASSERT(exp) ((void)RTL_SOFT_VERIFY(exp))
-#define RTL_SOFT_ASSERTMSG(msg, exp) ((void)RTL_SOFT_VERIFYMSG(msg, exp))
+#define ASSERTMSG(msg, exp) \
+  ((VOID)((!(exp)) ? \
+    RtlAssert( (PVOID)#exp, (PVOID)__FILE__, __LINE__, (PCHAR)msg ), FALSE : TRUE))
+
+#define RTL_SOFT_ASSERT(exp) \
+  ((VOID)((!(exp)) ? \
+    DbgPrint("%s(%d): Soft assertion failed\n   Expression: %s\n", __FILE__, __LINE__, #exp), FALSE : TRUE))
+
+#define RTL_SOFT_ASSERTMSG(msg, exp) \
+  ((VOID)((!(exp)) ? \
+    DbgPrint("%s(%d): Soft assertion failed\n   Expression: %s\n   Message: %s\n", __FILE__, __LINE__, #exp, (msg)), FALSE : TRUE))
 
 #if defined(_MSC_VER)
 # define __assert_annotationA(msg) __annotation(L"Debug", L"AssertFail", L ## msg)
 # define __assert_annotationW(msg) __annotation(L"Debug", L"AssertFail", msg)
 #else
 # define __assert_annotationA(msg) \
-    DbgPrint("Assertion %s(%d): %s", __FILE__, __LINE__, msg)
+    DbgPrint("Assertion failed at %s(%d): %s\n", __FILE__, __LINE__, msg)
 # define __assert_annotationW(msg) \
-    DbgPrint("Assertion %s(%d): %S", __FILE__, __LINE__, msg)
+    DbgPrint("Assertion failed at %s(%d): %S\n", __FILE__, __LINE__, msg)
+#endif
+
+#ifdef _PREFAST_
+#define __analysis_unreachable() __assume(0)
+#else
+#define __analysis_unreachable() ((void)0)
 #endif
 
 #define NT_VERIFY(exp) \
@@ -3110,9 +3262,21 @@ RtlCheckBit(
         (__assert_annotationW(msg), \
          DbgRaiseAssertionFailure(), FALSE) : TRUE)
 
-#define NT_ASSERT(exp) ((void)NT_VERIFY(exp))
-#define NT_ASSERTMSG(msg, exp) ((void)NT_VERIFYMSG(msg, exp))
-#define NT_ASSERTMSGW(msg, exp) ((void)NT_VERIFYMSGW(msg, exp))
+/* Can't reuse verify, see above */
+#define NT_ASSERT(exp) \
+   ((VOID)((!(exp)) ? \
+      (__assert_annotationA(#exp), \
+       DbgRaiseAssertionFailure(), __analysis_unreachable(), FALSE) : TRUE))
+
+#define NT_ASSERTMSG(msg, exp) \
+   ((VOID)((!(exp)) ? \
+      (__assert_annotationA(msg), \
+      DbgRaiseAssertionFailure(), __analysis_unreachable(), FALSE) : TRUE))
+
+#define NT_ASSERTMSGW(msg, exp) \
+    ((VOID)((!(exp)) ? \
+        (__assert_annotationW(msg), \
+         DbgRaiseAssertionFailure(), __analysis_unreachable(), FALSE) : TRUE))
 
 #else /* !DBG */
 

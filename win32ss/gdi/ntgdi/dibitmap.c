@@ -458,6 +458,7 @@ DibCreateDIBSurface(
                                  bitmapformat.iFormat,
                                  fjBitmap,
                                  0,
+                                 cjMaxBits,
                                  pvBits);
     if (!psurf)
     {
@@ -689,7 +690,7 @@ GreCreateDIBitmapInternal(
         }
 
         /* Allocate a surface for the bitmap */
-        psurfBmp = SURFACE_AllocSurface(STYPE_BITMAP, cx, cy, iFormat, 0, 0, NULL);
+        psurfBmp = SURFACE_AllocSurface(STYPE_BITMAP, cx, cy, iFormat, 0, 0, 0, NULL);
         if (psurfBmp == NULL)
         {
             goto cleanup;
@@ -718,7 +719,7 @@ GreCreateDIBitmapInternal(
         GDIOBJ_vReferenceObjectByPointer(&ppalBmp->BaseObject);
 
         /* Allocate a surface for the bitmap */
-        psurfBmp = SURFACE_AllocSurface(STYPE_BITMAP, cx, cy, iFormat, 0, 0, NULL);
+        psurfBmp = SURFACE_AllocSurface(STYPE_BITMAP, cx, cy, iFormat, 0, 0, 0, NULL);
         if (psurfBmp == NULL)
         {
             goto cleanup;
@@ -1302,14 +1303,14 @@ GreStretchDIBitsInternal(
                           pdc->pdcattr->crForegroundClr);
 
     /* Prepare DC for blit */
-    DC_vPrepareDCsForBlit(pdc, rcDst, NULL, rcSrc);
+    DC_vPrepareDCsForBlit(pdc, &rcDst, NULL, &rcSrc);
 
     /* Perform the stretch operation (note: this will go to
        EngBitBlt when no stretching is needed) */
     bResult = IntEngStretchBlt(&psurfDst->SurfObj,
                                &psurfDIB->SurfObj,
                                NULL,
-                               pdc->rosdc.CombinedClip,
+                               &pdc->co.ClipObj,
                                &exlo.xlo,
                                &pdc->dclevel.ca,
                                &rcDst,

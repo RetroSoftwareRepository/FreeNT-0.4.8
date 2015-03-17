@@ -3,7 +3,7 @@
  * PROJECT:         ReactOS kernel
  * FILE:            ntoskrnl/ke/i386/ctxswitch.S
  * PURPOSE:         Thread Context Switching
- * 
+ *
  * PROGRAMMERS:     Alex Ionescu (alex@relsoft.net)
  *                  Gregor Anich (FPU Code)
  */
@@ -63,7 +63,7 @@ PUBLIC @KiSwitchThreads@8
     /* Load the new kernel stack and switch OS to new thread */
     mov esp, edx
     call @KiSwapContextExit@8
-    
+
     /* Now we're on the new thread. Return to the caller to restore registers */
     add esp, 2 * 4
     ret
@@ -143,7 +143,7 @@ _Ki386SetupAndExitToV86Mode@4:
 
     /* Enter V8086 mode */
     pushad
-    sub esp, (12 + KTRAP_FRAME_LENGTH + NPX_FRAME_LENGTH)
+    sub esp, (12 + KTRAP_FRAME_LENGTH + NPX_FRAME_LENGTH + 16)
     mov ecx, esp
     call @KiEnterV86Mode@4
     jmp $
@@ -155,7 +155,7 @@ PUBLIC @Ki386BiosCallReturnAddress@4
     /* Exit V8086 mode */
     call @KiExitV86Mode@4
     mov esp, eax
-    add esp, (12 + KTRAP_FRAME_LENGTH + NPX_FRAME_LENGTH)
+    add esp, (12 + KTRAP_FRAME_LENGTH + NPX_FRAME_LENGTH + 16)
     popad
     ret 4
 

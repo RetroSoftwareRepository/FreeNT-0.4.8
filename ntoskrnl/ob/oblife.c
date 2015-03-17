@@ -370,7 +370,7 @@ ObpCaptureObjectName(IN OUT PUNICODE_STRING CapturedName,
 {
     NTSTATUS Status = STATUS_SUCCESS;
     ULONG StringLength;
-    PWCHAR StringBuffer = NULL;
+    PWCHAR _SEH2_VOLATILE StringBuffer = NULL;
     UNICODE_STRING LocalName;
     PAGED_CODE();
 
@@ -491,7 +491,8 @@ ObpCaptureObjectCreateInformation(IN POBJECT_ATTRIBUTES ObjectAttributes,
             /* Check if we have a security descriptor */
             if (SecurityDescriptor)
             {
-                /* Capture it */
+                /* Capture it. Note: This has an implicit memory barrier due
+                   to the function call, so cleanup is safe here.) */
                 Status = SeCaptureSecurityDescriptor(SecurityDescriptor,
                                                      AccessMode,
                                                      NonPagedPool,
@@ -1145,7 +1146,7 @@ ObCreateObjectType(IN PUNICODE_STRING TypeName,
 
             /* Set the key and free the converted name */
             LocalObjectType->Key = *(PULONG)AnsiName.Buffer;
-            ExFreePool(AnsiName.Buffer);
+            RtlFreeAnsiString(&AnsiName);
         }
         else
         {
@@ -1227,12 +1228,19 @@ ObCreateObjectType(IN PUNICODE_STRING TypeName,
     InitializeListHead(&LocalObjectType->TypeList);
 
     /* Lock the object type */
-    ObpEnterObjectTypeMutex(LocalObjectType);
+    ObpEnterObjectTypeMutex(ObpTypeObjectType);
 
     /* Get creator info and insert it into the type list */
     CreatorInfo = OBJECT_HEADER_TO_CREATOR_INFO(Header);
-    if (CreatorInfo) InsertTailList(&ObpTypeObjectType->TypeList,
-                                    &CreatorInfo->TypeList);
+    if (CreatorInfo)
+    {
+        InsertTailList(&ObpTypeObjectType->TypeList,
+                       &CreatorInfo->TypeList);
+
+        /* CORE-8423: Avoid inserting this a second time if someone creates a
+         * handle to the object type (bug in Windows 2003) */
+        Header->Flags &= ~OB_FLAG_CREATE_INFO;
+    }
 
     /* Set the index and the entry into the object type array */
     LocalObjectType->Index = ObpTypeObjectType->TotalNumberOfObjects;
@@ -1246,7 +1254,7 @@ ObCreateObjectType(IN PUNICODE_STRING TypeName,
     }
 
     /* Release the object type */
-    ObpLeaveObjectTypeMutex(LocalObjectType);
+    ObpLeaveObjectTypeMutex(ObpTypeObjectType);
 
     /* Check if we're actually creating the directory object itself */
     if (!(ObpTypeDirectoryObject) ||
@@ -1276,8 +1284,18 @@ VOID
 NTAPI
 ObDeleteCapturedInsertInfo(IN PVOID Object)
 {
-    UNIMPLEMENTED;
-    return;
+    POBJECT_HEADER ObjectHeader;
+    PAGED_CODE();
+
+    /* Check if there is anything to free */
+    ObjectHeader = OBJECT_TO_OBJECT_HEADER(Object);
+    if ((ObjectHeader->Flags & OB_FLAG_CREATE_INFO) &&
+        (ObjectHeader->ObjectCreateInfo != NULL))
+    {
+        /* Free the create info */
+        ObpFreeObjectCreateInformation(ObjectHeader->ObjectCreateInfo);
+        ObjectHeader->ObjectCreateInfo = NULL;
+    }
 }
 
 VOID
@@ -1675,14 +1693,14 @@ NtSetInformationObject(IN HANDLE ObjectHandle,
     switch (ObjectInformationClass)
     {
         case ObjectHandleFlagInformation:
-        
+
             /* Validate the length */
             if (Length != sizeof(OBJECT_HANDLE_ATTRIBUTE_INFORMATION))
             {
                 /* Invalid length */
                 return STATUS_INFO_LENGTH_MISMATCH;
             }
-            
+
             /* Save the previous mode */
             Context.PreviousMode = ExGetPreviousMode();
 
@@ -1714,7 +1732,7 @@ NtSetInformationObject(IN HANDLE ObjectHandle,
             }
 
             /* Check if this is a kernel handle */
-            if (ObIsKernelHandle(ObjectHandle, Context.PreviousMode))
+            if (ObpIsKernelHandle(ObjectHandle, Context.PreviousMode))
             {
                 /* Get the actual handle */
                 ObjectHandle = ObKernelHandleToHandle(ObjectHandle);
@@ -1752,9 +1770,9 @@ NtSetInformationObject(IN HANDLE ObjectHandle,
             /* De-attach if we were attached, and return status */
             if (AttachedToProcess) KeUnstackDetachProcess(&ApcState);
             break;
-        
+
         case ObjectSessionInformation:
-        
+
             /* Only a system process can do this */
             PreviousMode = ExGetPreviousMode();
             if (!SeSinglePrivilegeCheck(SeTcbPrivilege, PreviousMode))
@@ -1766,8 +1784,8 @@ NtSetInformationObject(IN HANDLE ObjectHandle,
             else
             {
                 /* Get the object directory */
-                Status = ObReferenceObjectByHandle(ObjectHandle, 
-                                                   0, 
+                Status = ObReferenceObjectByHandle(ObjectHandle,
+                                                   0,
                                                    ObDirectoryType,
                                                    PreviousMode,
                                                    (PVOID*)&Directory,
@@ -1781,7 +1799,7 @@ NtSetInformationObject(IN HANDLE ObjectHandle,
                 }
             }
             break;
-        
+
         default:
             /* Unsupported class */
             Status = STATUS_INVALID_INFO_CLASS;

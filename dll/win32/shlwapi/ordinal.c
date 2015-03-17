@@ -20,52 +20,25 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-#define COM_NO_WINDOWS_H
+#include "precomp.h"
 
-#include <config.h>
-//#include "wine/port.h"
-
-//#include <stdarg.h>
 #include <stdio.h>
-//#include <string.h>
 
-#define COBJMACROS
-#define NONAMELESSUNION
-#define NONAMELESSSTRUCT
-
-#include <windef.h>
-#include <winbase.h>
-//#include "winnls.h"
-#include <winreg.h>
-#include <wingdi.h>
-//#include "winuser.h"
 #include <winver.h>
 #include <winnetwk.h>
-#include <wincon.h>
 #include <mmsystem.h>
-#include "objbase.h"
-//#include "exdisp.h"
-#include "shdeprecated.h"
-#include <shlobj.h>
-#include <shlwapi.h>
+#include <shdeprecated.h>
 #include <shellapi.h>
 #include <commdlg.h>
 #include <mlang.h>
 #include <mshtmhst.h>
-#include <wine/unicode.h>
-#include <wine/debug.h>
-
-
-WINE_DEFAULT_DEBUG_CHANNEL(shell);
 
 /* DLL handles for late bound calls */
 extern HINSTANCE shlwapi_hInstance;
 extern DWORD SHLWAPI_ThreadRef_index;
 
 HRESULT WINAPI IUnknown_QueryService(IUnknown*,REFGUID,REFIID,LPVOID*);
-HRESULT WINAPI SHInvokeCommand(HWND,IShellFolder*,LPCITEMIDLIST,BOOL);
+HRESULT WINAPI SHInvokeCommand(HWND,IShellFolder*,LPCITEMIDLIST,DWORD);
 BOOL    WINAPI SHAboutInfoW(LPWSTR,DWORD);
 
 /*
@@ -79,13 +52,24 @@ BOOL    WINAPI SHAboutInfoW(LPWSTR,DWORD);
 */
 
 /*************************************************************************
- * SHLWAPI_DupSharedHandle
+ * @   [SHLWAPI.11]
  *
- * Internal implementation of SHLWAPI_11.
+ * Copy a sharable memory handle from one process to another.
+ *
+ * PARAMS
+ * hShared     [I] Shared memory handle to duplicate
+ * dwSrcProcId [I] ID of the process owning hShared
+ * dwDstProcId [I] ID of the process wanting the duplicated handle
+ * dwAccess    [I] Desired DuplicateHandle() access
+ * dwOptions   [I] Desired DuplicateHandle() options
+ *
+ * RETURNS
+ * Success: A handle suitable for use by the dwDstProcId process.
+ * Failure: A NULL handle.
+ *
  */
-static HANDLE SHLWAPI_DupSharedHandle(HANDLE hShared, DWORD dwDstProcId,
-                                      DWORD dwSrcProcId, DWORD dwAccess,
-                                      DWORD dwOptions)
+HANDLE WINAPI SHMapHandle(HANDLE hShared, DWORD dwSrcProcId, DWORD dwDstProcId,
+                          DWORD dwAccess, DWORD dwOptions)
 {
   HANDLE hDst, hSrc;
   DWORD dwMyProcId = GetCurrentProcessId();
@@ -111,7 +95,7 @@ static HANDLE SHLWAPI_DupSharedHandle(HANDLE hShared, DWORD dwDstProcId,
     if (hSrc)
     {
       /* Make handle available to dest process */
-      if (!DuplicateHandle(hDst, hShared, hSrc, &hRet,
+      if (!DuplicateHandle(hSrc, hShared, hDst, &hRet,
                            dwAccess, 0, dwOptions | DUPLICATE_SAME_ACCESS))
         hRet = NULL;
 
@@ -175,9 +159,8 @@ HANDLE WINAPI SHAllocShared(LPCVOID lpvData, DWORD dwSize, DWORD dwProcId)
 
     /* Release view. All further views mapped will be opaque */
     UnmapViewOfFile(pMapped);
-    hRet = SHLWAPI_DupSharedHandle(hMap, dwProcId,
-                                   GetCurrentProcessId(), FILE_MAP_ALL_ACCESS,
-                                   DUPLICATE_SAME_ACCESS);
+    hRet = SHMapHandle(hMap, GetCurrentProcessId(), dwProcId,
+                       FILE_MAP_ALL_ACCESS, DUPLICATE_SAME_ACCESS);
   }
 
   CloseHandle(hMap);
@@ -206,8 +189,8 @@ PVOID WINAPI SHLockShared(HANDLE hShared, DWORD dwProcId)
   TRACE("(%p %d)\n", hShared, dwProcId);
 
   /* Get handle to shared memory for current process */
-  hDup = SHLWAPI_DupSharedHandle(hShared, dwProcId, GetCurrentProcessId(),
-                                 FILE_MAP_ALL_ACCESS, 0);
+  hDup = SHMapHandle(hShared, dwProcId, GetCurrentProcessId(), FILE_MAP_ALL_ACCESS, 0);
+
   /* Get View */
   pMapped = MapViewOfFile(hDup, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, 0);
   CloseHandle(hDup);
@@ -257,37 +240,10 @@ BOOL WINAPI SHFreeShared(HANDLE hShared, DWORD dwProcId)
   TRACE("(%p %d)\n", hShared, dwProcId);
 
   /* Get a copy of the handle for our process, closing the source handle */
-  hClose = SHLWAPI_DupSharedHandle(hShared, dwProcId, GetCurrentProcessId(),
-                                   FILE_MAP_ALL_ACCESS,DUPLICATE_CLOSE_SOURCE);
+  hClose = SHMapHandle(hShared, dwProcId, GetCurrentProcessId(),
+                       FILE_MAP_ALL_ACCESS,DUPLICATE_CLOSE_SOURCE);
   /* Close local copy */
   return CloseHandle(hClose);
-}
-
-/*************************************************************************
- * @   [SHLWAPI.11]
- *
- * Copy a sharable memory handle from one process to another.
- *
- * PARAMS
- * hShared     [I] Shared memory handle to duplicate
- * dwDstProcId [I] ID of the process wanting the duplicated handle
- * dwSrcProcId [I] ID of the process owning hShared
- * dwAccess    [I] Desired DuplicateHandle() access
- * dwOptions   [I] Desired DuplicateHandle() options
- *
- * RETURNS
- * Success: A handle suitable for use by the dwDstProcId process.
- * Failure: A NULL handle.
- *
- */
-HANDLE WINAPI SHMapHandle(HANDLE hShared, DWORD dwDstProcId, DWORD dwSrcProcId,
-                          DWORD dwAccess, DWORD dwOptions)
-{
-  HANDLE hRet;
-
-  hRet = SHLWAPI_DupSharedHandle(hShared, dwDstProcId, dwSrcProcId,
-                                 dwAccess, dwOptions);
-  return hRet;
 }
 
 /*************************************************************************
@@ -2938,7 +2894,7 @@ HWND WINAPI SHCreateWorkerWindowW(LONG wndProc, HWND hWndParent, DWORD dwExStyle
 HRESULT WINAPI SHInvokeDefaultCommand(HWND hWnd, IShellFolder* lpFolder, LPCITEMIDLIST lpApidl)
 {
     TRACE("%p %p %p\n", hWnd, lpFolder, lpApidl);
-    return SHInvokeCommand(hWnd, lpFolder, lpApidl, FALSE);
+    return SHInvokeCommand(hWnd, lpFolder, lpApidl, 0);
 }
 
 /*************************************************************************
@@ -3486,19 +3442,19 @@ UINT WINAPI SHDefExtractIconWrapW(LPCWSTR pszIconFile, int iIndex, UINT uFlags, 
  *  hWnd           [I] Window displaying the shell folder
  *  lpFolder       [I] IShellFolder interface
  *  lpApidl        [I] Id for the particular folder desired
- *  bInvokeDefault [I] Whether to invoke the default menu item
+ *  dwCommandId    [I] The command ID to invoke (0=invoke default)
  *
  * RETURNS
  *  Success: S_OK. If bInvokeDefault is TRUE, the default menu action was
  *           executed.
  *  Failure: An HRESULT error code indicating the error.
  */
-HRESULT WINAPI SHInvokeCommand(HWND hWnd, IShellFolder* lpFolder, LPCITEMIDLIST lpApidl, BOOL bInvokeDefault)
+HRESULT WINAPI SHInvokeCommand(HWND hWnd, IShellFolder* lpFolder, LPCITEMIDLIST lpApidl, DWORD dwCommandId)
 {
   IContextMenu *iContext;
   HRESULT hRet;
 
-  TRACE("(%p, %p, %p, %d)\n", hWnd, lpFolder, lpApidl, bInvokeDefault);
+  TRACE("(%p, %p, %p, %u)\n", hWnd, lpFolder, lpApidl, dwCommandId);
 
   if (!lpFolder)
     return E_FAIL;
@@ -3512,16 +3468,16 @@ HRESULT WINAPI SHInvokeCommand(HWND hWnd, IShellFolder* lpFolder, LPCITEMIDLIST 
     if ((hMenu = CreatePopupMenu()))
     {
       HRESULT hQuery;
-      DWORD dwDefaultId = 0;
 
       /* Add the context menu entries to the popup */
       hQuery = IContextMenu_QueryContextMenu(iContext, hMenu, 0, 1, 0x7FFF,
-                                             bInvokeDefault ? CMF_NORMAL : CMF_DEFAULTONLY);
+                                             dwCommandId ? CMF_NORMAL : CMF_DEFAULTONLY);
 
       if (SUCCEEDED(hQuery))
       {
-        if (bInvokeDefault &&
-            (dwDefaultId = GetMenuDefaultItem(hMenu, 0, 0)) != (UINT)-1)
+        if (!dwCommandId)
+          dwCommandId = GetMenuDefaultItem(hMenu, 0, 0);
+        if (dwCommandId != (UINT)-1)
         {
           CMINVOKECOMMANDINFO cmIci;
           /* Invoke the default item */
@@ -3529,8 +3485,8 @@ HRESULT WINAPI SHInvokeCommand(HWND hWnd, IShellFolder* lpFolder, LPCITEMIDLIST 
           cmIci.cbSize = sizeof(cmIci);
           cmIci.fMask = CMIC_MASK_ASYNCOK;
           cmIci.hwnd = hWnd;
-          cmIci.lpVerb = MAKEINTRESOURCEA(dwDefaultId);
-          cmIci.nShow = SW_SCROLLCHILDREN;
+          cmIci.lpVerb = MAKEINTRESOURCEA(dwCommandId);
+          cmIci.nShow = SW_SHOWNORMAL;
 
           hRet = IContextMenu_InvokeCommand(iContext, &cmIci);
         }
@@ -5351,3 +5307,10 @@ DWORD WINAPI SHGetObjectCompatFlags(IUnknown *pUnk, const CLSID *clsid)
 
     return ret;
 }
+
+#ifdef __REACTOS__
+DWORD WINAPI SHGetAllAccessSA(void)
+{
+    return 0;
+}
+#endif

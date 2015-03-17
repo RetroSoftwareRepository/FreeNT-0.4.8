@@ -2,14 +2,13 @@
 #define CDFS_H
 
 #include <ntifs.h>
-#include <ntddk.h>
 #include <ntddcdrm.h>
+#include <pseh/pseh2.h>
 
 #define CDFS_BASIC_SECTOR 2048
 #define CDFS_PRIMARY_DESCRIPTOR_LOCATION 16
 #define BLOCKSIZE CDFS_BASIC_SECTOR
 #define CDFS_MAX_NAME_LEN 256
-
 
 /* Volume descriptor types (VdType) */
 #define BOOT_VOLUME_DESCRIPTOR_TYPE		0
@@ -162,6 +161,10 @@ typedef struct
   PFILE_OBJECT StreamFileObject;
 
   CDINFO CdInfo;
+
+  /* Notifications */
+  LIST_ENTRY NotifyList;
+  PNOTIFY_SYNC NotifySync;
 } DEVICE_EXTENSION, *PDEVICE_EXTENSION, VCB, *PVCB;
 
 
@@ -191,8 +194,9 @@ typedef struct _FCB
 
   UNICODE_STRING ShortNameU;
 
-  WCHAR *ObjectName;		/* point on filename (250 chars max) in PathName */
-  WCHAR PathName[MAX_PATH];	/* path+filename 260 max */
+  WCHAR *ObjectName;			/* point on filename (250 chars max) in PathName */
+  UNICODE_STRING PathName;		/* path+filename 260 max */
+  WCHAR PathNameBuffer[MAX_PATH];	/* Buffer for PathName */
   WCHAR ShortNameBuffer[13];
 
   LIST_ENTRY FcbListEntry;
@@ -200,8 +204,8 @@ typedef struct _FCB
 
   ULONG DirIndex;
 
-  LARGE_INTEGER IndexNumber;	/* HighPart: Parent directory start sector */
-				/* LowPart: Directory record offset in the parent directory file */
+  LARGE_INTEGER IndexNumber;		/* HighPart: Parent directory start sector */
+					/* LowPart: Directory record offset in the parent directory file */
 
   LONG RefCount;
   ULONG Flags;
@@ -472,4 +476,4 @@ CdfsAcquireForLazyWrite(IN PVOID Context,
 VOID NTAPI
 CdfsReleaseFromLazyWrite(IN PVOID Context);
 
-#endif //CDFS_H
+#endif /* CDFS_H */

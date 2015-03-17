@@ -11,7 +11,7 @@
 #include <ntoskrnl.h>
 #define NDEBUG
 #include <debug.h>
-#include "../mm/ARM3/miarm.h"
+#include <mm/ARM3/miarm.h>
 #undef MmSystemRangeStart
 
 VOID NTAPI RtlpBreakWithStatusInstruction(VOID);
@@ -79,8 +79,8 @@ PKDEBUG_SWITCH_ROUTINE KiDebugSwitchRoutine;
 //
 BOOLEAN KdBreakAfterSymbolLoad;
 BOOLEAN KdPitchDebugger;
-BOOLEAN _KdDebuggerNotPresent;
-BOOLEAN _KdDebuggerEnabled;
+BOOLEAN KdDebuggerNotPresent;
+BOOLEAN KdDebuggerEnabled;
 BOOLEAN KdAutoEnableOnEvent;
 BOOLEAN KdBlockEnable;
 BOOLEAN KdIgnoreUmExceptions;

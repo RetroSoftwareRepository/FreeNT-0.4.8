@@ -1,7 +1,13 @@
+#ifndef _RAPPS_H
+#define _RAPPS_H
+
+#include <stdarg.h>
+
 #define WIN32_NO_STATUS
 #define _INC_WINDOWS
 #define COM_NO_WINDOWS_H
-#include <stdarg.h>
+#define COBJMACROS
+
 #include <windef.h>
 #include <winbase.h>
 #include <winreg.h>
@@ -10,16 +16,17 @@
 #include <winuser.h>
 #include <wincon.h>
 #include <richedit.h>
-#include <shellapi.h>
-#include <shlwapi.h>
 #include <shlobj.h>
+#include <shlwapi.h>
 #include <stdio.h>
+#include <strsafe.h>
 
 #include <rappsmsg.h>
 
 #include "resource.h"
 
-#define APPLICATION_DATEBASE_URL L"http://svn.reactos.org/packages/rappmgr.cab"
+/* FIXME: this should be downloaded by HTTPS once is supported */
+#define APPLICATION_DATABASE_URL L"http://svn.reactos.org/packages/rappmgr.cab"
 
 #define SPLIT_WIDTH 4
 #define MAX_STR_LEN 256
@@ -67,7 +74,7 @@ typedef struct
     WCHAR szName[MAX_PATH];
     WCHAR szRegName[MAX_PATH];
     WCHAR szVersion[MAX_PATH];
-    WCHAR szLicence[MAX_PATH];
+    WCHAR szLicense[MAX_PATH];
     WCHAR szDesc[MAX_PATH];
     WCHAR szSize[MAX_PATH];
     WCHAR szUrlSite[MAX_PATH];
@@ -95,13 +102,17 @@ typedef struct
     BOOL Maximized;
     INT Left;
     INT Top;
-    INT Right;
-    INT Bottom;
+    INT Width;
+    INT Height;
+    /* Proxy settings */
+    INT Proxy;
+    WCHAR szProxyServer[MAX_PATH];
+    WCHAR szNoProxyFor[MAX_PATH];
 
 } SETTINGS_INFO, *PSETTINGS_INFO;
 
 /* available.c */
-typedef BOOL (CALLBACK *AVAILENUMPROC)(APPLICATION_INFO Info);
+typedef BOOL (CALLBACK *AVAILENUMPROC)(PAPPLICATION_INFO Info);
 BOOL EnumAvailableApplications(INT EnumType, AVAILENUMPROC lpEnumProc);
 BOOL ShowAvailableAppInfo(INT Index);
 BOOL UpdateAppsDB(VOID);
@@ -110,7 +121,7 @@ BOOL UpdateAppsDB(VOID);
 BOOL InstallApplication(INT Index);
 
 /* installed.c */
-typedef BOOL (CALLBACK *APPENUMPROC)(INT ItemIndex, LPWSTR lpName, INSTALLED_INFO Info);
+typedef BOOL (CALLBACK *APPENUMPROC)(INT ItemIndex, LPWSTR lpName, PINSTALLED_INFO Info);
 BOOL EnumInstalledApplications(INT EnumType, BOOL IsUserKey, APPENUMPROC lpEnumProc);
 BOOL GetApplicationString(HKEY hKey, LPWSTR lpKeyName, LPWSTR lpString);
 BOOL ShowInstalledAppInfo(INT Index);
@@ -147,8 +158,9 @@ int GetClientWindowWidth(HWND hwnd);
 int GetClientWindowHeight(HWND hwnd);
 VOID CopyTextToClipboard(LPCWSTR lpszText);
 VOID SetWelcomeText(VOID);
-VOID ShowPopupMenu(HWND hwnd, UINT MenuID);
+VOID ShowPopupMenu(HWND hwnd, UINT MenuID, UINT DefaultItem);
 BOOL StartProcess(LPWSTR lpPath, BOOL Wait);
+BOOL GetStorageDirectory(PWCHAR lpDirectory, DWORD cch);
 BOOL ExtractFilesFromCab(LPWSTR lpCabName, LPWSTR lpOutputPath);
 VOID InitLogs(VOID);
 VOID FreeLogs(VOID);
@@ -192,3 +204,5 @@ VOID ToolBarOnGetDispInfo(LPTOOLTIPTEXT lpttt);
 extern HWND hTreeView;
 BOOL CreateTreeView(HWND hwnd);
 HTREEITEM TreeViewAddItem(HTREEITEM hParent, LPWSTR lpText, INT Image, INT SelectedImage, LPARAM lParam);
+
+#endif /* _RAPPS_H */

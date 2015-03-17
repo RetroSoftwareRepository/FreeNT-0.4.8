@@ -15,23 +15,10 @@
  * License along with this library; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
-#define COBJMACROS
 
-#include "config.h"
-#include <stdarg.h>
-
-#include "windef.h"
-#include "winbase.h"
-#include "ole2.h"
-#include "rpcproxy.h"
-
-#include <initguid.h>
-#include "scrrun.h"
 #include "scrrun_private.h"
 
-#include "wine/debug.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(scrrun);
+#include <rpcproxy.h>
 
 static HINSTANCE scrrun_instance;
 
@@ -103,9 +90,14 @@ static ITypeInfo *typeinfos[LAST_tid];
 static REFIID tid_ids[] = {
     &IID_NULL,
     &IID_IDictionary,
+    &IID_IDrive,
+    &IID_IDriveCollection,
+    &IID_IFile,
+    &IID_IFileCollection,
     &IID_IFileSystem3,
     &IID_IFolder,
-    &IID_IFile
+    &IID_IFolderCollection,
+    &IID_ITextStream
 };
 
 static HRESULT load_typelib(void)

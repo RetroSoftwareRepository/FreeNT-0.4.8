@@ -22,19 +22,7 @@
  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-
-#include "main/glheader.h"
-#include "main/colormac.h"
-#include "main/feedback.h"
-#include "main/light.h"
-#include "main/macros.h"
-#include "main/simple_list.h"
-#include "main/mtypes.h"
-
-#include "math/m_matrix.h"
-#include "tnl/tnl.h"
-
-
+#include <precomp.h>
 
 /**
  * Clip a point against the view volume.
@@ -116,8 +104,7 @@ static void
 shade_rastpos(struct gl_context *ctx,
               const GLfloat vertex[4],
               const GLfloat normal[3],
-              GLfloat Rcolor[4],
-              GLfloat Rspec[4])
+              GLfloat Rcolor[4])
 {
    /*const*/ GLfloat (*base)[3] = ctx->Light._BaseColor;
    const struct gl_light *light;
@@ -221,14 +208,8 @@ shade_rastpos(struct gl_context *ctx,
 	    GET_SHINE_TAB_ENTRY( ctx->_ShineTable[0], n_dot_h, spec_coef );
 
 	    if (spec_coef > 1.0e-10) {
-               if (ctx->Light.Model.ColorControl==GL_SEPARATE_SPECULAR_COLOR) {
-                  ACC_SCALE_SCALAR_3V( specularContrib, spec_coef,
+              ACC_SCALE_SCALAR_3V( diffuseContrib, spec_coef,
                                        light->_MatSpecular[0]);
-               }
-               else {
-                  ACC_SCALE_SCALAR_3V( diffuseContrib, spec_coef,
-                                       light->_MatSpecular[0]);
-               }
 	    }
 	 }
       }
@@ -241,10 +222,6 @@ shade_rastpos(struct gl_context *ctx,
    Rcolor[1] = CLAMP(diffuseColor[1], 0.0F, 1.0F);
    Rcolor[2] = CLAMP(diffuseColor[2], 0.0F, 1.0F);
    Rcolor[3] = CLAMP(diffuseColor[3], 0.0F, 1.0F);
-   Rspec[0] = CLAMP(specularColor[0], 0.0F, 1.0F);
-   Rspec[1] = CLAMP(specularColor[1], 0.0F, 1.0F);
-   Rspec[2] = CLAMP(specularColor[2], 0.0F, 1.0F);
-   Rspec[3] = CLAMP(specularColor[3], 0.0F, 1.0F);
 }
 
 
@@ -433,15 +410,12 @@ _tnl_RasterPos(struct gl_context *ctx, const GLfloat vObj[4])
    if (ctx->Light.Enabled) {
       /* lighting */
       shade_rastpos( ctx, vObj, norm,
-                     ctx->Current.RasterColor,
-                     ctx->Current.RasterSecondaryColor );
+                     ctx->Current.RasterColor );
    }
    else {
       /* use current color */
       COPY_4FV(ctx->Current.RasterColor,
-      ctx->Current.Attrib[VERT_ATTRIB_COLOR0]);
-      COPY_4FV(ctx->Current.RasterSecondaryColor,
-      ctx->Current.Attrib[VERT_ATTRIB_COLOR1]);
+      ctx->Current.Attrib[VERT_ATTRIB_COLOR]);
    }
 
    /* texture coords */

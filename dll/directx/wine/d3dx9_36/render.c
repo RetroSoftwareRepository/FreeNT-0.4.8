@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012 Jأ³zef Kucia
+ * Copyright (C) 2012 Józef Kucia
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -17,10 +17,7 @@
  *
  */
 
-#include "wine/debug.h"
 #include "d3dx9_36_private.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(d3dx);
 
 struct device_state
 {

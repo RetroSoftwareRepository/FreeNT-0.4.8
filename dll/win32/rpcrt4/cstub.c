@@ -19,28 +19,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-
-#include <config.h>
-//#include "wine/port.h"
-
-#include <stdarg.h>
-
-#define COBJMACROS
-
-#include <windef.h>
-#include <winbase.h>
-//#include "winerror.h"
-//#include "excpt.h"
-
-#include <objbase.h>
-#include <rpcproxy.h>
-
-#include <wine/debug.h>
-#include <wine/exception.h>
-
-#include "cpsf.h"
+#include "precomp.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(ole);
 
@@ -197,6 +176,7 @@ static const vtbl_method_t *allocate_block( unsigned int num )
 {
     unsigned int i;
     vtbl_method_t *prev, *block;
+    DWORD oldprot;
 
     block = VirtualAlloc( NULL, BLOCK_SIZE * sizeof(*block),
                           MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE );
@@ -207,7 +187,7 @@ static const vtbl_method_t *allocate_block( unsigned int num )
         memcpy( &block[i], opcodes, sizeof(opcodes) );
         block[i].offset = (BLOCK_SIZE * num + i + 3) * sizeof(void *);
     }
-    VirtualProtect( block, BLOCK_SIZE * sizeof(*block), PAGE_EXECUTE_READ, NULL );
+    VirtualProtect( block, BLOCK_SIZE * sizeof(*block), PAGE_EXECUTE_READ, &oldprot );
     prev = InterlockedCompareExchangePointer( (void **)&method_blocks[num], block, NULL );
     if (prev) /* someone beat us to it */
     {
@@ -375,7 +355,7 @@ HRESULT WINAPI CStdStubBuffer_QueryInterface(LPRPCSTUBBUFFER iface,
   if (IsEqualIID(&IID_IUnknown, riid) ||
       IsEqualIID(&IID_IRpcStubBuffer, riid))
   {
-    IUnknown_AddRef(iface);
+    IRpcStubBuffer_AddRef(iface);
     *obj = iface;
     return S_OK;
   }

@@ -10,6 +10,9 @@
 
 #include "ws2_32.h"
 
+#include <ws2tcpip.h>
+#include <strsafe.h>
+
 /*
  * @implemented
  */
@@ -893,6 +896,16 @@ getnameinfo(const struct sockaddr FAR * sa,
             DWORD           servlen,
             INT             flags)
 {
+    if (!host && serv && flags & NI_NUMERICSERV)
+    {
+        const struct sockaddr_in *sa_in = (const struct sockaddr_in *)sa;
+        if (salen >= sizeof(*sa_in) && sa->sa_family == AF_INET)
+        {
+            StringCbPrintfA(serv, servlen, "%u", sa_in->sin_port);
+            return 0;
+        }
+    }
+
     UNIMPLEMENTED
 
     WSASetLastError(WSASYSCALLFAILURE);
@@ -933,5 +946,23 @@ GetAddrInfoW(IN PCWSTR pszNodeName,
     return EAI_FAIL;
 }
 
+/*
+ * @unimplemented
+ */
+INT
+EXPORT
+GetNameInfoW(IN CONST SOCKADDR *pSockaddr,
+             IN socklen_t SockaddrLength,
+             OUT PWCHAR pNodeBuffer,
+             IN DWORD NodeBufferSize,
+             OUT PWCHAR pServiceBuffer,
+             IN DWORD ServiceBufferSize,
+             IN INT Flags)
+{
+    UNIMPLEMENTED
+
+    WSASetLastError(EAI_FAIL);
+    return EAI_FAIL;
+}
 
 /* EOF */

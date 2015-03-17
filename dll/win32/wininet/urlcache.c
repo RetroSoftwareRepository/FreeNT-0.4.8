@@ -22,47 +22,10 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-#define COM_NO_WINDOWS_H
-
-#include <config.h>
-//#include "wine/port.h"
-
-#define NONAMELESSUNION
-#define NONAMELESSSTRUCT
-
-#include <stdarg.h>
-//#include <stdio.h>
-//#include <stdlib.h>
-//#include <string.h>
-//#include <sys/types.h>
-#ifdef HAVE_SYS_SOCKET_H
-# include <sys/socket.h>
-#endif
-//#include <time.h>
-
-#include <windef.h>
-#include <winbase.h>
-//#include "winuser.h"
-#include <wininet.h>
-#include <winineti.h>
-//#include "winerror.h"
-#include <winreg.h>
-#include <shlwapi.h>
-#include <shlobj.h>
-#include <shellapi.h>
-
-#if defined(__MINGW32__) || defined (_MSC_VER)
-#include <ws2tcpip.h>
-#endif
-
 #include "internet.h"
 
-//#include "wine/unicode.h"
-#include <wine/debug.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(wininet);
+#include <shlobj.h>
+#include <shellapi.h>
 
 static const char urlcache_ver_prefix[] = "WINE URLCache Ver ";
 static const char urlcache_ver[] = "0.2012001";
@@ -216,7 +179,7 @@ typedef struct
 
 /* List of all containers available */
 static struct list UrlContainers = LIST_INIT(UrlContainers);
-// ReactOS r54992
+/* ReactOS r54992 */
 BOOL bDefaultContainersAdded = FALSE;
 
 static inline char *heap_strdupWtoUTF8(LPCWSTR str)
@@ -768,7 +731,7 @@ static void cache_containers_init(void)
     static const WCHAR UrlSuffix[] = {'C','o','n','t','e','n','t','.','I','E','5',0};
     static const WCHAR HistorySuffix[] = {'H','i','s','t','o','r','y','.','I','E','5',0};
     static const WCHAR CookieSuffix[] = {0};
-    // ReactOS r50916
+    /* ReactOS r50916 */
     static const WCHAR UserProfile[] = {'U','S','E','R','P','R','O','F','I','L','E',0};
     static const struct
     {
@@ -784,7 +747,7 @@ static void cache_containers_init(void)
     };
     DWORD i;
 
-    // ReactOS r50916
+    /* ReactOS r50916 */
     if (GetEnvironmentVariableW(UserProfile, NULL, 0) == 0 && GetLastError() == ERROR_ENVVAR_NOT_FOUND)
     {
         TRACE("Environment variable 'USERPROFILE' does not exist!\n");
@@ -860,7 +823,7 @@ static DWORD cache_containers_find(const char *url, cache_container **ret)
     if(!url)
         return ERROR_INVALID_PARAMETER;
 
-    // ReactOS r54992
+    /* ReactOS r54992 */
     if (!bDefaultContainersAdded)
         cache_containers_init();
 
@@ -890,7 +853,7 @@ static BOOL cache_containers_enum(char *search_pattern, DWORD index, cache_conta
     if (search_pattern && index > 0)
         return FALSE;
 
-    // ReactOS r54992
+    /* ReactOS r54992 */
     if (!bDefaultContainersAdded)
         cache_containers_init();
 
@@ -1514,7 +1477,7 @@ static DWORD urlcache_hash_key(LPCSTR lpszKey)
     for (i = 0; i < sizeof(key) / sizeof(key[0]); i++)
         key[i] = lookupTable[(*lpszKey + i) & 0xFF];
 
-    for (lpszKey++; *lpszKey && ((lpszKey[0] != '/') || (lpszKey[1] != 0)); lpszKey++)
+    for (lpszKey++; *lpszKey; lpszKey++)
     {
         for (i = 0; i < sizeof(key) / sizeof(key[0]); i++)
             key[i] = lookupTable[*lpszKey ^ key[i]];

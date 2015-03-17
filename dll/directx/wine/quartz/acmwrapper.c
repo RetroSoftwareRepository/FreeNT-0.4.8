@@ -18,26 +18,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <config.h>
-
 #include "quartz_private.h"
-#include "pin.h"
-
-//#include "uuids.h"
-#include <mmreg.h>
-//#include "windef.h"
-//#include "winbase.h"
-//#include "dshow.h"
-//#include "strmif.h"
-//#include "vfwmsgs.h"
-#include <msacm.h>
-
-#include <assert.h>
-
-//#include "wine/unicode.h"
-#include <wine/debug.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(quartz);
 
 typedef struct ACMWrapperImpl
 {
@@ -56,11 +37,6 @@ static const IBaseFilterVtbl ACMWrapper_Vtbl;
 static inline ACMWrapperImpl *impl_from_TransformFilter( TransformFilter *iface )
 {
     return CONTAINING_RECORD(iface, ACMWrapperImpl, tf.filter);
-}
-
-static inline ACMWrapperImpl *impl_from_IBaseFilter( IBaseFilter *iface )
-{
-    return CONTAINING_RECORD(iface, ACMWrapperImpl, tf.filter.IBaseFilter_iface);
 }
 
 static HRESULT WINAPI ACMWrapper_Receive(TransformFilter *tf, IMediaSample *pSample)

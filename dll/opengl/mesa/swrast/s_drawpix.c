@@ -22,24 +22,9 @@
  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+#include <precomp.h>
 
-#include "main/glheader.h"
-#include "main/bufferobj.h"
-#include "main/colormac.h"
-#include "main/context.h"
-#include "main/format_pack.h"
-#include "main/image.h"
-#include "main/imports.h"
-#include "main/macros.h"
-#include "main/pack.h"
-#include "main/pixeltransfer.h"
-#include "main/state.h"
-
-#include "s_context.h"
-#include "s_span.h"
-#include "s_stencil.h"
-#include "s_zoom.h"
-
+#include <main/pack.h>
 
 /**
  * Handle a common case of drawing GL_RGB/GL_UNSIGNED_BYTE into a
@@ -424,7 +409,7 @@ draw_rgba_pixels( struct gl_context *ctx, GLint x, GLint y,
    INIT_SPAN(span, GL_BITMAP);
    _swrast_span_default_attribs(ctx, &span);
    span.arrayMask = SPAN_RGBA;
-   span.arrayAttribs = FRAG_BIT_COL0; /* we're fill in COL0 attrib values */
+   span.arrayAttribs = FRAG_BIT_COL; /* we're fill in COL0 attrib values */
 
    if (_mesa_get_format_datatype(ctx->DrawBuffer->_ColorDrawBuffer->Format) != GL_FLOAT) {
       /* need to clamp colors before applying fragment ops */
@@ -441,7 +426,7 @@ draw_rgba_pixels( struct gl_context *ctx, GLint x, GLint y,
          = _mesa_image_row_stride(unpack, width, format, type);
       GLint skipPixels = 0;
       /* use span array for temp color storage */
-      GLfloat *rgba = (GLfloat *) span.array->attribs[FRAG_ATTRIB_COL0];
+      GLfloat *rgba = (GLfloat *) span.array->attribs[FRAG_ATTRIB_COL];
 
       /* if the span is wider than MAX_WIDTH we have to do it in chunks */
       while (skipPixels < width) {

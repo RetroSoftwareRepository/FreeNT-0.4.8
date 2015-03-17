@@ -19,15 +19,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <assert.h>
-
-#define NONAMELESSUNION
-#define NONAMELESSSTRUCT
-#include "ntstatus.h"
-#define WIN32_NO_STATUS
 #include "dbghelp_private.h"
-#include "winternl.h"
-#include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(dbghelp);
 
@@ -91,8 +83,8 @@ typedef struct _UNWIND_INFO
 #define GetExceptionDataPtr(info) \
     ((PVOID)((PULONG)GetLanguageSpecificData(info) + 1)
 
-static unsigned x86_64_get_addr(HANDLE hThread, const CONTEXT* ctx,
-                                enum cpu_addr ca, ADDRESS64* addr)
+static BOOL x86_64_get_addr(HANDLE hThread, const CONTEXT* ctx,
+                            enum cpu_addr ca, ADDRESS64* addr)
 {
     addr->Mode = AddrModeFlat;
     switch (ca)

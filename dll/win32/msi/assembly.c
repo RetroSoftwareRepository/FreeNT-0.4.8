@@ -18,19 +18,6 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-#define COM_NO_WINDOWS_H
-
-//#include <stdarg.h>
-
-#define COBJMACROS
-
-#include <windef.h>
-//#include "winbase.h"
-#include <winreg.h>
-#include <wine/debug.h>
-#include <wine/unicode.h>
 #include "msipriv.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(msi);
@@ -255,7 +242,7 @@ static BOOL is_assembly_installed( IAssemblyCache *cache, const WCHAR *display_n
     memset( &info, 0, sizeof(info) );
     info.cbAssemblyInfo = sizeof(info);
     hr = IAssemblyCache_QueryAssemblyInfo( cache, 0, display_name, &info );
-    if (hr == S_OK /* sxs version */ || hr == HRESULT_FROM_WIN32( ERROR_INSUFFICIENT_BUFFER ))
+    if (hr == S_OK /* sxs version */ || hr == E_NOT_SUFFICIENT_BUFFER)
     {
         return (info.dwAssemblyFlags == ASSEMBLYINFO_FLAG_INSTALLED);
     }
@@ -361,7 +348,7 @@ static enum clr_version get_clr_version( const WCHAR *filename )
     if (!pGetFileVersion) return CLR_VERSION_V10;
 
     hr = pGetFileVersion( filename, NULL, 0, &len );
-    if (hr != HRESULT_FROM_WIN32(ERROR_INSUFFICIENT_BUFFER)) return CLR_VERSION_V11;
+    if (hr != E_NOT_SUFFICIENT_BUFFER) return CLR_VERSION_V11;
     if ((strW = msi_alloc( len * sizeof(WCHAR) )))
     {
         hr = pGetFileVersion( filename, strW, len, &len );

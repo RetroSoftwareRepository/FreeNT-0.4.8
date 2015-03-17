@@ -19,25 +19,29 @@
 #ifndef __WINE_DXGI_PRIVATE_H
 #define __WINE_DXGI_PRIVATE_H
 
+#include <wine/config.h>
+#include <wine/port.h>
+
+#include <stdarg.h>
+
 #define WIN32_NO_STATUS
 #define _INC_WINDOWS
 #define COM_NO_WINDOWS_H
 
-#include "wine/debug.h"
-
 #define COBJMACROS
-#include "winbase.h"
-#include "wingdi.h"
-#include "winuser.h"
-#include "objbase.h"
-#include "winnls.h"
 
-#include "dxgi.h"
-#ifdef DXGI_INIT_GUID
-#include "initguid.h"
-#endif
-#include "wine/wined3d.h"
+#include <windef.h>
+#include <winbase.h>
+#include <wingdi.h>
+#include <winuser.h>
+#include <objbase.h>
+#include <winnls.h>
+
+#include <wine/debug.h>
+#include <wine/wined3d.h>
 #include <wine/winedxgi.h>
+
+WINE_DEFAULT_DEBUG_CHANNEL(dxgi);
 
 extern CRITICAL_SECTION dxgi_cs DECLSPEC_HIDDEN;
 
@@ -78,18 +82,29 @@ const char *debug_dxgi_format(DXGI_FORMAT format) DECLSPEC_HIDDEN;
 
 DXGI_FORMAT dxgi_format_from_wined3dformat(enum wined3d_format_id format) DECLSPEC_HIDDEN;
 enum wined3d_format_id wined3dformat_from_dxgi_format(DXGI_FORMAT format) DECLSPEC_HIDDEN;
+HRESULT dxgi_get_private_data(struct wined3d_private_store *store,
+        REFGUID guid, UINT *data_size, void *data) DECLSPEC_HIDDEN;
+HRESULT dxgi_set_private_data(struct wined3d_private_store *store,
+        REFGUID guid, UINT data_size, const void *data) DECLSPEC_HIDDEN;
+HRESULT dxgi_set_private_data_interface(struct wined3d_private_store *store,
+        REFGUID guid, const IUnknown *object) DECLSPEC_HIDDEN;
 
 /* IDXGIFactory */
 struct dxgi_factory
 {
-    IWineDXGIFactory IWineDXGIFactory_iface;
+    IDXGIFactory1 IDXGIFactory1_iface;
     LONG refcount;
+    struct wined3d_private_store private_store;
     struct wined3d *wined3d;
     UINT adapter_count;
-    IDXGIAdapter **adapters;
+    IDXGIAdapter1 **adapters;
+    BOOL extended;
+    HWND device_window;
 };
 
-HRESULT dxgi_factory_init(struct dxgi_factory *factory) DECLSPEC_HIDDEN;
+HRESULT dxgi_factory_create(REFIID riid, void **factory, BOOL extended) DECLSPEC_HIDDEN;
+HWND dxgi_factory_get_device_window(struct dxgi_factory *factory) DECLSPEC_HIDDEN;
+struct dxgi_factory *unsafe_impl_from_IDXGIFactory1(IDXGIFactory1 *iface) DECLSPEC_HIDDEN;
 
 /* IDXGIDevice */
 struct dxgi_device
@@ -97,8 +112,9 @@ struct dxgi_device
     IWineDXGIDevice IWineDXGIDevice_iface;
     IUnknown *child_layer;
     LONG refcount;
+    struct wined3d_private_store private_store;
     struct wined3d_device *wined3d_device;
-    IWineDXGIFactory *factory;
+    IDXGIFactory1 *factory;
 };
 
 HRESULT dxgi_device_init(struct dxgi_device *device, struct dxgi_device_layer *layer,
@@ -109,6 +125,7 @@ struct dxgi_output
 {
     IDXGIOutput IDXGIOutput_iface;
     LONG refcount;
+    struct wined3d_private_store private_store;
     struct dxgi_adapter *adapter;
 };
 
@@ -117,20 +134,23 @@ void dxgi_output_init(struct dxgi_output *output, struct dxgi_adapter *adapter) 
 /* IDXGIAdapter */
 struct dxgi_adapter
 {
-    IWineDXGIAdapter IWineDXGIAdapter_iface;
-    IWineDXGIFactory *parent;
+    IDXGIAdapter1 IDXGIAdapter1_iface;
+    struct dxgi_factory *parent;
     LONG refcount;
+    struct wined3d_private_store private_store;
     UINT ordinal;
     IDXGIOutput *output;
 };
 
-HRESULT dxgi_adapter_init(struct dxgi_adapter *adapter, IWineDXGIFactory *parent, UINT ordinal) DECLSPEC_HIDDEN;
+HRESULT dxgi_adapter_init(struct dxgi_adapter *adapter, struct dxgi_factory *parent, UINT ordinal) DECLSPEC_HIDDEN;
+struct dxgi_adapter *unsafe_impl_from_IDXGIAdapter1(IDXGIAdapter1 *iface) DECLSPEC_HIDDEN;
 
 /* IDXGISwapChain */
 struct dxgi_swapchain
 {
     IDXGISwapChain IDXGISwapChain_iface;
     LONG refcount;
+    struct wined3d_private_store private_store;
     struct wined3d_swapchain *wined3d_swapchain;
 };
 
@@ -144,9 +164,13 @@ struct dxgi_surface
     IUnknown IUnknown_iface;
     IUnknown *outer_unknown;
     LONG refcount;
+    struct wined3d_private_store private_store;
     IDXGIDevice *device;
+
+    DXGI_SURFACE_DESC desc;
 };
 
-HRESULT dxgi_surface_init(struct dxgi_surface *surface, IDXGIDevice *device, IUnknown *outer) DECLSPEC_HIDDEN;
+HRESULT dxgi_surface_init(struct dxgi_surface *surface, IDXGIDevice *device,
+        IUnknown *outer, const DXGI_SURFACE_DESC *desc) DECLSPEC_HIDDEN;
 
 #endif /* __WINE_DXGI_PRIVATE_H */

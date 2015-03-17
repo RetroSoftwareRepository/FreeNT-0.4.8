@@ -18,22 +18,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define NONAMELESSUNION
-#define NONAMELESSSTRUCT
-
 #include "quartz_private.h"
-
-#include <wine/debug.h>
-#include <wine/unicode.h>
-#include "pin.h"
-//#include "uuids.h"
-//#include "vfwmsgs.h"
-//#include "winbase.h"
-//#include "winreg.h"
-#include <shlwapi.h>
-#include <assert.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(quartz);
 
 static const WCHAR wszOutputPinName[] = { 'O','u','t','p','u','t',0 };
 
@@ -480,7 +465,7 @@ static HRESULT WINAPI AsyncReader_QueryInterface(IBaseFilter * iface, REFIID rii
 static ULONG WINAPI AsyncReader_Release(IBaseFilter * iface)
 {
     AsyncReader *This = impl_from_IBaseFilter(iface);
-    ULONG refCount = BaseFilterImpl_Release(iface);
+    ULONG refCount = InterlockedDecrement(&This->filter.refCount);
     
     TRACE("(%p)->() Release from %d\n", This, refCount + 1);
     
@@ -500,6 +485,7 @@ static ULONG WINAPI AsyncReader_Release(IBaseFilter * iface)
         CoTaskMemFree(This->pszFileName);
         if (This->pmt)
             FreeMediaType(This->pmt);
+        BaseFilter_Destroy(&This->filter);
         CoTaskMemFree(This);
         return 0;
     }
@@ -848,7 +834,7 @@ static ULONG WINAPI FileAsyncReaderPin_Release(IPin * iface)
         CloseHandle(This->hFile);
         This->csList.DebugInfo->Spare[0] = 0;
         DeleteCriticalSection(&This->csList);
-        CoTaskMemFree(This);
+        BaseOutputPin_Destroy(&This->pin);
         return 0;
     }
     return refCount;
@@ -924,14 +910,13 @@ static HRESULT WINAPI FileAsyncReaderPin_DecideBufferSize(BaseOutputPin *iface, 
     return IMemAllocator_SetProperties(pAlloc, &This->allocProps, &actual);
 }
 
-static const  BasePinFuncTable output_BaseFuncTable = {
-    NULL,
-    FileAsyncReaderPin_AttemptConnection,
-    BasePinImpl_GetMediaTypeVersion,
-    FileAsyncReaderPin_GetMediaType
-};
-
 static const BaseOutputPinFuncTable output_BaseOutputFuncTable = {
+    {
+        NULL,
+        FileAsyncReaderPin_AttemptConnection,
+        BasePinImpl_GetMediaTypeVersion,
+        FileAsyncReaderPin_GetMediaType
+    },
     FileAsyncReaderPin_DecideBufferSize,
     BaseOutputPinImpl_DecideAllocator,
     BaseOutputPinImpl_BreakConnect
@@ -946,7 +931,7 @@ static HRESULT FileAsyncReader_Construct(HANDLE hFile, IBaseFilter * pBaseFilter
     piOutput.dir = PINDIR_OUTPUT;
     piOutput.pFilter = pBaseFilter;
     strcpyW(piOutput.achName, wszOutputPinName);
-    hr = BaseOutputPin_Construct(&FileAsyncReaderPin_Vtbl, sizeof(FileAsyncReader), &piOutput, &output_BaseFuncTable, &output_BaseOutputFuncTable, pCritSec, ppPin);
+    hr = BaseOutputPin_Construct(&FileAsyncReaderPin_Vtbl, sizeof(FileAsyncReader), &piOutput, &output_BaseOutputFuncTable, pCritSec, ppPin);
 
     if (SUCCEEDED(hr))
     {

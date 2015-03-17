@@ -11,6 +11,9 @@
 
 #include "srv.h"
 
+#include <winreg.h>
+#include <ndk/cmfuncs.h>
+
 #define NDEBUG
 #include <debug.h>
 
@@ -573,7 +576,7 @@ CsrParseServerCommandLine(IN ULONG ArgumentCount,
         ParameterValue = NULL;
         ParameterValue = strchr(ParameterName, '=');
         if (ParameterValue) *ParameterValue++ = ANSI_NULL;
-        DPRINT1("Name=%s, Value=%s\n", ParameterName, ParameterValue);
+        DPRINT("Name=%s, Value=%s\n", ParameterName, ParameterValue);
 
         /* Check for Object Directory */
         if (_stricmp(ParameterName, "ObjectDirectory") == 0)

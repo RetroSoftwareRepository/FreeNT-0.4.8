@@ -26,18 +26,7 @@
  *    Keith Whitwell <keith@tungstengraphics.com>
  */
 
-#include "main/glheader.h"
-#include "main/bufferobj.h"
-#include "main/context.h"
-#include "main/imports.h"
-#include "main/mfeatures.h"
-#include "main/mtypes.h"
-#include "main/macros.h"
-#include "main/light.h"
-#include "main/state.h"
-
-#include "vbo_context.h"
-
+#include <precomp.h>
 
 #if FEATURE_dlist
 
@@ -107,7 +96,7 @@ _playback_copy_to_current(struct gl_context *ctx,
    /* Colormaterial -- this kindof sucks.
     */
    if (ctx->Light.ColorMaterialEnabled) {
-      _mesa_update_color_material(ctx, ctx->Current.Attrib[VBO_ATTRIB_COLOR0]);
+      _mesa_update_color_material(ctx, ctx->Current.Attrib[VBO_ATTRIB_COLOR]);
    }
 
    /* CurrentExecPrimitive

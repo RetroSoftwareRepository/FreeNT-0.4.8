@@ -1,9 +1,7 @@
-/* FILE:        base/applications/cmdutils/reg/lang/cs-CZ.rc
- * TRANSLATOR:  Radek Liska aka Black_Fox (radekliska at gmail dot com)
- * UPDATED:     2013-05-01
+/* FILE:       base/applications/cmdutils/reg/lang/cs-CZ.rc
+ * TRANSLATOR: Radek Liska aka Black_Fox (radekliska at gmail dot com)
+ * UPDATED:    2013-05-01
  */
-
-#include "reg.h"
 
 LANGUAGE LANG_CZECH, SUBLANG_DEFAULT
 

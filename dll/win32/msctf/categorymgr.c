@@ -18,31 +18,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-#define COM_NO_WINDOWS_H
-
-#include <config.h>
-
-//#include <stdarg.h>
-
-#define COBJMACROS
-
-#include <wine/debug.h>
-//#include "windef.h"
-#include <winbase.h>
-#include <winreg.h>
-//#include "winuser.h"
-//#include "shlwapi.h"
-//#include "winerror.h"
-#include <objbase.h>
-
-#include <wine/unicode.h>
-
-#include <msctf.h>
 #include "msctf_internal.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(msctf);
 
 typedef struct tagCategoryMgr {
     ITfCategoryMgr ITfCategoryMgr_iface;
@@ -67,7 +43,7 @@ static HRESULT WINAPI CategoryMgr_QueryInterface(ITfCategoryMgr *iface, REFIID i
 
     if (IsEqualIID(iid, &IID_IUnknown) || IsEqualIID(iid, &IID_ITfCategoryMgr))
     {
-        *ppvOut = This;
+        *ppvOut = &This->ITfCategoryMgr_iface;
     }
 
     if (*ppvOut)
@@ -178,9 +154,9 @@ static HRESULT WINAPI CategoryMgr_UnregisterCategory ( ITfCategoryMgr *iface,
     sprintfW(fullkey,fmt2,ctg,ctg,buf,buf2);
 
     sprintfW(fullkey,fmt2,ctg,itm,buf2,buf);
-    RegDeleteTreeW(tipkey, fullkey);
+    SHDeleteKeyW(tipkey, fullkey);
     sprintfW(fullkey,fmt2,ctg,itm,buf2,buf);
-    RegDeleteTreeW(tipkey, fullkey);
+    SHDeleteKeyW(tipkey, fullkey);
 
     RegCloseKey(tipkey);
     return S_OK;
@@ -395,12 +371,11 @@ static HRESULT WINAPI CategoryMgr_IsEqualTfGuidAtom ( ITfCategoryMgr *iface,
 }
 
 
-static const ITfCategoryMgrVtbl CategoryMgr_CategoryMgrVtbl =
+static const ITfCategoryMgrVtbl CategoryMgrVtbl =
 {
     CategoryMgr_QueryInterface,
     CategoryMgr_AddRef,
     CategoryMgr_Release,
-
     CategoryMgr_RegisterCategory,
     CategoryMgr_UnregisterCategory,
     CategoryMgr_EnumCategoriesInItem,
@@ -427,10 +402,10 @@ HRESULT CategoryMgr_Constructor(IUnknown *pUnkOuter, IUnknown **ppOut)
     if (This == NULL)
         return E_OUTOFMEMORY;
 
-    This->ITfCategoryMgr_iface.lpVtbl = &CategoryMgr_CategoryMgrVtbl;
+    This->ITfCategoryMgr_iface.lpVtbl = &CategoryMgrVtbl;
     This->refCount = 1;
 
-    TRACE("returning %p\n", This);
-    *ppOut = (IUnknown *)This;
+    *ppOut = (IUnknown *)&This->ITfCategoryMgr_iface;
+    TRACE("returning %p\n", *ppOut);
     return S_OK;
 }

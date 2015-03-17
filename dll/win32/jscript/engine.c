@@ -16,18 +16,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <config.h>
-#include <wine/port.h>
-
-//#include <math.h>
-#include <assert.h>
-
 #include "jscript.h"
-#include "engine.h"
-
-#include <wine/debug.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(jscript);
 
 static const WCHAR booleanW[] = {'b','o','o','l','e','a','n',0};
 static const WCHAR functionW[] = {'f','u','n','c','t','i','o','n',0};
@@ -791,22 +780,21 @@ static HRESULT interp_pop_except(exec_ctx_t *ctx)
 /* ECMA-262 3rd Edition    12.14 */
 static HRESULT interp_end_finally(exec_ctx_t *ctx)
 {
-    //jsval_t v;
+    jsval_t v;
 
     TRACE("\n");
 
-    assert(is_bool(stack_top(ctx)));
-    if(!get_bool(stack_top(ctx))) {
-        TRACE("passing exception\n");
+    v = stack_pop(ctx);
+    assert(is_bool(v));
 
-        //jsval_release(v);
-        stack_popn(ctx, 1);
+    if(!get_bool(v)) {
+        TRACE("passing exception\n");
 
         ctx->script->ei.val = stack_pop(ctx);
         return DISP_E_EXCEPTION;
     }
 
-    stack_popn(ctx, 2);
+    stack_pop(ctx);
     return S_OK;
 }
 

@@ -18,30 +18,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-#define COM_NO_WINDOWS_H
-
-//#include <stdarg.h>
-
-#define COBJMACROS
-
-//#include "windef.h"
-//#include "winbase.h"
-//#include "winerror.h"
-#include <wine/debug.h>
-#include <wine/unicode.h>
-//#include "msi.h"
-//#include "msiquery.h"
-//#include "objbase.h"
-//#include "objidl.h"
-//#include "msipriv.h"
-//#include "winnls.h"
-
-#include "query.h"
-#include <msiserver.h>
-
-//#include "initguid.h"
+#include "msipriv.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(msi);
 
@@ -844,8 +821,13 @@ UINT WINAPI MsiDatabaseCommit( MSIHANDLE hdb )
 
     /* FIXME: lock the database */
 
-    r = MSI_CommitTables( db );
-    if (r != ERROR_SUCCESS) ERR("Failed to commit tables!\n");
+    r = msi_commit_streams( db );
+    if (r != ERROR_SUCCESS) ERR("Failed to commit streams!\n");
+    else
+    {
+        r = MSI_CommitTables( db );
+        if (r != ERROR_SUCCESS) ERR("Failed to commit tables!\n");
+    }
 
     /* FIXME: unlock the database */
 

@@ -10,7 +10,6 @@
 /* INCLUDES *****************************************************************/
 
 #include <ntdll.h>
-#include <callback.h>
 
 #define NDEBUG
 #include <debug.h>
@@ -1776,7 +1775,7 @@ LdrpInitializeProcess(IN PCONTEXT Context,
     /* Check if we failed */
     if (!NT_SUCCESS(Status))
     {
-        /* Aassume System32 */
+        /* Assume System32 */
         LdrpKnownDllObjectDirectory = NULL;
         RtlInitUnicodeString(&LdrpKnownDllPath, StringBuffer);
         LdrpKnownDllPath.Length -= sizeof(WCHAR);
@@ -1844,24 +1843,24 @@ LdrpInitializeProcess(IN PCONTEXT Context,
     PebLdr.Initialized = TRUE;
 
     /* Allocate a data entry for the Image */
-    LdrpImageEntry = NtLdrEntry = LdrpAllocateDataTableEntry(Peb->ImageBaseAddress);
+    LdrpImageEntry = LdrpAllocateDataTableEntry(Peb->ImageBaseAddress);
 
     /* Set it up */
-    NtLdrEntry->EntryPoint = LdrpFetchAddressOfEntryPoint(NtLdrEntry->DllBase);
-    NtLdrEntry->LoadCount = -1;
-    NtLdrEntry->EntryPointActivationContext = 0;
-    NtLdrEntry->FullDllName = ImageFileName;
+    LdrpImageEntry->EntryPoint = LdrpFetchAddressOfEntryPoint(LdrpImageEntry->DllBase);
+    LdrpImageEntry->LoadCount = -1;
+    LdrpImageEntry->EntryPointActivationContext = 0;
+    LdrpImageEntry->FullDllName = ImageFileName;
 
     if (IsDotNetImage)
-        NtLdrEntry->Flags = LDRP_COR_IMAGE;
+        LdrpImageEntry->Flags = LDRP_COR_IMAGE;
     else
-        NtLdrEntry->Flags = 0;
+        LdrpImageEntry->Flags = 0;
 
     /* Check if the name is empty */
     if (!ImageFileName.Buffer[0])
     {
         /* Use the same Base name */
-        NtLdrEntry->BaseDllName = NtLdrEntry->FullDllName;
+        LdrpImageEntry->BaseDllName = LdrpImageEntry->FullDllName;
     }
     else
     {
@@ -1880,21 +1879,21 @@ LdrpInitializeProcess(IN PCONTEXT Context,
         if (!NtDllName)
         {
             /* Use the same Base name */
-            NtLdrEntry->BaseDllName = NtLdrEntry->FullDllName;
+            LdrpImageEntry->BaseDllName = LdrpImageEntry->FullDllName;
         }
         else
         {
             /* Setup the name */
-            NtLdrEntry->BaseDllName.Length = (USHORT)((ULONG_PTR)ImageFileName.Buffer + ImageFileName.Length - (ULONG_PTR)NtDllName);
-            NtLdrEntry->BaseDllName.MaximumLength = NtLdrEntry->BaseDllName.Length + sizeof(WCHAR);
-            NtLdrEntry->BaseDllName.Buffer = (PWSTR)((ULONG_PTR)ImageFileName.Buffer +
-                                                     (ImageFileName.Length - NtLdrEntry->BaseDllName.Length));
+            LdrpImageEntry->BaseDllName.Length = (USHORT)((ULONG_PTR)ImageFileName.Buffer + ImageFileName.Length - (ULONG_PTR)NtDllName);
+            LdrpImageEntry->BaseDllName.MaximumLength = LdrpImageEntry->BaseDllName.Length + sizeof(WCHAR);
+            LdrpImageEntry->BaseDllName.Buffer = (PWSTR)((ULONG_PTR)ImageFileName.Buffer +
+                                                     (ImageFileName.Length - LdrpImageEntry->BaseDllName.Length));
         }
     }
 
     /* Processing done, insert it */
-    LdrpInsertMemoryTableEntry(NtLdrEntry);
-    NtLdrEntry->Flags |= LDRP_ENTRY_PROCESSED;
+    LdrpInsertMemoryTableEntry(LdrpImageEntry);
+    LdrpImageEntry->Flags |= LDRP_ENTRY_PROCESSED;
 
     /* Now add an entry for NTDLL */
     NtLdrEntry = LdrpAllocateDataTableEntry(SystemArgument1);
@@ -2070,6 +2069,40 @@ LdrpInitializeProcess(IN PCONTEXT Context,
                             ProcessExecuteFlags,
                             &ExecuteOptions,
                             sizeof(ULONG));
+
+    // FIXME: Should be done by Application Compatibility features,
+    // by reading the registry, etc...
+    // For now, this is the old code from ntdll!RtlGetVersion().
+    RtlInitEmptyUnicodeString(&Peb->CSDVersion, NULL, 0);
+    if (((Peb->OSCSDVersion >> 8) & 0xFF) != 0)
+    {
+        WCHAR szCSDVersion[128];
+        ULONG i;
+        ULONG Length = ARRAYSIZE(szCSDVersion) - 1;
+        i = _snwprintf(szCSDVersion, Length,
+                       L"Service Pack %d",
+                       ((Peb->OSCSDVersion >> 8) & 0xFF));
+        if (i < 0)
+        {
+            /* Null-terminate if it was overflowed */
+            szCSDVersion[Length] = UNICODE_NULL;
+        }
+
+        Length *= sizeof(WCHAR);
+        Peb->CSDVersion.Buffer = RtlAllocateHeap(RtlGetProcessHeap(),
+                                                 0,
+                                                 Length + sizeof(UNICODE_NULL));
+        if (Peb->CSDVersion.Buffer)
+        {
+            Peb->CSDVersion.Length = Length;
+            Peb->CSDVersion.MaximumLength = Length + sizeof(UNICODE_NULL);
+
+            RtlCopyMemory(Peb->CSDVersion.Buffer,
+                          szCSDVersion,
+                          Peb->CSDVersion.MaximumLength);
+            Peb->CSDVersion.Buffer[Peb->CSDVersion.Length / sizeof(WCHAR)] = UNICODE_NULL;
+        }
+    }
 
     /* Check if we had Shim Data */
     if (OldShimData)

@@ -28,20 +28,7 @@
  * Texture state handling.
  */
 
-#include "glheader.h"
-#include "mfeatures.h"
-#include "bufferobj.h"
-#include "colormac.h"
-#include "colortab.h"
-#include "context.h"
-#include "enums.h"
-#include "macros.h"
-#include "texobj.h"
-#include "teximage.h"
-#include "texstate.h"
-#include "mtypes.h"
-
-
+#include <precomp.h>
 
 /**
  * Default texture combine environment state.  This is used to initialize
@@ -515,7 +502,6 @@ alloc_proxy_textures( struct gl_context *ctx )
     */
    static const GLenum targets[] = {
       GL_TEXTURE_CUBE_MAP_ARB,
-      GL_TEXTURE_3D,
       GL_TEXTURE_2D,
       GL_TEXTURE_1D,
    };

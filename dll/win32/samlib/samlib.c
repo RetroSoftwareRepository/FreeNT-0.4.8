@@ -24,9 +24,14 @@
  * PROGRAMER:         Eric Kohl
  */
 
-/* INCLUDES *****************************************************************/
-
 #include "precomp.h"
+
+#define NTOS_MODE_USER
+#include <ndk/rtlfuncs.h>
+#include <ntsam.h>
+#include <sam_c.h>
+
+#include <wine/debug.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(samlib);
 
@@ -39,6 +44,12 @@ NTSTATUS
 WINAPI
 SystemFunction007(PUNICODE_STRING string,
                   LPBYTE hash);
+
+NTSTATUS
+WINAPI
+SystemFunction012(const BYTE *in,
+                  const BYTE *key,
+                  LPBYTE out);
 
 /* GLOBALS *******************************************************************/
 
@@ -117,8 +128,11 @@ SampCheckPassword(IN SAMPR_HANDLE UserHandle,
                   IN PUNICODE_STRING Password)
 {
     USER_DOMAIN_PASSWORD_INFORMATION DomainPasswordInformation;
+    LPWORD CharTypeBuffer = NULL;
     ULONG PasswordLength;
-    NTSTATUS Status;
+    ULONG i;
+    ULONG Upper = 0, Lower = 0, Digit = 0, Punct = 0, Alpha = 0;
+    NTSTATUS Status = STATUS_SUCCESS;
 
     TRACE("(%p %p)\n", UserHandle, Password);
 
@@ -141,10 +155,57 @@ SampCheckPassword(IN SAMPR_HANDLE UserHandle,
     /* Check the password complexity */
     if (DomainPasswordInformation.PasswordProperties & DOMAIN_PASSWORD_COMPLEX)
     {
-        /* FIXME */
+        CharTypeBuffer = midl_user_allocate(PasswordLength * sizeof(WORD));
+        if (CharTypeBuffer == NULL)
+            return STATUS_INSUFFICIENT_RESOURCES;
+
+        GetStringTypeW(CT_CTYPE1,
+                       Password->Buffer,
+                       PasswordLength,
+                       CharTypeBuffer);
+
+        for (i = 0; i < PasswordLength; i++)
+        {
+            TRACE("%lu: %C %s %s %s %s\n", i, Password->Buffer[i],
+                  (CharTypeBuffer[i] & C1_UPPER) ? "C1_UPPER" : "        ",
+                  (CharTypeBuffer[i] & C1_LOWER) ? "C1_LOWER" : "        ",
+                  (CharTypeBuffer[i] & C1_DIGIT) ? "C1_DIGIT" : "        ",
+                  (CharTypeBuffer[i] & C1_PUNCT) ? "C1_PUNCT" : "        ",
+                  (CharTypeBuffer[i] & C1_ALPHA) ? "C1_ALPHA" : "        ");
+
+            if (CharTypeBuffer[i] & C1_UPPER)
+                Upper = 1;
+
+            if (CharTypeBuffer[i] & C1_LOWER)
+                Lower = 1;
+
+            if (CharTypeBuffer[i] & C1_DIGIT)
+                Digit = 1;
+
+            if (CharTypeBuffer[i] & C1_PUNCT)
+                Punct = 1;
+
+            if ((CharTypeBuffer[i] & C1_ALPHA) &&
+                !(CharTypeBuffer[i] & C1_UPPER) &&
+                !(CharTypeBuffer[i] & C1_LOWER))
+                Alpha = 1;
+        }
+
+        TRACE("Upper: %lu\n", Upper);
+        TRACE("Lower: %lu\n", Lower);
+        TRACE("Digit: %lu\n", Digit);
+        TRACE("Punct: %lu\n", Punct);
+        TRACE("Alpha: %lu\n", Alpha);
+
+        TRACE("Total: %lu\n", Upper + Lower + Digit + Punct + Alpha);
+        if (Upper + Lower + Digit + Punct + Alpha < 3)
+            Status = STATUS_PASSWORD_RESTRICTION;
     }
 
-    return STATUS_SUCCESS;
+    if (CharTypeBuffer != NULL)
+        midl_user_free(CharTypeBuffer);
+
+    return Status;
 }
 
 
@@ -249,6 +310,13 @@ SamChangePasswordUser(IN SAM_HANDLE UserHandle,
     BOOLEAN NewLmPasswordPresent = FALSE;
     NTSTATUS Status;
 
+    ENCRYPTED_LM_OWF_PASSWORD OldLmEncryptedWithNewLm;
+    ENCRYPTED_LM_OWF_PASSWORD NewLmEncryptedWithOldLm;
+    ENCRYPTED_LM_OWF_PASSWORD OldNtEncryptedWithNewNt;
+    ENCRYPTED_LM_OWF_PASSWORD NewNtEncryptedWithOldNt;
+    PENCRYPTED_LM_OWF_PASSWORD pOldLmEncryptedWithNewLm = NULL;
+    PENCRYPTED_LM_OWF_PASSWORD pNewLmEncryptedWithOldLm = NULL;
+
     /* Calculate the NT hash for the old password */
     Status = SystemFunction007(OldPassword,
                                (LPBYTE)&OldNtPassword);
@@ -307,15 +375,57 @@ SamChangePasswordUser(IN SAM_HANDLE UserHandle,
         }
     }
 
+    if (OldLmPasswordPresent && NewLmPasswordPresent)
+    {
+        Status = SystemFunction012((const BYTE *)&OldLmPassword,
+                                   (const BYTE *)&NewLmPassword,
+                                   (LPBYTE)&OldLmEncryptedWithNewLm);
+        if (!NT_SUCCESS(Status))
+        {
+            TRACE("SystemFunction012 failed (Status 0x%08lx)\n", Status);
+            return Status;
+        }
+
+        Status = SystemFunction012((const BYTE *)&NewLmPassword,
+                                   (const BYTE *)&OldLmPassword,
+                                   (LPBYTE)&NewLmEncryptedWithOldLm);
+        if (!NT_SUCCESS(Status))
+        {
+            TRACE("SystemFunction012 failed (Status 0x%08lx)\n", Status);
+            return Status;
+        }
+
+        pOldLmEncryptedWithNewLm = &OldLmEncryptedWithNewLm;
+        pNewLmEncryptedWithOldLm = &NewLmEncryptedWithOldLm;
+    }
+
+    Status = SystemFunction012((const BYTE *)&OldNtPassword,
+                               (const BYTE *)&NewNtPassword,
+                               (LPBYTE)&OldNtEncryptedWithNewNt);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SystemFunction012 failed (Status 0x%08lx)\n", Status);
+        return Status;
+    }
+
+    Status = SystemFunction012((const BYTE *)&NewNtPassword,
+                               (const BYTE *)&OldNtPassword,
+                               (LPBYTE)&NewNtEncryptedWithOldNt);
+    if (!NT_SUCCESS(Status))
+    {
+        TRACE("SystemFunction012 failed (Status 0x%08lx)\n", Status);
+        return Status;
+    }
+
     RpcTryExcept
     {
         Status = SamrChangePasswordUser((SAMPR_HANDLE)UserHandle,
                                         OldLmPasswordPresent && NewLmPasswordPresent,
-                                        &OldLmPassword,
-                                        &NewLmPassword,
+                                        pOldLmEncryptedWithNewLm,
+                                        pNewLmEncryptedWithOldLm,
                                         TRUE,
-                                        &OldNtPassword,
-                                        &NewNtPassword,
+                                        &OldNtEncryptedWithNewNt,
+                                        &NewNtEncryptedWithOldNt,
                                         FALSE,
                                         NULL,
                                         FALSE,
@@ -1609,23 +1719,19 @@ SamQuerySecurityObject(IN SAM_HANDLE ObjectHandle,
                        IN SECURITY_INFORMATION SecurityInformation,
                        OUT PSECURITY_DESCRIPTOR *SecurityDescriptor)
 {
-    SAMPR_SR_SECURITY_DESCRIPTOR LocalSecurityDescriptor;
-    PSAMPR_SR_SECURITY_DESCRIPTOR pLocalSecurityDescriptor;
+    PSAMPR_SR_SECURITY_DESCRIPTOR SamSecurityDescriptor = NULL;
     NTSTATUS Status;
 
     TRACE("SamQuerySecurityObject(%p %lu %p)\n",
           ObjectHandle, SecurityInformation, SecurityDescriptor);
 
-    LocalSecurityDescriptor.Length = 0;
-    LocalSecurityDescriptor.SecurityDescriptor = NULL;
+    *SecurityDescriptor = NULL;
 
     RpcTryExcept
     {
-        pLocalSecurityDescriptor = &LocalSecurityDescriptor;
-
         Status = SamrQuerySecurityObject((SAMPR_HANDLE)ObjectHandle,
                                          SecurityInformation,
-                                         &pLocalSecurityDescriptor);
+                                         &SamSecurityDescriptor);
     }
     RpcExcept(EXCEPTION_EXECUTE_HANDLER)
     {
@@ -1633,7 +1739,17 @@ SamQuerySecurityObject(IN SAM_HANDLE ObjectHandle,
     }
     RpcEndExcept;
 
-    *SecurityDescriptor = LocalSecurityDescriptor.SecurityDescriptor;
+    TRACE("SamSecurityDescriptor: %p\n", SamSecurityDescriptor);
+
+    if (SamSecurityDescriptor != NULL)
+    {
+        TRACE("SamSecurityDescriptor->Length: %lu\n", SamSecurityDescriptor->Length);
+        TRACE("SamSecurityDescriptor->SecurityDescriptor: %p\n", SamSecurityDescriptor->SecurityDescriptor);
+
+        *SecurityDescriptor = SamSecurityDescriptor->SecurityDescriptor;
+
+        midl_user_free(SamSecurityDescriptor);
+    }
 
     return Status;
 }

@@ -309,7 +309,7 @@ CsrInsertThread(IN PCSR_PROCESS Process,
                                       sizeof(ThreadInfo),
                                       NULL);
     if (!NT_SUCCESS(Status)) return Status;
-    if (ThreadInfo == TRUE) return STATUS_THREAD_IS_TERMINATING;
+    if (ThreadInfo) return STATUS_THREAD_IS_TERMINATING;
 
     /* Insert it into the Regular List */
     InsertTailList(&Process->ThreadList, &Thread->Link);
@@ -1045,7 +1045,7 @@ CsrReferenceThread(IN PCSR_THREAD CsrThread)
     CsrAcquireProcessLock();
 
     /* Sanity checks */
-    ASSERT(CsrThread->Flags & CsrThreadTerminated); // CSR_THREAD_DESTROYED in ASSERT
+    ASSERT((CsrThread->Flags & CsrThreadTerminated) == 0);
     ASSERT(CsrThread->ReferenceCount != 0);
 
     /* Increment reference count */

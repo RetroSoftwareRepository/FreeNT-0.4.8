@@ -30,23 +30,7 @@ USE OR OTHER DEALINGS IN THE SOFTWARE.
  *   Keith Whitwell <keith@tungstengraphics.com>
  */
 
-#include "main/glheader.h"
-#include "main/bufferobj.h"
-#include "main/context.h"
-#include "main/macros.h"
-#include "main/mfeatures.h"
-#include "main/vtxfmt.h"
-#include "main/dlist.h"
-#include "main/eval.h"
-#include "main/state.h"
-#include "main/light.h"
-#include "main/api_arrayelt.h"
-#include "main/api_validate.h"
-#include "main/dispatch.h"
-
-#include "vbo_context.h"
-#include "vbo_noop.h"
-
+#include <precomp.h>
 
 #ifdef ERROR
 #undef ERROR
@@ -187,9 +171,9 @@ static void vbo_exec_copy_to_current( struct vbo_exec_context *exec )
    /* Colormaterial -- this kindof sucks.
     */
    if (ctx->Light.ColorMaterialEnabled &&
-       exec->vtx.attrsz[VBO_ATTRIB_COLOR0]) {
+       exec->vtx.attrsz[VBO_ATTRIB_COLOR]) {
       _mesa_update_color_material(ctx, 
-				  ctx->Current.Attrib[VBO_ATTRIB_COLOR0]);
+				  ctx->Current.Attrib[VBO_ATTRIB_COLOR]);
    }
 }
 
@@ -887,8 +871,6 @@ static void vbo_exec_vtxfmt_init( struct vbo_exec_context *exec )
    vfmt->FogCoordfvEXT = vbo_FogCoordfvEXT;
    vfmt->Normal3f = vbo_Normal3f;
    vfmt->Normal3fv = vbo_Normal3fv;
-   vfmt->SecondaryColor3fEXT = vbo_SecondaryColor3fEXT;
-   vfmt->SecondaryColor3fvEXT = vbo_SecondaryColor3fvEXT;
    vfmt->TexCoord1f = vbo_TexCoord1f;
    vfmt->TexCoord1fv = vbo_TexCoord1fv;
    vfmt->TexCoord2f = vbo_TexCoord2f;
@@ -943,8 +925,6 @@ static void vbo_exec_vtxfmt_init( struct vbo_exec_context *exec )
    (void) vbo_MultiTexCoord4fv;
    (void) vbo_Normal3f;
    (void) vbo_Normal3fv;
-   (void) vbo_SecondaryColor3fEXT;
-   (void) vbo_SecondaryColor3fvEXT;
    (void) vbo_TexCoord1f;
    (void) vbo_TexCoord1fv;
    (void) vbo_TexCoord2f;

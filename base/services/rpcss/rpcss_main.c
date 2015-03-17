@@ -43,11 +43,7 @@
  *     role of rpcss.exe in wine.
  */
 
-#define NONAMELESSUNION
-#define NONAMELESSSTRUCT
 #include "rpcss.h"
-#include <irot_s.h>
-#include <epm_s.h>
 
 #include <wine/debug.h>
 
@@ -98,8 +94,15 @@ BOOL RPCSS_Initialize(void)
   if (status != RPC_S_OK)
     goto fail;
 
-  //exit_event = __wine_make_process_system();
+#ifndef __REACTOS__
+  exit_event = __wine_make_process_system();
+#else
   exit_event = CreateEventW(NULL, FALSE, FALSE, NULL); // never fires
+  {
+    HANDLE hStartEvent = CreateEventW(NULL, TRUE, FALSE, L"ScmCreatedEvent");
+    SetEvent(hStartEvent);
+  }
+#endif
 
   return TRUE;
 

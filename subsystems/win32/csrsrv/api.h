@@ -7,13 +7,6 @@
 
 #pragma once
 
-#define NTOS_MODE_USER
-#include <ndk/psfuncs.h>
-#include <ndk/rtlfuncs.h>
-
-#include <csr/csrsrv.h>
-
-
 extern RTL_CRITICAL_SECTION CsrProcessLock, CsrWaitListsLock;
 
 #define CsrAcquireProcessLock() \
@@ -160,8 +153,6 @@ NTSTATUS
 NTAPI
 CsrInitializeProcessStructure(VOID);
 
-// NTSTATUS WINAPI CsrEnumProcesses(CSRSS_ENUM_PROCESS_PROC EnumProc,
-//                                  PVOID Context);
 PCSR_THREAD
 NTAPI
 CsrLocateThreadInProcess(IN PCSR_PROCESS CsrProcess OPTIONAL,
@@ -200,7 +191,7 @@ CsrNotifyWaitBlock(IN PCSR_WAIT_BLOCK WaitBlock,
                    IN PVOID WaitArgument2,
                    IN ULONG WaitFlags,
                    IN BOOLEAN DereferenceThread);
-                   
+
 VOID
 NTAPI
 CsrReferenceNtSession(IN PCSR_NT_SESSION Session);

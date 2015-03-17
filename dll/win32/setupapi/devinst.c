@@ -21,8 +21,6 @@
 
 #include "setupapi_private.h"
 
-WINE_DEFAULT_DEBUG_CHANNEL(setupapi);
-
 /* Unicode constants */
 static const WCHAR BackSlash[] = {'\\',0};
 static const WCHAR ClassGUID[]  = {'C','l','a','s','s','G','U','I','D',0};
@@ -213,7 +211,7 @@ CheckSectionValid(
      * Field[3] Minor version
      * Field[4] Product type
      * Field[5] Suite mask
-     * Remark: lastests fields may be NULL if the information is not provided
+     * Remark: these fields may be NULL if the information is not provided
      */
     Fields[0] = Section;
     if (Fields[0] == NULL)
@@ -604,6 +602,8 @@ DestroyDeviceInfo(struct DeviceInfo *deviceInfo)
             return FALSE;
     }
     DestroyClassInstallParams(&deviceInfo->ClassInstallParams);
+    if (deviceInfo->hmodDevicePropPageProvider)
+        FreeLibrary(deviceInfo->hmodDevicePropPageProvider);
     return HeapFree(GetProcessHeap(), 0, deviceInfo);
 }
 
@@ -624,6 +624,8 @@ DestroyDeviceInfoSet(struct DeviceInfoSet* list)
         RegCloseKey(list->HKLM);
     CM_Disconnect_Machine(list->hMachine);
     DestroyClassInstallParams(&list->ClassInstallParams);
+    if (list->hmodClassPropPageProvider)
+        FreeLibrary(list->hmodClassPropPageProvider);
     return HeapFree(GetProcessHeap(), 0, list);
 }
 

@@ -29,7 +29,7 @@ ShowAvailableAppInfo(INT Index)
     } \
 
     ADD_TEXT(IDS_AINFO_VERSION, Info->szVersion, CFE_BOLD, 0);
-    ADD_TEXT(IDS_AINFO_LICENCE, Info->szLicence, CFE_BOLD, 0);
+    ADD_TEXT(IDS_AINFO_LICENSE, Info->szLicense, CFE_BOLD, 0);
     ADD_TEXT(IDS_AINFO_SIZE, Info->szSize, CFE_BOLD, 0);
     ADD_TEXT(IDS_AINFO_URLSITE, Info->szUrlSite, CFE_BOLD, CFE_LINK);
     ADD_TEXT(IDS_AINFO_DESCRIPTION, Info->szDesc, CFE_BOLD, 0);
@@ -46,39 +46,47 @@ DeleteCurrentAppsDB(VOID)
     WCHAR szSearchPath[MAX_PATH];
     WCHAR szPath[MAX_PATH];
     WCHAR szTmp[MAX_PATH];
+    HRESULT hr;
+    BOOL result = TRUE;
 
-    if (!GetCurrentDirectoryW(MAX_PATH, szPath))
+    if (!GetStorageDirectory(szPath, sizeof(szPath) / sizeof(szPath[0])))
         return FALSE;
 
-    swprintf(szCabPath, L"%s\\rappmgr.cab", szPath);
+    hr = StringCbPrintfW(szCabPath, sizeof(szCabPath),
+                         L"%ls\\rappmgr.cab",
+                         szPath);
+    if (FAILED(hr))
+        return FALSE;
 
-    if (GetFileAttributesW(szCabPath) != INVALID_FILE_ATTRIBUTES)
-    {
-        if (!DeleteFileW(szCabPath))
-            return FALSE;
-    }
+    result = result && DeleteFileW(szCabPath);
 
-    wcscat(szPath, L"\\rapps\\");
-    swprintf(szSearchPath, L"%s*.txt", szPath);
+    hr = StringCbCatW(szPath, sizeof(szPath), L"\\rapps\\");
+    if (FAILED(hr))
+        return FALSE;
+
+    hr = StringCbPrintfW(szSearchPath, sizeof(szSearchPath),
+                         L"%ls*.txt",
+                         szPath);
+    if (FAILED(hr))
+        return FALSE;
 
     hFind = FindFirstFileW(szSearchPath, &FindFileData);
     if (hFind == INVALID_HANDLE_VALUE)
-        return TRUE;
+        return result;
 
     do
     {
-        swprintf(szTmp, L"%s%s", szPath, FindFileData.cFileName);
-        if (!DeleteFileW(szTmp))
-        {
-            FindClose(hFind);
-            return FALSE;
-        }
-    }
-    while (FindNextFileW(hFind, &FindFileData) != 0);
+        hr = StringCbPrintfW(szTmp, sizeof(szTmp),
+                             L"%ls%ls",
+                             szPath, FindFileData.cFileName);
+        if (FAILED(hr))
+            continue;
+        result = result && DeleteFileW(szTmp);
+    } while (FindNextFileW(hFind, &FindFileData) != 0);
 
     FindClose(hFind);
 
-    return TRUE;
+    return result;
 }
 
 
@@ -92,15 +100,24 @@ UpdateAppsDB(VOID)
     if (!DeleteCurrentAppsDB())
         return FALSE;
 
-    DownloadApplicationsDB(APPLICATION_DATEBASE_URL);
+    DownloadApplicationsDB(APPLICATION_DATABASE_URL);
 
-    if (!GetCurrentDirectoryW(MAX_PATH, szPath))
+    if (!GetStorageDirectory(szPath, sizeof(szPath) / sizeof(szPath[0])))
         return FALSE;
 
-    swprintf(szCabPath, L"%s\\rappmgr.cab", szPath);
+    if (FAILED(StringCbPrintfW(szCabPath, sizeof(szCabPath),
+                               L"%ls\\rappmgr.cab",
+                               szPath)))
+    {
+        return FALSE;
+    }
 
-    wcscat(szPath, L"\\rapps\\");
-    wcscpy(szAppsPath, szPath);
+    if (FAILED(StringCbPrintfW(szAppsPath, sizeof(szAppsPath),
+                               L"%ls\\rapps\\",
+                               szPath)))
+    {
+        return FALSE;
+    }
 
     ExtractFilesFromCab(szCabPath, szAppsPath);
 
@@ -119,16 +136,23 @@ EnumAvailableApplications(INT EnumType, AVAILENUMPROC lpEnumProc)
     WCHAR szCabPath[MAX_PATH];
     WCHAR szLocale[4 + 1];
     APPLICATION_INFO Info;
+    HRESULT hr;
 
-    if (!GetCurrentDirectoryW(MAX_PATH, szPath))
-    {
+    if (!GetStorageDirectory(szPath, sizeof(szPath) / sizeof(szPath[0])))
         return FALSE;
-    }
 
-    swprintf(szCabPath, L"%s\\rappmgr.cab", szPath);
+    hr = StringCbPrintfW(szCabPath, sizeof(szCabPath),
+                         L"%ls\\rappmgr.cab",
+                         szPath);
+    if (FAILED(hr))
+        return FALSE;
 
-    wcscat(szPath, L"\\rapps\\");
-    wcscpy(szAppsPath, szPath);
+    hr = StringCbCatW(szPath, sizeof(szPath), L"\\rapps\\");
+    if (FAILED(hr))
+        return FALSE;
+    hr = StringCbCopyW(szAppsPath, sizeof(szAppsPath), szPath);
+    if (FAILED(hr))
+        return FALSE;
 
     if (!CreateDirectory(szPath, NULL) &&
         GetLastError() != ERROR_ALREADY_EXISTS)
@@ -136,21 +160,34 @@ EnumAvailableApplications(INT EnumType, AVAILENUMPROC lpEnumProc)
         return FALSE;
     }
 
-    GetLocaleInfoW(GetUserDefaultLCID(), LOCALE_ILANGUAGE, szLocale, sizeof(szLocale) / sizeof(WCHAR));
-    wcscat(szSectionLocale, szLocale);
-
-    wcscat(szPath, L"*.txt");
+    hr = StringCbCatW(szPath, sizeof(szPath), L"*.txt");
+    if (FAILED(hr))
+        return FALSE;
 
     hFind = FindFirstFileW(szPath, &FindFileData);
     if (hFind == INVALID_HANDLE_VALUE)
     {
         if (GetFileAttributesW(szCabPath) == INVALID_FILE_ATTRIBUTES)
-            DownloadApplicationsDB(APPLICATION_DATEBASE_URL);
+            DownloadApplicationsDB(APPLICATION_DATABASE_URL);
 
         ExtractFilesFromCab(szCabPath, szAppsPath);
         hFind = FindFirstFileW(szPath, &FindFileData);
         if (hFind == INVALID_HANDLE_VALUE)
             return FALSE;
+    }
+
+    if (!GetLocaleInfoW(GetUserDefaultLCID(), LOCALE_ILANGUAGE,
+                        szLocale, sizeof(szLocale) / sizeof(WCHAR)))
+    {
+        FindClose(hFind);
+        return FALSE;
+    }
+
+    hr = StringCbCatW(szSectionLocale, sizeof(szSectionLocale), szLocale);
+    if (FAILED(hr))
+    {
+        FindClose(hFind);
+        return FALSE;
     }
 
 #define GET_STRING1(a, b)  \
@@ -180,15 +217,14 @@ EnumAvailableApplications(INT EnumType, AVAILENUMPROC lpEnumProc)
 
         GET_STRING2(L"RegName", Info.szRegName);
         GET_STRING2(L"Version", Info.szVersion);
-        GET_STRING2(L"Licence", Info.szLicence);
+        GET_STRING2(L"License", Info.szLicense);
         GET_STRING2(L"Description", Info.szDesc);
         GET_STRING2(L"Size", Info.szSize);
         GET_STRING2(L"URLSite", Info.szUrlSite);
         GET_STRING2(L"CDPath", Info.szCDPath);
 
-        if (!lpEnumProc(Info)) break;
-    }
-    while (FindNextFileW(hFind, &FindFileData) != 0);
+        if (!lpEnumProc(&Info)) break;
+    } while (FindNextFileW(hFind, &FindFileData) != 0);
 
     FindClose(hFind);
 

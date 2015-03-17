@@ -20,7 +20,13 @@
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
+#include "precomp.h"
+
+#include <winnls.h>
+#include <shellapi.h>
+
 #include "fontview.h"
+#include "resource.h"
 
 HINSTANCE g_hInstance;
 EXTLOGFONTW g_ExtLogFontW;
@@ -28,8 +34,8 @@ LPCWSTR g_fileName;
 
 static const WCHAR g_szFontViewClassName[] = L"FontViewWClass";
 
-/* Tye definition for the GetFontResourceInfo function */
-typedef BOOL (WINAPI *PGFRI)(LPCWSTR, DWORD *, LPVOID, DWORD);
+/* GetFontResourceInfoW is undocumented */
+BOOL WINAPI GetFontResourceInfoW(LPCWSTR lpFileName, DWORD *pdwBufSize, void* lpBuffer, DWORD dwType);
 
 DWORD
 FormatString(
@@ -87,14 +93,13 @@ WinMain (HINSTANCE hThisInstance,
 {
 	int argc;
 	WCHAR** argv;
+	WCHAR szFileName[MAX_PATH] = L"";
 	DWORD dwSize;
 	HWND hMainWnd;
 	MSG msg;
 	WNDCLASSEXW wincl;
-	HINSTANCE hDLL;
-	PGFRI GetFontResourceInfoW;
 	LPCWSTR fileName;
-    
+
     switch (GetUserDefaultUILanguage())
     {
     case MAKELANGID(LANG_HEBREW, SUBLANG_DEFAULT):
@@ -104,7 +109,7 @@ WinMain (HINSTANCE hThisInstance,
     default:
       break;
     }
-    
+
 	g_hInstance = hThisInstance;
 
 	/* Get unicode command line */
@@ -112,7 +117,6 @@ WinMain (HINSTANCE hThisInstance,
 	if (argc < 2)
 	{
 		OPENFILENAMEW fontOpen;
-		WCHAR szFileName[MAX_PATH] = L"";
 		HLOCAL dialogTitle = NULL;
 
 		/* Gets the title for the dialog box ready */
@@ -159,10 +163,6 @@ WinMain (HINSTANCE hThisInstance,
 		return -1;
 	}
 
-	/* Load the GetFontResourceInfo function from gdi32.dll */
-	hDLL = LoadLibraryW(L"GDI32.DLL");
-	GetFontResourceInfoW = (PGFRI)GetProcAddress(hDLL, "GetFontResourceInfoW");
-
 	/* Get the font name */
 	dwSize = sizeof(g_ExtLogFontW.elfFullName);
 	if (!GetFontResourceInfoW(fileName, &dwSize, g_ExtLogFontW.elfFullName, 1))
@@ -191,12 +191,12 @@ WinMain (HINSTANCE hThisInstance,
 	wincl.cbClsExtra = 0;
 	wincl.cbWndExtra = 0;
 	wincl.hInstance = hThisInstance;
-	wincl.hIcon = LoadIcon (NULL, IDI_APPLICATION);
+	wincl.hIcon = LoadIcon (GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_TT));
 	wincl.hCursor = LoadCursor (NULL, IDC_ARROW);
 	wincl.hbrBackground = (HBRUSH)COLOR_BACKGROUND;
 	wincl.lpszMenuName = NULL;
 	wincl.lpszClassName = g_szFontViewClassName;
-	wincl.hIconSm = LoadIcon (NULL, IDI_APPLICATION);
+	wincl.hIconSm = LoadIcon (GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_TT));
 
 	/* Register the window class, and if it fails quit the program */
 	if (!RegisterClassExW (&wincl))

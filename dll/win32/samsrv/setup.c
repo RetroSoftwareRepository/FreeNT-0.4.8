@@ -7,19 +7,17 @@
  * PROGRAMMERS:     Eric Kohl
  */
 
-/* INCLUDES ****************************************************************/
-
 #include "samsrv.h"
 
-WINE_DEFAULT_DEBUG_CHANNEL(samsrv);
+#include <ntsecapi.h>
 
+#include "resources.h"
 
 /* GLOBALS *****************************************************************/
 
 #define TICKS_PER_SECOND 10000000LL
 
 SID_IDENTIFIER_AUTHORITY SecurityNtAuthority = {SECURITY_NT_AUTHORITY};
-
 
 /* FUNCTIONS ***************************************************************/
 

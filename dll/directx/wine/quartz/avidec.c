@@ -18,27 +18,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <config.h>
-
 #include "quartz_private.h"
-#include "pin.h"
-
-//#include "uuids.h"
-//#include "amvideo.h"
-//#include "windef.h"
-//#include "winbase.h"
-//#include "dshow.h"
-//#include "strmif.h"
-//#include "vfwmsgs.h"
-#include <vfw.h>
-#include <dvdmedia.h>
-
-#include <assert.h>
-
-//#include <wine/unicode.h>
-#include <wine/debug.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(quartz);
 
 typedef struct AVIDecImpl
 {
@@ -51,11 +31,6 @@ typedef struct AVIDecImpl
 } AVIDecImpl;
 
 static const IBaseFilterVtbl AVIDec_Vtbl;
-
-static inline AVIDecImpl *impl_from_IBaseFilter( IBaseFilter *iface )
-{
-    return CONTAINING_RECORD(iface, AVIDecImpl, tf.filter.IBaseFilter_iface);
-}
 
 static inline AVIDecImpl *impl_from_TransformFilter( TransformFilter *iface )
 {

@@ -10,6 +10,7 @@
 /* INCLUDES *******************************************************************/
 
 #include "usersrv.h"
+
 #include "api.h"
 
 #define NDEBUG
@@ -18,6 +19,13 @@
 /* GLOBALS ********************************************************************/
 
 HINSTANCE UserServerDllInstance = NULL;
+
+/* Handles for Power and Media events. Used by both usersrv and win32k. */
+HANDLE ghPowerRequestEvent;
+HANDLE ghMediaRequestEvent;
+
+/* Copy of CSR Port handle for win32k */
+HANDLE CsrApiPort = NULL;
 
 /* Memory */
 HANDLE UserServerHeap = NULL;   // Our own heap.
@@ -83,162 +91,10 @@ PCHAR UserServerApiNameTable[UserpMaxApiNumber - USERSRV_FIRST_API_NUMBER] =
 /* FUNCTIONS ******************************************************************/
 
 // PUSER_SOUND_SENTRY. Used in basesrv.dll
-BOOL WINAPI _UserSoundSentry(VOID)
+BOOL NTAPI _UserSoundSentry(VOID)
 {
     // TODO: Do something.
     return TRUE;
-}
-
-ULONG
-InitializeVideoAddressSpace(VOID)
-{
-    OBJECT_ATTRIBUTES ObjectAttributes;
-    UNICODE_STRING PhysMemName = RTL_CONSTANT_STRING(L"\\Device\\PhysicalMemory");
-    NTSTATUS Status;
-    HANDLE PhysMemHandle;
-    PVOID BaseAddress;
-    LARGE_INTEGER Offset;
-    SIZE_T ViewSize;
-    CHAR IVTAndBda[1024+256];
-    
-    /* Free the 1MB pre-reserved region. In reality, ReactOS should simply support us mapping the view into the reserved area, but it doesn't. */
-    BaseAddress = 0;
-    ViewSize = 1024 * 1024;
-    Status = ZwFreeVirtualMemory(NtCurrentProcess(), 
-                                 &BaseAddress,
-                                 &ViewSize,
-                                 MEM_RELEASE);
-    if (!NT_SUCCESS(Status))
-    {
-        DPRINT1("Couldn't unmap reserved memory (%x)\n", Status);
-        return 0;
-    }
-    
-    /* Open the physical memory section */
-    InitializeObjectAttributes(&ObjectAttributes,
-                               &PhysMemName,
-                               0,
-                               NULL,
-                               NULL);
-    Status = ZwOpenSection(&PhysMemHandle,
-                           SECTION_ALL_ACCESS,
-                           &ObjectAttributes);
-    if (!NT_SUCCESS(Status))
-    {
-        DPRINT1("Couldn't open \\Device\\PhysicalMemory\n");
-        return 0;
-    }
-
-    /* Map the BIOS and device registers into the address space */
-    Offset.QuadPart = 0xa0000;
-    ViewSize = 0x100000 - 0xa0000;
-    BaseAddress = (PVOID)0xa0000;
-    Status = ZwMapViewOfSection(PhysMemHandle,
-                                NtCurrentProcess(),
-                                &BaseAddress,
-                                0,
-                                ViewSize,
-                                &Offset,
-                                &ViewSize,
-                                ViewUnmap,
-                                0,
-                                PAGE_EXECUTE_READWRITE);
-    if (!NT_SUCCESS(Status))
-    {
-        DPRINT1("Couldn't map physical memory (%x)\n", Status);
-        ZwClose(PhysMemHandle);
-        return 0;
-    }
-
-    /* Close physical memory section handle */
-    ZwClose(PhysMemHandle);
-
-    if (BaseAddress != (PVOID)0xa0000)
-    {
-        DPRINT1("Couldn't map physical memory at the right address (was %x)\n",
-                BaseAddress);
-        return 0;
-    }
-
-    /* Allocate some low memory to use for the non-BIOS
-     * parts of the v86 mode address space
-     */
-    BaseAddress = (PVOID)0x1;
-    ViewSize = 0xa0000 - 0x1000;
-    Status = ZwAllocateVirtualMemory(NtCurrentProcess(),
-                                     &BaseAddress,
-                                     0,
-                                     &ViewSize,
-                                     MEM_RESERVE | MEM_COMMIT,
-                                     PAGE_EXECUTE_READWRITE);
-    if (!NT_SUCCESS(Status))
-    {
-        DPRINT1("Failed to allocate virtual memory (Status %x)\n", Status);
-        return 0;
-    }
-    if (BaseAddress != (PVOID)0x0)
-    {
-        DPRINT1("Failed to allocate virtual memory at right address (was %x)\n",
-                BaseAddress);
-        return 0;
-    }
-
-    /* Get the real mode IVT and BDA from the kernel */
-    Status = NtVdmControl(VdmInitialize, IVTAndBda);
-    if (!NT_SUCCESS(Status))
-    {
-        DPRINT1("NtVdmControl failed (status %x)\n", Status);
-        return 0;
-    }
-
-    /* Return success */
-    return 1;
-}
-
-/**********************************************************************
- * UserpInitVideo
- *
- * TODO: we need a virtual device for sessions other than
- * TODO: the console one
- */
-NTSTATUS
-UserpInitVideo(VOID)
-{
-    OBJECT_ATTRIBUTES ObjectAttributes;
-    UNICODE_STRING DeviceName = RTL_CONSTANT_STRING(L"\\??\\DISPLAY1");
-    IO_STATUS_BLOCK Iosb;
-    HANDLE VideoHandle = (HANDLE) 0;
-    NTSTATUS Status = STATUS_SUCCESS;
-
-    DPRINT("CSR: %s called\n", __FUNCTION__);
-
-    InitializeVideoAddressSpace();
-
-    InitializeObjectAttributes(&ObjectAttributes,
-                               &DeviceName,
-                               0,
-                               NULL,
-                               NULL);
-    Status = NtOpenFile(&VideoHandle,
-                        FILE_ALL_ACCESS,
-                        &ObjectAttributes,
-                        &Iosb,
-                        0,
-                        0);
-    if (NT_SUCCESS(Status))
-    {
-        NtClose(VideoHandle);
-    }
-
-    return Status;
-}
-
-// From win32ss/user/win32csr/dllmain.c
-VOID
-WINAPI
-PrivateCsrssManualGuiCheck(LONG Check)
-{
-    NtUserCallOneParam(Check, ONEPARAM_ROUTINE_CSRSS_GUICHECK);
 }
 
 ULONG
@@ -264,8 +120,15 @@ CSR_API(SrvActivateDebugger)
 
 CSR_API(SrvGetThreadConsoleDesktop)
 {
+    PUSER_GET_THREAD_CONSOLE_DESKTOP GetThreadConsoleDesktopRequest = &((PUSER_API_MESSAGE)ApiMessage)->Data.GetThreadConsoleDesktopRequest;
+
     DPRINT1("%s not yet implemented\n", __FUNCTION__);
-    return STATUS_NOT_IMPLEMENTED;
+
+    /* Return nothing for the moment... */
+    GetThreadConsoleDesktopRequest->ConsoleDesktop = NULL;
+
+    /* Always succeeds */
+    return STATUS_SUCCESS;
 }
 
 CSR_API(SrvDeviceEvent)
@@ -274,22 +137,81 @@ CSR_API(SrvDeviceEvent)
     return STATUS_NOT_IMPLEMENTED;
 }
 
+CSR_API(SrvLogon)
+{
+    PUSER_LOGON LogonRequest = &((PUSER_API_MESSAGE)ApiMessage)->Data.LogonRequest;
+
+    DPRINT1("We are logged %s\n", LogonRequest->IsLogon ? "on" : "off");
+
+    /* Impersonate the caller in order to retrieve settings in its context */
+    if (!CsrImpersonateClient(NULL))
+        return STATUS_UNSUCCESSFUL;
+
+    GetTimeouts(&ShutdownSettings);
+
+    /* We are done */
+    CsrRevertToSelf();
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
+UserClientConnect(IN PCSR_PROCESS CsrProcess,
+                  IN OUT PVOID  ConnectionInfo,
+                  IN OUT PULONG ConnectionInfoLength)
+{
+    NTSTATUS Status;
+    // PUSERCONNECT
+    PUSERSRV_API_CONNECTINFO ConnectInfo = (PUSERSRV_API_CONNECTINFO)ConnectionInfo;
+
+    DPRINT("UserClientConnect\n");
+
+    /* Check if we don't have an API port yet */
+    if (CsrApiPort == NULL)
+    {
+        /* Query the API port and save it globally */
+        CsrApiPort = CsrQueryApiPort();
+
+        /* Inform win32k about the API port */
+        Status = NtUserSetInformationThread(NtCurrentThread(),
+                                            UserThreadCsrApiPort,
+                                            &CsrApiPort,
+                                            sizeof(CsrApiPort));
+        if (!NT_SUCCESS(Status))
+        {
+            return Status;
+        }
+    }
+
+    /* Check connection info validity */
+    if ( ConnectionInfo       == NULL ||
+         ConnectionInfoLength == NULL ||
+        *ConnectionInfoLength != sizeof(*ConnectInfo) )
+    {
+        DPRINT1("USERSRV: Connection failed - ConnectionInfo = 0x%p ; ConnectionInfoLength = 0x%p (%lu), expected %lu\n",
+                ConnectionInfo,
+                ConnectionInfoLength,
+                ConnectionInfoLength ? *ConnectionInfoLength : (ULONG)-1,
+                sizeof(*ConnectInfo));
+
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    /* Pass the request to win32k */
+    ConnectInfo->dwDispatchCount = 0; // gDispatchTableValues;
+    Status = NtUserProcessConnect(CsrProcess->ProcessHandle,
+                                  ConnectInfo,
+                                  *ConnectionInfoLength);
+
+    return Status;
+}
+
 CSR_SERVER_DLL_INIT(UserServerDllInitialization)
 {
-/*** From win32csr... ***/
-    HANDLE ServerThread;
-    CLIENT_ID ClientId;
     NTSTATUS Status;
-    UINT i;
-/*** END - From win32csr... ***/
 
     /* Initialize the memory */
     UserServerHeap = RtlGetProcessHeap();
-
-    /* Initialize the video */
-    UserpInitVideo();
-    NtUserInitialize(0, NULL, NULL);
-    PrivateCsrssManualGuiCheck(0);
 
     /* Setup the DLL Object */
     LoadedServerDll->ApiBase = USERSRV_FIRST_API_NUMBER;
@@ -300,28 +222,73 @@ CSR_SERVER_DLL_INIT(UserServerDllInitialization)
     LoadedServerDll->NameTable = UserServerApiNameTable;
 #endif
     LoadedServerDll->SizeOfProcessData = 0;
-    LoadedServerDll->ConnectCallback = NULL;
+    LoadedServerDll->ConnectCallback = UserClientConnect;
     LoadedServerDll->DisconnectCallback = NULL;
     LoadedServerDll->HardErrorCallback = UserServerHardError;
-    LoadedServerDll->ShutdownProcessCallback = NULL;
+    LoadedServerDll->ShutdownProcessCallback = UserClientShutdown;
 
     UserServerDllInstance = LoadedServerDll->ServerHandle;
 
-/*** From win32csr... See r54125 ***/
-    /* Start the Raw Input Thread and the Desktop Thread */
-    for (i = 0; i < 2; ++i)
+    /* Create the power request event */
+    Status = NtCreateEvent(&ghPowerRequestEvent,
+                           EVENT_ALL_ACCESS,
+                           NULL,
+                           SynchronizationEvent,
+                           FALSE);
+    if (!NT_SUCCESS(Status))
     {
-        Status = RtlCreateUserThread(NtCurrentProcess(),
-                                     NULL, TRUE, 0, 0, 0,
-                                     CreateSystemThreads,
-                                     (PVOID)i, &ServerThread, &ClientId);
-        if (NT_SUCCESS(Status))
+        DPRINT1("Power request event creation failed with Status 0x%08x\n", Status);
+        return Status;
+    }
+
+    /* Create the media request event */
+    Status = NtCreateEvent(&ghMediaRequestEvent,
+                           EVENT_ALL_ACCESS,
+                           NULL,
+                           SynchronizationEvent,
+                           FALSE);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("Media request event creation failed with Status 0x%08x\n", Status);
+        return Status;
+    }
+
+    /* Set the process creation notify routine for BASE */
+    BaseSetProcessCreateNotify(NtUserNotifyProcessCreate);
+
+    /* Initialize the kernel mode subsystem */
+    Status = NtUserInitialize(USER_VERSION,
+                              ghPowerRequestEvent,
+                              ghMediaRequestEvent);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("NtUserInitialize failed with Status 0x%08x\n", Status);
+        return Status;
+    }
+
+/*** From win32csr... See r54125 ***/
+    {
+        HANDLE ServerThread;
+        CLIENT_ID ClientId;
+        UINT i;
+
+        /* Start the Raw Input Thread and the Desktop Thread */
+        for (i = 0; i < 2; ++i)
         {
-            NtResumeThread(ServerThread, NULL);
-            NtClose(ServerThread);
+            Status = RtlCreateUserThread(NtCurrentProcess(),
+                                         NULL, TRUE, 0, 0, 0,
+                                         CreateSystemThreads,
+                                         (PVOID)i, &ServerThread, &ClientId);
+            if (NT_SUCCESS(Status))
+            {
+                NtResumeThread(ServerThread, NULL);
+                NtClose(ServerThread);
+            }
+            else
+            {
+                DPRINT1("Cannot start Raw Input Thread!\n");
+            }
         }
-        else
-            DPRINT1("Cannot start Raw Input Thread!\n");
     }
 /*** END - From win32csr... ***/
 

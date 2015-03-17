@@ -18,18 +18,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "config.h"
-#include "wine/debug.h"
-
-#define COBJMACROS
-
-#include "winbase.h"
-#include "wingdi.h"
-
 #include "d3dxof_private.h"
-#include "dxfile.h"
-
-#include <stdio.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(d3dxof_parsing);
 
@@ -90,7 +79,7 @@ static const char *debugstr_fourcc(DWORD fourcc)
         (char)(fourcc >> 16), (char)(fourcc >> 24));
 }
 
-static const char* get_primitive_string(WORD token)
+static const char* get_primitive_string(DWORD token)
 {
   switch(token)
   {
@@ -510,11 +499,11 @@ static BOOL is_name(parse_buffer* buf)
   char tmp[512];
   DWORD pos = 0;
   char c;
-  BOOL error = 0;
+  BOOL error = FALSE;
   while (pos < buf->rem_bytes && !is_separator(c = *(buf->buffer+pos)))
   {
     if (!(((c >= 'a') && (c <= 'z')) || ((c >= 'A') && (c <= 'Z')) || ((c >= '0') && (c <= '9')) || (c == '_') || (c == '-')))
-      error = 1;
+      error = TRUE;
     if (pos < sizeof(tmp))
         tmp[pos] = c;
     pos++;
@@ -542,7 +531,7 @@ static BOOL is_float(parse_buffer* buf)
   DWORD pos = 0;
   char c;
   float decimal;
-  BOOL dot = 0;
+  BOOL dot = FALSE;
 
   while (pos < buf->rem_bytes && !is_separator(c = *(buf->buffer+pos)))
   {
@@ -602,7 +591,7 @@ static BOOL is_string(parse_buffer* buf)
   char tmp[512];
   DWORD pos = 0;
   char c;
-  BOOL ok = 0;
+  BOOL ok = FALSE;
 
   if (*buf->buffer != '"')
     return FALSE;
@@ -612,7 +601,7 @@ static BOOL is_string(parse_buffer* buf)
     c = *(buf->buffer+pos+1);
     if (c == '"')
     {
-      ok = 1;
+      ok = TRUE;
       break;
     }
     if (pos < sizeof(tmp))
@@ -899,10 +888,10 @@ static inline BOOL is_primitive_type(WORD token)
     case TOKEN_LPSTR:
     case TOKEN_UNICODE:
     case TOKEN_CSTRING:
-      ret = 1;
+      ret = TRUE;
       break;
     default:
-      ret = 0;
+      ret = FALSE;
       break;
   }
   return ret;
@@ -948,14 +937,14 @@ static BOOL parse_template_members_list(parse_buffer * buf)
 
   while (1)
   {
-    BOOL array = 0;
+    BOOL array = FALSE;
     int nb_dims = 0;
     cur_member = &buf->pdxf->xtemplates[buf->pdxf->nb_xtemplates].members[idx_member];
 
     if (check_TOKEN(buf) == TOKEN_ARRAY)
     {
       get_TOKEN(buf);
-      array = 1;
+      array = TRUE;
     }
 
     if (check_TOKEN(buf) == TOKEN_NAME)

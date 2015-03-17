@@ -2,7 +2,7 @@
  * COPYRIGHT:        See COPYING in the top level directory
  * PROJECT:          ReactOS kernel
  * PURPOSE:          Clipboard routines
- * FILE:             subsys/win32k/ntuser/clipboard.c
+ * FILE:             win32ss/user/ntuser/clipboard.c
  * PROGRAMER:        Filip Navara <xnavara@volny.cz>
  *                   Pablo Borobia <pborobia@gmail.com>
  *                   Rafal Harabien <rafalh@reactos.org>
@@ -17,7 +17,7 @@ DBG_DEFAULT_CHANNEL(UserClipbrd);
 #define IS_DATA_DELAYED(ce)     ((ce)->hData == DATA_DELAYED)
 #define IS_DATA_SYNTHESIZED(ce) ((ce)->hData == DATA_SYNTH_USER || (ce)->hData == DATA_SYNTH_KRNL)
 
-PWINSTATION_OBJECT static FASTCALL
+static PWINSTATION_OBJECT FASTCALL
 IntGetWinStaForCbAccess(VOID)
 {
     HWINSTA hWinSta;
@@ -25,7 +25,7 @@ IntGetWinStaForCbAccess(VOID)
     NTSTATUS Status;
 
     hWinSta = UserGetProcessWindowStation();
-    Status = IntValidateWindowStationHandle(hWinSta, KernelMode, WINSTA_ACCESSCLIPBOARD, &pWinStaObj);
+    Status = IntValidateWindowStationHandle(hWinSta, KernelMode, WINSTA_ACCESSCLIPBOARD, &pWinStaObj, 0);
     if (!NT_SUCCESS(Status))
     {
         ERR("Cannot open winsta\n");
@@ -37,7 +37,7 @@ IntGetWinStaForCbAccess(VOID)
 }
 
 /* If format exists, returns a non zero value (pointing to formated object) */
-PCLIP static FASTCALL
+static PCLIP FASTCALL
 IntIsFormatAvailable(PWINSTATION_OBJECT pWinStaObj, UINT fmt)
 {
     unsigned i = 0;
@@ -51,7 +51,7 @@ IntIsFormatAvailable(PWINSTATION_OBJECT pWinStaObj, UINT fmt)
     return NULL;
 }
 
-VOID static FASTCALL
+static VOID FASTCALL
 IntFreeElementData(PCLIP pElement)
 {
     if (!IS_DATA_DELAYED(pElement) &&
@@ -69,7 +69,7 @@ IntFreeElementData(PCLIP pElement)
 }
 
 /* Adds a new format and data to the clipboard */
-PCLIP static NTAPI
+static PCLIP NTAPI
 IntAddFormatedData(PWINSTATION_OBJECT pWinStaObj, UINT fmt, HANDLE hData, BOOLEAN fGlobalHandle, BOOL bEnd)
 {
     PCLIP pElement = NULL;
@@ -121,7 +121,7 @@ IntAddFormatedData(PWINSTATION_OBJECT pWinStaObj, UINT fmt, HANDLE hData, BOOLEA
     return pElement;
 }
 
-BOOL static FASTCALL
+static BOOL FASTCALL
 IntIsClipboardOpenByMe(PWINSTATION_OBJECT pWinSta)
 {
     /* Check if current thread has opened the clipboard */
@@ -134,7 +134,7 @@ IntIsClipboardOpenByMe(PWINSTATION_OBJECT pWinSta)
     return FALSE;
 }
 
-VOID static NTAPI
+static VOID NTAPI
 IntSynthesizeDib(
     PWINSTATION_OBJECT pWinStaObj,
     HBITMAP hbm)
@@ -211,7 +211,7 @@ cleanup:
     UserReleaseDC(NULL, hdc, FALSE);
 }
 
-VOID static WINAPI
+static VOID WINAPI
 IntSynthesizeBitmap(PWINSTATION_OBJECT pWinStaObj, PCLIP pBmEl)
 {
     HDC hdc = NULL;
@@ -266,7 +266,7 @@ cleanup:
         UserReleaseDC(NULL, hdc, FALSE);
 }
 
-VOID static NTAPI
+static VOID NTAPI
 IntAddSynthesizedFormats(PWINSTATION_OBJECT pWinStaObj)
 {
     PCLIP pTextEl, pUniTextEl, pOemTextEl, pLocaleEl, pBmEl, pDibEl;
@@ -291,10 +291,10 @@ IntAddSynthesizedFormats(PWINSTATION_OBJECT pWinStaObj)
             pMemObj->cbData = sizeof(LCID);
             *((LCID*)pMemObj->Data) = NtCurrentTeb()->CurrentLocale;
             IntAddFormatedData(pWinStaObj, CF_LOCALE, hMem, TRUE, TRUE);
-        }
 
-        /* Release the extra reference (UserCreateObject added 2 references) */
-        UserDereferenceObject(pMemObj);
+            /* Release the extra reference (UserCreateObject added 2 references) */
+            UserDereferenceObject(pMemObj);
+        }
     }
 
     /* Add CF_TEXT. Note: it is synthesized in user32.dll */
@@ -609,7 +609,7 @@ UserEmptyClipboard(VOID)
 
         if (pWinStaObj->spwndClipOwner)
         {
-            TRACE("Clipboard: WM_DESTROYCLIPBOARD to %p", pWinStaObj->spwndClipOwner->head.h);
+            TRACE("Clipboard: WM_DESTROYCLIPBOARD to %p\n", pWinStaObj->spwndClipOwner->head.h);
             co_IntSendMessageNoWait(pWinStaObj->spwndClipOwner->head.h, WM_DESTROYCLIPBOARD, 0, 0);
         }
 

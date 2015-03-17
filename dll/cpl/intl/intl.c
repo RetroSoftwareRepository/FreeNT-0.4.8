@@ -25,7 +25,11 @@
 
 #include "intl.h"
 
+#include <debug.h>
+
 #define NUM_APPLETS    (1)
+
+#define BUFFERSIZE 512
 
 static LONG APIENTRY
 Applet(HWND hwnd, UINT uMsg, LPARAM wParam, LPARAM lParam);
@@ -44,6 +48,17 @@ APPLET Applets[NUM_APPLETS] =
     {IDC_CPLICON, IDS_CPLNAME, IDS_CPLDESCRIPTION, Applet}
 };
 
+VOID
+PrintErrorMsgBox(UINT msg)
+{
+    TCHAR szErrorText[BUFFERSIZE];
+    TCHAR szErrorCaption[BUFFERSIZE];
+
+    LoadString(hApplet, msg, szErrorText, sizeof(szErrorText)/sizeof(TCHAR));
+    LoadString(hApplet, IDS_ERROR, szErrorCaption, sizeof(szErrorCaption)/sizeof(TCHAR));
+
+    MessageBox(NULL, szErrorText, szErrorCaption, MB_OK | MB_ICONERROR);
+}
 
 static VOID
 InitPropSheetPage(PROPSHEETPAGE *psp, WORD idDlg, DLGPROC DlgProc)
@@ -122,7 +137,7 @@ Applet(HWND hwnd, UINT uMsg, LPARAM wParam, LPARAM lParam)
 {
     PROPSHEETPAGE psp[3];
     PROPSHEETHEADER psh;
-    TCHAR Caption[256];
+    TCHAR Caption[BUFFERSIZE];
 
     if (OpenSetupInf())
     {

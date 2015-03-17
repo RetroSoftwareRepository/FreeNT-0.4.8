@@ -56,7 +56,7 @@ CdfsMakeAbsoluteFilename(PFILE_OBJECT FileObject,
     }
 
     /* construct absolute path name */
-    Length = (wcslen(Fcb->PathName) * sizeof(WCHAR)) +
+    Length = Fcb->PathName.Length +
         sizeof(WCHAR) +
         RelativeFileName->Length +
         sizeof(WCHAR);
@@ -69,8 +69,8 @@ CdfsMakeAbsoluteFilename(PFILE_OBJECT FileObject,
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    Status = RtlAppendUnicodeToString(AbsoluteFileName,
-        Fcb->PathName);
+    Status = RtlAppendUnicodeStringToString(AbsoluteFileName,
+        &Fcb->PathName);
     if (!NT_SUCCESS(Status))
     {
         RtlFreeUnicodeString(AbsoluteFileName);
@@ -140,10 +140,6 @@ CdfsOpenFile(PDEVICE_EXTENSION DeviceExt,
     DPRINT ("Status %lx\n", Status);
     if (!NT_SUCCESS(Status))
     {
-        if (Status == STATUS_NO_MEDIA_IN_DEVICE || Status == STATUS_VERIFY_REQUIRED)
-        {
-            DeviceExt->VolumeDevice->Flags |= DO_VERIFY_VOLUME;
-        }
         DPRINT1 ("Status %lx\n", Status);
         return Status;
     }

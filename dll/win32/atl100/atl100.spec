@@ -5,7 +5,7 @@
 14 stdcall AtlUnmarshalPtr(ptr ptr ptr)
 15 stdcall AtlComModuleGetClassObject(ptr ptr ptr ptr)
 17 stdcall AtlComModuleRegisterClassObjects(ptr long long)
-20 stub AtlComModuleRevokeClassObjects
+20 stdcall AtlComModuleRevokeClassObjects(ptr)
 22 stdcall AtlComModuleUnregisterServer(ptr long ptr)
 23 stdcall AtlUpdateRegistryFromResourceD(long wstr long ptr ptr)
 24 stdcall AtlWaitWithMessageLoop(long)
@@ -40,8 +40,8 @@
 54 stdcall AtlGetObjectSourceInterface(ptr ptr ptr ptr ptr)
 56 stdcall AtlLoadTypeLib(long wstr ptr ptr)
 58 stdcall AtlModuleAddTermFunc(ptr ptr long)
-59 stub AtlAxCreateControlLic
-60 stub AtlAxCreateControlLicEx
+59 stdcall AtlAxCreateControlLic(wstr long ptr ptr wstr)
+60 stdcall AtlAxCreateControlLicEx(wstr long ptr ptr ptr ptr ptr wstr)
 61 stdcall AtlCreateRegistrar(ptr)
 62 stub AtlWinModuleRegisterClassExW
 63 stub AtlWinModuleRegisterClassExA

@@ -18,32 +18,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-#define COM_NO_WINDOWS_H
-
-#define NONAMELESSUNION
-#define NONAMELESSSTRUCT
-#define COBJMACROS
-#include <stdarg.h>
-//#include <string.h>
-
-#include <windef.h>
-#include <winbase.h>
-#include <wingdi.h>
-#include <winuser.h>
-#include <winreg.h>
-//#include "winerror.h"
-
-//#include "ole2.h"
-#include "objbase.h"
-#include <uuids.h>
-#include <strmif.h>
-
-#include <wine/debug.h>
-#include <wine/unicode.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(quartz);
+#include "quartz_private.h"
 
 /*
  * Near the bottom of this file are the exported DllRegisterServer and
@@ -202,8 +177,7 @@ static HRESULT register_interfaces(struct regsvr_interface const *list)
 	if (res != ERROR_SUCCESS) goto error_close_interface_key;
 
 	if (list->name) {
-	    res = RegSetValueExA(iid_key, NULL, 0, REG_SZ,
-				 (CONST BYTE*)(list->name),
+            res = RegSetValueExA(iid_key, NULL, 0, REG_SZ, (const BYTE*)list->name,
 				 strlen(list->name) + 1);
 	    if (res != ERROR_SUCCESS) goto error_close_iid_key;
 	}
@@ -222,8 +196,7 @@ static HRESULT register_interfaces(struct regsvr_interface const *list)
 	    if (res != ERROR_SUCCESS) goto error_close_iid_key;
 
 	    sprintfW(buf, fmt, list->num_methods);
-	    res = RegSetValueExW(key, NULL, 0, REG_SZ,
-				 (CONST BYTE*)buf,
+            res = RegSetValueExW(key, NULL, 0, REG_SZ, (const BYTE*)buf,
 				 (lstrlenW(buf) + 1) * sizeof(WCHAR));
 	    RegCloseKey(key);
 
@@ -267,7 +240,7 @@ static HRESULT unregister_interfaces(struct regsvr_interface const *list)
 	WCHAR buf[39];
 
 	StringFromGUID2(list->iid, buf, 39);
-	res = RegDeleteTreeW(interface_key, buf);
+	res = SHDeleteKeyW(interface_key, buf);
 	if (res == ERROR_FILE_NOT_FOUND) res = ERROR_SUCCESS;
     }
 
@@ -298,8 +271,7 @@ static HRESULT register_coclasses(struct regsvr_coclass const *list)
 	if (res != ERROR_SUCCESS) goto error_close_coclass_key;
 
 	if (list->name) {
-	    res = RegSetValueExA(clsid_key, NULL, 0, REG_SZ,
-				 (CONST BYTE*)(list->name),
+            res = RegSetValueExA(clsid_key, NULL, 0, REG_SZ, (const BYTE*)list->name,
 				 strlen(list->name) + 1);
 	    if (res != ERROR_SUCCESS) goto error_close_clsid_key;
 	}
@@ -317,12 +289,11 @@ static HRESULT register_coclasses(struct regsvr_coclass const *list)
 				  &ips32_key, NULL);
 	    if (res != ERROR_SUCCESS) goto error_close_clsid_key;
 
-	    res = RegSetValueExA(ips32_key, NULL, 0, REG_SZ,
-				 (CONST BYTE*)list->ips32,
+            res = RegSetValueExA(ips32_key, NULL, 0, REG_SZ, (const BYTE*)list->ips32,
 				 lstrlenA(list->ips32) + 1);
 	    if (res == ERROR_SUCCESS && list->ips32_tmodel)
 		res = RegSetValueExA(ips32_key, tmodel_valuename, 0, REG_SZ,
-				     (CONST BYTE*)list->ips32_tmodel,
+                                     (const BYTE*)list->ips32_tmodel,
 				     strlen(list->ips32_tmodel) + 1);
 	    RegCloseKey(ips32_key);
 	    if (res != ERROR_SUCCESS) goto error_close_clsid_key;
@@ -375,18 +346,18 @@ static HRESULT unregister_coclasses(struct regsvr_coclass const *list)
 	WCHAR buf[39];
 
 	StringFromGUID2(list->clsid, buf, 39);
-	res = RegDeleteTreeW(coclass_key, buf);
+	res = SHDeleteKeyW(coclass_key, buf);
 	if (res == ERROR_FILE_NOT_FOUND) res = ERROR_SUCCESS;
 	if (res != ERROR_SUCCESS) goto error_close_coclass_key;
 
 	if (list->progid) {
-	    res = RegDeleteTreeA(HKEY_CLASSES_ROOT, list->progid);
+	    res = SHDeleteKeyA(HKEY_CLASSES_ROOT, list->progid);
 	    if (res == ERROR_FILE_NOT_FOUND) res = ERROR_SUCCESS;
 	    if (res != ERROR_SUCCESS) goto error_close_coclass_key;
 	}
 
 	if (list->viprogid) {
-	    res = RegDeleteTreeA(HKEY_CLASSES_ROOT, list->viprogid);
+	    res = SHDeleteKeyA(HKEY_CLASSES_ROOT, list->viprogid);
 	    if (res == ERROR_FILE_NOT_FOUND) res = ERROR_SUCCESS;
 	    if (res != ERROR_SUCCESS) goto error_close_coclass_key;
 	}
@@ -427,14 +398,14 @@ static HRESULT register_mediatypes_parsing(struct regsvr_mediatype_parsing const
 	if (res != ERROR_SUCCESS) goto error_close_keys;
 
 	StringFromGUID2(&CLSID_AsyncReader, buf, 39);
-	res = RegSetValueExW(subtype_key, sourcefilter_valuename, 0, REG_SZ, (CONST BYTE*)buf,
+        res = RegSetValueExW(subtype_key, sourcefilter_valuename, 0, REG_SZ, (const BYTE*)buf,
 			     (lstrlenW(buf) + 1) * sizeof(WCHAR));
 	if (res != ERROR_SUCCESS) goto error_close_keys;
 
 	for(i = 0; list->line[i]; i++) {
 	    char buffer[3];
 	    wsprintfA(buffer, "%d", i);
-	    res = RegSetValueExA(subtype_key, buffer, 0, REG_SZ, (CONST BYTE*)list->line[i],
+            res = RegSetValueExA(subtype_key, buffer, 0, REG_SZ, (const BYTE*)list->line[i],
 				 lstrlenA(list->line[i]));
 	    if (res != ERROR_SUCCESS) goto error_close_keys;
 	}
@@ -477,17 +448,17 @@ static HRESULT register_mediatypes_extension(struct regsvr_mediatype_extension c
 	if (res != ERROR_SUCCESS) break;
 
 	StringFromGUID2(list->majortype, buf, 39);
-	res = RegSetValueExW(extension_key, mediatype_name, 0, REG_SZ, (CONST BYTE*)buf,
+        res = RegSetValueExW(extension_key, mediatype_name, 0, REG_SZ, (const BYTE*)buf,
 			     (lstrlenW(buf) + 1) * sizeof(WCHAR));
 	if (res != ERROR_SUCCESS) goto error_close_key;
 
 	StringFromGUID2(list->subtype, buf, 39);
-	res = RegSetValueExW(extension_key, subtype_valuename, 0, REG_SZ, (CONST BYTE*)buf,
+        res = RegSetValueExW(extension_key, subtype_valuename, 0, REG_SZ, (const BYTE*)buf,
 			     (lstrlenW(buf) + 1) * sizeof(WCHAR));
 	if (res != ERROR_SUCCESS) goto error_close_key;
 
 	StringFromGUID2(&CLSID_AsyncReader, buf, 39);
-	res = RegSetValueExW(extension_key, sourcefilter_valuename, 0, REG_SZ, (CONST BYTE*)buf,
+        res = RegSetValueExW(extension_key, sourcefilter_valuename, 0, REG_SZ, (const BYTE*)buf,
 			     (lstrlenW(buf) + 1) * sizeof(WCHAR));
 	if (res != ERROR_SUCCESS) goto error_close_key;
 
@@ -529,7 +500,7 @@ static HRESULT unregister_mediatypes_parsing(struct regsvr_mediatype_parsing con
 	if (res != ERROR_SUCCESS) break;
 
 	StringFromGUID2(list->subtype, buf, 39);
-	res = RegDeleteTreeW(majortype_key, buf);
+	res = SHDeleteKeyW(majortype_key, buf);
     	if (res == ERROR_FILE_NOT_FOUND) res = ERROR_SUCCESS;
 
 	/* Removed majortype key if there is no more subtype key */
@@ -564,7 +535,7 @@ static HRESULT unregister_mediatypes_extension(struct regsvr_mediatype_extension
 	res = ERROR_SUCCESS;
     else if (res == ERROR_SUCCESS)
 	for (; res == ERROR_SUCCESS && list->majortype; ++list) {
-	    res = RegDeleteTreeA(extensions_root_key, list->extension);
+	    res = SHDeleteKeyA(extensions_root_key, list->extension);
 	    if (res == ERROR_FILE_NOT_FOUND) res = ERROR_SUCCESS;
 	}
 
@@ -621,7 +592,7 @@ static HRESULT register_filters(struct regsvr_filter const *list)
 		    if (list->pins[i].mediatypes[j].subtype)
 			memcpy(lpClsid + j*2 + 1, list->pins[i].mediatypes[j].subtype, sizeof(CLSID));
 		    else {
-			/* Subtype are often a combination of major type + fourcc/tag */
+                        /* Subtypes are often a combination of major type + fourcc/tag */
 			memcpy(lpClsid + j*2 + 1, list->pins[i].mediatypes[j].majortype, sizeof(CLSID));
 			*(DWORD*)(lpClsid + j*2 + 1) = list->pins[i].mediatypes[j].fourcc;
 		    }
@@ -707,7 +678,7 @@ static LONG register_key_defvalueW(
     res = RegCreateKeyExW(base, name, 0, NULL, 0,
 			  KEY_READ | KEY_WRITE, NULL, &key, NULL);
     if (res != ERROR_SUCCESS) return res;
-    res = RegSetValueExW(key, NULL, 0, REG_SZ, (CONST BYTE*)value,
+    res = RegSetValueExW(key, NULL, 0, REG_SZ, (const BYTE*)value,
 			 (lstrlenW(value) + 1) * sizeof(WCHAR));
     RegCloseKey(key);
     return res;
@@ -727,8 +698,7 @@ static LONG register_key_defvalueA(
     res = RegCreateKeyExW(base, name, 0, NULL, 0,
 			  KEY_READ | KEY_WRITE, NULL, &key, NULL);
     if (res != ERROR_SUCCESS) return res;
-    res = RegSetValueExA(key, NULL, 0, REG_SZ, (CONST BYTE*)value,
-			 lstrlenA(value) + 1);
+    res = RegSetValueExA(key, NULL, 0, REG_SZ, (const BYTE*)value, lstrlenA(value) + 1);
     RegCloseKey(key);
     return res;
 }
@@ -752,8 +722,7 @@ static LONG register_progid(
     if (res != ERROR_SUCCESS) return res;
 
     if (name) {
-	res = RegSetValueExA(progid_key, NULL, 0, REG_SZ,
-			     (CONST BYTE*)name, strlen(name) + 1);
+        res = RegSetValueExA(progid_key, NULL, 0, REG_SZ, (const BYTE*)name, strlen(name) + 1);
 	if (res != ERROR_SUCCESS) goto error_close_progid_key;
     }
 
@@ -955,6 +924,18 @@ static struct regsvr_filter const filter_list[] = {
         &CLSID_LegacyAmFilterCategory,
         {'V','i','d','e','o',' ','R','e','n','d','e','r','e','r',0},
         0x800000,
+        {   {   REG_PINFLAG_B_RENDERER,
+                {   { &MEDIATYPE_Video, &GUID_NULL },
+                    { NULL }
+                },
+            },
+            { 0xFFFFFFFF },
+        }
+    },
+    {   &CLSID_VideoMixingRenderer,
+        &CLSID_LegacyAmFilterCategory,
+        {'V','i','d','e','o',' ','M','i','x','i','n','g',' ','R','e','n','d','e','r','e','r',0},
+        0x200000,
         {   {   REG_PINFLAG_B_RENDERER,
                 {   { &MEDIATYPE_Video, &GUID_NULL },
                     { NULL }

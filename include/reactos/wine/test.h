@@ -68,7 +68,8 @@ extern LONG winetest_get_failures(void);
 extern void winetest_add_failures( LONG new_failures );
 extern void winetest_wait_child_process( HANDLE process );
 
-extern const char *wine_dbgstr_wn( const WCHAR *str, int n );
+extern const char *wine_dbgstr_wn( const WCHAR *str, intptr_t n );
+extern const char *wine_dbgstr_guid( const GUID *guid );
 static inline const char *wine_dbgstr_w( const WCHAR *s ) { return wine_dbgstr_wn( s, -1 ); }
 
 /* strcmpW is available for tests compiled under Wine, but not in standalone
@@ -254,10 +255,10 @@ static tls_data* get_tls_data(void)
     DWORD last_error;
 
     last_error=GetLastError();
-    data=TlsGetValue(tls_index);
+    data=(tls_data*)TlsGetValue(tls_index);
     if (!data)
     {
-        data=HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(tls_data));
+        data=(tls_data*)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(tls_data));
         data->str_pos = data->strings;
         TlsSetValue(tls_index,data);
     }
@@ -305,7 +306,11 @@ void winetest_set_location( const char* file, int line )
 
 int broken( int condition )
 {
-    return (strcmp(winetest_platform, "windows") == 0) && condition;
+    return ((strcmp(winetest_platform, "windows") == 0)
+#ifndef USE_WINE_TODOS
+    || (strcmp(winetest_platform, "reactos") == 0)
+#endif
+    ) && condition;
 }
 
 /*
@@ -410,7 +415,11 @@ void __winetest_cdecl winetest_win_skip( const char *msg, ... )
 {
     __winetest_va_list valist;
     __winetest_va_start(valist, msg);
-    if ((strcmp(winetest_platform, "windows") == 0) || (strcmp(winetest_platform, "reactos") == 0))
+    if ((strcmp(winetest_platform, "windows") == 0)
+#ifndef USE_WINE_TODOS
+    || (strcmp(winetest_platform, "reactos") == 0)
+#endif
+    )
         winetest_vskip(msg, valist);
     else
         winetest_vok(0, msg, valist);
@@ -485,7 +494,7 @@ void winetest_wait_child_process( HANDLE process )
     }
 }
 
-const char *wine_dbgstr_wn( const WCHAR *str, int n )
+const char *wine_dbgstr_wn( const WCHAR *str, intptr_t n )
 {
     char *dst, *res;
     size_t size;
@@ -538,6 +547,19 @@ const char *wine_dbgstr_wn( const WCHAR *str, int n )
     }
     *dst++ = 0;
     release_temp_buffer( res, dst - res );
+    return res;
+}
+
+const char *wine_dbgstr_guid( const GUID *guid )
+{
+    char *res;
+
+    if (!guid) return "(null)";
+    res = get_temp_buffer( 39 ); /* CHARS_IN_GUID */
+    sprintf( res, "{%08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x}",
+             guid->Data1, guid->Data2, guid->Data3, guid->Data4[0],
+             guid->Data4[1], guid->Data4[2], guid->Data4[3], guid->Data4[4],
+             guid->Data4[5], guid->Data4[6], guid->Data4[7] );
     return res;
 }
 
@@ -687,7 +709,7 @@ int main( int argc, char **argv )
 #define ok_char(expression, result) ok_hex(expression, result)
 
 #define ok_err(error) \
-    ok(GetLastError() == (error), "Wrong last error. Expected " #error ", got %d\n", (int)GetLastError())
+    ok(GetLastError() == (error), "Wrong last error. Expected " #error ", got 0x%lx\n", GetLastError())
 
 #define ok_str(x, y) \
     ok(strcmp(x, y) == 0, "Wrong string. Expected '%s', got '%s'\n", y, x)

@@ -16,27 +16,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <config.h>
-
-#include <stdarg.h>
-
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-
-#define COBJMACROS
-
-#include <windef.h>
-#include <winbase.h>
-//#include "winuser.h"
-#include <ole2.h>
-//#include "shlobj.h"
-
 #include "mshtml_private.h"
-#include "pluginhost.h"
-
-#include <wine/debug.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(mshtml);
 
 typedef struct {
     IOleInPlaceFrame IOleInPlaceFrame_iface;
@@ -53,20 +33,18 @@ static HRESULT WINAPI InPlaceFrame_QueryInterface(IOleInPlaceFrame *iface,
 {
     InPlaceFrame *This = impl_from_IOleInPlaceFrame(iface);
 
+    TRACE("(%p)->(%s %p)\n", This, debugstr_mshtml_guid(riid), ppv);
+
     if(IsEqualGUID(&IID_IUnknown, riid)) {
-        TRACE("(%p)->(IID_IUnknown %p)\n", This, ppv);
         *ppv = &This->IOleInPlaceFrame_iface;
     }else if(IsEqualGUID(&IID_IOleWindow, riid)) {
-        TRACE("(%p)->(IID_IOleWindow %p)\n", This, ppv);
         *ppv = &This->IOleInPlaceFrame_iface;
     }else if(IsEqualGUID(&IID_IOleInPlaceUIWindow, riid)) {
-        TRACE("(%p)->(IID_IOleInPlaceUIWindow %p)\n", This, ppv);
         *ppv = &This->IOleInPlaceFrame_iface;
     }else if(IsEqualGUID(&IID_IOleInPlaceFrame, riid)) {
-        TRACE("(%p)->(IID_IOleInPlaceFrame %p)\n", This, ppv);
         *ppv = &This->IOleInPlaceFrame_iface;
     }else {
-        WARN("Unsopported interface %s\n", debugstr_guid(riid));
+        WARN("Unsopported interface %s\n", debugstr_mshtml_guid(riid));
         *ppv = NULL;
         return E_NOINTERFACE;
     }
@@ -237,17 +215,16 @@ static HRESULT WINAPI InPlaceUIWindow_QueryInterface(IOleInPlaceUIWindow *iface,
 {
     InPlaceUIWindow *This = impl_from_IOleInPlaceUIWindow(iface);
 
+    TRACE("(%p)->(%s %p)\n", This, debugstr_mshtml_guid(riid), ppv);
+
     if(IsEqualGUID(&IID_IUnknown, riid)) {
-        TRACE("(%p)->(IID_IUnknown %p)\n", This, ppv);
         *ppv = &This->IOleInPlaceUIWindow_iface;
     }else if(IsEqualGUID(&IID_IOleWindow, riid)) {
-        TRACE("(%p)->(IID_IOleWindow %p)\n", This, ppv);
         *ppv = &This->IOleInPlaceUIWindow_iface;
     }else if(IsEqualGUID(&IID_IOleInPlaceUIWindow, riid)) {
-        TRACE("(%p)->(IID_IOleInPlaceUIWindow %p)\n", This, ppv);
         *ppv = &This->IOleInPlaceUIWindow_iface;
     }else {
-        WARN("Unsopported interface %s\n", debugstr_guid(riid));
+        WARN("Unsopported interface %s\n", debugstr_mshtml_guid(riid));
         *ppv = NULL;
         return E_NOINTERFACE;
     }

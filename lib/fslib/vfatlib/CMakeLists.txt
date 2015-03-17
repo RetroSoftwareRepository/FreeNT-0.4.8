@@ -10,7 +10,8 @@ list(APPEND SOURCE
     fat12.c
     fat16.c
     fat32.c
-    vfatlib.c)
+    vfatlib.c
+    vfatlib.h)
+
 add_library(vfatlib ${SOURCE})
-add_pch(vfatlib vfatlib.h)
-add_dependencies(vfatlib psdk)
+add_pch(vfatlib vfatlib.h SOURCE)

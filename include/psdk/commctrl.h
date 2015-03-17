@@ -247,6 +247,7 @@ extern "C" {
 #define CDRF_NOTIFYITEMDRAW 0x20
 #define CDRF_NOTIFYSUBITEMDRAW 0x20
 #define CDRF_NOTIFYPOSTERASE 0x40
+#define CDRF_NOTIFYITEMERASE 0x00000080 /* obsolete ??? */
 
 #define CDDS_PREPAINT 0x1
 #define CDDS_POSTPAINT 0x2
@@ -949,7 +950,6 @@ extern "C" {
 #define TBSTYLE_CUSTOMERASE 0x2000
 #define TBSTYLE_REGISTERDROP 0x4000
 #define TBSTYLE_TRANSPARENT 0x8000
-#define TBSTYLE_EX_DRAWDDARROWS 0x1
 
 #define BTNS_BUTTON TBSTYLE_BUTTON
 #define BTNS_SEP TBSTYLE_SEP
@@ -962,9 +962,12 @@ extern "C" {
 #define BTNS_SHOWTEXT 0x40
 #define BTNS_WHOLEDROPDOWN 0x80
 
-#define TBSTYLE_EX_MIXEDBUTTONS 0x8
-#define TBSTYLE_EX_HIDECLIPPEDBUTTONS 0x10
-#define TBSTYLE_EX_DOUBLEBUFFER 0x80
+#define TBSTYLE_EX_DRAWDDARROWS         0x00000001
+#define TBSTYLE_EX_MULTICOLUMN          0x00000002
+#define TBSTYLE_EX_VERTICAL             0x00000004
+#define TBSTYLE_EX_MIXEDBUTTONS         0x00000008
+#define TBSTYLE_EX_HIDECLIPPEDBUTTONS   0x00000010 /* don't show partially obscured buttons */
+#define TBSTYLE_EX_DOUBLEBUFFER         0x00000080 /* Double Buffer the toolbar */
 
   typedef struct _NMTBCUSTOMDRAW {
     NMCUSTOMDRAW nmcd;
@@ -4714,7 +4717,17 @@ typedef struct {
     _In_ PFNDSAENUMCALLBACK pfnCB,
     _In_opt_ void *pData);
 
+  WINCOMMCTRLAPI
+  VOID
+  WINAPI
+  DSA_EnumCallback(
+    _In_ HDSA hdsa,
+    _In_ PFNDSAENUMCALLBACK enumProc,
+    _In_opt_ LPVOID lParam);
+
   WINCOMMCTRLAPI PVOID WINAPI DSA_GetItemPtr(_In_ HDSA hdsa, int i);
+
+  WINCOMMCTRLAPI BOOL WINAPI DSA_DeleteAllItems(_In_ HDSA hdsa);
 
   WINCOMMCTRLAPI
   int

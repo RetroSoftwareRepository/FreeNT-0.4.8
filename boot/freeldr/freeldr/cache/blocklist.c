@@ -100,7 +100,7 @@ PCACHE_BLOCK CacheInternalAddBlockToCache(PCACHE_DRIVE CacheDrive, ULONG BlockNu
     // We will need to add the block to the
     // drive's list of cached blocks. So allocate
     // the block memory.
-    CacheBlock = MmHeapAlloc(sizeof(CACHE_BLOCK));
+    CacheBlock = FrLdrTempAlloc(sizeof(CACHE_BLOCK), TAG_CACHE_BLOCK);
     if (CacheBlock == NULL)
     {
         return NULL;
@@ -110,21 +110,22 @@ PCACHE_BLOCK CacheInternalAddBlockToCache(PCACHE_DRIVE CacheDrive, ULONG BlockNu
     // allocate room for the block data
     RtlZeroMemory(CacheBlock, sizeof(CACHE_BLOCK));
     CacheBlock->BlockNumber = BlockNumber;
-    CacheBlock->BlockData = MmHeapAlloc(CacheDrive->BlockSize * CacheDrive->BytesPerSector);
+    CacheBlock->BlockData = FrLdrTempAlloc(CacheDrive->BlockSize * CacheDrive->BytesPerSector,
+                                           TAG_CACHE_DATA);
     if (CacheBlock->BlockData ==NULL)
     {
-        MmHeapFree(CacheBlock);
+        FrLdrTempFree(CacheBlock, TAG_CACHE_BLOCK);
         return NULL;
     }
 
     // Now try to read in the block
-    if (!MachDiskReadLogicalSectors(CacheDrive->DriveNumber, (BlockNumber * CacheDrive->BlockSize), CacheDrive->BlockSize, (PVOID)DISKREADBUFFER))
+    if (!MachDiskReadLogicalSectors(CacheDrive->DriveNumber, (BlockNumber * CacheDrive->BlockSize), CacheDrive->BlockSize, DiskReadBuffer))
     {
-        MmHeapFree(CacheBlock->BlockData);
-        MmHeapFree(CacheBlock);
+        FrLdrTempFree(CacheBlock->BlockData, TAG_CACHE_DATA);
+        FrLdrTempFree(CacheBlock, TAG_CACHE_BLOCK);
         return NULL;
     }
-    RtlCopyMemory(CacheBlock->BlockData, (PVOID)DISKREADBUFFER, CacheDrive->BlockSize * CacheDrive->BytesPerSector);
+    RtlCopyMemory(CacheBlock->BlockData, DiskReadBuffer, CacheDrive->BlockSize * CacheDrive->BytesPerSector);
 
     // Add it to our list of blocks managed by the cache
     InsertTailList(&CacheDrive->CacheBlockHead, &CacheBlock->ListEntry);
@@ -148,7 +149,7 @@ BOOLEAN CacheInternalFreeBlock(PCACHE_DRIVE CacheDrive)
     // that isn't forced to be in the cache and remove
     // it from the list
     CacheBlockToFree = CONTAINING_RECORD(CacheDrive->CacheBlockHead.Blink, CACHE_BLOCK, ListEntry);
-    while (&CacheBlockToFree->ListEntry != &CacheDrive->CacheBlockHead && CacheBlockToFree->LockedInCache == TRUE)
+    while (&CacheBlockToFree->ListEntry != &CacheDrive->CacheBlockHead && CacheBlockToFree->LockedInCache)
     {
         CacheBlockToFree = CONTAINING_RECORD(CacheBlockToFree->ListEntry.Blink, CACHE_BLOCK, ListEntry);
     }
@@ -163,8 +164,8 @@ BOOLEAN CacheInternalFreeBlock(PCACHE_DRIVE CacheDrive)
     RemoveEntryList(&CacheBlockToFree->ListEntry);
 
     // Free the block memory and the block structure
-    MmHeapFree(CacheBlockToFree->BlockData);
-    MmHeapFree(CacheBlockToFree);
+    FrLdrTempFree(CacheBlockToFree->BlockData, TAG_CACHE_DATA);
+    FrLdrTempFree(CacheBlockToFree, TAG_CACHE_BLOCK);
 
     // Update the cache data
     CacheBlockCount--;

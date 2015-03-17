@@ -6,12 +6,15 @@
  * PROGRAMMERS: ReactOS Portable Systems Group
  */
 
-#pragma once
+#ifndef _SVCHOST_PCH_
+#define _SVCHOST_PCH_
+
 #define WIN32_NO_STATUS
-#include <windows.h>
-#include <aclapi.h>
-#include <ntndk.h>
-#include <lmerr.h>
+#define WIN32_LEAN_AND_MEAN
+
+#include <rpc.h>
+#include <ndk/rtlfuncs.h>
+#include <ndk/kdtypes.h>
 
 //
 // FIXME: Should go in public headers
@@ -37,7 +40,7 @@
 // FIXME: GLOBAL HEADER
 //
 typedef VOID
-    (*CALLBACK PSVCHOST_STOP_CALLBACK) (
+    (CALLBACK *PSVCHOST_STOP_CALLBACK) (
     _In_ PVOID lpParameter,
     _In_ BOOLEAN TimerOrWaitFired
     );
@@ -294,3 +297,4 @@ SvcRegisterStopCallback (
 
 extern PSVCHOST_GLOBALS g_pSvchostSharedGlobals;
 
+#endif /* _SVCHOST_PCH_ */

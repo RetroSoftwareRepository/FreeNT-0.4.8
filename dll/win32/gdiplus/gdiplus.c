@@ -16,24 +16,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-//#include <stdarg.h>
-//#include <math.h>
-
-//#include "windef.h"
-//#include "winbase.h"
-//#include "winerror.h"
-#include <wine/debug.h>
-//#include "wingdi.h"
-
-//#include "objbase.h"
-
-//#include "winreg.h"
-//#include "shlwapi.h"
-
-//#include "gdiplus.h"
 #include "gdiplus_private.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(gdiplus);
 
 static const REAL mm_per_inch = 25.4;
 static const REAL point_per_inch = 72.0;
@@ -374,7 +357,7 @@ REAL units_scale(GpUnit from, GpUnit to, REAL dpi)
 }
 
 /* Calculates Bezier points from cardinal spline points. */
-void calc_curve_bezier(CONST GpPointF *pts, REAL tension, REAL *x1,
+void calc_curve_bezier(const GpPointF *pts, REAL tension, REAL *x1,
     REAL *y1, REAL *x2, REAL *y2)
 {
     REAL xdiff, ydiff;
@@ -459,7 +442,7 @@ void delete_element(region_element* element)
         case RegionDataRect:
             break;
         case RegionDataPath:
-            GdipDeletePath(element->elementdata.pathdata.path);
+            GdipDeletePath(element->elementdata.path);
             break;
         case RegionDataEmptyRect:
         case RegionDataInfiniteRect:
@@ -473,13 +456,13 @@ void delete_element(region_element* element)
     }
 }
 
-const char *debugstr_rectf(CONST RectF* rc)
+const char *debugstr_rectf(const RectF* rc)
 {
     if (!rc) return "(null)";
     return wine_dbg_sprintf("(%0.2f,%0.2f,%0.2f,%0.2f)", rc->X, rc->Y, rc->Width, rc->Height);
 }
 
-const char *debugstr_pointf(CONST PointF* pt)
+const char *debugstr_pointf(const PointF* pt)
 {
     if (!pt) return "(null)";
     return wine_dbg_sprintf("(%0.2f,%0.2f)", pt->X, pt->Y);

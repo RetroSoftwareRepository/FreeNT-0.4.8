@@ -27,9 +27,6 @@ extern "C" {
 // These codes are answered by GetConsoleDisplayMode
 #define CONSOLE_WINDOWED            0
 #define CONSOLE_FULLSCREEN          1
-#if (_WIN32_WINNT >= 0x0600)
-#define CONSOLE_OVERSTRIKE          1
-#endif
 #define CONSOLE_FULLSCREEN_HARDWARE 2
 
 // These codes should be given to SetConsoleDisplayMode
@@ -65,11 +62,12 @@ extern "C" {
 /*
  * Control handler codes
  */
-#define CTRL_C_EVENT        0
-#define CTRL_BREAK_EVENT    1
-#define CTRL_CLOSE_EVENT    2
-#define CTRL_LOGOFF_EVENT   5
-#define CTRL_SHUTDOWN_EVENT 6
+#define CTRL_C_EVENT            0
+#define CTRL_BREAK_EVENT        1
+#define CTRL_CLOSE_EVENT        2
+#define CTRL_LAST_CLOSE_EVENT   3   /* Undocumented */
+#define CTRL_LOGOFF_EVENT       5
+#define CTRL_SHUTDOWN_EVENT     6
 
 /*
  * Input mode flags
@@ -102,11 +100,21 @@ extern "C" {
 #define CONSOLE_MOUSE_DOWN              0x0008
 
 /*
- * History duplicate flags
+ * History information and mode flags
  */
 #if (_WIN32_WINNT >= 0x0600)
+// For Get/SetConsoleHistoryInfo
 #define HISTORY_NO_DUP_FLAG             0x0001
+// For SetConsoleCommandHistoryMode
+#define CONSOLE_OVERSTRIKE              0x0001
 #endif
+
+
+/*
+ * Read input flags
+ */
+#define CONSOLE_READ_KEEPEVENT          0x0001
+#define CONSOLE_READ_CONTINUE           0x0002
 
 /*
  * Event types
@@ -220,7 +228,7 @@ typedef struct _KEY_EVENT_RECORD {
     WORD wVirtualScanCode;
     union {
         WCHAR UnicodeChar;
-        CHAR AsciiChar;
+        CHAR  AsciiChar;
     } uChar;
     DWORD dwControlKeyState;
 }
@@ -228,18 +236,26 @@ typedef struct _KEY_EVENT_RECORD {
 /* gcc's alignment is not what win32 expects */
 PACKED
 #endif
-KEY_EVENT_RECORD;
+KEY_EVENT_RECORD, *PKEY_EVENT_RECORD;
 
 typedef struct _MOUSE_EVENT_RECORD {
     COORD dwMousePosition;
     DWORD dwButtonState;
     DWORD dwControlKeyState;
     DWORD dwEventFlags;
-} MOUSE_EVENT_RECORD;
+} MOUSE_EVENT_RECORD, *PMOUSE_EVENT_RECORD;
 
-typedef struct _WINDOW_BUFFER_SIZE_RECORD { COORD dwSize; } WINDOW_BUFFER_SIZE_RECORD;
-typedef struct _MENU_EVENT_RECORD { UINT dwCommandId; } MENU_EVENT_RECORD,*PMENU_EVENT_RECORD;
-typedef struct _FOCUS_EVENT_RECORD { BOOL bSetFocus; } FOCUS_EVENT_RECORD;
+typedef struct _WINDOW_BUFFER_SIZE_RECORD {
+    COORD dwSize;
+} WINDOW_BUFFER_SIZE_RECORD, *PWINDOW_BUFFER_SIZE_RECORD;
+
+typedef struct _MENU_EVENT_RECORD {
+    UINT dwCommandId;
+} MENU_EVENT_RECORD, *PMENU_EVENT_RECORD;
+
+typedef struct _FOCUS_EVENT_RECORD {
+    BOOL bSetFocus;
+} FOCUS_EVENT_RECORD, *PFOCUS_EVENT_RECORD;
 
 typedef struct _INPUT_RECORD {
     WORD EventType;
@@ -250,7 +266,7 @@ typedef struct _INPUT_RECORD {
         MENU_EVENT_RECORD MenuEvent;
         FOCUS_EVENT_RECORD FocusEvent;
     } Event;
-} INPUT_RECORD,*PINPUT_RECORD;
+} INPUT_RECORD, *PINPUT_RECORD;
 
 #if (_WIN32_WINNT >= 0x0600)
 typedef struct _CONSOLE_HISTORY_INFO {
@@ -268,6 +284,7 @@ typedef struct _CONSOLE_SCREEN_BUFFER_INFOEX {
     SMALL_RECT srWindow;
     COORD dwMaximumWindowSize;
     WORD wPopupAttributes;
+    BOOL bFullscreenSupported;
     COLORREF ColorTable[16];
 } CONSOLE_SCREEN_BUFFER_INFOEX, *PCONSOLE_SCREEN_BUFFER_INFOEX;
 
@@ -421,10 +438,10 @@ GetCurrentConsoleFont(
 #if (_WIN32_WINNT >= 0x0500)
 
 HWND WINAPI GetConsoleWindow(VOID);
-BOOL APIENTRY GetConsoleDisplayMode(_Out_ LPDWORD lpModeFlags);
+BOOL WINAPI GetConsoleDisplayMode(_Out_ LPDWORD lpModeFlags);
 
 BOOL
-APIENTRY
+WINAPI
 SetConsoleDisplayMode(
   _In_ HANDLE hConsoleOutput,
   _In_ DWORD dwFlags,
@@ -436,6 +453,7 @@ COORD WINAPI GetLargestConsoleWindowSize(_In_ HANDLE);
 BOOL WINAPI GetNumberOfConsoleInputEvents(_In_ HANDLE, _Out_ PDWORD);
 BOOL WINAPI GetNumberOfConsoleMouseButtons(_Out_ PDWORD);
 
+_Success_(return != 0)
 BOOL
 WINAPI PeekConsoleInputA(
   _In_ HANDLE hConsoleInput,
@@ -443,6 +461,7 @@ WINAPI PeekConsoleInputA(
   _In_ DWORD nLength,
   _Out_ LPDWORD lpNumberOfEventsRead);
 
+_Success_(return != 0)
 BOOL
 WINAPI
 PeekConsoleInputW(
@@ -488,6 +507,26 @@ ReadConsoleInputW(
   _Out_writes_to_(nLength, *lpNumberOfEventsRead) PINPUT_RECORD lpBuffer,
   _In_ DWORD nLength,
   _Out_ _Deref_out_range_(<= , nLength) LPDWORD lpNumberOfEventsRead);
+
+_Success_(return != 0)
+BOOL
+WINAPI
+ReadConsoleInputExA(
+  _In_ HANDLE hConsoleInput,
+  _Out_writes_to_(nLength, *lpNumberOfEventsRead) PINPUT_RECORD lpBuffer,
+  _In_ DWORD nLength,
+  _Out_ _Deref_out_range_(<= , nLength) LPDWORD lpNumberOfEventsRead,
+  _In_ WORD wFlags);
+
+_Success_(return != 0)
+BOOL
+WINAPI
+ReadConsoleInputExW(
+  _In_ HANDLE hConsoleInput,
+  _Out_writes_to_(nLength, *lpNumberOfEventsRead) PINPUT_RECORD lpBuffer,
+  _In_ DWORD nLength,
+  _Out_ _Deref_out_range_(<= , nLength) LPDWORD lpNumberOfEventsRead,
+  _In_ WORD wFlags);
 
 BOOL
 WINAPI
@@ -579,8 +618,22 @@ BOOL WINAPI SetConsoleMenuClose(_In_ BOOL);
 BOOL WINAPI SetConsoleCursor(_In_ HANDLE, _In_ HCURSOR);
 /* Undocumented, see http://undoc.airesoft.co.uk/kernel32.dll/ShowConsoleCursor.php */
 INT WINAPI ShowConsoleCursor(_In_ HANDLE, _In_ BOOL);
+/* Undocumented */
+BOOL WINAPI SetConsoleIcon(_In_ HICON);
 /* Undocumented, see http://comments.gmane.org/gmane.comp.lang.harbour.devel/27844 */
 BOOL WINAPI SetConsolePalette(_In_ HANDLE, _In_ HPALETTE, _In_ UINT);
+/* Undocumented */
+BOOL WINAPI CloseConsoleHandle(_In_ HANDLE);
+// HANDLE WINAPI GetStdHandle(_In_ DWORD);
+// BOOL WINAPI SetStdHandle(_In_ DWORD, _In_ HANDLE);
+/* Undocumented */
+BOOL WINAPI VerifyConsoleIoHandle(_In_ HANDLE);
+/* Undocumented */
+BOOL
+WINAPI
+RegisterConsoleVDM(_In_ DWORD, _In_ HANDLE, _In_ HANDLE, _In_ HANDLE, _In_ DWORD,
+                   _Out_ LPDWORD, _Out_ PVOID*, _In_ PVOID, _In_ DWORD, _In_ COORD,
+                   _Out_ PVOID*);
 
 BOOL
 WINAPI
@@ -689,6 +742,7 @@ WriteConsoleOutputCharacterW(
 #define PeekConsoleInput PeekConsoleInputW
 #define ReadConsole ReadConsoleW
 #define ReadConsoleInput ReadConsoleInputW
+#define ReadConsoleInputEx ReadConsoleInputExW
 #define ReadConsoleOutput ReadConsoleOutputW
 #define ReadConsoleOutputCharacter ReadConsoleOutputCharacterW
 #define ScrollConsoleScreenBuffer ScrollConsoleScreenBufferW
@@ -710,6 +764,7 @@ WriteConsoleOutputCharacterW(
 #define PeekConsoleInput PeekConsoleInputA
 #define ReadConsole ReadConsoleA
 #define ReadConsoleInput ReadConsoleInputA
+#define ReadConsoleInputEx ReadConsoleInputExA
 #define ReadConsoleOutput ReadConsoleOutputA
 #define ReadConsoleOutputCharacter ReadConsoleOutputCharacterA
 #define ScrollConsoleScreenBuffer ScrollConsoleScreenBufferA

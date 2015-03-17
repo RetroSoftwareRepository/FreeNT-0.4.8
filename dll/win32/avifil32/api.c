@@ -17,35 +17,9 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-#define COM_NO_WINDOWS_H
-
-#include <stdarg.h>
-
-#define COBJMACROS
-
-#include <windef.h>
-#include <winbase.h>
-//#include "winnls.h"
-#include <wingdi.h>
-//#include "winuser.h"
-#include <winreg.h>
-//#include "winerror.h"
-
-//#include "ole2.h"
-//#include "shellapi.h"
-//#include "shlobj.h"
-#include <vfw.h>
-//#include "msacm.h"
-
 #include "avifile_private.h"
 
-#include <wine/debug.h>
-#include <wine/unicode.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(avifile);
-
+#include <winreg.h>
 
 /***********************************************************************
  * for AVIBuildFilterW -- uses fixed size table
@@ -1519,7 +1493,7 @@ HRESULT WINAPI AVISaveVA(LPCSTR szFile, CLSID *pclsidHandler,
   HRESULT hr;
   int     len;
 
-  TRACE("%s,%p,%p,%d,%p,%p)\n", debugstr_a(szFile), pclsidHandler,
+  TRACE("(%s,%p,%p,%d,%p,%p)\n", debugstr_a(szFile), pclsidHandler,
 	lpfnCallback, nStream, ppavi, plpOptions);
 
   if (szFile == NULL || ppavi == NULL || plpOptions == NULL)

@@ -1201,7 +1201,7 @@ xmlSwitchInputEncodingInt(xmlParserCtxtPtr ctxt, xmlParserInputPtr input,
                 /*
                  * convert as much as possible of the buffer
                  */
-                nbchars = xmlCharEncInput(input->buf);
+                nbchars = xmlCharEncInput(input->buf, 1);
             } else {
                 /*
                  * convert just enough to get
@@ -1253,7 +1253,7 @@ xmlSwitchInputEncoding(xmlParserCtxtPtr ctxt, xmlParserInputPtr input,
  * xmlSwitchToEncodingInt:
  * @ctxt:  the parser context
  * @handler:  the encoding handler
- * @len: the lenght to convert or -1
+ * @len: the length to convert or -1
  *
  * change the input functions when discovering the character encoding
  * of a given entity, and convert only @len bytes of the output, this
@@ -1691,12 +1691,20 @@ xmlInitParserCtxt(xmlParserCtxtPtr ctxt)
     ctxt->nsWellFormed = 1;
     ctxt->valid = 1;
     ctxt->loadsubset = xmlLoadExtDtdDefaultValue;
+    if (ctxt->loadsubset) {
+        ctxt->options |= XML_PARSE_DTDLOAD;
+    }
     ctxt->validate = xmlDoValidityCheckingDefaultValue;
     ctxt->pedantic = xmlPedanticParserDefaultValue;
+    if (ctxt->pedantic) {
+        ctxt->options |= XML_PARSE_PEDANTIC;
+    }
     ctxt->linenumbers = xmlLineNumbersDefaultValue;
     ctxt->keepBlanks = xmlKeepBlanksDefaultValue;
-    if (ctxt->keepBlanks == 0)
+    if (ctxt->keepBlanks == 0) {
 	ctxt->sax->ignorableWhitespace = xmlSAX2IgnorableWhitespace;
+	ctxt->options |= XML_PARSE_NOBLANKS;
+    }
 
     ctxt->vctxt.finishDtd = XML_CTXT_FINISH_DTD_0;
     ctxt->vctxt.userData = ctxt;
@@ -1708,8 +1716,12 @@ xmlInitParserCtxt(xmlParserCtxtPtr ctxt)
 	else
 	    ctxt->vctxt.warning = xmlParserValidityWarning;
 	ctxt->vctxt.nodeMax = 0;
+        ctxt->options |= XML_PARSE_DTDVALID;
     }
     ctxt->replaceEntities = xmlSubstituteEntitiesDefaultValue;
+    if (ctxt->replaceEntities) {
+        ctxt->options |= XML_PARSE_NOENT;
+    }
     ctxt->record_info = 0;
     ctxt->nbChars = 0;
     ctxt->checkIndex = 0;
@@ -1719,6 +1731,8 @@ xmlInitParserCtxt(xmlParserCtxtPtr ctxt)
     ctxt->charset = XML_CHAR_ENCODING_UTF8;
     ctxt->catalogs = NULL;
     ctxt->nbentities = 0;
+    ctxt->sizeentities = 0;
+    ctxt->sizeentcopy = 0;
     ctxt->input_id = 1;
     xmlInitNodeInfoSeq(&ctxt->node_seq);
     return(0);
@@ -1988,7 +2002,8 @@ xmlParserAddNodeInfo(xmlParserCtxtPtr ctxt,
 
     /* Otherwise, we need to add new node to buffer */
     else {
-        if (ctxt->node_seq.length + 1 > ctxt->node_seq.maximum) {
+        if ((ctxt->node_seq.length + 1 > ctxt->node_seq.maximum) ||
+	    (ctxt->node_seq.buffer == NULL)) {
             xmlParserNodeInfo *tmp_buffer;
             unsigned int byte_size;
 

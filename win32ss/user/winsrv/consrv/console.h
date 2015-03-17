@@ -1,27 +1,49 @@
 /*
  * COPYRIGHT:       See COPYING in the top level directory
  * PROJECT:         ReactOS Console Server DLL
- * FILE:            win32ss/user/winsrv/consrv/console.h
+ * FILE:            consrv/console.h
  * PURPOSE:         Console Initialization Functions
  * PROGRAMMERS:     Hermes Belusca-Maito (hermes.belusca@sfr.fr)
  */
 
 #pragma once
 
-// FIXME: Fix compilation
-struct _CONSOLE;
+typedef struct _CONSOLE_INIT_INFO
+{
+    PCONSOLE_START_INFO ConsoleStartInfo;
+    BOOLEAN IsWindowVisible;
+
+    ULONG  TitleLength;
+    PWCHAR ConsoleTitle;
+    ULONG  DesktopLength;
+    PWCHAR Desktop;
+    ULONG  AppNameLength;
+    PWCHAR AppName;
+    ULONG  CurDirLength;
+    PWCHAR CurDir;
+} CONSOLE_INIT_INFO, *PCONSOLE_INIT_INFO;
+
+VOID NTAPI
+ConSrvInitConsoleSupport(VOID);
 
 NTSTATUS NTAPI
 ConSrvInitConsole(OUT PHANDLE NewConsoleHandle,
-                  OUT struct _CONSOLE** /* PCONSOLE* */ NewConsole,
-                  IN OUT PCONSOLE_START_INFO ConsoleStartInfo,
-                  IN ULONG ConsoleLeaderProcessId);
-VOID NTAPI ConSrvDeleteConsole(struct _CONSOLE* /* PCONSOLE */ Console);
+                  OUT struct _CONSRV_CONSOLE** /* PCONSRV_CONSOLE* */ NewConsole,
+                  IN OUT PCONSOLE_INIT_INFO ConsoleInitInfo,
+                  IN PCSR_PROCESS ConsoleLeaderProcess);
+VOID NTAPI ConSrvDeleteConsole(struct _CONSRV_CONSOLE* /* PCONSRV_CONSOLE */ Console);
 
-NTSTATUS FASTCALL ConSrvGetConsole(PCONSOLE_PROCESS_DATA ProcessData,
-                                   struct _CONSOLE** /* PCONSOLE* */ Console,
-                                   BOOL LockConsole);
-VOID FASTCALL ConSrvReleaseConsole(struct _CONSOLE* /* PCONSOLE */ Console,
-                                   BOOL WasConsoleLocked);
+NTSTATUS
+ConSrvGetConsole(IN PCONSOLE_PROCESS_DATA ProcessData,
+                 OUT struct _CONSRV_CONSOLE** /* PCONSRV_CONSOLE* */ Console,
+                 IN BOOLEAN LockConsole);
+VOID
+ConSrvReleaseConsole(IN struct _CONSRV_CONSOLE* /* PCONSRV_CONSOLE */ Console,
+                     IN BOOLEAN WasConsoleLocked);
 
-/* EOF */
+
+BOOLEAN NTAPI
+ConSrvValidateConsole(OUT struct _CONSRV_CONSOLE** /* PCONSRV_CONSOLE* */ Console,
+                      IN HANDLE ConsoleHandle,
+                      IN CONSOLE_STATE ExpectedState,
+                      IN BOOLEAN LockConsole);

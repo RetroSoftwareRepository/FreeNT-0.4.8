@@ -10,6 +10,7 @@
 /* INCLUDES *****************************************************************/
 
 #include <ntdll.h>
+
 #define NDEBUG
 #include <debug.h>
 
@@ -20,6 +21,7 @@ LONG LdrpLoaderLockAcquisitonCount;
 BOOLEAN LdrpShowRecursiveLoads, LdrpBreakOnRecursiveDllLoads;
 UNICODE_STRING LdrApiDefaultExtension = RTL_CONSTANT_STRING(L".DLL");
 ULONG AlternateResourceModuleCount;
+extern PLDR_MANIFEST_PROBER_ROUTINE LdrpManifestProberRoutine;
 
 /* FUNCTIONS *****************************************************************/
 
@@ -68,9 +70,10 @@ LdrAccessOutOfProcessResource(IN PVOID Unknown,
 
 VOID
 NTAPI
-LdrSetDllManifestProber(IN PVOID ProberFunction)
+LdrSetDllManifestProber(
+    _In_ PLDR_MANIFEST_PROBER_ROUTINE Routine)
 {
-    UNIMPLEMENTED;
+    LdrpManifestProberRoutine = Routine;
 }
 
 BOOLEAN
@@ -81,8 +84,8 @@ LdrAlternateResourcesEnabled(VOID)
     return FALSE;
 }
 
-ULONG_PTR
 FORCEINLINE
+ULONG_PTR
 LdrpMakeCookie(VOID)
 {
     /* Generate a cookie */
@@ -209,9 +212,6 @@ LdrLockLoaderLock(IN ULONG Flags,
         return STATUS_INVALID_PARAMETER_3;
     }
 
-    /* Do or Do Not. There is no Try */
-    ASSERT((Disposition != NULL) || !(Flags & LDR_LOCK_LOADER_LOCK_FLAG_TRY_ONLY));
-
     /* If the flag is set, make sure we have a valid pointer to use */
     if ((Flags & LDR_LOCK_LOADER_LOCK_FLAG_TRY_ONLY) && !(Disposition))
     {
@@ -306,6 +306,7 @@ LdrLockLoaderLock(IN ULONG Flags,
  */
 NTSTATUS
 NTAPI
+DECLSPEC_HOTPATCH
 LdrLoadDll(IN PWSTR SearchPath OPTIONAL,
            IN PULONG DllCharacteristics OPTIONAL,
            IN PUNICODE_STRING DllName,
@@ -320,10 +321,8 @@ LdrLoadDll(IN PWSTR SearchPath OPTIONAL,
     PTEB Teb = NtCurrentTeb();
 
     /* Initialize the strings */
+    RtlInitEmptyUnicodeString(&DllString1, StringBuffer, sizeof(StringBuffer));
     RtlInitEmptyUnicodeString(&DllString2, NULL, 0);
-    DllString1.Buffer = StringBuffer;
-    DllString1.Length = 0;
-    DllString1.MaximumLength = sizeof(StringBuffer);
 
     /* Check if the SxS Assemblies specify another file */
     Status = RtlDosApplyFileIsolationRedirection_Ustr(TRUE,
@@ -408,8 +407,7 @@ LdrLoadDll(IN PWSTR SearchPath OPTIONAL,
              (Status != STATUS_OBJECT_NAME_NOT_FOUND) &&
              (Status != STATUS_DLL_INIT_FAILED))
     {
-        // 85 == DPFLTR_LDR_ID;
-        DbgPrintEx(85,
+        DbgPrintEx(DPFLTR_LDR_ID,
                    DPFLTR_WARNING_LEVEL,
                    "LDR: %s - failing because LdrpLoadDll(%wZ) returned status %x\n",
                    __FUNCTION__,
@@ -501,8 +499,11 @@ LdrFindEntryForAddress(PVOID Address,
     }
 
     /* Nothing found */
-    // 85 == DPFLTR_LDR_ID;
-    DbgPrintEx(85, DPFLTR_WARNING_LEVEL, "LDR: %s() exiting 0x%08lx\n", __FUNCTION__, STATUS_NO_MORE_ENTRIES);
+    DbgPrintEx(DPFLTR_LDR_ID,
+               DPFLTR_WARNING_LEVEL,
+               "LDR: %s() exiting 0x%08lx\n",
+               __FUNCTION__,
+               STATUS_NO_MORE_ENTRIES);
     return STATUS_NO_MORE_ENTRIES;
 }
 

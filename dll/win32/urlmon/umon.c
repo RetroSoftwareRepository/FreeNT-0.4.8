@@ -22,14 +22,8 @@
 
 #include "urlmon_main.h"
 
-//#include "winreg.h"
-#include <shlwapi.h>
+#include <shellapi.h>
 #include <hlink.h>
-//#include "shellapi.h"
-
-#include <wine/debug.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(urlmon);
 
 typedef struct {
     IMoniker      IMoniker_iface;

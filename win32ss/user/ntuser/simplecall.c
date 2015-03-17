@@ -7,10 +7,11 @@
  */
 
 #include <win32k.h>
+
 DBG_DEFAULT_CHANNEL(UserMisc);
 
-/* registered Logon process */
-PPROCESSINFO LogonProcess = NULL;
+/* Registered logon process ID */
+HANDLE gpidLogon = 0;
 
 BOOL FASTCALL
 co_IntRegisterLogonProcess(HANDLE ProcessId, BOOL Register)
@@ -18,38 +19,33 @@ co_IntRegisterLogonProcess(HANDLE ProcessId, BOOL Register)
    NTSTATUS Status;
    PEPROCESS Process;
 
-   Status = PsLookupProcessByProcessId(ProcessId,
-                                       &Process);
+   Status = PsLookupProcessByProcessId(ProcessId, &Process);
    if (!NT_SUCCESS(Status))
    {
       EngSetLastError(RtlNtStatusToDosError(Status));
       return FALSE;
    }
 
+   ProcessId = Process->UniqueProcessId;
+
+   ObDereferenceObject(Process);
+
    if (Register)
    {
       /* Register the logon process */
-      if (LogonProcess != NULL)
-      {
-         ObDereferenceObject(Process);
+      if (gpidLogon != 0)
          return FALSE;
-      }
 
-      LogonProcess = (PPROCESSINFO)Process->Win32Process;
+      gpidLogon = ProcessId;
    }
    else
    {
       /* Deregister the logon process */
-      if (LogonProcess != (PPROCESSINFO)Process->Win32Process)
-      {
-         ObDereferenceObject(Process);
+      if (gpidLogon != ProcessId)
          return FALSE;
-      }
 
-      LogonProcess = NULL;
+      gpidLogon = 0;
    }
-
-   ObDereferenceObject(Process);
 
    return TRUE;
 }
@@ -70,11 +66,11 @@ NtUserCallNoParam(DWORD Routine)
    switch(Routine)
    {
       case NOPARAM_ROUTINE_CREATEMENU:
-         Result = (DWORD_PTR)UserCreateMenu(FALSE);
+         Result = (DWORD_PTR)UserCreateMenu(GetW32ThreadInfo()->rpdesk, FALSE);
          break;
 
       case NOPARAM_ROUTINE_CREATEMENUPOPUP:
-         Result = (DWORD_PTR)UserCreateMenu(TRUE);
+         Result = (DWORD_PTR)UserCreateMenu(GetW32ThreadInfo()->rpdesk, TRUE);
          break;
 
       case NOPARAM_ROUTINE_DESTROY_CARET:
@@ -87,10 +83,6 @@ NtUserCallNoParam(DWORD Routine)
 
       case NOPARAM_ROUTINE_UNINIT_MESSAGE_PUMP:
          Result = (DWORD_PTR)IntUninitMessagePumpHook();
-         break;
-
-      case NOPARAM_ROUTINE_GETMESSAGEEXTRAINFO:
-         Result = (DWORD_PTR)MsqGetMessageExtraInfo();
          break;
 
       case NOPARAM_ROUTINE_MSQCLEARWAKEMASK:
@@ -175,8 +167,8 @@ NtUserCallOneParam(
              if (count == 0) count = 8;
 
              psmwp = (PSMWP) UserCreateObject( gHandleTable,
-                                               NULL, 
-                                               NULL, 
+                                               NULL,
+                                               NULL,
                                               (PHANDLE)&hDwp,
                                                TYPE_SETWINDOWPOS,
                                                sizeof(SMWP));
@@ -226,9 +218,6 @@ NtUserCallOneParam(
             RETURN(Result);
          }
 
-      case ONEPARAM_ROUTINE_SWITCHCARETSHOWING:
-         RETURN( (DWORD_PTR)IntSwitchCaretShowing((PVOID)Param));
-
       case ONEPARAM_ROUTINE_SETCARETBLINKTIME:
          RETURN( (DWORD_PTR)IntSetCaretBlinkTime((UINT)Param));
 
@@ -237,17 +226,13 @@ NtUserCallOneParam(
 
       case ONEPARAM_ROUTINE_CREATEEMPTYCUROBJECT:
          {
-            PCURICON_OBJECT CurIcon;
 			DWORD_PTR Result ;
 
-            if (!(CurIcon = IntCreateCurIconHandle((DWORD)Param)))
+            if (!(Result = (DWORD_PTR)IntCreateCurIconHandle((DWORD)Param)))
             {
                EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
                RETURN(0);
             }
-
-            Result = (DWORD_PTR)CurIcon->Self;
-			UserDereferenceObject(CurIcon);
 			RETURN(Result);
          }
 
@@ -297,10 +282,6 @@ NtUserCallOneParam(
       case ONEPARAM_ROUTINE_ENUMCLIPBOARDFORMATS:
          /* FIXME: Should use UserEnterShared */
          RETURN(UserEnumClipboardFormats(Param));
-
-      case ONEPARAM_ROUTINE_CSRSS_GUICHECK:
-          IntUserManualGuiCheck(Param);
-          RETURN(TRUE);
 
       case ONEPARAM_ROUTINE_GETCURSORPOS:
       {
@@ -360,8 +341,8 @@ NtUserCallOneParam(
       case ONEPARAM_ROUTINE_REPLYMESSAGE:
           RETURN (co_MsqReplyMessage((LRESULT) Param));
       case ONEPARAM_ROUTINE_MESSAGEBEEP:
+          /* TODO: Implement sound sentry */
           RETURN ( UserPostMessage(hwndSAS, WM_LOGONNOTIFY, LN_MESSAGE_BEEP, Param) );
-		  /* TODO: Implement sound sentry */
       case ONEPARAM_ROUTINE_CREATESYSTEMTHREADS:
           RETURN(CreateSystemThreads(Param));
       case ONEPARAM_ROUTINE_LOCKFOREGNDWINDOW:
@@ -402,17 +383,17 @@ NtUserCallTwoParam(
       case TWOPARAM_ROUTINE_SETMENUBARHEIGHT:
          {
             DWORD_PTR Ret;
-            PMENU_OBJECT MenuObject = IntGetMenuObject((HMENU)Param1);
+            PMENU MenuObject = IntGetMenuObject((HMENU)Param1);
             if(!MenuObject)
                RETURN( 0);
 
             if(Param2 > 0)
             {
-               Ret = (MenuObject->MenuInfo.Height == (int)Param2);
-               MenuObject->MenuInfo.Height = (int)Param2;
+               Ret = (MenuObject->cyMenu == (int)Param2);
+               MenuObject->cyMenu = (int)Param2;
             }
             else
-               Ret = (DWORD_PTR)MenuObject->MenuInfo.Height;
+               Ret = (DWORD_PTR)MenuObject->cyMenu;
             IntReleaseMenuObject(MenuObject);
             RETURN( Ret);
          }
@@ -452,7 +433,6 @@ NtUserCallTwoParam(
          STUB
          RETURN( 0);
 
-
       case TWOPARAM_ROUTINE_SETCARETPOS:
          RETURN( (DWORD_PTR)co_IntSetCaretPos((int)Param1, (int)Param2));
 
@@ -464,13 +444,6 @@ NtUserCallTwoParam(
 
       case TWOPARAM_ROUTINE_UNHOOKWINDOWSHOOK:
          RETURN( IntUnhookWindowsHook((int)Param1, (HOOKPROC)Param2));
-      case TWOPARAM_ROUTINE_EXITREACTOS:
-          if(hwndSAS == NULL)
-          {
-              ASSERT(hwndSAS);
-              RETURN(STATUS_NOT_FOUND);
-          }
-         RETURN( co_IntSendMessage (hwndSAS, PM_WINLOGON_EXITWINDOWS, (WPARAM) Param1, (LPARAM)Param2));
    }
    ERR("Calling invalid routine number 0x%x in NtUserCallTwoParam(), Param1=0x%x Parm2=0x%x\n",
            Routine, Param1, Param2);
@@ -565,9 +538,9 @@ NtUserCallHwndLock(
          break;
 
       case HWNDLOCK_ROUTINE_SETFOREGROUNDWINDOWMOUSE:
-         TRACE("co_IntSetForegroundWindow 1 0x%p\n",hWnd);
+         TRACE("co_IntSetForegroundWindow M 1 0x%p\n",hWnd);
          Ret = co_IntSetForegroundWindowMouse(Window);
-         TRACE("co_IntSetForegroundWindow 2 0x%p\n",hWnd);
+         TRACE("co_IntSetForegroundWindow M 2 0x%p\n",hWnd);
          break;
 
       case HWNDLOCK_ROUTINE_UPDATEWINDOW:
@@ -794,8 +767,15 @@ NtUserCallHwndParamLock(
    switch (Routine)
    {
       case TWOPARAM_ROUTINE_VALIDATERGN:
-         Ret = (DWORD)co_UserRedrawWindow( Window, NULL, (HRGN)Param, RDW_VALIDATE);
-         break;
+      {
+          PREGION Rgn = REGION_LockRgn((HRGN)Param);
+          if (Rgn)
+          {
+              Ret = (DWORD)co_UserRedrawWindow( Window, NULL, Rgn, RDW_VALIDATE);
+              REGION_UnlockRgn(Rgn);
+          }
+          break;
+      }
    }
 
    UserDerefObjectCo(Window);

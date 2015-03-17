@@ -18,12 +18,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define COBJMACROS
-
 #include "qmgr.h"
-#include <wine/debug.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(qmgr);
 
 static ULONG WINAPI
 BITS_IClassFactory_AddRef(IClassFactory *iface)
@@ -62,7 +57,7 @@ BITS_IClassFactory_CreateInstance(IClassFactory *iface, IUnknown *pUnkOuter, REF
     if (pUnkOuter)
         return CLASS_E_NOAGGREGATION;
 
-    res = BackgroundCopyManagerConstructor(pUnkOuter, (LPVOID*) &punk);
+    res = BackgroundCopyManagerConstructor((LPVOID*) &punk);
     if (FAILED(res))
         return res;
 

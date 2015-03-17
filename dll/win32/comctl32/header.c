@@ -27,25 +27,7 @@
  *   - New Windows Vista features
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-#define COM_NO_WINDOWS_H
-
-//#include <stdarg.h>
-#include <stdlib.h>
-//#include <string.h>
-
-//#include "windef.h"
-//#include "winbase.h"
-//#include "wine/unicode.h"
-//#include "wingdi.h"
-//#include "winuser.h"
-//#include "winnls.h"
-//#include "commctrl.h"
 #include "comctl32.h"
-#include <vssym32.h>
-#include <uxtheme.h>
-#include <wine/debug.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(header);
 
@@ -890,7 +872,7 @@ HEADER_SendNotifyWithIntFieldT(const HEADER_INFO *infoPtr, UINT code, INT iItem,
  * Prepare callback items
  *   depends on NMHDDISPINFOW having same structure as NMHDDISPINFOA 
  *   (so we handle the two cases only doing a specific cast for pszText).
- * Checks if any of the required field are callback. If there are sends a 
+ * Checks if any of the required fields is a callback. If this is the case sends a
  * NMHDISPINFO notify to retrieve these items. The items are stored in the
  * HEADER_ITEM pszText and iImage fields. They should be freed with
  * HEADER_FreeCallbackItems.

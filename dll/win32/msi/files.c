@@ -30,24 +30,7 @@
  * RemoveFiles
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-#define COM_NO_WINDOWS_H
-
-//#include <stdarg.h>
-
-//#include "windef.h"
-//#include "winbase.h"
-//#include "winerror.h"
-#include <wine/debug.h>
-//#include "fdi.h"
-//#include "msi.h"
-//#include "msidefs.h"
 #include "msipriv.h"
-//#include "winuser.h"
-#include <winreg.h>
-#include <shlwapi.h>
-#include <wine/unicode.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(msi);
 
@@ -847,7 +830,13 @@ static UINT ITERATE_MoveFiles( MSIRECORD *rec, LPVOID param )
     {
         if (!wildcards)
         {
-            destname = strdupW(sourcename);
+            WCHAR *p;
+            if (sourcename)
+                destname = strdupW(sourcename);
+            else if ((p = strrchrW(sourcedir, '\\')))
+                destname = strdupW(p + 1);
+            else
+                destname = strdupW(sourcedir);
             if (!destname)
                 goto done;
         }

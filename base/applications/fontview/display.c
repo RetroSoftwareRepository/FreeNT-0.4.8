@@ -20,7 +20,10 @@
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#include "display.h"
+#include "precomp.h"
+
+#include <stdio.h>
+#include <malloc.h>
 
 #define SPACING1 8
 #define SPACING2 5
@@ -110,7 +113,7 @@ Display_DrawText(HDC hDC, DISPLAYDATA* pData, int nYPos)
 	TextOutW(hDC, 0, y, szCaption, (INT)wcslen(szCaption));
 	y += tm.tmHeight + 1;
 
-	swprintf(szCaption, L"0123456789.:,;(\"~!@#$%^&*')");
+	swprintf(szCaption, L"0123456789.:,;(\"~!@#$%%^&*')");
 	TextOutW(hDC, 0, y, szCaption, (INT)wcslen(szCaption));
 	y += tm.tmHeight + 1;
 

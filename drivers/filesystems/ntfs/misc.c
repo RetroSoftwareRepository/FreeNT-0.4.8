@@ -1,6 +1,6 @@
 /*
  *  ReactOS kernel
- *  Copyright (C) 2008 ReactOS Team
+ *  Copyright (C) 2008, 2014 ReactOS Team
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -30,9 +30,6 @@
 
 #define NDEBUG
 #include <debug.h>
-
-/* GLOBALS *****************************************************************/
-
 
 /* FUNCTIONS ****************************************************************/
 
@@ -98,6 +95,34 @@ NtfsAllocateIrpContext(PDEVICE_OBJECT DeviceObject,
     }
 
     return IrpContext;
+}
+
+VOID
+NtfsFileFlagsToAttributes(ULONG NtfsAttributes,
+                          PULONG FileAttributes)
+{
+    *FileAttributes = NtfsAttributes;
+    if ((NtfsAttributes & NTFS_FILE_TYPE_DIRECTORY) == NTFS_FILE_TYPE_DIRECTORY)
+    {
+        *FileAttributes = NtfsAttributes & ~NTFS_FILE_TYPE_DIRECTORY;
+        *FileAttributes |= FILE_ATTRIBUTE_DIRECTORY;
+    }
+
+    if (NtfsAttributes == 0)
+        *FileAttributes = FILE_ATTRIBUTE_NORMAL;
+}
+
+PVOID
+NtfsGetUserBuffer(PIRP Irp)
+{
+    if (Irp->MdlAddress != NULL)
+    {
+        return MmGetSystemAddressForMdlSafe(Irp->MdlAddress, HighPagePriority);
+    }
+    else
+    {
+        return Irp->UserBuffer;
+    }
 }
 
 /* EOF */

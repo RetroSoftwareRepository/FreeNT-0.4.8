@@ -23,18 +23,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define COBJMACROS
-
-#include "dshow.h"
-#include "wine/strmbase.h"
 #include "strmbase_private.h"
-
-#include "uuids.h"
-#include "wine/debug.h"
-
-#include <assert.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(strmbase_qc);
 
 HRESULT QualityControlImpl_Create(IPin *input, IBaseFilter *self, QualityControlImpl **ppv) {
     QualityControlImpl *This;
@@ -112,8 +101,9 @@ void QualityControlRender_Start(QualityControlImpl *This, REFERENCE_TIME tStart)
     This->avg_render = This->last_in_time = This->last_left = This->avg_duration = This->avg_pt = -1;
     This->clockstart = tStart;
     This->avg_rate = -1.0;
-    This->rendered = This->dropped = This->is_dropped = 0;
-    This->qos_handled = 1; /* Lie that will be corrected on first adjustment */
+    This->rendered = This->dropped = 0;
+    This->is_dropped = FALSE;
+    This->qos_handled = TRUE; /* Lie that will be corrected on first adjustment */
 }
 
 

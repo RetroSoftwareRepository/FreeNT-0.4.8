@@ -7,6 +7,10 @@
 
 #include "precomp.h"
 
+#include <stdlib.h>
+#include <tchar.h>
+#include <powrprof.h>
+
 /*
  * This takes strings from a resource stringtable
  * and outputs it to the console.
@@ -18,7 +22,7 @@ VOID PrintResourceString(INT resID, ...)
 
     va_start(arg_ptr, resID);
     LoadStringW(GetModuleHandle(NULL), resID, tmpBuffer, MAX_BUFFER_SIZE);
-    _vcwprintf(tmpBuffer, arg_ptr);
+    vfwprintf(stdout, tmpBuffer, arg_ptr);
     va_end(arg_ptr);
 }
 
@@ -277,7 +281,7 @@ int wmain(int argc, WCHAR *argv[])
     }
 
     /* Ensure that the timout amount is not too high or a negative number */
-    if ((opts.shutdown_delay < 0) || (opts.shutdown_delay > MAX_TIMEOUT))
+    if (opts.shutdown_delay > MAX_SHUTDOWN_TIMEOUT)
     {
         PrintResourceString(IDS_ERROR_TIMEOUT, opts.shutdown_delay);
         return EXIT_FAILURE;

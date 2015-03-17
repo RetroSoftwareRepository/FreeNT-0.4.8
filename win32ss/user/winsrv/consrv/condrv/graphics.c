@@ -1,7 +1,7 @@
 /*
  * COPYRIGHT:       See COPYING in the top level directory
  * PROJECT:         ReactOS Console Driver DLL
- * FILE:            win32ss/user/winsrv/consrv/condrv/graphics.c
+ * FILE:            consrv/condrv/graphics.c
  * PURPOSE:         Console Output Functions for graphics-mode screen-buffers
  * PROGRAMMERS:     Hermes Belusca-Maito (hermes.belusca@sfr.fr)
  *
@@ -11,15 +11,10 @@
 
 /* INCLUDES *******************************************************************/
 
-#include "consrv.h"
-#include "include/conio.h"
-#include "include/term.h"
-#include "conoutput.h"
-#include "handle.h"
+#include <consrv.h>
 
 #define NDEBUG
 #include <debug.h>
-
 
 /* PRIVATE FUNCTIONS **********************************************************/
 
@@ -38,7 +33,8 @@ static CONSOLE_SCREEN_BUFFER_VTBL GraphicsVtbl =
 
 NTSTATUS
 CONSOLE_SCREEN_BUFFER_Initialize(OUT PCONSOLE_SCREEN_BUFFER* Buffer,
-                                 IN OUT PCONSOLE Console,
+                                 IN PCONSOLE Console,
+                                 IN PCONSOLE_SCREEN_BUFFER_VTBL Vtbl,
                                  IN SIZE_T Size);
 VOID
 CONSOLE_SCREEN_BUFFER_Destroy(IN OUT PCONSOLE_SCREEN_BUFFER Buffer);
@@ -46,7 +42,8 @@ CONSOLE_SCREEN_BUFFER_Destroy(IN OUT PCONSOLE_SCREEN_BUFFER Buffer);
 
 NTSTATUS
 GRAPHICS_BUFFER_Initialize(OUT PCONSOLE_SCREEN_BUFFER* Buffer,
-                           IN OUT PCONSOLE Console,
+                           IN PCONSOLE Console,
+                           IN HANDLE ProcessHandle,
                            IN PGRAPHICS_BUFFER_INFO GraphicsInfo)
 {
     NTSTATUS Status = STATUS_SUCCESS;
@@ -54,7 +51,6 @@ GRAPHICS_BUFFER_Initialize(OUT PCONSOLE_SCREEN_BUFFER* Buffer,
 
     LARGE_INTEGER SectionSize;
     ULONG ViewSize = 0;
-    HANDLE ProcessHandle;
 
     if (Buffer == NULL || Console == NULL || GraphicsInfo == NULL)
         return STATUS_INVALID_PARAMETER;
@@ -63,17 +59,16 @@ GRAPHICS_BUFFER_Initialize(OUT PCONSOLE_SCREEN_BUFFER* Buffer,
 
     Status = CONSOLE_SCREEN_BUFFER_Initialize((PCONSOLE_SCREEN_BUFFER*)&NewBuffer,
                                               Console,
+                                              &GraphicsVtbl,
                                               sizeof(GRAPHICS_SCREEN_BUFFER));
     if (!NT_SUCCESS(Status)) return Status;
     NewBuffer->Header.Type = GRAPHICS_BUFFER;
-    NewBuffer->Vtbl = &GraphicsVtbl;
 
     /*
      * Remember the handle to the process so that we can close or unmap
      * correctly the allocated resources when the client releases the
      * screen buffer.
      */
-    ProcessHandle = CsrGetClientThread()->Process->ProcessHandle;
     NewBuffer->ClientProcess = ProcessHandle;
 
     /* Get infos from the graphics buffer information structure */
@@ -93,7 +88,8 @@ GRAPHICS_BUFFER_Initialize(OUT PCONSOLE_SCREEN_BUFFER* Buffer,
     /* We do not use anything else than uncompressed bitmaps */
     if (GraphicsInfo->Info.lpBitMapInfo->bmiHeader.biCompression != BI_RGB)
     {
-        DPRINT1("biCompression == %d != BI_RGB, correct that!\n", GraphicsInfo->Info.lpBitMapInfo->bmiHeader.biCompression);
+        DPRINT1("biCompression == %d != BI_RGB, fix that!\n",
+                GraphicsInfo->Info.lpBitMapInfo->bmiHeader.biCompression);
         GraphicsInfo->Info.lpBitMapInfo->bmiHeader.biCompression = BI_RGB;
     }
 
@@ -166,7 +162,7 @@ GRAPHICS_BUFFER_Initialize(OUT PCONSOLE_SCREEN_BUFFER* Buffer,
                              NULL);
     if (!NT_SUCCESS(Status))
     {
-        DPRINT1("Error: Impossible to create a shared section ; Status = %lu\n", Status);
+        DPRINT1("Error: Impossible to create a shared section, Status = 0x%08lx\n", Status);
         NtClose(NewBuffer->ClientMutex);
         NtClose(NewBuffer->Mutex);
         ConsoleFreeHeap(NewBuffer->BitMapInfo);
@@ -191,7 +187,7 @@ GRAPHICS_BUFFER_Initialize(OUT PCONSOLE_SCREEN_BUFFER* Buffer,
                                 PAGE_READWRITE);
     if (!NT_SUCCESS(Status))
     {
-        DPRINT1("Error: Impossible to map the shared section ; Status = %lu\n", Status);
+        DPRINT1("Error: Impossible to map the shared section, Status = 0x%08lx\n", Status);
         NtClose(NewBuffer->hSection);
         NtClose(NewBuffer->ClientMutex);
         NtClose(NewBuffer->Mutex);
@@ -218,7 +214,7 @@ GRAPHICS_BUFFER_Initialize(OUT PCONSOLE_SCREEN_BUFFER* Buffer,
                                 PAGE_READWRITE);
     if (!NT_SUCCESS(Status))
     {
-        DPRINT1("Error: Impossible to map the shared section ; Status = %lu\n", Status);
+        DPRINT1("Error: Impossible to map the shared section, Status = 0x%08lx\n", Status);
         NtUnmapViewOfSection(NtCurrentProcess(), NewBuffer->BitMap);
         NtClose(NewBuffer->hSection);
         NtClose(NewBuffer->ClientMutex);

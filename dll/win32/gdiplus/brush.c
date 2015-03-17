@@ -16,23 +16,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-//#include <stdarg.h>
-
-//#include "windef.h"
-//#include "winbase.h"
-//#include "winuser.h"
-//#include "wingdi.h"
-
-#define COBJMACROS
-//#include "objbase.h"
-//#include "olectl.h"
-//#include "ole2.h"
-
-//#include "gdiplus.h"
 #include "gdiplus_private.h"
-#include <wine/debug.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(gdiplus);
 
 /*
     Unix stuff
@@ -772,8 +756,6 @@ GpStatus WINGDIPAPI GdipCreateTexture2(GpImage *image, GpWrapMode wrapmode,
 
 /******************************************************************************
  * GdipCreateTextureIA [GDIPLUS.@]
- *
- * FIXME: imageattr ignored
  */
 GpStatus WINGDIPAPI GdipCreateTextureIA(GpImage *image,
     GDIPCONST GpImageAttributes *imageattr, REAL x, REAL y, REAL width,
@@ -871,6 +853,7 @@ GpStatus WINGDIPAPI GdipCreateTexture2I(GpImage *image, GpWrapMode wrapmode,
         imageattr->wrap = wrapmode;
 
         stat = GdipCreateTextureIA(image, imageattr, x, y, width, height, texture);
+        GdipDisposeImageAttributes(imageattr);
     }
 
     return stat;

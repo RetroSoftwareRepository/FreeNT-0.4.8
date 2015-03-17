@@ -1959,6 +1959,22 @@ static const WCHAR MS_ENH_RSA_AES_PROV_W[] =           { 'M','i','c','r','o','s'
 #endif
 #define MS_ENH_RSA_AES_PROV                            WINELIB_NAME_AW(MS_ENH_RSA_AES_PROV_)
 
+#define MS_ENH_RSA_AES_PROV_XP_A    "Microsoft Enhanced RSA and AES Cryptographic Provider (Prototype)"
+#if defined(__GNUC__)
+# define MS_ENH_RSA_AES_PROV_XP_W (const WCHAR []){ 'M','i','c','r','o','s','o','f','t',' ', \
+        'E','n','h','a','n','c','e','d',' ','R','S','A',' ','a','n','d',' ','A','E','S',' ',\
+        'C','r','y','p','t','o','g','r','a','p','h','i','c',' ','P','r','o','v','i','d','e','r',' ',\
+        '(','P','r','o','t','o','t','y','p','e',')',0 }
+#elif defined(_MSC_VER)
+# define MS_ENH_RSA_AES_PROV_XP_W   L"Microsoft Enhanced RSA and AES Cryptographic Provider (Prototype)"
+#else
+static const WCHAR MS_ENH_RSA_AES_PROV_XP_W[] = { 'M','i','c','r','o','s','o','f','t',' ',
+        'E','n','h','a','n','c','e','d',' ','R','S','A',' ','a','n','d',' ','A','E','S',' ',
+        'C','r','y','p','t','o','g','r','a','p','h','i','c',' ','P','r','o','v','i','d','e','r',' ',
+        '(','P','r','o','t','o','t','y','p','e',')',0 };
+#endif
+#define MS_ENH_RSA_AES_PROV_XP                   WINELIB_NAME_AW(MS_ENH_RSA_AES_PROV_XP_)
+
 /* Key Specs*/
 #define AT_KEYEXCHANGE          1
 #define AT_SIGNATURE            2
@@ -4026,6 +4042,8 @@ typedef BOOL
 #define REPORT_NOT_ABLE_TO_EXPORT_PRIVATE_KEY 0x00000002
 #define EXPORT_PRIVATE_KEYS                   0x00000004
 #define PKCS12_EXPORT_RESERVED_MASK           0xffff0000
+
+#define CRYPT_USERDATA 0x00000001
 
 /* function declarations */
 /* advapi32.dll */

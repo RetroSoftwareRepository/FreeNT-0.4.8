@@ -18,18 +18,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "config.h"
-#include "wine/debug.h"
-
-#define COBJMACROS
-
-#include "winbase.h"
-#include "wingdi.h"
-
 #include "d3dxof_private.h"
-#include "dxfile.h"
-
-#include <stdio.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(d3dxof);
 WINE_DECLARE_DEBUG_CHANNEL(d3dxof_dump);
@@ -39,7 +28,6 @@ static const struct IDirectXFileBinaryVtbl IDirectXFileBinary_Vtbl;
 static const struct IDirectXFileDataVtbl IDirectXFileData_Vtbl;
 static const struct IDirectXFileDataReferenceVtbl IDirectXFileDataReference_Vtbl;
 static const struct IDirectXFileEnumObjectVtbl IDirectXFileEnumObject_Vtbl;
-static const struct IDirectXFileObjectVtbl IDirectXFileObject_Vtbl;
 static const struct IDirectXFileSaveObjectVtbl IDirectXFileSaveObject_Vtbl;
 
 static HRESULT IDirectXFileDataReferenceImpl_Create(IDirectXFileDataReferenceImpl** ppObj);
@@ -136,6 +124,7 @@ static HRESULT WINAPI IDirectXFileImpl_CreateEnumObject(IDirectXFile* iface, LPV
   HRESULT hr;
   LPBYTE file_buffer;
   DWORD file_size;
+  DWORD bytes_written;
 
   TRACE("(%p/%p)->(%p,%x,%p)\n", This, iface, pvSource, dwLoadOptions, ppEnumObj);
 
@@ -187,7 +176,7 @@ static HRESULT WINAPI IDirectXFileImpl_CreateEnumObject(IDirectXFile* iface, LPV
     HGLOBAL resource_data;
     LPDXFILELOADRESOURCE lpdxflr = pvSource;
 
-    TRACE("Source in resource (module = %p, name = %s, type = %s\n", lpdxflr->hModule, debugstr_a(lpdxflr->lpName), debugstr_a(lpdxflr->lpType));
+    TRACE("Source in resource (module = %p, name = %s, type = %s)\n", lpdxflr->hModule, debugstr_a(lpdxflr->lpName), debugstr_a(lpdxflr->lpType));
 
     resource_info = FindResourceA(lpdxflr->hModule, lpdxflr->lpName, lpdxflr->lpType);
     if (!resource_info)
@@ -240,7 +229,7 @@ static HRESULT WINAPI IDirectXFileImpl_CreateEnumObject(IDirectXFile* iface, LPV
     file = CreateFileA(tmp, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, 0, NULL);
     if (file != INVALID_HANDLE_VALUE)
     {
-      WriteFile(file, file_buffer, file_size, NULL, NULL);
+      WriteFile(file, file_buffer, file_size, &bytes_written, NULL);
       CloseHandle(file);
     }
   }
@@ -304,6 +293,7 @@ static HRESULT WINAPI IDirectXFileImpl_RegisterTemplates(IDirectXFile* iface, LP
   parse_buffer buf;
   HRESULT hr;
   LPBYTE decomp_buffer = NULL;
+  DWORD bytes_written;
 
   ZeroMemory(&buf, sizeof(buf));
   buf.buffer = pvData;
@@ -325,7 +315,7 @@ static HRESULT WINAPI IDirectXFileImpl_RegisterTemplates(IDirectXFile* iface, LP
     file = CreateFileA(tmp, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, 0, NULL);
     if (file != INVALID_HANDLE_VALUE)
     {
-      WriteFile(file, pvData, cbSize, NULL, NULL);
+      WriteFile(file, pvData, cbSize, &bytes_written, NULL);
       CloseHandle(file);
     }
   }

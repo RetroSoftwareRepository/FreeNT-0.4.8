@@ -1,5 +1,11 @@
 #include "precomp.h"
 
+#include <winnls.h>
+#include <winsock.h>
+#include <iphlpapi.h>
+#include <dhcpcsdk.h>
+#include <dhcpcapi.h>
+
 typedef struct
 {
     DWORD EnableSecurityFilters;
@@ -3135,7 +3141,7 @@ INetCfgComponentControl_fnApplyRegistryChanges(
     //MessageBoxW(NULL, L"INetCfgComponentControl_fnApplyRegistryChanges", NULL, MB_OK);
 
 
-    if (RegCreateKeyExW(hKey, L"SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters", 0, NULL, 0, KEY_WRITE, NULL, &hKey, NULL) == ERROR_SUCCESS)
+    if (RegCreateKeyExW(HKEY_LOCAL_MACHINE, L"SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters", 0, NULL, 0, KEY_WRITE, NULL, &hKey, NULL) == ERROR_SUCCESS)
     {
         if (pCurrentConfig->pDNS)
         {

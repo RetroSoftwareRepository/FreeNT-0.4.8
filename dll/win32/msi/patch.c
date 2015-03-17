@@ -19,19 +19,6 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-#define COM_NO_WINDOWS_H
-
-#include <stdarg.h>
-#define COBJMACROS
-#include <windef.h>
-#include <winbase.h>
-#include <winreg.h>
-#include <objbase.h>
-#include <shlwapi.h>
-#include <wine/debug.h>
-#include <wine/unicode.h>
 #include "msipriv.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(msi);
@@ -48,56 +35,222 @@ static BOOL match_language( MSIPACKAGE *package, LANGID langid )
     return FALSE;
 }
 
+struct transform_desc
+{
+    WCHAR *product_code_from;
+    WCHAR *product_code_to;
+    WCHAR *version_from;
+    WCHAR *version_to;
+    WCHAR *upgrade_code;
+};
+
+static void free_transform_desc( struct transform_desc *desc )
+{
+    msi_free( desc->product_code_from );
+    msi_free( desc->product_code_to );
+    msi_free( desc->version_from );
+    msi_free( desc->version_to );
+    msi_free( desc->upgrade_code );
+    msi_free( desc );
+}
+
+static struct transform_desc *parse_transform_desc( const WCHAR *str )
+{
+    struct transform_desc *ret;
+    const WCHAR *p = str, *q;
+    UINT len;
+
+    if (!(ret = msi_alloc_zero( sizeof(*ret) ))) return NULL;
+
+    q = strchrW( p, '}' );
+    if (*p != '{' || !q) goto error;
+
+    len = q - p + 1;
+    if (!(ret->product_code_from = msi_alloc( (len + 1) * sizeof(WCHAR) ))) goto error;
+    memcpy( ret->product_code_from, p, len * sizeof(WCHAR) );
+    ret->product_code_from[len] = 0;
+
+    p = q + 1;
+    if (!(q = strchrW( p, ';' ))) goto error;
+    len = q - p;
+    if (!(ret->version_from = msi_alloc( (len + 1) * sizeof(WCHAR) ))) goto error;
+    memcpy( ret->version_from, p, len * sizeof(WCHAR) );
+    ret->version_from[len] = 0;
+
+    p = q + 1;
+    q = strchrW( p, '}' );
+    if (*p != '{' || !q) goto error;
+
+    len = q - p + 1;
+    if (!(ret->product_code_to = msi_alloc( (len + 1) * sizeof(WCHAR) ))) goto error;
+    memcpy( ret->product_code_to, p, len * sizeof(WCHAR) );
+    ret->product_code_to[len] = 0;
+
+    p = q + 1;
+    if (!(q = strchrW( p, ';' ))) goto error;
+    len = q - p;
+    if (!(ret->version_to = msi_alloc( (len + 1) * sizeof(WCHAR) ))) goto error;
+    memcpy( ret->version_to, p, len * sizeof(WCHAR) );
+    ret->version_to[len] = 0;
+
+    p = q + 1;
+    q = strchrW( p, '}' );
+    if (*p != '{' || !q) goto error;
+
+    len = q - p + 1;
+    if (!(ret->upgrade_code = msi_alloc( (len + 1) * sizeof(WCHAR) ))) goto error;
+    memcpy( ret->upgrade_code, p, len * sizeof(WCHAR) );
+    ret->upgrade_code[len] = 0;
+
+    return ret;
+
+error:
+    free_transform_desc( ret );
+    return NULL;
+}
+
 static UINT check_transform_applicable( MSIPACKAGE *package, IStorage *transform )
 {
-    WCHAR *package_product, *transform_product, *template = NULL;
-    UINT ret = ERROR_FUNCTION_FAILED;
+    static const UINT supported_flags =
+        MSITRANSFORM_VALIDATE_PRODUCT  | MSITRANSFORM_VALIDATE_LANGUAGE |
+        MSITRANSFORM_VALIDATE_PLATFORM | MSITRANSFORM_VALIDATE_MAJORVERSION |
+        MSITRANSFORM_VALIDATE_MINORVERSION | MSITRANSFORM_VALIDATE_UPGRADECODE;
+    MSISUMMARYINFO *si = MSI_GetSummaryInformationW( transform, 0 );
+    UINT valid_flags = 0, wanted_flags = 0;
+    WCHAR *template, *product, *p;
+    struct transform_desc *desc;
 
-    package_product = msi_dup_property( package->db, szProductCode );
-    transform_product = msi_get_suminfo_product( transform );
-
-    TRACE("package = %s transform = %s\n", debugstr_w(package_product), debugstr_w(transform_product));
-
-    if (!transform_product || strstrW( transform_product, package_product ))
+    if (!si)
     {
-        MSISUMMARYINFO *si;
-        const WCHAR *p;
+        WARN("no summary information!\n");
+        return ERROR_FUNCTION_FAILED;
+    }
+    wanted_flags = msi_suminfo_get_int32( si, PID_CHARCOUNT );
+    wanted_flags &= 0xffff; /* mask off error condition flags */
+    TRACE("validation flags 0x%04x\n", wanted_flags);
 
-        si = MSI_GetSummaryInformationW( transform, 0 );
-        if (!si)
-        {
-            ERR("no summary information!\n");
-            goto end;
-        }
-        template = msi_suminfo_dup_string( si, PID_TEMPLATE );
-        if (!template)
-        {
-            ERR("no template property!\n");
-            msiobj_release( &si->hdr );
-            goto end;
-        }
-        if (!template[0])
-        {
-            ret = ERROR_SUCCESS;
-            msiobj_release( &si->hdr );
-            goto end;
-        }
-        TRACE("template: %s\n", debugstr_w(template));
-        p = strchrW( template, ';' );
-        if (p && match_language( package, atoiW( p + 1 ) ))
-        {
-            TRACE("applicable transform\n");
-            ret = ERROR_SUCCESS;
-        }
-        /* FIXME: check platform */
+    if (wanted_flags & ~supported_flags)
+    {
+        FIXME("unsupported validation flags 0x%04x\n", wanted_flags);
         msiobj_release( &si->hdr );
+        return ERROR_FUNCTION_FAILED;
+    }
+    if (!(template = msi_suminfo_dup_string( si, PID_TEMPLATE )))
+    {
+        WARN("no template property!\n");
+        msiobj_release( &si->hdr );
+        return ERROR_FUNCTION_FAILED;
+    }
+    TRACE("template property: %s\n", debugstr_w(template));
+    if (!(product = msi_get_suminfo_product( transform )))
+    {
+        WARN("no product property!\n");
+        msi_free( template );
+        msiobj_release( &si->hdr );
+        return ERROR_FUNCTION_FAILED;
+    }
+    TRACE("product property: %s\n", debugstr_w(product));
+    if (!(desc = parse_transform_desc( product )))
+    {
+        msi_free( template );
+        msiobj_release( &si->hdr );
+        return ERROR_FUNCTION_FAILED;
+    }
+    msi_free( product );
+
+    if (wanted_flags & MSITRANSFORM_VALIDATE_LANGUAGE)
+    {
+        if (!template[0] || ((p = strchrW( template, ';' )) && match_language( package, atoiW( p + 1 ) )))
+        {
+            valid_flags |= MSITRANSFORM_VALIDATE_LANGUAGE;
+        }
+    }
+    if (wanted_flags & MSITRANSFORM_VALIDATE_PRODUCT)
+    {
+        WCHAR *product_code_installed = msi_dup_property( package->db, szProductCode );
+
+        if (!product_code_installed)
+        {
+            msi_free( template );
+            free_transform_desc( desc );
+            msiobj_release( &si->hdr );
+            return ERROR_INSTALL_PACKAGE_INVALID;
+        }
+        if (!strcmpW( desc->product_code_from, product_code_installed ))
+        {
+            valid_flags |= MSITRANSFORM_VALIDATE_PRODUCT;
+        }
+        msi_free( product_code_installed );
+    }
+    if (wanted_flags & MSITRANSFORM_VALIDATE_PLATFORM)
+    {
+        if ((p = strchrW( template, ';' )))
+        {
+            *p = 0;
+            if (package->platform == parse_platform( template ))
+                valid_flags |= MSITRANSFORM_VALIDATE_PLATFORM;
+        }
+    }
+    msi_free( template );
+    if (wanted_flags & MSITRANSFORM_VALIDATE_MAJORVERSION)
+    {
+        WCHAR *product_version_installed = msi_dup_property( package->db, szProductVersion );
+        DWORD major_installed, minor_installed, major, minor;
+
+        if (!product_version_installed)
+        {
+            free_transform_desc( desc );
+            msiobj_release( &si->hdr );
+            return ERROR_INSTALL_PACKAGE_INVALID;
+        }
+        msi_parse_version_string( product_version_installed, &major_installed, &minor_installed );
+        msi_parse_version_string( desc->version_from, &major, &minor );
+
+        if (major_installed == major)
+        {
+            valid_flags |= MSITRANSFORM_VALIDATE_MAJORVERSION;
+            wanted_flags &= ~MSITRANSFORM_VALIDATE_MINORVERSION;
+        }
+        msi_free( product_version_installed );
+    }
+    else if (wanted_flags & MSITRANSFORM_VALIDATE_MINORVERSION)
+    {
+        WCHAR *product_version_installed = msi_dup_property( package->db, szProductVersion );
+        DWORD major_installed, minor_installed, major, minor;
+
+        if (!product_version_installed)
+        {
+            free_transform_desc( desc );
+            msiobj_release( &si->hdr );
+            return ERROR_INSTALL_PACKAGE_INVALID;
+        }
+        msi_parse_version_string( product_version_installed, &major_installed, &minor_installed );
+        msi_parse_version_string( desc->version_from, &major, &minor );
+
+        if (major_installed == major && minor_installed == minor)
+            valid_flags |= MSITRANSFORM_VALIDATE_MINORVERSION;
+        msi_free( product_version_installed );
+    }
+    if (wanted_flags & MSITRANSFORM_VALIDATE_UPGRADECODE)
+    {
+        WCHAR *upgrade_code_installed = msi_dup_property( package->db, szUpgradeCode );
+
+        if (!upgrade_code_installed)
+        {
+            free_transform_desc( desc );
+            msiobj_release( &si->hdr );
+            return ERROR_INSTALL_PACKAGE_INVALID;
+        }
+        if (!strcmpW( desc->upgrade_code, upgrade_code_installed ))
+            valid_flags |= MSITRANSFORM_VALIDATE_UPGRADECODE;
+        msi_free( upgrade_code_installed );
     }
 
-end:
-    msi_free( transform_product );
-    msi_free( package_product );
-    msi_free( template );
-    return ret;
+    free_transform_desc( desc );
+    msiobj_release( &si->hdr );
+    if ((valid_flags & wanted_flags) != wanted_flags) return ERROR_FUNCTION_FAILED;
+    TRACE("applicable transform\n");
+    return ERROR_SUCCESS;
 }
 
 static UINT apply_substorage_transform( MSIPACKAGE *package, MSIDATABASE *patch_db, LPCWSTR name )

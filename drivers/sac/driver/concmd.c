@@ -10,6 +10,8 @@
 
 #include "sacdrv.h"
 
+#include <ndk/exfuncs.h>
+
 /* GLOBALS ********************************************************************/
 
 PVOID GlobalBuffer;
@@ -94,7 +96,7 @@ GetTListInfo(IN PSAC_SYSTEM_INFORMATION SacInfo,
 
     /* Make sure it's at least big enough to hold the static structure */
     BufferLength = InputSize - sizeof(SAC_SYSTEM_INFORMATION);
-    if ((INT)InputSize - sizeof(SAC_SYSTEM_INFORMATION) < 0)
+    if (InputSize < sizeof(SAC_SYSTEM_INFORMATION))
     {
         SAC_DBG(SAC_DBG_ENTRY_EXIT, "Exiting, no memory (2).\n");
         return STATUS_NO_MEMORY;
@@ -309,7 +311,7 @@ VOID
 NTAPI
 PrintTListInfo(IN PSAC_SYSTEM_INFORMATION SacInfo)
 {
-    SAC_DBG(1, "Testing: %d %d %I64d\n",
+    SAC_DBG(SAC_DBG_ENTRY_EXIT, "Testing: %d %d %I64d\n",
             SacInfo->BasicInfo.NumberOfPhysicalPages,
             SacInfo->PerfInfo.AvailablePages,
             SacInfo->TimeInfo.BootTime);
@@ -355,7 +357,7 @@ DoRebootCommand(IN BOOLEAN Reboot)
     LARGE_INTEGER Timeout, TickCount;
     NTSTATUS Status;
     KEVENT Event;
-    SAC_DBG(1, "SAC DoRebootCommand: Entering.\n");
+    SAC_DBG(SAC_DBG_ENTRY_EXIT, "SAC DoRebootCommand: Entering.\n");
 
     /* Get the current time now, and setup a timeout in 1 second */
     KeQueryTickCount(&TickCount);
@@ -428,42 +430,42 @@ VOID
 NTAPI
 DoSetTimeCommand(IN PCHAR InputTime)
 {
-    SAC_DBG(1, "Entering\n");
+    SAC_DBG(SAC_DBG_ENTRY_EXIT, "Entering\n");
 }
 
 VOID
 NTAPI
 DoKillCommand(IN PCHAR KillString)
 {
-    SAC_DBG(1, "Entering\n");
+    SAC_DBG(SAC_DBG_ENTRY_EXIT, "Entering\n");
 }
 
 VOID
 NTAPI
 DoLowerPriorityCommand(IN PCHAR PrioString)
 {
-    SAC_DBG(1, "Entering\n");
+    SAC_DBG(SAC_DBG_ENTRY_EXIT, "Entering\n");
 }
 
 VOID
 NTAPI
 DoRaisePriorityCommand(IN PCHAR PrioString)
 {
-    SAC_DBG(1, "Entering\n");
+    SAC_DBG(SAC_DBG_ENTRY_EXIT, "Entering\n");
 }
 
 VOID
 NTAPI
 DoLimitMemoryCommand(IN PCHAR LimitString)
 {
-    SAC_DBG(1, "Entering\n");
+    SAC_DBG(SAC_DBG_ENTRY_EXIT, "Entering\n");
 }
 
 VOID
 NTAPI
 DoCrashCommand(VOID)
 {
-    SAC_DBG(1, "SAC DoCrashCommand: Entering.\n");
+    SAC_DBG(SAC_DBG_ENTRY_EXIT, "SAC DoCrashCommand: Entering.\n");
 
     /* Crash the machine */
     KeBugCheckEx(MANUALLY_INITIATED_CRASH, 0, 0, 0, 0);
@@ -474,28 +476,28 @@ VOID
 NTAPI
 DoMachineInformationCommand(VOID)
 {
-    SAC_DBG(1, "Entering\n");
+    SAC_DBG(SAC_DBG_ENTRY_EXIT, "Entering\n");
 }
 
 VOID
 NTAPI
 DoChannelCommand(IN PCHAR ChannelString)
 {
-    SAC_DBG(1, "Entering\n");
+    SAC_DBG(SAC_DBG_ENTRY_EXIT, "Entering\n");
 }
 
 VOID
 NTAPI
 DoCmdCommand(IN PCHAR InputString)
 {
-    SAC_DBG(1, "Entering\n");
+    SAC_DBG(SAC_DBG_ENTRY_EXIT, "Entering\n");
 }
 
 VOID
 NTAPI
 DoLockCommand(VOID)
 {
-    SAC_DBG(1, "Entering\n");
+    SAC_DBG(SAC_DBG_ENTRY_EXIT, "Entering\n");
 }
 
 FORCEINLINE
@@ -554,14 +556,14 @@ VOID
 NTAPI
 DoGetNetInfo(IN BOOLEAN DoPrint)
 {
-    SAC_DBG(1, "Entering\n");
+    SAC_DBG(SAC_DBG_ENTRY_EXIT, "Entering\n");
 }
 
 VOID
 NTAPI
 DoSetIpAddressCommand(IN PCHAR IpString)
 {
-    SAC_DBG(1, "Entering\n");
+    SAC_DBG(SAC_DBG_ENTRY_EXIT, "Entering\n");
 }
 
 VOID
@@ -587,7 +589,7 @@ DoTlistCommand(VOID)
         {
             /* Out of memory, bail out */
             SacPutSimpleMessage(11);
-            SAC_DBG(1, "SAC DoTlistCommand: Exiting.\n");
+            SAC_DBG(SAC_DBG_ENTRY_EXIT, "SAC DoTlistCommand: Exiting.\n");
             return;
         }
     }
@@ -611,7 +613,7 @@ DoTlistCommand(VOID)
         {
             /* Out of memory, bail out */
             SacPutSimpleMessage(11);
-            SAC_DBG(1, "SAC DoTlistCommand: Exiting.\n");
+            SAC_DBG(SAC_DBG_ENTRY_EXIT, "SAC DoTlistCommand: Exiting.\n");
             return;
         }
 
@@ -635,5 +637,5 @@ DoTlistCommand(VOID)
         PrintTListInfo(GlobalBuffer);
     }
 
-    SAC_DBG(1, "SAC DoTlistCommand: Exiting.\n");
+    SAC_DBG(SAC_DBG_ENTRY_EXIT, "SAC DoTlistCommand: Exiting.\n");
 }

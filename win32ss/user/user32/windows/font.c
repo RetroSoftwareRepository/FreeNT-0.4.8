@@ -33,6 +33,9 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(text);
 
+DWORD WINAPI GdiGetCodePage(HDC hdc);
+
+
 /* FUNCTIONS *****************************************************************/
 
 #ifndef NDEBUG
@@ -71,14 +74,13 @@ TabbedTextOutA(
   LONG ret;
   DWORD len;
   LPWSTR strW;
+  UINT cp = GdiGetCodePage( hDC ); // CP_ACP
 
-  len = MultiByteToWideChar(CP_ACP, 0, lpString, nCount, NULL, 0);
+  len = MultiByteToWideChar(cp, 0, lpString, nCount, NULL, 0);
+  if (!len) return 0;
   strW = HeapAlloc(GetProcessHeap(), 0, len * sizeof(WCHAR));
-  if (!strW)
-    {
-	  return 0;
-    }
-  MultiByteToWideChar(CP_ACP, 0, lpString, nCount, strW, len);
+  if (!strW) return 0;
+  MultiByteToWideChar(cp, 0, lpString, nCount, strW, len);
   ret = TabbedTextOutW(hDC, X, Y, strW, len, nTabPositions, lpnTabStopPositions, nTabOrigin);
   HeapFree(GetProcessHeap(), 0, strW);
   return ret;
@@ -215,20 +217,19 @@ GetTabbedTextExtentA(
   CONST INT *lpnTabStopPositions)
 {
     LONG ret;
-    DWORD len = MultiByteToWideChar(CP_ACP, 0, lpString, nCount, NULL, 0);
-    LPWSTR strW = HeapAlloc(GetProcessHeap(), 0, len * sizeof(WCHAR));
+    UINT cp = GdiGetCodePage( hDC ); // CP_ACP
+    DWORD len;
+    LPWSTR strW;
 
-    if (!strW)
-        return 0;
-    MultiByteToWideChar(CP_ACP, 0, lpString, nCount, strW, len);
-
-    ret = GetTabbedTextExtentW(hDC, strW, len, nTabPositions,
-        lpnTabStopPositions);
-
+    len = MultiByteToWideChar(cp, 0, lpString, nCount, NULL, 0);
+    if (!len) return 0;
+    strW = HeapAlloc(GetProcessHeap(), 0, len * sizeof(WCHAR));
+    if (!strW) return 0;
+    MultiByteToWideChar(cp, 0, lpString, nCount, strW, len);
+    ret = GetTabbedTextExtentW(hDC, strW, len, nTabPositions, lpnTabStopPositions);
     HeapFree(GetProcessHeap(), 0, strW);
     return ret;
 }
-
 
 /*
  * @implemented
@@ -293,6 +294,8 @@ GetTabbedTextExtentW(
 #define CR     13
 #define SPACE  32
 #define PREFIX 38
+#define ALPHA_PREFIX 30 /* Win16: Alphabet prefix */
+#define KANA_PREFIX  31 /* Win16: Katakana prefix */
 
 #define FORWARD_SLASH '/'
 #define BACK_SLASH '\\'
@@ -602,7 +605,7 @@ static void TEXT_WordBreak (HDC hdc, WCHAR *str, unsigned int max_str,
     p = str + chars_fit; /* The character that doesn't fit */
     word_fits = TRUE;
     if (!chars_fit)
-        ; /* we pretend that it fits anyway */
+        word_fits = FALSE;
     else if (*p == SPACE) /* chars_fit < *len_str so this is valid */
         p--; /* the word just fitted */
     else
@@ -612,7 +615,7 @@ static void TEXT_WordBreak (HDC hdc, WCHAR *str, unsigned int max_str,
             ;
         word_fits = (p != str || *p == SPACE || IsCJKT(p[1]));
     }
-    /* If there was one or the first character didn't fit then */
+    /* If there was one. */
     if (word_fits)
     {
         int next_is_space;
@@ -633,8 +636,9 @@ static void TEXT_WordBreak (HDC hdc, WCHAR *str, unsigned int max_str,
             DT_EDITCONTROL)
         {
             /* break the word after the last character that fits (there must be
-             * at least one; none is caught earlier).
-             */
+             * at least one). */
+            if (!chars_fit)
+                ++chars_fit;
             *len_str = chars_fit;
             *chars_used = chars_fit;
 
@@ -711,8 +715,9 @@ static void TEXT_SkipChars (int *new_count, const WCHAR **new_str,
         max -= n;
         while (n--)
         {
-            if (*start_str++ == PREFIX && max--)
+            if ((*start_str == PREFIX || *start_str == ALPHA_PREFIX) && max--)
                 start_str++;
+            start_str++;
         }
         start_count -= (start_str - str_on_entry);
     }
@@ -746,10 +751,10 @@ static int TEXT_Reprefix (const WCHAR *str, unsigned int ns,
                           const ellipsis_data *pe)
 {
     int result = -1;
-    unsigned int i = 0;
+    unsigned int i;
     unsigned int n = pe->before + pe->under + pe->after;
     assert (n <= ns);
-    while (i < n)
+    for (i = 0; i < n; i++, str++)
     {
         if (i == (unsigned int) pe->before)
         {
@@ -762,16 +767,15 @@ static int TEXT_Reprefix (const WCHAR *str, unsigned int ns,
         }
         if (!ns) break;
         ns--;
-        if (*str++ == PREFIX)
+        if (*str++ == PREFIX || *str == ALPHA_PREFIX)
         {
+            str++;
             if (!ns) break;
             if (*str != PREFIX)
                 result = (i < (unsigned int) pe->before || pe->under == 0) ? i : i - pe->under + pe->len;
                 /* pe->len may be non-zero while pe_under is zero */
-            str++;
             ns--;
         }
-        i++;
     }
     return result;
 }
@@ -870,8 +874,13 @@ static const WCHAR *TEXT_NextLineW( HDC hdc, const WCHAR *str, int *count,
                (str[i] != TAB || !(format & DT_EXPANDTABS)) &&
                ((str[i] != CR && str[i] != LF) || (format & DT_SINGLELINE)))
         {
-	    if (str[i] == PREFIX && !(format & DT_NOPREFIX) && *count > 1)
+            if ((format & DT_NOPREFIX) || *count <= 1)
             {
+                (*count)--; if (j < maxl) dest[j++] = str[i++]; else i++;
+                continue;
+            }
+
+	    if (str[i] == PREFIX || str[i] == ALPHA_PREFIX) {
                 (*count)--, i++; /* Throw away the prefix itself */
                 if (str[i] == PREFIX)
                 {
@@ -887,6 +896,12 @@ static const WCHAR *TEXT_NextLineW( HDC hdc, const WCHAR *str, int *count,
                  * one.
                  */
 	    }
+	    else if (str[i] == KANA_PREFIX)
+            {
+                /* Throw away katakana access keys */
+                (*count)--, i++; /* skip the prefix */
+                (*count)--, i++; /* skip the letter */
+            }
             else
             {
                 (*count)--; if (j < maxl) dest[j++] = str[i++]; else i++;
@@ -1283,10 +1298,6 @@ INT WINAPI DrawTextExW( HDC hdc, LPWSTR str, INT i_count,
     }
     return y - rect->top;
 }
-
-DWORD
-WINAPI
-GdiGetCodePage(HDC hdc);
 
 /***********************************************************************
  *           DrawTextExA    (USER32.@)

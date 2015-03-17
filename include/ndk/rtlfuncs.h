@@ -2084,8 +2084,10 @@ RtlCompareMemoryUlong(
     _In_ ULONG Pattern
 );
 
+#ifndef RtlEqualMemory
 #define RtlEqualMemory(Destination, Source, Length) \
     (!memcmp(Destination, Source, Length))
+#endif
 
 #define RtlCopyBytes RtlCopyMemory
 #define RtlFillBytes RtlFillMemory
@@ -2112,10 +2114,21 @@ RtlFindCharInUnicodeString(
     _Out_ PUSHORT Position
 );
 
+_IRQL_requires_max_(PASSIVE_LEVEL)
 NTSYSAPI
 VOID
 NTAPI
-RtlFreeUnicodeString(IN PUNICODE_STRING UnicodeString);
+RtlFreeUnicodeString(
+    _Inout_ _At_(UnicodeString->Buffer, __drv_freesMem(Mem))
+        PUNICODE_STRING UnicodeString
+);
+
+NTSYSAPI
+VOID
+NTAPI
+RtlEraseUnicodeString(
+    _Inout_ PUNICODE_STRING String
+);
 
 NTSYSAPI
 NTSTATUS
@@ -2161,22 +2174,74 @@ RtlIsTextUnicode(
     INT *Flags
 );
 
+_IRQL_requires_max_(PASSIVE_LEVEL)
+_Must_inspect_result_
 NTSYSAPI
 BOOLEAN
 NTAPI
 RtlPrefixString(
-    PSTRING String1,
-    PSTRING String2,
-    BOOLEAN CaseInsensitive
+    _In_ const STRING *String1,
+    _In_ const STRING *String2,
+    _In_ BOOLEAN CaseInsensitive
 );
 
+_IRQL_requires_max_(PASSIVE_LEVEL)
+_Must_inspect_result_
 NTSYSAPI
 BOOLEAN
 NTAPI
 RtlPrefixUnicodeString(
-    PCUNICODE_STRING String1,
-    PCUNICODE_STRING String2,
-    BOOLEAN CaseInsensitive
+    _In_ PCUNICODE_STRING String1,
+    _In_ PCUNICODE_STRING String2,
+    _In_ BOOLEAN CaseInsensitive
+);
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+NTSYSAPI
+VOID
+NTAPI
+RtlUpperString(
+    _Inout_ PSTRING DestinationString,
+    _In_ const STRING *SourceString
+);
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+_Must_inspect_result_
+NTSYSAPI
+LONG
+NTAPI
+RtlCompareString(
+    _In_ const STRING *String1,
+    _In_ const STRING *String2,
+    _In_ BOOLEAN CaseInSensitive
+);
+
+NTSYSAPI
+VOID
+NTAPI
+RtlCopyString(
+    _Out_ PSTRING DestinationString,
+    _In_opt_ const STRING *SourceString
+);
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+_Must_inspect_result_
+NTSYSAPI
+BOOLEAN
+NTAPI
+RtlEqualString(
+    _In_ const STRING *String1,
+    _In_ const STRING *String2,
+    _In_ BOOLEAN CaseInSensitive
+);
+
+_IRQL_requires_max_(APC_LEVEL)
+NTSYSAPI
+NTSTATUS
+NTAPI
+RtlAppendStringToString(
+    _Inout_ PSTRING Destination,
+    _In_ const STRING *Source
 );
 
 _IRQL_requires_max_(PASSIVE_LEVEL)
@@ -2190,7 +2255,7 @@ RtlUpcaseUnicodeString(
         PUNICODE_STRING DestinationString,
     _In_ PCUNICODE_STRING SourceString,
     _In_ BOOLEAN AllocateDestinationString
-    );
+);
 
 _IRQL_requires_max_(PASSIVE_LEVEL)
 NTSYSAPI
@@ -2501,7 +2566,7 @@ RtlRemoteCall(
 
 NTSYSAPI
 NTSTATUS
-NTAPI
+__cdecl
 RtlSetProcessIsCritical(
     _In_ BOOLEAN NewValue,
     _Out_opt_ PBOOLEAN OldValue,
@@ -2510,7 +2575,7 @@ RtlSetProcessIsCritical(
 
 NTSYSAPI
 NTSTATUS
-NTAPI
+__cdecl
 RtlSetThreadIsCritical(
     _In_ BOOLEAN NewValue,
     _Out_opt_ PBOOLEAN OldValue,
@@ -3591,7 +3656,7 @@ RtlFindActivationContextSectionString(
     _In_ ULONG dwFlags,
     _In_ const GUID *ExtensionGuid,
     _In_ ULONG SectionType,
-    _In_ PUNICODE_STRING SectionName,
+    _In_ const UNICODE_STRING *SectionName,
     _Inout_ PVOID ReturnedData
 );
 
@@ -3931,11 +3996,41 @@ RtlComputeCrc32(
 NTSYSAPI
 NTSTATUS
 NTAPI
+RtlIpv4StringToAddressA(
+    _In_ PCSTR String,
+    _In_ BOOLEAN Strict,
+    _Out_ PCSTR *Terminator,
+    _Out_ struct in_addr *Addr
+);
+
+NTSYSAPI
+NTSTATUS
+NTAPI
 RtlIpv4StringToAddressW(
     _In_ PCWSTR String,
     _In_ BOOLEAN Strict,
-    _Out_ LPWSTR *Terminator,
+    _Out_ PCWSTR *Terminator,
     _Out_ struct in_addr *Addr
+);
+
+NTSYSAPI
+NTSTATUS
+NTAPI
+RtlIpv4StringToAddressExA(
+    _In_ PCSTR AddressString,
+    _In_ BOOLEAN Strict,
+    _Out_ struct in_addr *Address,
+    _Out_ PUSHORT Port
+);
+
+NTSYSAPI
+NTSTATUS
+NTAPI
+RtlIpv4StringToAddressExW(
+    _In_ PCWSTR AddressString,
+    _In_ BOOLEAN Strict,
+    _Out_ struct in_addr *Address,
+    _Out_ PUSHORT Port
 );
 
 NTSYSAPI
@@ -4181,7 +4276,7 @@ RtlFinalReleaseOutOfProcessMemoryStream(
 NTSYSAPI
 HRESULT
 NTAPI
-RtlQueryInterfaceMemoryStream( 
+RtlQueryInterfaceMemoryStream(
     _In_ struct IStream *This,
     _In_ REFIID RequestedIid,
     _Outptr_ PVOID *ResultObject
@@ -4190,21 +4285,21 @@ RtlQueryInterfaceMemoryStream(
 NTSYSAPI
 ULONG
 NTAPI
-RtlAddRefMemoryStream( 
+RtlAddRefMemoryStream(
     _In_ struct IStream *This
 );
 
 NTSYSAPI
 ULONG
 NTAPI
-RtlReleaseMemoryStream( 
+RtlReleaseMemoryStream(
     _In_ struct IStream *This
 );
 
 NTSYSAPI
 HRESULT
 NTAPI
-RtlReadMemoryStream( 
+RtlReadMemoryStream(
     _In_ struct IStream *This,
     _Out_writes_bytes_(Length) PVOID Buffer,
     _In_ ULONG Length,
@@ -4214,7 +4309,7 @@ RtlReadMemoryStream(
 NTSYSAPI
 HRESULT
 NTAPI
-RtlReadOutOfProcessMemoryStream( 
+RtlReadOutOfProcessMemoryStream(
     _In_ struct IStream *This,
     _Out_writes_bytes_(Length) PVOID Buffer,
     _In_ ULONG Length,
@@ -4224,7 +4319,7 @@ RtlReadOutOfProcessMemoryStream(
 NTSYSAPI
 HRESULT
 NTAPI
-RtlSeekMemoryStream( 
+RtlSeekMemoryStream(
     _In_ struct IStream *This,
     _In_ LARGE_INTEGER RelativeOffset,
     _In_ ULONG Origin,
@@ -4234,7 +4329,7 @@ RtlSeekMemoryStream(
 NTSYSAPI
 HRESULT
 NTAPI
-RtlCopyMemoryStreamTo( 
+RtlCopyMemoryStreamTo(
     _In_ struct IStream *This,
     _In_ struct IStream *Target,
     _In_ ULARGE_INTEGER Length,
@@ -4245,7 +4340,7 @@ RtlCopyMemoryStreamTo(
 NTSYSAPI
 HRESULT
 NTAPI
-RtlCopyOutOfProcessMemoryStreamTo( 
+RtlCopyOutOfProcessMemoryStreamTo(
     _In_ struct IStream *This,
     _In_ struct IStream *Target,
     _In_ ULARGE_INTEGER Length,
@@ -4256,7 +4351,7 @@ RtlCopyOutOfProcessMemoryStreamTo(
 NTSYSAPI
 HRESULT
 NTAPI
-RtlStatMemoryStream( 
+RtlStatMemoryStream(
     _In_ struct IStream *This,
     _Out_ struct tagSTATSTG *Stats,
     _In_ ULONG Flags
@@ -4266,7 +4361,7 @@ RtlStatMemoryStream(
 NTSYSAPI
 HRESULT
 NTAPI
-RtlWriteMemoryStream( 
+RtlWriteMemoryStream(
     _In_ struct IStream *This,
     _In_reads_bytes_(Length) CONST VOID *Buffer,
     _In_ ULONG Length,
@@ -4276,7 +4371,7 @@ RtlWriteMemoryStream(
 NTSYSAPI
 HRESULT
 NTAPI
-RtlSetMemoryStreamSize( 
+RtlSetMemoryStreamSize(
     _In_ struct IStream *This,
     _In_ ULARGE_INTEGER NewSize
 );
@@ -4284,7 +4379,7 @@ RtlSetMemoryStreamSize(
 NTSYSAPI
 HRESULT
 NTAPI
-RtlCommitMemoryStream( 
+RtlCommitMemoryStream(
     _In_ struct IStream *This,
     _In_ ULONG CommitFlags
 );
@@ -4292,14 +4387,14 @@ RtlCommitMemoryStream(
 NTSYSAPI
 HRESULT
 NTAPI
-RtlRevertMemoryStream( 
+RtlRevertMemoryStream(
     _In_ struct IStream *This
 );
 
 NTSYSAPI
 HRESULT
 NTAPI
-RtlLockMemoryStreamRegion( 
+RtlLockMemoryStreamRegion(
     _In_ struct IStream *This,
     _In_ ULARGE_INTEGER Offset,
     _In_ ULARGE_INTEGER Length,
@@ -4309,7 +4404,7 @@ RtlLockMemoryStreamRegion(
 NTSYSAPI
 HRESULT
 NTAPI
-RtlUnlockMemoryStreamRegion( 
+RtlUnlockMemoryStreamRegion(
     _In_ struct IStream *This,
     _In_ ULARGE_INTEGER Offset,
     _In_ ULARGE_INTEGER Length,
@@ -4319,12 +4414,23 @@ RtlUnlockMemoryStreamRegion(
 NTSYSAPI
 HRESULT
 NTAPI
-RtlCloneMemoryStream( 
+RtlCloneMemoryStream(
     _In_ struct IStream *This,
     _Outptr_ struct IStream **ResultStream
 );
 
 #endif // NTOS_MODE_USER
+
+NTSYSAPI
+NTSTATUS
+NTAPI
+RtlFindActivationContextSectionGuid(
+    ULONG flags,
+    const GUID *extguid,
+    ULONG section_kind,
+    const GUID *guid,
+    void *ptr
+);
 
 #ifdef __cplusplus
 }

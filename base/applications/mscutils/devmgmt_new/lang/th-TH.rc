@@ -11,39 +11,39 @@ LANGUAGE LANG_THAI, SUBLANG_DEFAULT
 
 IDR_MAINMENU MENU
 BEGIN
-  POPUP "�&���"
+  POPUP "แ&ฟ้ม"
   BEGIN
-    MENUITEM "&�͡",                         IDC_EXIT
+    MENUITEM "&ออก",                         IDC_EXIT
   END
-  POPUP "�������"
+  POPUP "เริ่มทำ"
   BEGIN
-    MENUITEM "�����",                        IDC_PRINT, GRAYED
+    MENUITEM "พิมพ์",                        IDC_PRINT, GRAYED
     MENUITEM SEPARATOR
-    MENUITEM "�س���ѵ�",                    IDC_PROP, GRAYED
+    MENUITEM "คุณสมบัติ",                    IDC_PROP, GRAYED
   END
-  POPUP "����ͧ"
+  POPUP "มุมมอง"
   BEGIN
-    MENUITEM "�ػ�ó��觵��������",         IDC_DEVBYTYPE, CHECKED
-    MENUITEM "�ػ�ó��觵�������������",   IDC_STATIC, GRAYED
-    MENUITEM "���觢����ŵ��������",         IDC_STATIC, GRAYED
-    MENUITEM "���觢����ŵ�������������",   IDC_STATIC, GRAYED
+    MENUITEM "อุปกรณ์แบ่งตามประเภท",         IDC_DEVBYTYPE, CHECKED
+    MENUITEM "อุปกรณ์แบ่งตามการเชื่อมต่อ",   IDC_STATIC, GRAYED
+    MENUITEM "แหล่งข้อมูลตามประเภท",         IDC_STATIC, GRAYED
+    MENUITEM "แหล่งข้อมูลตามการเชื่อมต่อ",   IDC_STATIC, GRAYED
   END
-  POPUP "���������"
+  POPUP "ช่วยเหลือ"
   BEGIN
-    MENUITEM "����ǡѺ",                    IDC_ABOUT
+    MENUITEM "เกี่ยวกับ",                    IDC_ABOUT
   END
 END
 
 IDR_POPUP MENU
 BEGIN
-  POPUP "˹�ҵ�ҧ�Ѩ�غѹ"
+  POPUP "หน้าต่างปัจจุบัน"
   BEGIN
-    MENUITEM "�س���ѵ�",                    IDC_PROP, GRAYED
+    MENUITEM "คุณสมบัติ",                    IDC_PROP, GRAYED
   END
 END
 
 IDD_ABOUTBOX DIALOGEX 22,16,190,182
-CAPTION "����ǡѺ��èѴ����ػ�ó�"
+CAPTION "เกี่ยวกับการจัดการอุปกรณ์"
 FONT 8,"MS Shell Dlg",0,0
 STYLE DS_SHELLFONT | WS_BORDER | WS_DLGFRAME | WS_SYSMENU | DS_MODALFRAME
 BEGIN
@@ -53,34 +53,34 @@ BEGIN
   EDITTEXT IDC_LICENSE_EDIT, 8, 44, 174, 107, WS_VISIBLE | WS_VSCROLL | WS_TABSTOP | ES_READONLY | ES_MULTILINE
 END
 
-STRINGTABLE
+STRINGTABLE DISCARDABLE
 BEGIN
   IDS_LICENSE "This program is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; either version 2 of the License, or (at your option) any later version.\r\n\r\nThis program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more details.\r\n\r\nYou should have received a copy of the GNU General Public License along with this program; if not, write to the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA."
 END
 
-STRINGTABLE
+STRINGTABLE DISCARDABLE
 BEGIN
-  IDS_TOOLTIP_PROP      "�س���ѵ�"
-  IDS_TOOLTIP_REFRESH   "��鹿�"
-  IDS_TOOLTIP_HELP      "���������"
-  IDS_TOOLTIP_EXIT      "�͡�ҡ�����"
+  IDS_TOOLTIP_PROP      "คุณสมบัติ"
+  IDS_TOOLTIP_REFRESH   "ฟื้นฟู"
+  IDS_TOOLTIP_HELP      "ช่วยเหลือ"
+  IDS_TOOLTIP_EXIT      "ออกจากโปรแกรม"
 END
 
 /* Hints */
-STRINGTABLE
+STRINGTABLE DISCARDABLE
 BEGIN
-  IDS_APPNAME "��èѴ����ػ�ó�ͧ ReactOS"
+  IDS_APPNAME "การจัดการอุปกรณ์ของ ReactOS"
   IDS_HINT_BLANK        " "
-  IDS_HINT_EXIT         " �͡�ҡ�����"
-  IDS_HINT_REFRESH      " ��鹿���¡�ú�ԡ��"
-  IDS_HINT_PROP         " �Դ�س���ѵԢͧ�蹧ҹ���������͡㹻Ѩ�غѹ"
-  IDS_HINT_HELP         " �ʴ�˹�ҵ�ҧ���������"
-  IDS_HINT_ABOUT        " ����ǡѺ��èѴ����ػ�ó�ͧ ReactOS"
+  IDS_HINT_EXIT         " ออกจากโปรแกรม"
+  IDS_HINT_REFRESH      " ฟื้นฟูรายการบริการ"
+  IDS_HINT_PROP         " เปิดคุณสมบัติของแผ่นงานตามการเลือกในปัจจุบัน"
+  IDS_HINT_HELP         " แสดงหน้าต่างช่วยเหลือ"
+  IDS_HINT_ABOUT        " เกี่ยวกับการจัดการอุปกรณ์ของ ReactOS"
 
-  IDS_HINT_SYS_RESTORE  " �׹��Ҿ�ͧ˹�ҵ�ҧ�����袹Ҵ����"
-  IDS_HINT_SYS_MOVE     " ����˹�ҵ�ҧ���"
-  IDS_HINT_SYS_SIZE     " ����¹��Ҵ˹�ҵ�ҧ���"
-  IDS_HINT_SYS_MINIMIZE " ���˹�ҵ�ҧ���������ѭ�ٻ"
-  IDS_HINT_SYS_MAXIMIZE " ����˹�ҵ�ҧ��騹���˹�Ҩ�"
-  IDS_HINT_SYS_CLOSE    " �Դ˹�ҵ�ҧ���"
+  IDS_HINT_SYS_RESTORE  " คืนสภาพของหน้าต่างนี้สู่ขนาดปกติ"
+  IDS_HINT_SYS_MOVE     " ย้ายหน้าต่างนี้"
+  IDS_HINT_SYS_SIZE     " เปลี่ยนขนาดหน้าต่างนี้"
+  IDS_HINT_SYS_MINIMIZE " ย่อหน้าต่างนี้ให้เป็นสัญรูป"
+  IDS_HINT_SYS_MAXIMIZE " ขยายหน้าต่างนี้จนเต็มหน้าจอ"
+  IDS_HINT_SYS_CLOSE    " ปิดหน้าต่างนี้"
 END

@@ -10,7 +10,6 @@
 
 #include "precomp.h"
 
-
 static VOID
 SetListViewColumns(HWND hwndListView)
 {
@@ -159,7 +158,7 @@ UserProfileDlgProc(HWND hwndDlg,
                 ShellExecute(hwndDlg,
                              TEXT("open"),
                              TEXT("rundll32.exe"),
-                             TEXT("shell32.dll, Control_RunDLL nusrmgr.cpl"),
+                             TEXT("shell32.dll, Control_RunDLL usrmgr.cpl"),
                              NULL,
                              SW_SHOWNORMAL);
             }

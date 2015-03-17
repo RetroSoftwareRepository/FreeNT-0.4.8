@@ -10,6 +10,8 @@
 
 #include "basesrv.h"
 
+#include <ndk/mmfuncs.h>
+
 #define NDEBUG
 #include <debug.h>
 
@@ -49,7 +51,7 @@ BASESRV_KERNEL_IMPORTS BaseSrvKernel32Imports[10] =
 
 /* FUNCTIONS *****************************************************************/
 
-NTSTATUS 
+NTSTATUS
 NTAPI
 BaseSrvDelayLoadKernel32(VOID)
 {
@@ -106,7 +108,7 @@ BaseSrvDelayLoadKernel32(VOID)
 }
 
 VOID
-WINAPI
+NTAPI
 BaseSrvNLSInit(IN PBASE_STATIC_SERVER_DATA StaticData)
 {
     /* Initialize the lock */
@@ -114,7 +116,7 @@ BaseSrvNLSInit(IN PBASE_STATIC_SERVER_DATA StaticData)
 
     /* Initialize the data with all F's */
     pNlsRegUserInfo = &StaticData->NlsUserInfo;
-    RtlFillMemory(&StaticData->NlsUserInfo, 0xFF, sizeof(StaticData->NlsUserInfo));
+    RtlFillMemory(&StaticData->NlsUserInfo, sizeof(StaticData->NlsUserInfo), 0xFF);
 
     /* Set empty LCID */
     pNlsRegUserInfo->UserLocaleId = 0;
@@ -126,6 +128,16 @@ BaseSrvNLSInit(IN PBASE_STATIC_SERVER_DATA StaticData)
 
     /* Get the LCID */
     NtQueryDefaultLocale(0, &pNlsRegUserInfo->UserLocaleId);
+}
+
+NTSTATUS
+NTAPI
+BaseSrvNlsConnect(IN PCSR_PROCESS CsrProcess,
+                  IN OUT PVOID  ConnectionInfo,
+                  IN OUT PULONG ConnectionInfoLength)
+{
+    /* Does nothing */
+    return STATUS_SUCCESS;
 }
 
 /* PUBLIC SERVER APIS *********************************************************/

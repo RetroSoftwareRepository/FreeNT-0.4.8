@@ -24,6 +24,9 @@
  * PROGRAMMER:      Eric Kohl
  */
 
+#ifndef _USETUP_PCH_
+#define _USETUP_PCH_
+
 /* C Headers */
 #include <stdio.h>
 #include <stdlib.h>
@@ -41,18 +44,15 @@
 #include <ndk/exfuncs.h>
 #include <ndk/iofuncs.h>
 #include <ndk/kefuncs.h>
-#include <ndk/mmtypes.h>
 #include <ndk/mmfuncs.h>
 #include <ndk/obfuncs.h>
 #include <ndk/psfuncs.h>
 #include <ndk/rtlfuncs.h>
+#include <ndk/setypes.h>
 
 /* Filesystem headers */
 #include <fslib/ext2lib.h>
 #include <fslib/vfatlib.h>
-
-/* DDK Disk Headers */
-#include <ntddscsi.h>
 
 /* Internal Headers */
 #include "interface/consup.h"
@@ -64,25 +64,14 @@
 #include "infros.h"
 #include "filequeue.h"
 #endif
-#include "bootsup.h"
 #include "registry.h"
 #include "fslist.h"
-#include "chkdsk.h"
-#include "format.h"
 #include "cabinet.h"
 #include "filesup.h"
-#include "drivesup.h"
 #include "genlist.h"
-#include "settings.h"
 #include "host.h"
 #include "mui.h"
 #include "errorcode.h"
-
-#define INITGUID
-#include <guiddef.h>
-#include <libs/umpnpmgr/sysguid.h>
-
-#include <zlib.h>
 
 extern HANDLE ProcessHeap;
 extern UNICODE_STRING SourceRootPath;
@@ -125,43 +114,46 @@ extern BOOLEAN InfGetStringField(PINFCONTEXT Context,
 #define _PAGE_NUMBER_DEFINED
 typedef enum _PAGE_NUMBER
 {
-  START_PAGE,
-  LANGUAGE_PAGE,
-  INTRO_PAGE,
-  LICENSE_PAGE,
-  INSTALL_INTRO_PAGE,
+    START_PAGE,
+    LANGUAGE_PAGE,
+    INTRO_PAGE,
+    LICENSE_PAGE,
+    INSTALL_INTRO_PAGE,
 
-//  SCSI_CONTROLLER_PAGE,
+//    SCSI_CONTROLLER_PAGE,
 
-  DEVICE_SETTINGS_PAGE,
-  COMPUTER_SETTINGS_PAGE,
-  DISPLAY_SETTINGS_PAGE,
-  KEYBOARD_SETTINGS_PAGE,
-  LAYOUT_SETTINGS_PAGE,
+    DEVICE_SETTINGS_PAGE,
+    COMPUTER_SETTINGS_PAGE,
+    DISPLAY_SETTINGS_PAGE,
+    KEYBOARD_SETTINGS_PAGE,
+    LAYOUT_SETTINGS_PAGE,
 
-  SELECT_PARTITION_PAGE,
-  CREATE_PARTITION_PAGE,
-  DELETE_PARTITION_PAGE,
+    SELECT_PARTITION_PAGE,
+    CREATE_PRIMARY_PARTITION_PAGE,
+    CREATE_EXTENDED_PARTITION_PAGE,
+    CREATE_LOGICAL_PARTITION_PAGE,
+    DELETE_PARTITION_PAGE,
 
-  SELECT_FILE_SYSTEM_PAGE,
-  FORMAT_PARTITION_PAGE,
-  CHECK_FILE_SYSTEM_PAGE,
+    SELECT_FILE_SYSTEM_PAGE,
+    FORMAT_PARTITION_PAGE,
+    CHECK_FILE_SYSTEM_PAGE,
 
-  PREPARE_COPY_PAGE,
-  INSTALL_DIRECTORY_PAGE,
-  FILE_COPY_PAGE,
-  REGISTRY_PAGE,
-  BOOT_LOADER_PAGE,
-  BOOT_LOADER_FLOPPY_PAGE,
-  BOOT_LOADER_HARDDISK_MBR_PAGE,
-  BOOT_LOADER_HARDDISK_VBR_PAGE,
+    PREPARE_COPY_PAGE,
+    INSTALL_DIRECTORY_PAGE,
+    FILE_COPY_PAGE,
+    REGISTRY_PAGE,
+    BOOT_LOADER_PAGE,
+    BOOT_LOADER_FLOPPY_PAGE,
+    BOOT_LOADER_HARDDISK_MBR_PAGE,
+    BOOT_LOADER_HARDDISK_VBR_PAGE,
 
-  REPAIR_INTRO_PAGE,
+    REPAIR_INTRO_PAGE,
 
-  SUCCESS_PAGE,
-  QUIT_PAGE,
-  FLUSH_PAGE,
-  REBOOT_PAGE,			/* virtual page */
+    SUCCESS_PAGE,
+    QUIT_PAGE,
+    FLUSH_PAGE,
+    REBOOT_PAGE,		/* virtual page */
+    RECOVERY_PAGE,		/* virtual page */
 } PAGE_NUMBER, *PPAGE_NUMBER;
 #endif
 
@@ -187,4 +179,4 @@ typedef enum _PAGE_NUMBER
   InsertTailList(current, &((NewEntry)->ListEntryField));\
 }
 
-/* EOF */
+#endif /* _USETUP_PCH_ */

@@ -16,28 +16,50 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <wingdi.h>
-#include "docobj.h"
-#include "docobjectservice.h"
-#include <comcat.h>
-#include <mshtml.h>
-#include <mshtmhst.h>
-#include <hlink.h>
-#include <perhist.h>
-#include <dispex.h>
-#include "objsafe.h"
-#include "htiframe.h"
-#include "tlogstg.h"
-#include <shdeprecated.h>
+#ifndef _MSHTML_PRIVATE_H_
+#define _MSHTML_PRIVATE_H_
 
+#include <wine/config.h>
+
+#include <assert.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <math.h>
+
+#define WIN32_NO_STATUS
+#define _INC_WINDOWS
+
+#define COBJMACROS
+#define NONAMELESSUNION
+#define NONAMELESSSTRUCT
+
+#include <windef.h>
+#include <winbase.h>
+#include <winreg.h>
+#include <wingdi.h>
+#include <ole2.h>
+#include <docobjectservice.h>
+#include <mshtmhst.h>
+#include <mshtmcid.h>
+#include <mshtmdid.h>
+#include <perhist.h>
+#include <objsafe.h>
+#include <htiframe.h>
+#include <tlogstg.h>
+#include <shdeprecated.h>
+#include <shlguid.h>
+#define NO_SHLWAPI_REG
+#include <shlwapi.h>
+#include <optary.h>
+#include <idispids.h>
+#include <wininet.h>
+#include <nsiface.h>
+
+#include <wine/debug.h>
 #include <wine/list.h>
 #include <wine/unicode.h>
 
-#ifdef INIT_GUID
-#include <initguid.h>
-#endif
-
-#include <nsiface.h>
+WINE_DEFAULT_DEBUG_CHANNEL(mshtml);
 
 #define NS_ERROR_GENERATE_FAILURE(module,code) \
     ((nsresult) (((UINT32)(1<<31)) | ((UINT32)(module+0x45)<<16) | ((UINT32)(code))))
@@ -107,6 +129,7 @@ typedef struct event_target_t event_target_t;
     XDIID(DispHTMLStyle) \
     XDIID(DispHTMLStyleElement) \
     XDIID(DispHTMLStyleSheet) \
+    XDIID(DispHTMLStyleSheetRulesCollection) \
     XDIID(DispHTMLStyleSheetsCollection) \
     XDIID(DispHTMLTable) \
     XDIID(DispHTMLTableCell) \
@@ -135,6 +158,7 @@ typedef struct event_target_t event_target_t;
     XIID(IHTMLDocument5) \
     XIID(IHTMLDOMAttribute) \
     XIID(IHTMLDOMChildrenCollection) \
+    XIID(IHTMLDOMImplementation) \
     XIID(IHTMLDOMNode) \
     XIID(IHTMLDOMNode2) \
     XIID(IHTMLDOMTextNode) \
@@ -166,6 +190,7 @@ typedef struct event_target_t event_target_t;
     XIID(IHTMLObjectElement) \
     XIID(IHTMLObjectElement2) \
     XIID(IHTMLOptionElement) \
+    XIID(IHTMLOptionElementFactory) \
     XIID(IHTMLPluginsCollection) \
     XIID(IHTMLRect) \
     XIID(IHTMLScreen) \
@@ -180,6 +205,7 @@ typedef struct event_target_t event_target_t;
     XIID(IHTMLStyle6) \
     XIID(IHTMLStyleElement) \
     XIID(IHTMLStyleSheet) \
+    XIID(IHTMLStyleSheetRulesCollection) \
     XIID(IHTMLStyleSheetsCollection) \
     XIID(IHTMLTable) \
     XIID(IHTMLTable2) \
@@ -316,6 +342,7 @@ typedef struct {
 } global_prop_t;
 
 typedef struct {
+    DispatchEx dispex;
     IHTMLOptionElementFactory IHTMLOptionElementFactory_iface;
 
     LONG ref;
@@ -385,7 +412,10 @@ struct HTMLOuterWindow {
     nsIDOMWindow *nswindow;
     HTMLOuterWindow *parent;
     HTMLFrameBase *frame_element;
+
     READYSTATE readystate;
+    BOOL readystate_locked;
+    unsigned readystate_pending;
 
     HTMLInnerWindow *pending_window;
     IMoniker *mon;
@@ -485,6 +515,7 @@ struct HTMLDocument {
     IHTMLDocument4              IHTMLDocument4_iface;
     IHTMLDocument5              IHTMLDocument5_iface;
     IHTMLDocument6              IHTMLDocument6_iface;
+    IHTMLDocument7              IHTMLDocument7_iface;
     IPersistMoniker             IPersistMoniker_iface;
     IPersistFile                IPersistFile_iface;
     IPersistHistory             IPersistHistory_iface;
@@ -724,6 +755,8 @@ struct HTMLDocumentNode {
     BOOL content_ready;
     event_target_t *body_event_target;
 
+    IHTMLDOMImplementation *dom_implementation;
+
     ICatInformation *catmgr;
     nsDocumentEventListener *nsevent_listener;
     BOOL *event_vector;
@@ -754,11 +787,10 @@ HRESULT HTMLLocation_Create(HTMLInnerWindow*,HTMLLocation**) DECLSPEC_HIDDEN;
 IOmNavigator *OmNavigator_Create(void) DECLSPEC_HIDDEN;
 HRESULT HTMLScreen_Create(IHTMLScreen**) DECLSPEC_HIDDEN;
 HRESULT create_history(HTMLInnerWindow*,OmHistory**) DECLSPEC_HIDDEN;
+HRESULT create_dom_implementation(IHTMLDOMImplementation**) DECLSPEC_HIDDEN;
 
 HRESULT create_storage(IHTMLStorage**) DECLSPEC_HIDDEN;
 
-void HTMLDocument_HTMLDocument3_Init(HTMLDocument*) DECLSPEC_HIDDEN;
-void HTMLDocument_HTMLDocument5_Init(HTMLDocument*) DECLSPEC_HIDDEN;
 void HTMLDocument_Persist_Init(HTMLDocument*) DECLSPEC_HIDDEN;
 void HTMLDocument_OleCmd_Init(HTMLDocument*) DECLSPEC_HIDDEN;
 void HTMLDocument_OleObj_Init(HTMLDocument*) DECLSPEC_HIDDEN;
@@ -821,7 +853,6 @@ void nsACString_Finish(nsACString*) DECLSPEC_HIDDEN;
 
 BOOL nsAString_Init(nsAString*,const PRUnichar*) DECLSPEC_HIDDEN;
 void nsAString_InitDepend(nsAString*,const PRUnichar*) DECLSPEC_HIDDEN;
-void nsAString_SetData(nsAString*,const PRUnichar*) DECLSPEC_HIDDEN;
 UINT32 nsAString_GetData(const nsAString*,const PRUnichar**) DECLSPEC_HIDDEN;
 void nsAString_Finish(nsAString*) DECLSPEC_HIDDEN;
 HRESULT return_nsstr(nsresult,nsAString*,BSTR*) DECLSPEC_HIDDEN;
@@ -832,6 +863,7 @@ void get_editor_controller(NSContainer*) DECLSPEC_HIDDEN;
 nsresult get_nsinterface(nsISupports*,REFIID,void**) DECLSPEC_HIDDEN;
 nsIWritableVariant *create_nsvariant(void) DECLSPEC_HIDDEN;
 nsresult create_nsfile(const PRUnichar*,nsIFile**) DECLSPEC_HIDDEN;
+char *get_nscategory_entry(const char*,const char*) DECLSPEC_HIDDEN;
 
 HRESULT create_pending_window(HTMLOuterWindow*,nsChannelBSC*) DECLSPEC_HIDDEN;
 HRESULT start_binding(HTMLInnerWindow*,BSCallback*,IBindCtx*) DECLSPEC_HIDDEN;
@@ -858,6 +890,10 @@ HRESULT create_nselem(HTMLDocumentNode*,const WCHAR*,nsIDOMHTMLElement**) DECLSP
 HRESULT create_element(HTMLDocumentNode*,const WCHAR*,HTMLElement**) DECLSPEC_HIDDEN;
 
 HRESULT HTMLDOMTextNode_Create(HTMLDocumentNode*,nsIDOMNode*,HTMLDOMNode**) DECLSPEC_HIDDEN;
+
+BOOL variant_to_nscolor(const VARIANT *v, nsAString *nsstr) DECLSPEC_HIDDEN;
+HRESULT nscolor_to_str(LPCWSTR color, BSTR *ret) DECLSPEC_HIDDEN;
+
 
 struct HTMLAttributeCollection {
     DispatchEx dispex;
@@ -940,12 +976,18 @@ HTMLElement *unsafe_impl_from_IHTMLElement(IHTMLElement*) DECLSPEC_HIDDEN;
 HRESULT search_window_props(HTMLInnerWindow*,BSTR,DWORD,DISPID*) DECLSPEC_HIDDEN;
 HRESULT get_frame_by_name(HTMLOuterWindow*,const WCHAR*,BOOL,HTMLOuterWindow**) DECLSPEC_HIDDEN;
 HRESULT get_doc_elem_by_id(HTMLDocumentNode*,const WCHAR*,HTMLElement**) DECLSPEC_HIDDEN;
+HTMLOuterWindow *get_target_window(HTMLOuterWindow*,nsAString*,BOOL*) DECLSPEC_HIDDEN;
 
 HRESULT wrap_iface(IUnknown*,IUnknown*,IUnknown**) DECLSPEC_HIDDEN;
 
 IHTMLElementCollection *create_all_collection(HTMLDOMNode*,BOOL) DECLSPEC_HIDDEN;
 IHTMLElementCollection *create_collection_from_nodelist(HTMLDocumentNode*,nsIDOMNodeList*) DECLSPEC_HIDDEN;
 IHTMLElementCollection *create_collection_from_htmlcol(HTMLDocumentNode*,nsIDOMHTMLCollection*) DECLSPEC_HIDDEN;
+HRESULT get_elem_source_index(HTMLElement*,LONG*) DECLSPEC_HIDDEN;
+
+nsresult get_elem_attr_value(nsIDOMHTMLElement*,const WCHAR*,nsAString*,const PRUnichar**) DECLSPEC_HIDDEN;
+HRESULT elem_string_attr_getter(HTMLElement*,const WCHAR*,BOOL,BSTR*) DECLSPEC_HIDDEN;
+HRESULT elem_string_attr_setter(HTMLElement*,const WCHAR*,const WCHAR*) DECLSPEC_HIDDEN;
 
 /* commands */
 typedef struct {
@@ -964,6 +1006,7 @@ void do_ns_command(HTMLDocument*,const char*,nsICommandParams*) DECLSPEC_HIDDEN;
 
 void update_doc(HTMLDocument*,DWORD) DECLSPEC_HIDDEN;
 void update_title(HTMLDocumentObj*) DECLSPEC_HIDDEN;
+void set_document_navigation(HTMLDocumentObj*,BOOL) DECLSPEC_HIDDEN;
 
 HRESULT do_query_service(IUnknown*,REFGUID,REFIID,void**) DECLSPEC_HIDDEN;
 
@@ -1012,7 +1055,7 @@ void remove_target_tasks(LONG) DECLSPEC_HIDDEN;
 HRESULT set_task_timer(HTMLInnerWindow*,DWORD,BOOL,IDispatch*,LONG*) DECLSPEC_HIDDEN;
 HRESULT clear_task_timer(HTMLInnerWindow*,BOOL,DWORD) DECLSPEC_HIDDEN;
 
-const char *debugstr_variant(const VARIANT*) DECLSPEC_HIDDEN;
+const char *debugstr_mshtml_guid(const GUID*) DECLSPEC_HIDDEN;
 
 DEFINE_GUID(CLSID_AboutProtocol, 0x3050F406, 0x98B5, 0x11CF, 0xBB,0x82, 0x00,0xAA,0x00,0xBD,0xCE,0x0B);
 DEFINE_GUID(CLSID_JSProtocol, 0x3050F3B2, 0x98B5, 0x11CF, 0xBB,0x82, 0x00,0xAA,0x00,0xBD,0xCE,0x0B);
@@ -1178,3 +1221,12 @@ HINSTANCE get_shdoclc(void) DECLSPEC_HIDDEN;
 void set_statustext(HTMLDocumentObj*,INT,LPCWSTR) DECLSPEC_HIDDEN;
 
 extern HINSTANCE hInst DECLSPEC_HIDDEN;
+
+#include "binding.h"
+#include "htmlevent.h"
+#include "htmlscript.h"
+#include "htmlstyle.h"
+#include "pluginhost.h"
+#include "resource.h"
+
+#endif /* _MSHTML_PRIVATE_H_ */

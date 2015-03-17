@@ -27,19 +27,7 @@
  * GL_ARB_texture_storage functions
  */
 
-
-
-#include "glheader.h"
-#include "context.h"
-#include "enums.h"
-#include "imports.h"
-#include "macros.h"
-#include "mfeatures.h"
-#include "teximage.h"
-#include "texstorage.h"
-#include "mtypes.h"
-
-
+#include <precomp.h>
 
 /**
  * Check if the given texture target is a legal texture object target
@@ -67,14 +55,6 @@ legal_texobj_target(struct gl_context *ctx, GLuint dims, GLenum target)
       case GL_TEXTURE_CUBE_MAP:
       case GL_PROXY_TEXTURE_CUBE_MAP:
          return ctx->Extensions.ARB_texture_cube_map;
-      default:
-         return GL_FALSE;
-      }
-   case 3:
-      switch (target) {
-      case GL_TEXTURE_3D:
-      case GL_PROXY_TEXTURE_3D:
-         return GL_TRUE;
       default:
          return GL_FALSE;
       }

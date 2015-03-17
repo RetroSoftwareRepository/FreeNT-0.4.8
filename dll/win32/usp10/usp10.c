@@ -24,21 +24,10 @@
  * and filtering characters and bi-directional text with custom line breaks.
  */
 
-#include <stdarg.h>
-//#include <stdlib.h>
-
-#include <windef.h>
-//#include "winbase.h"
-#include <wingdi.h>
-#include <winuser.h>
-//#include "winnls.h"
-#include <winreg.h>
-#include <usp10.h>
-
 #include "usp10_internal.h"
 
-#include <wine/debug.h>
-#include <wine/unicode.h>
+#include <winuser.h>
+#include <winreg.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(uniscribe);
 
@@ -904,7 +893,7 @@ static WORD get_char_script( LPCWSTR str, INT index, INT end, INT *consumed)
     if (str[index] == 0xc || str[index] == 0x20 || str[index] == 0x202f)
         return Script_CR;
 
-    /* These punctuation are separated out as Latin punctuation */
+    /* These punctuation characters are separated out as Latin punctuation */
     if (strchrW(latin_punc,str[index]))
         return Script_Punctuation2;
 
@@ -1280,6 +1269,7 @@ static HRESULT _ItemizeInternal(const WCHAR *pwcInChars, int cInChars,
     WORD layoutRTL = 0;
     BOOL forceLevels = FALSE;
     INT consumed = 0;
+    HRESULT res = E_OUTOFMEMORY;
 
     TRACE("%s,%d,%d,%p,%p,%p,%p\n", debugstr_wn(pwcInChars, cInChars), cInChars, cMaxItems, 
           psControl, psState, pItems, pcItems);
@@ -1374,10 +1364,7 @@ static HRESULT _ItemizeInternal(const WCHAR *pwcInChars, int cInChars,
     {
         levels = heap_alloc_zero(cInChars * sizeof(WORD));
         if (!levels)
-        {
-            heap_free(scripts);
-            return E_OUTOFMEMORY;
-        }
+            goto nomemory;
 
         BIDI_DetermineLevels(pwcInChars, cInChars, psState, psControl, levels);
         baselevel = levels[0];
@@ -1392,15 +1379,11 @@ static HRESULT _ItemizeInternal(const WCHAR *pwcInChars, int cInChars,
         else
         {
             BOOL inNumber = FALSE;
-            static WCHAR math_punc[] = {'#','$','%','+',',','-','.','/',':',0x2212, 0x2044, 0x00a0,0};
+            static const WCHAR math_punc[] = {'#','$','%','+',',','-','.','/',':',0x2212, 0x2044, 0x00a0,0};
 
             strength = heap_alloc_zero(cInChars * sizeof(WORD));
             if (!strength)
-            {
-                heap_free(scripts);
-                heap_free(levels);
-                return E_OUTOFMEMORY;
-            }
+                goto nomemory;
             BIDI_GetStrengths(pwcInChars, cInChars, psControl, strength);
 
             /* We currently mis-level leading Diacriticals */
@@ -1580,7 +1563,7 @@ static HRESULT _ItemizeInternal(const WCHAR *pwcInChars, int cInChars,
 
             index++;
             if  (index+1 > cMaxItems)
-                return E_OUTOFMEMORY;
+                goto nomemory;
 
             if (strength)
                 str = strength[cnt];
@@ -1616,20 +1599,22 @@ static HRESULT _ItemizeInternal(const WCHAR *pwcInChars, int cInChars,
      * item is set up to prevent random behaviour if the caller erroneously
      * checks the n+1 structure                                              */
     index++;
+    if (index + 1 > cMaxItems) goto nomemory;
     memset(&pItems[index].a, 0, sizeof(SCRIPT_ANALYSIS));
 
     TRACE("index=%d cnt=%d iCharPos=%d\n", index, cnt, pItems[index].iCharPos);
 
     /*  Set one SCRIPT_STATE item being returned  */
-    if  (index + 1 > cMaxItems) return E_OUTOFMEMORY;
     if (pcItems) *pcItems = index;
 
     /*  Set SCRIPT_ITEM                                     */
     pItems[index].iCharPos = cnt;         /* the last item contains the ptr to the lastchar */
+    res = S_OK;
+nomemory:
     heap_free(levels);
     heap_free(strength);
     heap_free(scripts);
-    return S_OK;
+    return res;
 }
 
 /***********************************************************************
@@ -2848,6 +2833,7 @@ HRESULT WINAPI ScriptShapeOpenType( HDC hdc, SCRIPT_CACHE *psc,
     unsigned int g;
     BOOL rtl;
     int cluster;
+    static int once = 0;
 
     TRACE("(%p, %p, %p, %s, %s, %p, %p, %d, %s, %d, %d, %p, %p, %p, %p, %p )\n",
      hdc, psc, psa,
@@ -2862,7 +2848,7 @@ HRESULT WINAPI ScriptShapeOpenType( HDC hdc, SCRIPT_CACHE *psc,
     if (cChars > cMaxGlyphs) return E_OUTOFMEMORY;
 
     if (cRanges)
-        FIXME("Ranges not supported yet\n");
+        if(!once++) FIXME("Ranges not supported yet\n");
 
     rtl = (psa && !psa->fLogicalOrder && psa->fRTL);
 
@@ -3077,6 +3063,7 @@ HRESULT WINAPI ScriptPlaceOpenType( HDC hdc, SCRIPT_CACHE *psc, SCRIPT_ANALYSIS 
 {
     HRESULT hr;
     int i;
+    static int once = 0;
 
     TRACE("(%p, %p, %p, %s, %s, %p, %p, %d, %s, %p, %p, %d, %p, %p, %d, %p %p %p)\n",
      hdc, psc, psa,
@@ -3090,7 +3077,7 @@ HRESULT WINAPI ScriptPlaceOpenType( HDC hdc, SCRIPT_CACHE *psc, SCRIPT_ANALYSIS 
     if (!pGoffset) return E_FAIL;
 
     if (cRanges)
-        FIXME("Ranges not supported yet\n");
+        if (!once++) FIXME("Ranges not supported yet\n");
 
     ((ScriptCache *)*psc)->userScript = tagScript;
     ((ScriptCache *)*psc)->userLang = tagLangSys;
@@ -3751,8 +3738,10 @@ HRESULT WINAPI ScriptGetFontFeatureTags( HDC hdc, SCRIPT_CACHE *psc, SCRIPT_ANAL
     return SHAPE_GetFontFeatureTags(hdc, (ScriptCache *)*psc, psa, tagScript, tagLangSys, cMaxTags, pFeatureTags, pcTags);
 }
 
+#ifdef __REACTOS__
 BOOL gbLpkPresent = FALSE;
 VOID WINAPI LpkPresent()
 {
     gbLpkPresent = TRUE; /* Turn it on this way! Wine is out of control! */
 }
+#endif

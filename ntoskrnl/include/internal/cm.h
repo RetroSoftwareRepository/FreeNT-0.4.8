@@ -49,7 +49,7 @@
 #define CM_KCB_INVALID_SIGNATURE                        '4FmC'
 
 //
-// CM_KEY_CONTROL_BLOCK Flags
+// CM_KEY_CONTROL_BLOCK ExtFlags
 //
 #define CM_KCB_NO_SUBKEY                                0x01
 #define CM_KCB_SUBKEY_ONE                               0x02
@@ -59,6 +59,11 @@
 #define CM_KCB_NO_DELAY_CLOSE                           0x20
 #define CM_KCB_INVALID_CACHED_INFO                      0x40
 #define CM_KCB_READ_ONLY_KEY                            0x80
+
+//
+// CM_KEY_BODY Types
+//
+#define CM_KEY_BODY_TYPE                                0x6B793032
 
 //
 // CM_KEY_VALUE Types
@@ -253,8 +258,7 @@ typedef struct _CM_NAME_CONTROL_BLOCK
 typedef struct _CM_KEY_CONTROL_BLOCK
 {
     ULONG Signature;
-    USHORT RefCount;
-    USHORT Flags;
+    ULONG RefCount;
     struct
     {
         ULONG ExtFlags:8;
@@ -295,6 +299,13 @@ typedef struct _CM_KEY_CONTROL_BLOCK
     USHORT KcbMaxNameLen;
     USHORT KcbMaxValueNameLen;
     ULONG KcbMaxValueDataLen;
+    struct
+    {
+         ULONG KcbUserFlags : 4;
+         ULONG KcbVirtControlFlags : 4;
+         ULONG KcbDebug : 8;
+         ULONG Flags : 16;
+    };
     ULONG InDelayClose;
 } CM_KEY_CONTROL_BLOCK, *PCM_KEY_CONTROL_BLOCK;
 
@@ -778,6 +789,12 @@ CmpInitializeHive(
     IN HANDLE External,
     IN PCUNICODE_STRING FileName OPTIONAL,
     IN ULONG CheckFlags
+);
+
+NTSTATUS
+NTAPI
+CmpDestroyHive(
+    IN PCMHIVE CmHive
 );
 
 PSECURITY_DESCRIPTOR
@@ -1316,6 +1333,16 @@ CmpGetValueData(
     OUT PHCELL_INDEX CellToRelease
 );
 
+NTSTATUS
+NTAPI
+CmpCopyKeyValueList(
+    IN PHHIVE SourceHive,
+    IN PCHILD_LIST SrcValueList,
+    IN PHHIVE DestinationHive,
+    IN OUT PCHILD_LIST DestValueList,
+    IN HSTORAGE_TYPE StorageType
+);
+
 //
 // Boot Routines
 //
@@ -1519,6 +1546,41 @@ NTAPI
 CmCountOpenSubKeys(
     IN PCM_KEY_CONTROL_BLOCK RootKcb,
     IN BOOLEAN RemoveEmptyCacheEntries
+);
+
+HCELL_INDEX
+NTAPI
+CmpCopyCell(
+    IN PHHIVE SourceHive,
+    IN HCELL_INDEX SourceCell,
+    IN PHHIVE DestinationHive,
+    IN HSTORAGE_TYPE StorageType
+);
+
+NTSTATUS
+NTAPI
+CmpDeepCopyKey(
+    IN PHHIVE SourceHive,
+    IN HCELL_INDEX SrcKeyCell,
+    IN PHHIVE DestinationHive,
+    IN HSTORAGE_TYPE StorageType,
+    OUT PHCELL_INDEX DestKeyCell OPTIONAL
+);
+
+NTSTATUS
+NTAPI
+CmSaveKey(
+    IN PCM_KEY_CONTROL_BLOCK Kcb,
+    IN HANDLE FileHandle,
+    IN ULONG Flags
+);
+
+NTSTATUS
+NTAPI
+CmSaveMergedKeys(
+    IN PCM_KEY_CONTROL_BLOCK HighKcb,
+    IN PCM_KEY_CONTROL_BLOCK LowKcb,
+    IN HANDLE FileHandle
 );
 
 //

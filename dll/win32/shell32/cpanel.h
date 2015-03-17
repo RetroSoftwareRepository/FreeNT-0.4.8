@@ -26,6 +26,7 @@ typedef struct CPlApplet
 {
     struct CPlApplet *next;       /* linked list */
     HWND              hWnd;
+    LPWSTR            cmd;        /* path to applet */
     unsigned          count;      /* number of subprograms */
     HMODULE           hModule;    /* module of loaded applet */
     APPLET_PROC       proc;       /* entry point address */
@@ -43,7 +44,7 @@ typedef struct CPanel
 } CPanel;
 
 
-CPlApplet *Control_LoadApplet(HWND hWnd, LPCWSTR cmd, CPanel* panel);
-CPlApplet *Control_UnloadApplet(CPlApplet* applet);
+EXTERN_C CPlApplet *Control_LoadApplet(HWND hWnd, LPCWSTR cmd, CPanel* panel);
+EXTERN_C CPlApplet *Control_UnloadApplet(CPlApplet* applet);
 
 #endif /* __WINE_SHELL_CPANEL_H */

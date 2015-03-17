@@ -19,15 +19,6 @@
  */
 
 #include "quartz_private.h"
-#include "pin.h"
-
-#include <wine/debug.h>
-#include <wine/unicode.h>
-//#include "uuids.h"
-//#include "vfwmsgs.h"
-#include <assert.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(quartz);
 
 static const IPinVtbl PullPin_Vtbl;
 
@@ -75,7 +66,6 @@ static HRESULT SendFurther( IPin *from, SendPinFunc fnMiddle, LPVOID arg, SendPi
     hr = IPin_QueryInternalConnections( from, NULL, &amount );
     if (hr != E_NOTIMPL && amount)
         FIXME("Use QueryInternalConnections!\n");
-     hr = S_OK;
 
     pin_info.pFilter = NULL;
     hr = IPin_QueryPinInfo( from, &pin_info );
@@ -265,11 +255,11 @@ HRESULT WINAPI PullPin_ReceiveConnection(IPin * iface, IPin * pReceivePin, const
         ALLOCATOR_PROPERTIES props;
 
         props.cBuffers = 3;
-        props.cbBuffer = 64 * 1024; /* 64k bytes */
+        props.cbBuffer = 64 * 1024; /* 64 KB */
         props.cbAlign = 1;
         props.cbPrefix = 0;
 
-        if (SUCCEEDED(hr) && (This->fnQueryAccept(This->pUserData, pmt) != S_OK))
+        if (This->fnQueryAccept(This->pUserData, pmt) != S_OK)
             hr = VFW_E_TYPE_NOT_ACCEPTED; /* FIXME: shouldn't we just map common errors onto 
                                            * VFW_E_TYPE_NOT_ACCEPTED and pass the value on otherwise? */
 
@@ -598,7 +588,7 @@ static HRESULT PullPin_InitProcessing(PullPin * This)
         assert(WaitForSingleObject(This->thread_sleepy, 0) == WAIT_TIMEOUT);
         This->state = Req_Sleepy;
 
-        /* AddRef the filter to make sure it and it's pins will be around
+        /* AddRef the filter to make sure it and its pins will be around
          * as long as the thread */
         IBaseFilter_AddRef(This->pin.pinInfo.pFilter);
 

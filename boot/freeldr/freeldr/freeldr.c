@@ -17,45 +17,48 @@
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
+/* INCLUDES *******************************************************************/
+
 #include <freeldr.h>
 #include <debug.h>
 
 DBG_DEFAULT_CHANNEL(WARNING);
 
-VOID NTAPI HalpInitializePciStubs(VOID);
-VOID NTAPI HalpInitBusHandler(VOID);
+/* FUNCTIONS ******************************************************************/
 
 VOID BootMain(LPSTR CmdLine)
 {
     CmdLineParse(CmdLine);
-
     MachInit(CmdLine);
-
     FsInit();
 
     DebugInit();
 
     TRACE("BootMain() called.\n");
 
+    /* Check if the CPU is new enough */
+    FrLdrCheckCpuCompatiblity();
+
     if (!UiInitialize(FALSE))
     {
-        UiMessageBoxCritical("Unable to initialize UI.\n");
-        goto quit;
+        UiMessageBoxCritical("Unable to initialize UI.");
+        goto Quit;
     }
 
     if (!MmInitializeMemoryManager())
     {
-        UiMessageBoxCritical("Unable to initialize memory manager");
-        goto quit;
+        UiMessageBoxCritical("Unable to initialize memory manager.");
+        goto Quit;
     }
 
 #ifdef _M_IX86
     HalpInitializePciStubs();
     HalpInitBusHandler();
 #endif
+
     RunLoader();
 
-quit:
+Quit:
     /* If we reach this point, something went wrong before, therefore reboot */
     DiskStopFloppyMotor();
     Reboot();
@@ -70,7 +73,7 @@ int __cdecl wctomb(char *mbchar, wchar_t wchar)
     return 1;
 }
 
-int __cdecl mbtowc (wchar_t *wchar, const char *mbchar, size_t count)
+int __cdecl mbtowc(wchar_t *wchar, const char *mbchar, size_t count)
 {
     *wchar = (wchar_t)*mbchar;
     return 1;
@@ -81,4 +84,3 @@ int iswctype(wint_t wc, wctype_t wctypeFlags)
 {
     return _isctype((char)wc, wctypeFlags);
 }
-

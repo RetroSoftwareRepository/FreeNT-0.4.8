@@ -86,8 +86,8 @@ HvpAddBin(
          {
             ASSERT(RegistryHive->DirtyVector.Buffer);
             RtlCopyMemory(BitmapBuffer,
-   		       RegistryHive->DirtyVector.Buffer,
-   		       RegistryHive->DirtyVector.SizeOfBitMap / 8);
+                          RegistryHive->DirtyVector.Buffer,
+                          RegistryHive->DirtyVector.SizeOfBitMap / 8);
             RegistryHive->Free(RegistryHive->DirtyVector.Buffer, 0);
          }
          RtlInitializeBitMap(&RegistryHive->DirtyVector, BitmapBuffer,
@@ -98,6 +98,9 @@ HvpAddBin(
       RtlSetBits(&RegistryHive->DirtyVector,
                  Bin->FileOffset / HV_BLOCK_SIZE,
                  BlockCount);
+
+      /* Update size in the base block */
+      RegistryHive->BaseBlock->Length += BinSize;
    }
 
    return Bin;

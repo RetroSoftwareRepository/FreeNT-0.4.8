@@ -1,6 +1,6 @@
 /*++
 
-Copyright (c) 2008-2012 Alexandr A. Telyatnikov (Alter)
+Copyright (c) 2008-2014 Alexandr A. Telyatnikov (Alter)
 
 Module Name:
     id_probe.cpp
@@ -645,10 +645,10 @@ UniataAhciInit(
     PHW_CHANNEL chan;
     ULONG offs;
     ULONG BaseMemAddress;
-#ifdef DBG
     ULONG PI;
-#endif //DBG
     ULONG CAP;
+    ULONG CAP2;
+    ULONG BOHC;
     ULONG GHC;
     BOOLEAN MemIo = FALSE;
 
@@ -657,6 +657,37 @@ UniataAhciInit(
 #ifdef DBG
     UniataDumpAhciRegs(deviceExtension);
 #endif //DBG
+
+    CAP2 = UniataAhciReadHostPort4(deviceExtension, IDX_AHCI_CAP2);
+    if(CAP2 & AHCI_CAP2_BOH) {
+        BOHC = UniataAhciReadHostPort4(deviceExtension, IDX_AHCI_BOHC);
+        KdPrint2((PRINT_PREFIX "  stage 1 BOHC %#x\n", BOHC));
+        UniataAhciWriteHostPort4(deviceExtension, IDX_AHCI_BOHC,
+            BOHC | AHCI_BOHC_OOS);
+        for(i=0; i<50; i++) {
+            AtapiStallExecution(500);
+            BOHC = UniataAhciReadHostPort4(deviceExtension, IDX_AHCI_BOHC);
+            KdPrint2((PRINT_PREFIX "  BOHC %#x\n", BOHC));
+            if(BOHC & AHCI_BOHC_BB) {
+                break;
+            }
+            if(!(BOHC & AHCI_BOHC_BOS)) {
+                break;
+            }
+        }
+        KdPrint2((PRINT_PREFIX "  stage 2 BOHC %#x\n", BOHC));
+        if(BOHC & AHCI_BOHC_BB) {
+            for(i=0; i<2000; i++) {
+                AtapiStallExecution(1000);
+                BOHC = UniataAhciReadHostPort4(deviceExtension, IDX_AHCI_BOHC);
+                KdPrint2((PRINT_PREFIX "  BOHC %#x\n", BOHC));
+                if(!(BOHC & AHCI_BOHC_BOS)) {
+                    break;
+                }
+            }
+        }
+        KdPrint2((PRINT_PREFIX "  final BOHC %#x\n", BOHC));
+    }
 
     /* disable AHCI interrupts, for MSI compatibility issue
        see http://www.intel.com/Assets/PDF/specupdate/307014.pdf
@@ -724,12 +755,23 @@ UniataAhciInit(
     if(CAP & AHCI_CAP_SAM) {
         KdPrint2((PRINT_PREFIX "  AHCI legasy SATA\n"));
     }
-#ifdef DBG
+
     /* get the number of HW channels */
     PI = UniataAhciReadHostPort4(deviceExtension, IDX_AHCI_PI);
+    deviceExtension->AHCI_PI = PI;
     KdPrint2((PRINT_PREFIX "  AHCI PI %#x\n", PI));
-#endif //DBG
+    KdPrint2((PRINT_PREFIX "  AHCI PI mask %#x\n", deviceExtension->AHCI_PI_mask));
+    deviceExtension->AHCI_PI = PI = PI & deviceExtension->AHCI_PI_mask;
+    KdPrint2((PRINT_PREFIX "  masked AHCI PI %#x\n", PI));
 
+    CAP2 = UniataAhciReadHostPort4(deviceExtension, IDX_AHCI_CAP2);
+    if(CAP2 & AHCI_CAP2_BOH) {
+        KdPrint2((PRINT_PREFIX "  retry BOHC\n"));
+        BOHC = UniataAhciReadHostPort4(deviceExtension, IDX_AHCI_BOHC);
+        KdPrint2((PRINT_PREFIX "  BOHC %#x\n", BOHC));
+        UniataAhciWriteHostPort4(deviceExtension, IDX_AHCI_BOHC,
+            BOHC | AHCI_BOHC_OOS);
+    }
     /* clear interrupts */
     UniataAhciWriteHostPort4(deviceExtension, IDX_AHCI_IS,
         UniataAhciReadHostPort4(deviceExtension, IDX_AHCI_IS));
@@ -929,26 +971,48 @@ UniataAhciDetect(
     KdPrint2((PRINT_PREFIX "\n"));
 
     /* get the number of HW channels */
+    
+    /* CAP.NOP sometimes indicate the index of the last enabled
+     * port, at other times, that of the last possible port, so
+     * determining the maximum port number requires looking at
+     * both CAP.NOP and PI.
+     */
     PI = UniataAhciReadHostPort4(deviceExtension, IDX_AHCI_PI);
-    deviceExtension->AHCI_PI = PI;
+    deviceExtension->AHCI_PI = deviceExtension->AHCI_PI_mask = PI;
     KdPrint2((PRINT_PREFIX "  AHCI PI %#x\n", PI));
+
+    for(i=PI, n=0; i; n++, i=i>>1) {
+        if(AtapiRegCheckDevValue(deviceExtension, n, DEVNUM_NOT_SPECIFIED, L"Exclude", 0)) {
+            KdPrint2((PRINT_PREFIX "Channel %d excluded\n", n));
+            deviceExtension->AHCI_PI &= ~((ULONG)1 << n);
+            deviceExtension->AHCI_PI_mask &= ~((ULONG)1 << n);
+        }
+    }
+    deviceExtension->AHCI_PI_mask = 
+        AtapiRegCheckDevValue(deviceExtension, CHAN_NOT_SPECIFIED, DEVNUM_NOT_SPECIFIED, L"PortMask", deviceExtension->AHCI_PI_mask);
+    KdPrint2((PRINT_PREFIX "Force PortMask %#x\n", deviceExtension->AHCI_PI_mask));
+
     for(i=PI, n=0; i; n++, i=i>>1);
     NumberChannels =
         max((CAP & AHCI_CAP_NOP_MASK)+1, n);
 
     KdPrint2((PRINT_PREFIX "  CommandSlots %d\n", (CAP & AHCI_CAP_NCS_MASK)>>8 ));
-    KdPrint2((PRINT_PREFIX "  Channels %d\n", n));
+    KdPrint2((PRINT_PREFIX "  Detected Channels %d / %d\n", NumberChannels, n));
 
     switch(deviceExtension->DevID) {
-    case ATA_M88SX6111:
+    case ATA_M88SE6111:
+        KdPrint2((PRINT_PREFIX "  Marvell M88SE6111 -> 1\n"));
         NumberChannels = 1;
         break;
-    case ATA_M88SX6121:
-        NumberChannels = 2;
+    case ATA_M88SE6121:
+        KdPrint2((PRINT_PREFIX "  Marvell M88SE6121 -> 2\n"));
+        NumberChannels = min(NumberChannels, 2);
         break;
-    case ATA_M88SX6141:
-    case ATA_M88SX6145:
-        NumberChannels = 4;
+    case ATA_M88SE6141:
+    case ATA_M88SE6145:
+    case ATA_M88SE9123:
+        KdPrint2((PRINT_PREFIX "  Marvell M88SE614x/9123 -> 4\n"));
+        NumberChannels = min(NumberChannels, 4);
         break;
     } // switch()
 
@@ -957,6 +1021,7 @@ UniataAhciDetect(
         found = FALSE;
         goto exit_detect;
     }
+    KdPrint2((PRINT_PREFIX "  Adjusted Channels %d\n", NumberChannels));
 
 #ifdef DBG
     v_Mj = ((version >> 20) & 0xf0) + ((version >> 16) & 0x0f);
@@ -1061,6 +1126,7 @@ UniataAhciStatus(
     }
     chan->AhciCompleteCI = (chan->AhciPrevCI ^ CI) & chan->AhciPrevCI; // only 1->0 states
     chan->AhciPrevCI = CI;
+    chan->AhciLastSError = SError.Reg;
     KdPrint((" AHCI: complete mask %#x\n", chan->AhciCompleteCI));
     chan->AhciLastIS = IS.Reg;
     if(CI & (1 << tag)) {

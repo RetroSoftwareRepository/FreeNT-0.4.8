@@ -19,27 +19,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-
-#include <stdarg.h>
-//#include <string.h>
-
-#define COBJMACROS
-#define NONAMELESSUNION
-#define NONAMELESSSTRUCT
-
-#include <windef.h>
-#include <winbase.h>
-//#include "wingdi.h"
-//#include "winuser.h"
-//#include "winerror.h"
-
-#include <ole2.h>
-//#include "oleauto.h"
-//#include "typelib.h"
-#include <ocidl.h>
-#include <wine/debug.h>
+#include "precomp.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(ole);
 
@@ -201,7 +181,7 @@ typedef struct
     DWORD switch_is;
 } variant_wire_t;
 
-static unsigned int get_type_size(ULONG *pFlags, VARTYPE vt)
+unsigned int get_type_size(ULONG *pFlags, VARTYPE vt)
 {
     if (vt & VT_ARRAY) return 4;
 
@@ -217,6 +197,7 @@ static unsigned int get_type_size(ULONG *pFlags, VARTYPE vt)
         return sizeof(SHORT);
     case VT_I4:
     case VT_UI4:
+    case VT_HRESULT:
         return sizeof(LONG);
     case VT_INT:
     case VT_UINT:

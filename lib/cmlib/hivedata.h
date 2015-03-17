@@ -78,15 +78,15 @@ typedef ULONG HCELL_INDEX, *PHCELL_INDEX;
 //
 // Cell Magic Values
 //
-#define HCELL_NIL                                       MAXULONG
-#define HCELL_CACHED                                    1
+#define HCELL_NIL               MAXULONG
+#define HCELL_CACHED            1
 
-#define HCELL_TYPE_MASK                0x80000000
-#define HCELL_BLOCK_MASK               0x7ffff000
-#define HCELL_OFFSET_MASK              0x00000fff
-#define HCELL_TYPE_SHIFT               31
-#define HCELL_BLOCK_SHIFT              12
-#define HCELL_OFFSET_SHIFT             0
+#define HCELL_TYPE_MASK         0x80000000
+#define HCELL_BLOCK_MASK        0x7ffff000
+#define HCELL_OFFSET_MASK       0x00000fff
+#define HCELL_TYPE_SHIFT        31
+#define HCELL_BLOCK_SHIFT       12
+#define HCELL_OFFSET_SHIFT      0
 
 #define HvGetCellType(Cell)             \
     ((ULONG)((Cell & HCELL_TYPE_MASK) >> HCELL_TYPE_SHIFT))
@@ -106,6 +106,8 @@ typedef enum
  *
  * On-disk header for registry hive file.
  */
+
+#define HIVE_FILENAME_MAXLEN    31
 
 typedef struct _HBASE_BLOCK
 {
@@ -144,8 +146,9 @@ typedef struct _HBASE_BLOCK
    /* (1?) */
    ULONG Cluster;
 
-   /* Name of hive file */
-   CHAR FileName[64];
+   /* Last 31 UNICODE characters, plus terminating NULL character,
+      of the full name of the hive file */
+   WCHAR FileName[HIVE_FILENAME_MAXLEN + 1];
 
    ULONG Reserved1[99];
 

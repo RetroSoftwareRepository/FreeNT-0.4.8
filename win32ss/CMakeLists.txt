@@ -1,6 +1,5 @@
 
 set(USE_DIBLIB TRUE)
-set(USE_NEW_CURSORICON FALSE)
 
 # Give WIN32 subsystem its own project.
 PROJECT(WIN32SS)
@@ -9,10 +8,6 @@ add_subdirectory(drivers)
 
 if(USE_DIBLIB)
     add_subdirectory(gdi/diblib)
-endif()
-
-if(USE_NEW_CURSORICON)
-    add_definitions(-DNEW_CURSORICON)
 endif()
 
 add_subdirectory(gdi/gdi32)
@@ -105,6 +100,10 @@ list(APPEND SOURCE
     user/ntuser/caret.c
     user/ntuser/class.c
     user/ntuser/clipboard.c
+    user/ntuser/console.c
+    user/ntuser/csr.c
+    user/ntuser/cursoricon.c
+    user/ntuser/dde.c
     user/ntuser/defwnd.c
     user/ntuser/desktop.c
     user/ntuser/display.c
@@ -115,6 +114,7 @@ list(APPEND SOURCE
     user/ntuser/hook.c
     user/ntuser/hotkey.c
     user/ntuser/input.c
+    user/ntuser/ime.c
     user/ntuser/keyboard.c
     user/ntuser/kbdlayout.c
     user/ntuser/menu.c
@@ -130,6 +130,7 @@ list(APPEND SOURCE
     user/ntuser/prop.c
     user/ntuser/scrollbar.c
     user/ntuser/session.c
+    user/ntuser/shutdown.c
     user/ntuser/simplecall.c
     user/ntuser/sysparams.c
     user/ntuser/timer.c
@@ -165,6 +166,7 @@ list(APPEND SOURCE
     gdi/ntgdi/gdiobj.c
     gdi/ntgdi/gdipool.c
     gdi/ntgdi/icm.c
+    gdi/ntgdi/init.c
     gdi/ntgdi/line.c
     gdi/ntgdi/metafile.c
     gdi/ntgdi/palette.c
@@ -180,8 +182,7 @@ list(APPEND SOURCE
     gdi/ntgdi/xformobj.c
     gdi/eng/stubs.c
     gdi/eng/umpdstubs.c
-    win32k.rc
-    ${CMAKE_CURRENT_BINARY_DIR}/win32k.def)
+    pch.h)
 
 if(USE_DIBLIB)
     add_definitions(-D_USE_DIBLIB_)
@@ -193,12 +194,6 @@ else()
         gdi/dib/dib.c
         gdi/eng/copybits.c
         ${GENDIB_FILES})
-endif()
-
-if(USE_NEW_CURSORICON)
-    list(APPEND SOURCE user/ntuser/cursoricon_new.c)
-else()
-    list(APPEND SOURCE user/ntuser/cursoricon.c)
 endif()
 
 if(ARCH STREQUAL "i386")
@@ -214,26 +209,26 @@ list(APPEND SOURCE
 endif()
 
 if(KDBG)
-    list(APPEND SOURCE
-        gdi/ntgdi/gdikdbgext.c)
+    list(APPEND SOURCE gdi/ntgdi/gdikdbgext.c)
 endif()
 
 add_asm_files(win32k_asm ${ASM_SOURCE})
-add_library(win32k SHARED ${SOURCE} ${win32k_asm})
+
+add_library(win32k SHARED
+    ${SOURCE}
+    ${win32k_asm}
+    win32k.rc
+    ${CMAKE_CURRENT_BINARY_DIR}/win32k.def)
 
 set_module_type(win32k kernelmodedriver)
-
-target_link_libraries(win32k
-    ${PSEH_LIB}
-    dxguid
-    libcntpr)
+target_link_libraries(win32k ${PSEH_LIB} dxguid libcntpr)
 
 if(USE_DIBLIB)
     target_link_libraries(win32k diblib)
 endif()
 
 add_importlibs(win32k ntoskrnl hal ftfd)
-add_pch(win32k pch.h)
+add_pch(win32k pch.h SOURCE)
 add_cd_file(TARGET win32k DESTINATION reactos/system32 FOR all)
 
 set_source_files_properties(sys-stubs.S PROPERTIES OBJECT_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/w32ksvc.h)

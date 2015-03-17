@@ -20,24 +20,37 @@
 #ifndef __QUARTZ_PRIVATE_INCLUDED__
 #define __QUARTZ_PRIVATE_INCLUDED__
 
+#include <wine/config.h>
+
+#include <stdarg.h>
+#include <assert.h>
+
+#define WIN32_LEAN_AND_MEAN
 #define WIN32_NO_STATUS
 #define _INC_WINDOWS
 #define COM_NO_WINDOWS_H
 
-#include <stdarg.h>
-
 #define COBJMACROS
+#define NONAMELESSUNION
+#define NONAMELESSSTRUCT
 
 #include <windef.h>
 #include <winbase.h>
-#include <wtypes.h>
-#include <wingdi.h>
-#include <winuser.h>
 #include <objbase.h>
-#include <oleauto.h>
 #include <dshow.h>
+#include <dvdmedia.h>
+#include <vfw.h>
+#include <aviriff.h>
+#include <shlwapi.h>
+
 #include <wine/strmbase.h>
-#include <wine/list.h>
+#include <wine/unicode.h>
+
+#include <wine/debug.h>
+WINE_DEFAULT_DEBUG_CHANNEL(quartz);
+
+#include "pin.h"
+#include "parser.h"
 
 #define MEDIATIME_FROM_BYTES(x) ((LONGLONG)(x) * 10000000)
 #define SEC_FROM_MEDIATIME(time) ((time) / 10000000)
@@ -60,6 +73,7 @@ HRESULT VideoRendererDefault_create(IUnknown * pUnkOuter, LPVOID * ppv) DECLSPEC
 HRESULT QUARTZ_CreateSystemClock(IUnknown * pUnkOuter, LPVOID * ppv) DECLSPEC_HIDDEN;
 HRESULT ACMWrapper_create(IUnknown * pUnkOuter, LPVOID * ppv) DECLSPEC_HIDDEN;
 HRESULT WAVEParser_create(IUnknown * pUnkOuter, LPVOID * ppv) DECLSPEC_HIDDEN;
+HRESULT VMR7Impl_create(IUnknown *pUnkOuter, LPVOID *ppv) DECLSPEC_HIDDEN;
 HRESULT VMR9Impl_create(IUnknown *pUnkOuter, LPVOID *ppv) DECLSPEC_HIDDEN;
 
 HRESULT EnumMonikerImpl_Create(IMoniker ** ppMoniker, ULONG nMonikerCount, IEnumMoniker ** ppEnum) DECLSPEC_HIDDEN;

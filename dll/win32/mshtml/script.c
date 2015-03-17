@@ -16,32 +16,9 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-
-#include <config.h>
-
-#include <stdarg.h>
-#include <assert.h>
-
-#define COBJMACROS
-
-#include <windef.h>
-#include <winbase.h>
-//#include "winuser.h"
-#include <ole2.h>
-//#include "activscp.h"
-#include <activdbg.h>
-
-#include <wine/debug.h>
-
 #include "mshtml_private.h"
-#include "htmlscript.h"
-#include "pluginhost.h"
-#include "htmlevent.h"
-#include "binding.h"
 
-WINE_DEFAULT_DEBUG_CHANNEL(mshtml);
+#include <activdbg.h>
 
 #ifdef _WIN64
 
@@ -787,7 +764,7 @@ static void parse_script_elem(ScriptHost *script_host, HTMLScriptElement *script
             return;
         }
     }else {
-        ERR("GetAttribute(event) failed: %08x\n", nsres);
+        ERR("GetEvent failed: %08x\n", nsres);
     }
     nsAString_Finish(&event_str);
 
@@ -819,11 +796,13 @@ static BOOL get_guid_from_type(LPCWSTR type, GUID *guid)
 {
     const WCHAR text_javascriptW[] =
         {'t','e','x','t','/','j','a','v','a','s','c','r','i','p','t',0};
+    const WCHAR text_jscriptW[] =
+        {'t','e','x','t','/','j','s','c','r','i','p','t',0};
     const WCHAR text_vbscriptW[] =
         {'t','e','x','t','/','v','b','s','c','r','i','p','t',0};
 
     /* FIXME: Handle more types */
-    if(!strcmpiW(type, text_javascriptW)) {
+    if(!strcmpiW(type, text_javascriptW) || !strcmpiW(type, text_jscriptW)) {
         *guid = CLSID_JScript;
     }else if(!strcmpiW(type, text_vbscriptW)) {
         *guid = CLSID_VBScript;
@@ -850,7 +829,8 @@ static BOOL get_guid_from_language(LPCWSTR type, GUID *guid)
 
 static BOOL get_script_guid(HTMLInnerWindow *window, nsIDOMHTMLScriptElement *nsscript, GUID *guid)
 {
-    nsAString attr_str, val_str;
+    const PRUnichar *language;
+    nsAString val_str;
     BOOL ret = FALSE;
     nsresult nsres;
 
@@ -872,25 +852,16 @@ static BOOL get_script_guid(HTMLInnerWindow *window, nsIDOMHTMLScriptElement *ns
         ERR("GetType failed: %08x\n", nsres);
     }
 
-    nsAString_InitDepend(&attr_str, languageW);
-    nsres = nsIDOMHTMLScriptElement_GetAttribute(nsscript, &attr_str, &val_str);
-    nsAString_Finish(&attr_str);
+    nsres = get_elem_attr_value((nsIDOMHTMLElement*)nsscript, languageW, &val_str, &language);
     if(NS_SUCCEEDED(nsres)) {
-        const PRUnichar *language;
-
-        nsAString_GetData(&val_str, &language);
-
         if(*language) {
             ret = get_guid_from_language(language, guid);
         }else {
             *guid = get_default_script_guid(window);
             ret = TRUE;
         }
-    }else {
-        ERR("GetAttribute(language) failed: %08x\n", nsres);
+        nsAString_Finish(&val_str);
     }
-
-    nsAString_Finish(&val_str);
 
     return ret;
 }
@@ -1049,11 +1020,12 @@ IDispatch *get_script_disp(ScriptHost *script_host)
     return disp;
 }
 
-static HTMLElement *find_event_target(HTMLDocumentNode *doc, HTMLScriptElement *script_elem)
+static event_target_t **find_event_target(HTMLDocumentNode *doc, HTMLScriptElement *script_elem, HTMLDOMNode **ret_target_node)
 {
+    HTMLDOMNode *target_node = NULL;
+    event_target_t **target = NULL;
     const PRUnichar *target_id;
     nsAString target_id_str;
-    HTMLElement *elem;
     nsresult nsres;
     HRESULT hres;
 
@@ -1066,17 +1038,27 @@ static HTMLElement *find_event_target(HTMLDocumentNode *doc, HTMLScriptElement *
     }
 
     nsAString_GetData(&target_id_str, &target_id);
-    if(!*target_id || !strcmpW(target_id, documentW) || !strcmpW(target_id, windowW)) {
-        FIXME("for %s not supported\n", debugstr_w(target_id));
-        elem = NULL;
+    if(!*target_id) {
+        FIXME("Empty for attribute\n");
+    }else if(!strcmpW(target_id, documentW)) {
+        target = &doc->node.event_target;
+        target_node = &doc->node;
+        IHTMLDOMNode_AddRef(&target_node->IHTMLDOMNode_iface);
+    }else if(!strcmpW(target_id, windowW)) {
+        target = &doc->body_event_target;
     }else {
-        hres = get_doc_elem_by_id(doc, target_id, &elem);
-        if(FAILED(hres))
-            elem = NULL;
+        HTMLElement *target_elem;
+
+        hres = get_doc_elem_by_id(doc, target_id, &target_elem);
+        if(SUCCEEDED(hres) && target_elem) {
+            target_node = &target_elem->node;
+            target = &target_elem->node.event_target;
+        }
     }
     nsAString_Finish(&target_id_str);
 
-    return elem;
+    *ret_target_node = target_node;
+    return target;
 }
 
 static BOOL parse_event_str(WCHAR *event, const WCHAR **args)
@@ -1171,8 +1153,9 @@ void bind_event_scripts(HTMLDocumentNode *doc)
     HTMLPluginContainer *plugin_container;
     nsIDOMHTMLScriptElement *nsscript;
     HTMLScriptElement *script_elem;
-    HTMLElement *event_target;
+    event_target_t **event_target;
     nsIDOMNodeList *node_list;
+    HTMLDOMNode *target_node;
     nsIDOMNode *script_node;
     nsAString selector_str;
     IDispatch *event_disp;
@@ -1219,17 +1202,21 @@ void bind_event_scripts(HTMLDocumentNode *doc)
 
         event_disp = parse_event_elem(doc, script_elem, &event);
         if(event_disp) {
-            event_target = find_event_target(doc, script_elem);
+            event_target = find_event_target(doc, script_elem, &target_node);
             if(event_target) {
-                hres = IHTMLElement_QueryInterface(&event_target->IHTMLElement_iface, &IID_HTMLPluginContainer,
-                        (void**)&plugin_container);
+                if(target_node)
+                    hres = IHTMLDOMNode_QueryInterface(&target_node->IHTMLDOMNode_iface, &IID_HTMLPluginContainer,
+                            (void**)&plugin_container);
+                else
+                    hres = E_NOINTERFACE;
 
                 if(SUCCEEDED(hres))
                     bind_activex_event(doc, plugin_container, event, event_disp);
                 else
-                    bind_elem_event(doc, event_target, event, event_disp);
+                    bind_node_event(doc, event_target, target_node, event, event_disp);
 
-                IHTMLElement_Release(&event_target->IHTMLElement_iface);
+                if(target_node)
+                    IHTMLDOMNode_Release(&target_node->IHTMLDOMNode_iface);
             }
 
             heap_free(event);

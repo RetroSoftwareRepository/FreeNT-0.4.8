@@ -11,6 +11,11 @@
 
 #include "precomp.h"
 
+#include <stdlib.h>
+#include <time.h>
+#include <winnls.h>
+#include <windowsx.h>
+
 #define NDEBUG
 #include <debug.h>
 
@@ -366,7 +371,7 @@ AckPageDlgProc(HWND hwndDlg,
                     PropSheet_SetWizButtons(GetParent(hwndDlg), PSWIZB_BACK | PSWIZB_NEXT);
                     if (SetupData.UnattendSetup)
                     {
-                        SetWindowLongPtr(hwndDlg, DWL_MSGRESULT, IDD_OWNERPAGE);
+                        SetWindowLongPtr(hwndDlg, DWL_MSGRESULT, IDD_LOCALEPAGE);
                         return TRUE;
                     }
                     break;
@@ -532,18 +537,22 @@ WriteComputerSettings(WCHAR * ComputerName, HWND hwndDlg)
 {
     WCHAR Title[64];
     WCHAR ErrorComputerName[256];
+
     if (!SetComputerNameW(ComputerName))
     {
-        if (0 == LoadStringW(hDllInstance, IDS_REACTOS_SETUP, Title, sizeof(Title) / sizeof(Title[0])))
+        if (hwndDlg != NULL)
         {
-            wcscpy(Title, L"ReactOS Setup");
+            if (0 == LoadStringW(hDllInstance, IDS_REACTOS_SETUP, Title, sizeof(Title) / sizeof(Title[0])))
+            {
+                wcscpy(Title, L"ReactOS Setup");
+            }
+            if (0 == LoadStringW(hDllInstance, IDS_WZD_SETCOMPUTERNAME, ErrorComputerName,
+                                 sizeof(ErrorComputerName) / sizeof(ErrorComputerName[0])))
+            {
+                wcscpy(ErrorComputerName, L"Setup failed to set the computer name.");
+            }
+            MessageBoxW(hwndDlg, ErrorComputerName, Title, MB_ICONERROR | MB_OK);
         }
-        if (0 == LoadStringW(hDllInstance, IDS_WZD_SETCOMPUTERNAME, ErrorComputerName,
-                             sizeof(ErrorComputerName) / sizeof(ErrorComputerName[0])))
-        {
-            wcscpy(ErrorComputerName, L"Setup failed to set the computer name.");
-        }
-        MessageBoxW(hwndDlg, ErrorComputerName, Title, MB_ICONERROR | MB_OK);
 
         return FALSE;
     }
@@ -556,6 +565,59 @@ WriteComputerSettings(WCHAR * ComputerName, HWND hwndDlg)
 
     return TRUE;
 }
+
+
+static
+BOOL
+WriteDefaultLogonData(LPWSTR Domain)
+{
+    WCHAR szAdministratorName[256];
+    HKEY hKey = NULL;
+    LONG lError;
+
+    if (LoadStringW(hDllInstance,
+                    IDS_ADMINISTRATOR_NAME,
+                    szAdministratorName,
+                    sizeof(szAdministratorName) / sizeof(WCHAR)) == 0)
+    {
+        wcscpy(szAdministratorName, L"Administrator");
+    }
+
+    lError = RegOpenKeyExW(HKEY_LOCAL_MACHINE,
+                           L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon",
+                           0,
+                           KEY_SET_VALUE,
+                           &hKey);
+    if (lError != ERROR_SUCCESS)
+        return FALSE;
+
+    lError = RegSetValueEx(hKey,
+                           L"DefaultDomain",
+                           0,
+                           REG_SZ,
+                           (LPBYTE)Domain,
+                           (wcslen(Domain)+ 1) * sizeof(WCHAR));
+    if (lError != ERROR_SUCCESS)
+    {
+        DPRINT1("RegSetValueEx(\"DefaultDomain\") failed!\n");
+    }
+
+    lError = RegSetValueEx(hKey,
+                           L"DefaultUserName",
+                           0,
+                           REG_SZ,
+                           (LPBYTE)szAdministratorName,
+                           (wcslen(szAdministratorName)+ 1) * sizeof(WCHAR));
+    if (lError != ERROR_SUCCESS)
+    {
+        DPRINT1("RegSetValueEx(\"DefaultUserName\") failed!\n");
+    }
+
+    RegCloseKey(hKey);
+
+    return TRUE;
+}
+
 
 /* lpBuffer will be filled with a 15-char string (plus the null terminator) */
 static void
@@ -583,8 +645,8 @@ ComputerPageDlgProc(HWND hwndDlg,
                     LPARAM lParam)
 {
     WCHAR ComputerName[MAX_COMPUTERNAME_LENGTH + 1];
-    WCHAR Password1[15];
-    WCHAR Password2[15];
+    WCHAR Password1[128];
+    WCHAR Password2[128];
     PWCHAR Password;
     WCHAR Title[64];
     WCHAR EmptyComputerName[256], NotMatchPassword[256], WrongPassword[256];
@@ -598,7 +660,6 @@ ComputerPageDlgProc(HWND hwndDlg,
     switch (uMsg)
     {
         case WM_INITDIALOG:
-        {
             /* Generate a new pseudo-random computer name */
             GenerateComputerName(ComputerName);
 
@@ -607,8 +668,8 @@ ComputerPageDlgProc(HWND hwndDlg,
 
             /* Set text limits */
             SendDlgItemMessage(hwndDlg, IDC_COMPUTERNAME, EM_LIMITTEXT, MAX_COMPUTERNAME_LENGTH, 0);
-            SendDlgItemMessage(hwndDlg, IDC_ADMINPASSWORD1, EM_LIMITTEXT, 14, 0);
-            SendDlgItemMessage(hwndDlg, IDC_ADMINPASSWORD2, EM_LIMITTEXT, 14, 0);
+            SendDlgItemMessage(hwndDlg, IDC_ADMINPASSWORD1, EM_LIMITTEXT, 127, 0);
+            SendDlgItemMessage(hwndDlg, IDC_ADMINPASSWORD2, EM_LIMITTEXT, 127, 0);
 
             /* Set focus to computer name */
             SetFocus(GetDlgItem(hwndDlg, IDC_COMPUTERNAME));
@@ -617,10 +678,13 @@ ComputerPageDlgProc(HWND hwndDlg,
                 SendMessage(GetDlgItem(hwndDlg, IDC_COMPUTERNAME), WM_SETTEXT, 0, (LPARAM)SetupData.ComputerName);
                 SendMessage(GetDlgItem(hwndDlg, IDC_ADMINPASSWORD1), WM_SETTEXT, 0, (LPARAM)SetupData.AdminPassword);
                 SendMessage(GetDlgItem(hwndDlg, IDC_ADMINPASSWORD2), WM_SETTEXT, 0, (LPARAM)SetupData.AdminPassword);
+                WriteComputerSettings(SetupData.ComputerName, NULL);
+                SetAdministratorPassword(SetupData.AdminPassword);
             }
 
-        }
-        break;
+            /* Store the administrator account name as the default user name */
+            WriteDefaultLogonData(SetupData.ComputerName);
+            break;
 
 
         case WM_NOTIFY:
@@ -634,7 +698,7 @@ ComputerPageDlgProc(HWND hwndDlg,
                     PropSheet_SetWizButtons(GetParent(hwndDlg), PSWIZB_BACK | PSWIZB_NEXT);
                     if (SetupData.UnattendSetup && WriteComputerSettings(SetupData.ComputerName, hwndDlg))
                     {
-                        SetWindowLongPtr(hwndDlg, DWL_MSGRESULT, IDD_LOCALEPAGE);
+                        SetWindowLongPtr(hwndDlg, DWL_MSGRESULT, IDD_DATETIMEPAGE);
                         return TRUE;
                     }
                     break;
@@ -665,8 +729,8 @@ ComputerPageDlgProc(HWND hwndDlg,
 
 #if 0
                     /* Check if admin passwords have been entered */
-                    if ((GetDlgItemText(hwndDlg, IDC_ADMINPASSWORD1, Password1, 15) == 0) ||
-                            (GetDlgItemText(hwndDlg, IDC_ADMINPASSWORD2, Password2, 15) == 0))
+                    if ((GetDlgItemText(hwndDlg, IDC_ADMINPASSWORD1, Password1, 128) == 0) ||
+                        (GetDlgItemText(hwndDlg, IDC_ADMINPASSWORD2, Password2, 128) == 0))
                     {
                         if (0 == LoadStringW(hDllInstance, IDS_WZD_PASSWORDEMPTY, EmptyPassword,
                                              sizeof(EmptyPassword) / sizeof(EmptyPassword[0])))
@@ -678,8 +742,8 @@ ComputerPageDlgProc(HWND hwndDlg,
                         return TRUE;
                     }
 #else
-                    GetDlgItemTextW(hwndDlg, IDC_ADMINPASSWORD1, Password1, 15);
-                    GetDlgItemTextW(hwndDlg, IDC_ADMINPASSWORD2, Password2, 15);
+                    GetDlgItemTextW(hwndDlg, IDC_ADMINPASSWORD1, Password1, 128);
+                    GetDlgItemTextW(hwndDlg, IDC_ADMINPASSWORD2, Password2, 128);
 #endif
                     /* Check if passwords match */
                     if (wcscmp(Password1, Password2))
@@ -918,7 +982,7 @@ LocalePageDlgProc(HWND hwndDlg,
                             RunControlPanelApplet(hwndDlg, L"intl.cpl,,/f:\"unattend.inf\"");
                         }
 
-                        SetWindowLongPtr(hwndDlg, DWL_MSGRESULT, IDD_DATETIMEPAGE);
+                        SetWindowLongPtr(hwndDlg, DWL_MSGRESULT, IDD_OWNERPAGE);
                         return TRUE;
                     }
                     break;
@@ -1920,7 +1984,7 @@ FinishDlgProc(HWND hwndDlg,
             PSETUPDATA SetupData = (PSETUPDATA)((LPPROPSHEETPAGE)lParam)->lParam;
 
             /* Run the Wine Gecko prompt */
-            Control_RunDLLW(GetDesktopWindow(), 0, L"appwiz.cpl install_gecko", SW_SHOW);
+            Control_RunDLLW(hwndDlg, 0, L"appwiz.cpl install_gecko", SW_SHOW);
 
             /* Set title font */
             SendDlgItemMessage(hwndDlg,
@@ -2276,6 +2340,15 @@ InstallWizard(VOID)
     psp.pfnDlgProc = AckPageDlgProc;
     ahpsp[nPages++] = CreatePropertySheetPage(&psp);
 
+    /* Create the Locale page */
+    psp.dwFlags = PSP_DEFAULT | PSP_USEHEADERTITLE | PSP_USEHEADERSUBTITLE;
+    psp.pszHeaderTitle = MAKEINTRESOURCE(IDS_LOCALETITLE);
+    psp.pszHeaderSubTitle = MAKEINTRESOURCE(IDS_LOCALESUBTITLE);
+    psp.pfnDlgProc = LocalePageDlgProc;
+    psp.pszTemplate = MAKEINTRESOURCE(IDD_LOCALEPAGE);
+    ahpsp[nPages++] = CreatePropertySheetPage(&psp);
+
+
     /* Create the Owner page */
     psp.dwFlags = PSP_DEFAULT | PSP_USEHEADERTITLE | PSP_USEHEADERSUBTITLE;
     psp.pszHeaderTitle = MAKEINTRESOURCE(IDS_OWNERTITLE);
@@ -2290,15 +2363,6 @@ InstallWizard(VOID)
     psp.pszHeaderSubTitle = MAKEINTRESOURCE(IDS_COMPUTERSUBTITLE);
     psp.pfnDlgProc = ComputerPageDlgProc;
     psp.pszTemplate = MAKEINTRESOURCE(IDD_COMPUTERPAGE);
-    ahpsp[nPages++] = CreatePropertySheetPage(&psp);
-
-
-    /* Create the Locale page */
-    psp.dwFlags = PSP_DEFAULT | PSP_USEHEADERTITLE | PSP_USEHEADERSUBTITLE;
-    psp.pszHeaderTitle = MAKEINTRESOURCE(IDS_LOCALETITLE);
-    psp.pszHeaderSubTitle = MAKEINTRESOURCE(IDS_LOCALESUBTITLE);
-    psp.pfnDlgProc = LocalePageDlgProc;
-    psp.pszTemplate = MAKEINTRESOURCE(IDD_LOCALEPAGE);
     ahpsp[nPages++] = CreatePropertySheetPage(&psp);
 
 

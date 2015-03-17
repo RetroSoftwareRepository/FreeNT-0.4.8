@@ -11,17 +11,22 @@ list(APPEND CONSRV_SOURCE
     consrv/console.c
     consrv/frontendctl.c
     consrv/handle.c
+    consrv/history.c
     consrv/init.c
     consrv/lineinput.c
+    consrv/popup.c
     consrv/settings.c
+    consrv/shutdown.c
     consrv/subsysreg.c
     consrv/condrv/coninput.c
     consrv/condrv/conoutput.c
     consrv/condrv/console.c
-    consrv/condrv/dummyfrontend.c
+    consrv/condrv/dummyterm.c
     consrv/condrv/graphics.c
     consrv/condrv/text.c
     consrv/frontends/input.c
+    consrv/frontends/terminal.c
+    consrv/frontends/gui/conwnd.c
     consrv/frontends/gui/fullscreen.c
     consrv/frontends/gui/guiterm.c
     consrv/frontends/gui/guisettings.c
@@ -29,7 +34,7 @@ list(APPEND CONSRV_SOURCE
     consrv/frontends/gui/text.c
     consrv/frontends/tui/tuiterm.c
     # consrv/consrv.rc
-    )
+    consrv/consrv.h)
 
 #
 # Explicitely enable MS extensions to be able to use unnamed (anonymous) nested structs.
@@ -45,10 +50,10 @@ else()
 endif()
 
 add_library(consrv ${CONSRV_SOURCE})
+add_dependencies(consrv psdk)
+add_pch(consrv consrv/consrv.h CONSRV_SOURCE)
 #add_object_library(consrv ${CONSRV_SOURCE})
-
 list(APPEND CONSRV_IMPORT_LIBS psapi)
 list(APPEND CONSRV_DELAY_IMPORT_LIBS ole32)
 list(APPEND CONSRV_TARGET_LINK_LIBS uuid)
-
 set_module_type(consrv module UNICODE)

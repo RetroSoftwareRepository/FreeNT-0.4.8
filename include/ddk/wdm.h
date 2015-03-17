@@ -82,10 +82,13 @@ extern "C" {
 #endif
 
 /* For ReactOS */
-#if !defined(_NTOSKRNL_) && !defined(_BLDR_)
+#if !defined(_NTOSKRNL_) && !defined(_BLDR_) && !defined(_NTSYSTEM_)
 #define NTKERNELAPI DECLSPEC_IMPORT
 #else
 #define NTKERNELAPI
+#ifndef _NTSYSTEM_
+#define _NTSYSTEM_
+#endif
 #endif
 
 #if defined(_X86_) && !defined(_NTHAL_)
@@ -129,6 +132,29 @@ extern "C" {
 #define ALLOC_DATA_PRAGMA 1
 #endif
 
+#endif /* _MSC_VER */
+
+/* These macros are used to create aliases for imported data. We need to do
+   this to have declarations that are compatible with MS DDK */
+#ifdef _M_IX86
+#define __SYMBOL(_Name) "_"#_Name
+#define __IMPORTSYMBOL(_Name) "__imp__"#_Name
+#define __IMPORTNAME(_Name) __imp__##_Name
+#else
+#define __SYMBOL(_Name) #_Name
+#define __IMPORTSYMBOL(_Name) "__imp_"#_Name
+#define __IMPORTNAME(_Name) __imp_##_Name
+#endif
+#ifdef _MSC_VER
+#define __CREATE_NTOS_DATA_IMPORT_ALIAS(_Name) \
+    __pragma(comment(linker, "/alternatename:"__SYMBOL(_Name) "=" __IMPORTSYMBOL(_Name)))
+#else /* !_MSC_VER */
+#ifndef __STRINGIFY
+#define __STRINGIFY(_exp) #_exp
+#endif
+#define _Pragma_redefine_extname(_Name, _Target) _Pragma(__STRINGIFY(redefine_extname _Name _Target))
+#define __CREATE_NTOS_DATA_IMPORT_ALIAS(_Name) \
+    _Pragma_redefine_extname(_Name,__IMPORTNAME(_Name))
 #endif
 
 #if defined(_WIN64)
@@ -209,51 +235,6 @@ inline int IsEqualGUIDAligned(REFGUID guid1, REFGUID guid2)
 /******************************************************************************
  *                           INTERLOCKED Functions                            *
  ******************************************************************************/
-//
-// Intrinsics (note: taken from our winnt.h)
-// FIXME: 64-bit
-//
-#if defined(__GNUC__)
-
-static __inline__ BOOLEAN
-InterlockedBitTestAndSet(
-    _Inout_updates_bytes_((Bit+7)/8) _Interlocked_operand_ LONG volatile *Base,
-    _In_ LONG Bit)
-{
-#if defined(_M_IX86)
-  LONG OldBit;
-  __asm__ __volatile__("lock "
-                       "btsl %2,%1\n\t"
-                       "sbbl %0,%0\n\t"
-                       :"=r" (OldBit),"+m" (*Base)
-                       :"Ir" (Bit)
-                       : "memory");
-  return OldBit;
-#else
-  return (_InterlockedOr(Base, 1 << Bit) >> Bit) & 1;
-#endif
-}
-
-static __inline__ BOOLEAN
-InterlockedBitTestAndReset(
-    _Inout_updates_bytes_((Bit+7)/8) _Interlocked_operand_ LONG volatile *Base,
-    _In_ LONG Bit)
-{
-#if defined(_M_IX86)
-  LONG OldBit;
-  __asm__ __volatile__("lock "
-                       "btrl %2,%1\n\t"
-                       "sbbl %0,%0\n\t"
-                       :"=r" (OldBit),"+m" (*Base)
-                       :"Ir" (Bit)
-                       : "memory");
-  return OldBit;
-#else
-  return (_InterlockedAnd(Base, ~(1 << Bit)) >> Bit) & 1;
-#endif
-}
-
-#endif /* defined(__GNUC__) */
 
 #define BitScanForward _BitScanForward
 #define BitScanReverse _BitScanReverse
@@ -599,11 +580,19 @@ typedef struct _EXCEPTION_POINTERS {
   PCONTEXT ContextRecord;
 } EXCEPTION_POINTERS, *PEXCEPTION_POINTERS;
 
-/* MS definition is broken! */
-extern BOOLEAN NTSYSAPI NlsMbCodePageTag;
-extern BOOLEAN NTSYSAPI NlsMbOemCodePageTag;
+#ifdef _NTSYSTEM_
+extern BOOLEAN NlsMbCodePageTag;
 #define NLS_MB_CODE_PAGE_TAG NlsMbCodePageTag
+extern BOOLEAN NlsMbOemCodePageTag;
 #define NLS_MB_OEM_CODE_PAGE_TAG NlsMbOemCodePageTag
+#else
+__CREATE_NTOS_DATA_IMPORT_ALIAS(NlsMbCodePageTag)
+extern BOOLEAN *NlsMbCodePageTag;
+#define NLS_MB_CODE_PAGE_TAG (*NlsMbCodePageTag)
+__CREATE_NTOS_DATA_IMPORT_ALIAS(NlsMbOemCodePageTag)
+extern BOOLEAN *NlsMbOemCodePageTag;
+#define NLS_MB_OEM_CODE_PAGE_TAG (*NlsMbOemCodePageTag)
+#endif
 
 #define SHORT_LEAST_SIGNIFICANT_BIT       0
 #define SHORT_MOST_SIGNIFICANT_BIT        1
@@ -1162,6 +1151,7 @@ typedef enum _KD_OPTION {
   KD_OPTION_SET_BLOCK_ENABLE,
 } KD_OPTION;
 
+#ifdef _NTSYSTEM_
 typedef VOID
 (NTAPI *PKNORMAL_ROUTINE)(
   IN PVOID NormalContext OPTIONAL,
@@ -1179,6 +1169,7 @@ typedef VOID
   IN OUT PVOID *NormalContext OPTIONAL,
   IN OUT PVOID *SystemArgument1 OPTIONAL,
   IN OUT PVOID *SystemArgument2 OPTIONAL);
+#endif
 
 typedef struct _KAPC {
   UCHAR Type;
@@ -1188,9 +1179,13 @@ typedef struct _KAPC {
   ULONG SpareLong0;
   struct _KTHREAD *Thread;
   LIST_ENTRY ApcListEntry;
+#ifdef _NTSYSTEM_
   PKKERNEL_ROUTINE KernelRoutine;
   PKRUNDOWN_ROUTINE RundownRoutine;
   PKNORMAL_ROUTINE NormalRoutine;
+#else
+  PVOID Reserved[3];
+#endif
   PVOID NormalContext;
   PVOID SystemArgument1;
   PVOID SystemArgument2;
@@ -1672,6 +1667,7 @@ extern NTSYSAPI volatile CCHAR KeNumberProcessors;
 #elif (NTDDI_VERSION >= NTDDI_WINXP)
 extern NTSYSAPI CCHAR KeNumberProcessors;
 #else
+__CREATE_NTOS_DATA_IMPORT_ALIAS(KeNumberProcessors)
 extern PCCHAR KeNumberProcessors;
 #endif
 
@@ -1824,8 +1820,11 @@ typedef enum _MM_SYSTEM_SIZE {
   MmLargeSystem
 } MM_SYSTEMSIZE;
 
-extern NTKERNELAPI BOOLEAN Mm64BitPhysicalAddress;
-extern PVOID MmBadPointer;
+#ifndef _NTSYSTEM_
+__CREATE_NTOS_DATA_IMPORT_ALIAS(Mm64BitPhysicalAddress)
+extern PBOOLEAN Mm64BitPhysicalAddress;
+#endif
+extern NTKERNELAPI PVOID MmBadPointer;
 
 
 /******************************************************************************
@@ -2098,7 +2097,7 @@ typedef struct _RESOURCE_PERFORMANCE_DATA {
 
 /* Global debug flag */
 #if DEVL
-extern ULONG NtGlobalFlag;
+extern NTKERNELAPI ULONG NtGlobalFlag;
 #define IF_NTOS_DEBUG(FlagName) if (NtGlobalFlag & (FLG_##FlagName))
 #else
 #define IF_NTOS_DEBUG(FlagName) if(FALSE)
@@ -3440,6 +3439,12 @@ typedef struct _KEY_WOW64_FLAGS_INFORMATION {
 typedef struct _KEY_WRITE_TIME_INFORMATION {
   LARGE_INTEGER LastWriteTime;
 } KEY_WRITE_TIME_INFORMATION, *PKEY_WRITE_TIME_INFORMATION;
+
+#if (NTDDI_VERSION < NTDDI_VISTA)
+typedef struct _KEY_USER_FLAGS_INFORMATION {
+    ULONG   UserFlags;
+} KEY_USER_FLAGS_INFORMATION, *PKEY_USER_FLAGS_INFORMATION;
+#endif
 
 typedef enum _REG_NOTIFY_CLASS {
   RegNtDeleteKey,
@@ -7851,6 +7856,7 @@ typedef struct _OBJECT_NAME_INFORMATION {
 } OBJECT_NAME_INFORMATION, *POBJECT_NAME_INFORMATION;
 
 /* Exported object types */
+#ifdef _NTSYSTEM_
 extern POBJECT_TYPE NTSYSAPI CmKeyObjectType;
 extern POBJECT_TYPE NTSYSAPI ExEventObjectType;
 extern POBJECT_TYPE NTSYSAPI ExSemaphoreObjectType;
@@ -7858,6 +7864,30 @@ extern POBJECT_TYPE NTSYSAPI IoFileObjectType;
 extern POBJECT_TYPE NTSYSAPI PsThreadType;
 extern POBJECT_TYPE NTSYSAPI SeTokenObjectType;
 extern POBJECT_TYPE NTSYSAPI PsProcessType;
+#else
+__CREATE_NTOS_DATA_IMPORT_ALIAS(CmKeyObjectType)
+__CREATE_NTOS_DATA_IMPORT_ALIAS(IoFileObjectType)
+__CREATE_NTOS_DATA_IMPORT_ALIAS(ExEventObjectType)
+__CREATE_NTOS_DATA_IMPORT_ALIAS(ExSemaphoreObjectType)
+__CREATE_NTOS_DATA_IMPORT_ALIAS(TmTransactionManagerObjectType)
+__CREATE_NTOS_DATA_IMPORT_ALIAS(TmResourceManagerObjectType)
+__CREATE_NTOS_DATA_IMPORT_ALIAS(TmEnlistmentObjectType)
+__CREATE_NTOS_DATA_IMPORT_ALIAS(TmTransactionObjectType)
+__CREATE_NTOS_DATA_IMPORT_ALIAS(PsProcessType)
+__CREATE_NTOS_DATA_IMPORT_ALIAS(PsThreadType)
+__CREATE_NTOS_DATA_IMPORT_ALIAS(SeTokenObjectType)
+extern POBJECT_TYPE *CmKeyObjectType;
+extern POBJECT_TYPE *IoFileObjectType;
+extern POBJECT_TYPE *ExEventObjectType;
+extern POBJECT_TYPE *ExSemaphoreObjectType;
+extern POBJECT_TYPE *TmTransactionManagerObjectType;
+extern POBJECT_TYPE *TmResourceManagerObjectType;
+extern POBJECT_TYPE *TmEnlistmentObjectType;
+extern POBJECT_TYPE *TmTransactionObjectType;
+extern POBJECT_TYPE *PsProcessType;
+extern POBJECT_TYPE *PsThreadType;
+extern POBJECT_TYPE *SeTokenObjectType;
+#endif
 
 
 /******************************************************************************
@@ -8333,7 +8363,7 @@ KeRestoreFloatingPointState(PVOID FloatingState)
 #define HIGH_LEVEL              15
 
 #define KI_USER_SHARED_DATA ((ULONG_PTR)(KADDRESS_BASE + 0xFFFE0000))
-extern DECLSPEC_CACHEALIGN volatile LARGE_INTEGER KeTickCount;
+extern NTKERNELAPI volatile LARGE_INTEGER KeTickCount;
 
 #define PAUSE_PROCESSOR __yield();
 
@@ -9565,6 +9595,41 @@ void __PREfastPagedCodeLocked(void);
  *                         Runtime Library Functions                          *
  ******************************************************************************/
 
+#define FAST_FAIL_LEGACY_GS_VIOLATION           0
+#define FAST_FAIL_VTGUARD_CHECK_FAILURE         1
+#define FAST_FAIL_STACK_COOKIE_CHECK_FAILURE    2
+#define FAST_FAIL_CORRUPT_LIST_ENTRY            3
+#define FAST_FAIL_INCORRECT_STACK               4
+#define FAST_FAIL_INVALID_ARG                   5
+#define FAST_FAIL_GS_COOKIE_INIT                6
+#define FAST_FAIL_FATAL_APP_EXIT                7
+#define FAST_FAIL_RANGE_CHECK_FAILURE           8
+#define FAST_FAIL_UNSAFE_REGISTRY_ACCESS        9
+#define FAST_FAIL_GUARD_ICALL_CHECK_FAILURE     10
+#define FAST_FAIL_GUARD_WRITE_CHECK_FAILURE     11
+#define FAST_FAIL_INVALID_FIBER_SWITCH          12
+#define FAST_FAIL_INVALID_SET_OF_CONTEXT        13
+#define FAST_FAIL_INVALID_REFERENCE_COUNT       14
+#define FAST_FAIL_INVALID_JUMP_BUFFER           18
+#define FAST_FAIL_MRDATA_MODIFIED               19
+#define FAST_FAIL_INVALID_FAST_FAIL_CODE        0xFFFFFFFF
+
+DECLSPEC_NORETURN
+FORCEINLINE
+VOID
+RtlFailFast(
+  _In_ ULONG Code)
+{
+  __fastfail(Code);
+}
+
+#if !defined(NO_KERNEL_LIST_ENTRY_CHECKS) && (defined(_M_CEE_PURE) || defined(_M_CEE_SAFE))
+#define NO_KERNEL_LIST_ENTRY_CHECKS
+#endif
+
+#if !defined(EXTRA_KERNEL_LIST_ENTRY_CHECKS) && defined(__REACTOS__)
+#define EXTRA_KERNEL_LIST_ENTRY_CHECKS
+#endif
 
 #if !defined(MIDL_PASS) && !defined(SORTPP_PASS)
 
@@ -9589,6 +9654,46 @@ IsListEmpty(
 
 FORCEINLINE
 BOOLEAN
+RemoveEntryListUnsafe(
+  _In_ PLIST_ENTRY Entry)
+{
+  PLIST_ENTRY OldFlink;
+  PLIST_ENTRY OldBlink;
+
+  OldFlink = Entry->Flink;
+  OldBlink = Entry->Blink;
+  OldFlink->Blink = OldBlink;
+  OldBlink->Flink = OldFlink;
+  return (BOOLEAN)(OldFlink == OldBlink);
+}
+
+#if !defined(NO_KERNEL_LIST_ENTRY_CHECKS)
+FORCEINLINE
+VOID
+FatalListEntryError(
+  _In_ PVOID P1,
+  _In_ PVOID P2,
+  _In_ PVOID P3)
+{
+  UNREFERENCED_PARAMETER(P1);
+  UNREFERENCED_PARAMETER(P2);
+  UNREFERENCED_PARAMETER(P3);
+
+  RtlFailFast(FAST_FAIL_CORRUPT_LIST_ENTRY);
+}
+
+FORCEINLINE
+VOID
+RtlpCheckListEntry(
+  _In_ PLIST_ENTRY Entry)
+{
+  if (Entry->Flink->Blink != Entry || Entry->Blink->Flink != Entry)
+    FatalListEntryError(Entry->Blink, Entry, Entry->Flink);
+}
+#endif
+
+FORCEINLINE
+BOOLEAN
 RemoveEntryList(
   _In_ PLIST_ENTRY Entry)
 {
@@ -9597,6 +9702,14 @@ RemoveEntryList(
 
   OldFlink = Entry->Flink;
   OldBlink = Entry->Blink;
+#if !defined(NO_KERNEL_LIST_ENTRY_CHECKS)
+#ifdef EXTRA_KERNEL_LIST_ENTRY_CHECKS
+  if (OldFlink == Entry || OldBlink == Entry)
+    FatalListEntryError(OldBlink, Entry, OldFlink);
+#endif
+  if (OldFlink->Blink != Entry || OldBlink->Flink != Entry)
+    FatalListEntryError(OldBlink, Entry, OldFlink);
+#endif
   OldFlink->Blink = OldBlink;
   OldBlink->Flink = OldFlink;
   return (BOOLEAN)(OldFlink == OldBlink);
@@ -9610,8 +9723,19 @@ RemoveHeadList(
   PLIST_ENTRY Flink;
   PLIST_ENTRY Entry;
 
+#if !defined(NO_KERNEL_LIST_ENTRY_CHECKS) && DBG
+  RtlpCheckListEntry(ListHead);
+#ifdef EXTRA_KERNEL_LIST_ENTRY_CHECKS
+  if (ListHead->Flink == ListHead || ListHead->Blink == ListHead)
+    FatalListEntryError(ListHead->Blink, ListHead, ListHead->Flink);
+#endif
+#endif
   Entry = ListHead->Flink;
   Flink = Entry->Flink;
+#if !defined(NO_KERNEL_LIST_ENTRY_CHECKS)
+  if (Entry->Blink != ListHead || Flink->Blink != Entry)
+    FatalListEntryError(ListHead, Entry, Flink);
+#endif
   ListHead->Flink = Flink;
   Flink->Blink = ListHead;
   return Entry;
@@ -9625,8 +9749,19 @@ RemoveTailList(
   PLIST_ENTRY Blink;
   PLIST_ENTRY Entry;
 
+#if !defined(NO_KERNEL_LIST_ENTRY_CHECKS) && DBG
+  RtlpCheckListEntry(ListHead);
+#ifdef EXTRA_KERNEL_LIST_ENTRY_CHECKS
+  if (ListHead->Flink == ListHead || ListHead->Blink == ListHead)
+    FatalListEntryError(ListHead->Blink, ListHead, ListHead->Flink);
+#endif
+#endif
   Entry = ListHead->Blink;
   Blink = Entry->Blink;
+#if !defined(NO_KERNEL_LIST_ENTRY_CHECKS)
+  if (Blink->Flink != Entry || Entry->Flink != ListHead)
+    FatalListEntryError(Blink, Entry, ListHead);
+#endif
   ListHead->Blink = Blink;
   Blink->Flink = ListHead;
   return Entry;
@@ -9639,9 +9774,16 @@ InsertTailList(
   _Inout_ __drv_aliasesMem PLIST_ENTRY Entry)
 {
   PLIST_ENTRY OldBlink;
+#if !defined(NO_KERNEL_LIST_ENTRY_CHECKS) && DBG
+  RtlpCheckListEntry(ListHead);
+#endif
   OldBlink = ListHead->Blink;
   Entry->Flink = ListHead;
   Entry->Blink = OldBlink;
+#if !defined(NO_KERNEL_LIST_ENTRY_CHECKS)
+  if (OldBlink->Flink != ListHead)
+    FatalListEntryError(OldBlink->Blink, OldBlink, ListHead);
+#endif
   OldBlink->Flink = Entry;
   ListHead->Blink = Entry;
 }
@@ -9653,9 +9795,16 @@ InsertHeadList(
   _Inout_ __drv_aliasesMem PLIST_ENTRY Entry)
 {
   PLIST_ENTRY OldFlink;
+#if !defined(NO_KERNEL_LIST_ENTRY_CHECKS) && DBG
+  RtlpCheckListEntry(ListHead);
+#endif
   OldFlink = ListHead->Flink;
   Entry->Flink = OldFlink;
   Entry->Blink = ListHead;
+#if !defined(NO_KERNEL_LIST_ENTRY_CHECKS)
+  if (OldFlink->Blink != ListHead)
+    FatalListEntryError(ListHead, OldFlink, OldFlink->Flink);
+#endif
   OldFlink->Blink = Entry;
   ListHead->Flink = Entry;
 }
@@ -9668,6 +9817,10 @@ AppendTailList(
 {
   PLIST_ENTRY ListEnd = ListHead->Blink;
 
+#if !defined(NO_KERNEL_LIST_ENTRY_CHECKS)
+  RtlpCheckListEntry(ListHead);
+  RtlpCheckListEntry(ListToAppend);
+#endif
   ListHead->Blink->Flink = ListToAppend;
   ListHead->Blink = ListToAppend->Blink;
   ListToAppend->Blink->Flink = ListHead;
@@ -11010,23 +11163,42 @@ RtlCheckBit(
     DbgPrint("%s(%d): Soft assertion failed\n   Expression: %s\n", __FILE__, __LINE__, #exp), FALSE : TRUE)
 
 #define RTL_SOFT_VERIFYMSG(msg, exp) \
-  (VOID)((!(exp)) ? \
+  ((!(exp)) ? \
     DbgPrint("%s(%d): Soft assertion failed\n   Expression: %s\n   Message: %s\n", __FILE__, __LINE__, #exp, (msg)), FALSE : TRUE)
 
-#define ASSERT(exp) ((void)RTL_VERIFY(exp))
-#define ASSERTMSG(msg, exp) ((void)RTL_VERIFYMSG(msg, exp))
+/* The ASSERTs must be cast to void to avoid warnings about unused results.
+ * We also cannot invoke the VERIFY versions because the indirection messes
+ * with stringify. */
+#define ASSERT(exp) \
+  ((VOID)((!(exp)) ? \
+    RtlAssert( (PVOID)#exp, (PVOID)__FILE__, __LINE__, NULL ), FALSE : TRUE))
 
-#define RTL_SOFT_ASSERT(exp) ((void)RTL_SOFT_VERIFY(exp))
-#define RTL_SOFT_ASSERTMSG(msg, exp) ((void)RTL_SOFT_VERIFYMSG(msg, exp))
+#define ASSERTMSG(msg, exp) \
+  ((VOID)((!(exp)) ? \
+    RtlAssert( (PVOID)#exp, (PVOID)__FILE__, __LINE__, (PCHAR)msg ), FALSE : TRUE))
+
+#define RTL_SOFT_ASSERT(exp) \
+  ((VOID)((!(exp)) ? \
+    DbgPrint("%s(%d): Soft assertion failed\n   Expression: %s\n", __FILE__, __LINE__, #exp), FALSE : TRUE))
+
+#define RTL_SOFT_ASSERTMSG(msg, exp) \
+  ((VOID)((!(exp)) ? \
+    DbgPrint("%s(%d): Soft assertion failed\n   Expression: %s\n   Message: %s\n", __FILE__, __LINE__, #exp, (msg)), FALSE : TRUE))
 
 #if defined(_MSC_VER)
 # define __assert_annotationA(msg) __annotation(L"Debug", L"AssertFail", L ## msg)
 # define __assert_annotationW(msg) __annotation(L"Debug", L"AssertFail", msg)
 #else
 # define __assert_annotationA(msg) \
-    DbgPrint("Assertion %s(%d): %s", __FILE__, __LINE__, msg)
+    DbgPrint("Assertion failed at %s(%d): %s\n", __FILE__, __LINE__, msg)
 # define __assert_annotationW(msg) \
-    DbgPrint("Assertion %s(%d): %S", __FILE__, __LINE__, msg)
+    DbgPrint("Assertion failed at %s(%d): %S\n", __FILE__, __LINE__, msg)
+#endif
+
+#ifdef _PREFAST_
+#define __analysis_unreachable() __assume(0)
+#else
+#define __analysis_unreachable() ((void)0)
 #endif
 
 #define NT_VERIFY(exp) \
@@ -11044,9 +11216,21 @@ RtlCheckBit(
         (__assert_annotationW(msg), \
          DbgRaiseAssertionFailure(), FALSE) : TRUE)
 
-#define NT_ASSERT(exp) ((void)NT_VERIFY(exp))
-#define NT_ASSERTMSG(msg, exp) ((void)NT_VERIFYMSG(msg, exp))
-#define NT_ASSERTMSGW(msg, exp) ((void)NT_VERIFYMSGW(msg, exp))
+/* Can't reuse verify, see above */
+#define NT_ASSERT(exp) \
+   ((VOID)((!(exp)) ? \
+      (__assert_annotationA(#exp), \
+       DbgRaiseAssertionFailure(), __analysis_unreachable(), FALSE) : TRUE))
+
+#define NT_ASSERTMSG(msg, exp) \
+   ((VOID)((!(exp)) ? \
+      (__assert_annotationA(msg), \
+      DbgRaiseAssertionFailure(), __analysis_unreachable(), FALSE) : TRUE))
+
+#define NT_ASSERTMSGW(msg, exp) \
+    ((VOID)((!(exp)) ? \
+        (__assert_annotationW(msg), \
+         DbgRaiseAssertionFailure(), __analysis_unreachable(), FALSE) : TRUE))
 
 #else /* !DBG */
 
@@ -11421,7 +11605,7 @@ NTKERNELAPI
 VOID
 NTAPI
 MmBuildMdlForNonPagedPool(
-  _Inout_ PMDLX MemoryDescriptorList);
+  _Inout_ PMDL MemoryDescriptorList);
 
 //DECLSPEC_DEPRECATED_DDK
 NTKERNELAPI
@@ -11454,7 +11638,7 @@ NTKERNELAPI
 VOID
 NTAPI
 MmFreePagesFromMdl(
-  _Inout_ PMDLX MemoryDescriptorList);
+  _Inout_ PMDL MemoryDescriptorList);
 
 _IRQL_requires_max_(PASSIVE_LEVEL)
 NTKERNELAPI
@@ -11509,7 +11693,7 @@ NTKERNELAPI
 PVOID
 NTAPI
 MmMapLockedPagesSpecifyCache(
-  _Inout_ PMDLX MemoryDescriptorList,
+  _Inout_ PMDL MemoryDescriptorList,
   _In_ __drv_strictType(KPROCESSOR_MODE/enum _MODE,__drv_typeConst)
     KPROCESSOR_MODE AccessMode,
   _In_ __drv_strictTypeMatch(__drv_typeCond) MEMORY_CACHING_TYPE CacheType,
@@ -11531,7 +11715,7 @@ NTKERNELAPI
 VOID
 NTAPI
 MmProbeAndLockPages(
-  _Inout_ PMDLX MemoryDescriptorList,
+  _Inout_ PMDL MemoryDescriptorList,
   _In_ KPROCESSOR_MODE AccessMode,
   _In_ LOCK_OPERATION Operation);
 
@@ -11566,7 +11750,7 @@ NTKERNELAPI
 VOID
 NTAPI
 MmUnlockPages(
-  _Inout_ PMDLX MemoryDescriptorList);
+  _Inout_ PMDL MemoryDescriptorList);
 
 _IRQL_requires_max_(DISPATCH_LEVEL)
 NTKERNELAPI
@@ -11617,7 +11801,7 @@ NTKERNELAPI
 NTSTATUS
 NTAPI
 MmAdvanceMdl(
-  _Inout_ PMDLX Mdl,
+  _Inout_ PMDL Mdl,
   _In_ ULONG NumberOfBytes);
 
 _Must_inspect_result_
@@ -11657,7 +11841,7 @@ NTAPI
 MmMapLockedPagesWithReservedMapping(
   _In_ PVOID MappingAddress,
   _In_ ULONG PoolTag,
-  _Inout_ PMDLX MemoryDescriptorList,
+  _Inout_ PMDL MemoryDescriptorList,
   _In_ __drv_strictTypeMatch(__drv_typeCond)
     MEMORY_CACHING_TYPE CacheType);
 
@@ -11667,7 +11851,7 @@ NTKERNELAPI
 NTSTATUS
 NTAPI
 MmProtectMdlSystemAddress(
-  _In_ PMDLX MemoryDescriptorList,
+  _In_ PMDL MemoryDescriptorList,
   _In_ ULONG NewProtect);
 
 _IRQL_requires_max_(DISPATCH_LEVEL)
@@ -11677,7 +11861,7 @@ NTAPI
 MmUnmapReservedMapping(
   _In_ PVOID BaseAddress,
   _In_ ULONG PoolTag,
-  _Inout_ PMDLX MemoryDescriptorList);
+  _Inout_ PMDL MemoryDescriptorList);
 
 _IRQL_requires_max_ (APC_LEVEL)
 NTKERNELAPI
@@ -14627,14 +14811,14 @@ NTKERNELAPI
 VOID
 NTAPI
 ExFreePool(
-  _In_ __drv_freesMem(Mem) PVOID P);
+  _Pre_notnull_ __drv_freesMem(Mem) PVOID P);
 
 _IRQL_requires_max_(DISPATCH_LEVEL)
 NTKERNELAPI
 VOID
 NTAPI
 ExFreePoolWithTag(
-  _In_ __drv_freesMem(Mem) PVOID P,
+  _Pre_notnull_ __drv_freesMem(Mem) PVOID P,
   _In_ ULONG Tag);
 
 _IRQL_requires_max_(DISPATCH_LEVEL)
@@ -15739,27 +15923,18 @@ DbgSetDebugPrintCallback(
 
 #endif /* !DBG */
 
-#if defined(__GNUC__)
-
-extern NTKERNELAPI BOOLEAN KdDebuggerNotPresent;
-extern NTKERNELAPI BOOLEAN KdDebuggerEnabled;
-#define KD_DEBUGGER_ENABLED KdDebuggerEnabled
-#define KD_DEBUGGER_NOT_PRESENT KdDebuggerNotPresent
-
-#elif defined(_NTDDK_) || defined(_NTIFS_) || defined(_NTHAL_) || defined(_WDMDDK_) || defined(_NTOSP_)
-
-extern NTKERNELAPI PBOOLEAN KdDebuggerNotPresent;
-extern NTKERNELAPI PBOOLEAN KdDebuggerEnabled;
-#define KD_DEBUGGER_ENABLED *KdDebuggerEnabled
-#define KD_DEBUGGER_NOT_PRESENT *KdDebuggerNotPresent
-
-#else
-
-extern BOOLEAN KdDebuggerNotPresent;
+#ifdef _NTSYSTEM_
 extern BOOLEAN KdDebuggerEnabled;
 #define KD_DEBUGGER_ENABLED KdDebuggerEnabled
+extern BOOLEAN KdDebuggerNotPresent;
 #define KD_DEBUGGER_NOT_PRESENT KdDebuggerNotPresent
-
+#else
+__CREATE_NTOS_DATA_IMPORT_ALIAS(KdDebuggerEnabled)
+extern BOOLEAN *KdDebuggerEnabled;
+#define KD_DEBUGGER_ENABLED (*KdDebuggerEnabled)
+__CREATE_NTOS_DATA_IMPORT_ALIAS(KdDebuggerNotPresent)
+extern BOOLEAN *KdDebuggerNotPresent;
+#define KD_DEBUGGER_NOT_PRESENT (*KdDebuggerNotPresent)
 #endif
 
 #if (NTDDI_VERSION >= NTDDI_WIN2K)

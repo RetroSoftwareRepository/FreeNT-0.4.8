@@ -1,4 +1,5 @@
-/* COPYRIGHT:       See COPYING in the top level directory
+/*
+ * COPYRIGHT:       See COPYING in the top level directory
  * PROJECT:         ReactOS system libraries
  * PURPOSE:         Compression and decompression functions
  * FILE:            lib/rtl/compress.c
@@ -33,7 +34,8 @@ RtlpCompressBufferLZNT1(USHORT Engine,
                         PULONG FinalCompressedSize,
                         PVOID WorkSpace)
 {
-   return(STATUS_NOT_IMPLEMENTED);
+    UNIMPLEMENTED;
+    return STATUS_NOT_IMPLEMENTED;
 }
 
 
@@ -105,7 +107,8 @@ RtlCompressChunks(IN PUCHAR UncompressedBuffer,
                   IN ULONG CompressedDataInfoLength,
                   IN PVOID WorkSpace)
 {
-   return(STATUS_NOT_IMPLEMENTED);
+    UNIMPLEMENTED;
+    return STATUS_NOT_IMPLEMENTED;
 }
 
 
@@ -120,7 +123,8 @@ RtlDecompressBuffer(IN USHORT CompressionFormat,
                     IN ULONG CompressedBufferSize,
                     OUT PULONG FinalUncompressedSize)
 {
-   return(STATUS_NOT_IMPLEMENTED);
+    UNIMPLEMENTED;
+    return STATUS_NOT_IMPLEMENTED;
 }
 
 
@@ -136,7 +140,8 @@ RtlDecompressChunks(OUT PUCHAR UncompressedBuffer,
                     IN ULONG CompressedTailSize,
                     IN PCOMPRESSED_DATA_INFO CompressedDataInfo)
 {
-   return(STATUS_NOT_IMPLEMENTED);
+    UNIMPLEMENTED;
+    return STATUS_NOT_IMPLEMENTED;
 }
 
 
@@ -153,7 +158,8 @@ RtlDecompressFragment(IN USHORT CompressionFormat,
                       OUT PULONG FinalUncompressedSize,
                       IN PVOID WorkSpace)
 {
-   return(STATUS_NOT_IMPLEMENTED);
+    UNIMPLEMENTED;
+    return STATUS_NOT_IMPLEMENTED;
 }
 
 
@@ -167,7 +173,8 @@ RtlDescribeChunk(IN USHORT CompressionFormat,
                  OUT PUCHAR *ChunkBuffer,
                  OUT PULONG ChunkSize)
 {
-   return(STATUS_NOT_IMPLEMENTED);
+    UNIMPLEMENTED;
+    return STATUS_NOT_IMPLEMENTED;
 }
 
 
@@ -206,7 +213,8 @@ RtlReserveChunk(IN USHORT CompressionFormat,
                 OUT PUCHAR *ChunkBuffer,
                 IN ULONG ChunkSize)
 {
-   return(STATUS_NOT_IMPLEMENTED);
+    UNIMPLEMENTED;
+    return STATUS_NOT_IMPLEMENTED;
 }
 
 /* EOF */

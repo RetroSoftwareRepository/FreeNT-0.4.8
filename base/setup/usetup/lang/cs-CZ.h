@@ -1,7 +1,7 @@
 /* FILE:        setup/usetup/lang/cs-CZ.rc
  * TRANSLATOR:  Radek Liska aka Black_Fox (radekliska at gmail dot com)
  * THANKS TO:   preston for bugfix advice at line 842
- * UPDATED:     2011-03-31
+ * UPDATED:     2014-08-31
  */
 
 #pragma once
@@ -827,12 +827,18 @@ static MUI_ENTRY csCZSelectPartitionEntries[] =
     {
         8,
         15,
-        "\x07  Stisknut¡m C umo§n¡te vytvoýen¡ nov‚ho odd¡lu.",
+        "\x07  Stistknut¡m P vytvoý¡te prim rn¡ odd¡l.",
         TEXT_STYLE_NORMAL
     },
     {
         8,
         17,
+        "\x07  Stistknut¡m E vytvoý¡te rozç¡ýenì odd¡l.",
+        TEXT_STYLE_NORMAL
+    },
+    {
+        8,
+        19,
         "\x07  Stisknut¡m D umo§n¡te smaz n¡ existuj¡c¡ho odd¡lu.",
         TEXT_STYLE_NORMAL
     },
@@ -1287,6 +1293,10 @@ static MUI_ENTRY csCZRegistryEntries[] =
 MUI_ERROR csCZErrorEntries[] =
 {
     {
+        // NOT_AN_ERROR
+        "Success\n"
+    },
+    {
         //ERROR_NOT_INSTALLED
         "ReactOS nen¡ ve vaçem poŸ¡taŸi kompletnØ nainstalov n.\n"
         "Pokud nyn¡ instalaci ukonŸ¡te, budete ji muset pro\n"
@@ -1491,10 +1501,25 @@ MUI_ERROR csCZErrorEntries[] =
         "ENTER = Restartovat poŸ¡taŸ"
     },
     {
-        //ERROR_INSUFFICIENT_DISKSPACE,
-        "Na zvolen‚m odd¡lu nen¡ dost voln‚ho m¡sta.\n"
+        //ERROR_INSUFFICIENT_PARTITION_SIZE,
+        "The selected partition is not large enough to install ReactOS.\n"
+        "The install partition must have a size of at least %lu MB.\n"
+        "\n"
         "  * PokraŸujte stisknut¡m libovoln‚ kl vesy.",
         NULL
+    },
+    {
+        //ERROR_PARTITION_TABLE_FULL,
+        "Nepodaýilo se vytvoýit novì prim rn¡ nebo rozç¡ýenì odd¡l\n"
+        "v tabulce odd¡l… na zvolen‚m disku, proto§e tabulka odd¡l… je pln .\n"
+        "\n"
+        "  * PokraŸujte stisknut¡m libovoln‚ kl vesy."
+    },
+    {
+        //ERROR_ONLY_ONE_EXTENDED,
+        "Nen¡ mo§n‚ vytvoýit v¡ce ne§ jeden rozç¡ýenì odd¡l na disk.\n"
+        "\n"
+        "  * PokraŸujte stisknut¡m libovoln‚ kl vesy."
     },
     {
         NULL,
@@ -1608,13 +1633,21 @@ MUI_STRING csCZStrings[] =
     {STRING_PLEASEWAIT,
      "   ¬ekejte, pros¡m..."},
     {STRING_INSTALLCREATEPARTITION,
-     "   ENTER = Instalovat   C = Vytvoýit odd¡l    F3 = UkonŸit"},
+     "   ENTER = Instalovat   P = Novì prim rn¡   E = Novì rozç¡ýenì   F3 = UkonŸit"},
+    {STRING_INSTALLCREATELOGICAL,
+     "   ENTER = Instalovat   L = Vytvoýit logickì odd¡l   F3 = UkonŸit"},
     {STRING_INSTALLDELETEPARTITION,
      "   ENTER = Instalovat   D = Odstranit odd¡l   F3 = UkonŸit"},
+    {STRING_DELETEPARTITION,
+     "   D = Odstranit odd¡l   F3 = UkonŸit"},
     {STRING_PARTITIONSIZE,
      "Velikost nov‚ho odd¡lu:"},
     {STRING_CHOOSENEWPARTITION,
-     "Zvolili jste vytvoýen¡ nov‚ho odd¡lu na"},
+     "Zvolili jste vytvoýen¡ nov‚ho prim rn¡ho odd¡lu na"},
+    {STRING_CHOOSE_NEW_EXTENDED_PARTITION,
+     "Zvolili jste vytvoýen¡ nov‚ho rozç¡ýen‚ho odd¡lu na"},
+    {STRING_CHOOSE_NEW_LOGICAL_PARTITION,
+     "Zvolili jste vytvoýen¡ nov‚ho logick‚ho odd¡lu na"},
     {STRING_HDDSIZE,
     "Zadejte velikost nov‚ho odd¡lu v megabajtech."},
     {STRING_CREATEPARTITION,
@@ -1686,7 +1719,7 @@ MUI_STRING csCZStrings[] =
     {STRING_HDINFOPARTEXISTS,
     "na harddisku %lu (%I64u %s), Port=%hu, Bus=%hu, Id=%hu (%wZ)."},
     {STRING_HDDINFOUNK5,
-    "%c%c  Typ %-3u                        %6lu %s"},
+    "%c%c %c %sTyp %-3u%s                     %6lu %s"},
     {STRING_HDINFOPARTSELECT,
     "%6lu %s  Harddisk %lu  (Port=%hu, Bus=%hu, Id=%hu) na %S"},
     {STRING_HDDINFOUNK6,
@@ -1694,9 +1727,11 @@ MUI_STRING csCZStrings[] =
     {STRING_NEWPARTITION,
     "Instalace vytvoýila novì odd¡l na"},
     {STRING_UNPSPACE,
-    "    M¡sto bez odd¡l…                 %6lu %s"},
+    "    %sM¡sto bez odd¡l…%s               %6lu %s"},
     {STRING_MAXSIZE,
     "MB (max. %lu MB)"},
+    {STRING_EXTENDED_PARTITION,
+    "Rozç¡ýenì odd¡l"},
     {STRING_UNFORMATTED,
     "Novì (Nenaform tovanì)"},
     {STRING_FORMATUNUSED,

@@ -14,6 +14,7 @@
 /* INCLUDES *******************************************************************/
 
 #include <k32.h>
+
 #define NDEBUG
 #include <debug.h>
 
@@ -88,21 +89,22 @@ NlsInit(VOID)
     }
 
     /* Setup ANSI code page. */
-    AnsiCodePage.CodePage = CP_ACP;
     AnsiCodePage.SectionHandle = NULL;
     AnsiCodePage.SectionMapping = NtCurrentTeb()->ProcessEnvironmentBlock->AnsiCodePageData;
 
     RtlInitCodePageTable((PUSHORT)AnsiCodePage.SectionMapping,
                          &AnsiCodePage.CodePageTable);
+    AnsiCodePage.CodePage = AnsiCodePage.CodePageTable.CodePage;
+    
     InsertTailList(&CodePageListHead, &AnsiCodePage.Entry);
 
     /* Setup OEM code page. */
-    OemCodePage.CodePage = CP_OEMCP;
     OemCodePage.SectionHandle = NULL;
     OemCodePage.SectionMapping = NtCurrentTeb()->ProcessEnvironmentBlock->OemCodePageData;
 
     RtlInitCodePageTable((PUSHORT)OemCodePage.SectionMapping,
                          &OemCodePage.CodePageTable);
+    OemCodePage.CodePage = OemCodePage.CodePageTable.CodePage;
     InsertTailList(&CodePageListHead, &OemCodePage.Entry);
 
     return TRUE;
@@ -198,8 +200,15 @@ IntGetCodePageEntry(UINT CodePage)
     WCHAR FileName[MAX_PATH + 1];
     UINT FileNamePos;
     PCODEPAGE_ENTRY CodePageEntry;
-
-    if (CodePage == CP_THREAD_ACP)
+    if (CodePage == CP_ACP)
+    {
+        return &AnsiCodePage;
+    }
+    else if (CodePage == CP_OEMCP)
+    {
+        return &OemCodePage;
+    }
+    else if (CodePage == CP_THREAD_ACP)
     {
         if (!GetLocaleInfoW(GetThreadLocale(),
                             LOCALE_IDEFAULTANSICODEPAGE | LOCALE_RETURN_NUMBER,
@@ -1645,12 +1654,12 @@ static INT WideCharToUtf7(LPCWSTR pszWide, INT cchWide, LPSTR pszUtf7, INT cchUt
             }
             *pszUtf7++ = base64[wsz[0] >> 10];
             *pszUtf7++ = base64[(wsz[0] >> 4) & 0x3F];
-            *pszUtf7++ = base64[(wsz[0] << 2 | wsz[1] >> 14) & 0x3F];
+            *pszUtf7++ = base64[(wsz[0] << 2 | (n >= 2 ? wsz[1] >> 14 : 0)) & 0x3F];
             if (n >= 2)
             {
                 *pszUtf7++ = base64[(wsz[1] >> 8) & 0x3F];
                 *pszUtf7++ = base64[(wsz[1] >> 2) & 0x3F];
-                *pszUtf7++ = base64[(wsz[1] << 4 | wsz[2] >> 12) & 0x3F];
+                *pszUtf7++ = base64[(wsz[1] << 4 | (n >= 3 ? wsz[2] >> 12 : 0)) & 0x3F];
                 if (n >= 3)
                 {
                     *pszUtf7++ = base64[(wsz[2] >> 6) & 0x3F];
@@ -1670,8 +1679,8 @@ static INT WideCharToUtf7(LPCWSTR pszWide, INT cchWide, LPSTR pszUtf7, INT cchUt
     return c;
 }
 
-static BOOL
-GetLocalisedText(DWORD dwResId, WCHAR *lpszDest)
+DWORD
+GetLocalisedText(DWORD dwResId, WCHAR *lpszDest, DWORD dwDestSize)
 {
     HRSRC hrsrc;
     LCID lcid;
@@ -1695,6 +1704,16 @@ GetLocalisedText(DWORD dwResId, WCHAR *lpszDest)
                             (LPWSTR)RT_STRING,
                             MAKEINTRESOURCEW((dwId >> 4) + 1),
                             langId);
+
+    /* english fallback */
+    if(!hrsrc)
+    {
+        hrsrc = FindResourceExW(hCurrentModule,
+                            (LPWSTR)RT_STRING,
+                            MAKEINTRESOURCEW((dwId >> 4) + 1),
+                            MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US));
+    }
+
     if (hrsrc)
     {
         HGLOBAL hmem = LoadResource(hCurrentModule, hrsrc);
@@ -1703,18 +1722,32 @@ GetLocalisedText(DWORD dwResId, WCHAR *lpszDest)
         {
             const WCHAR *p;
             unsigned int i;
+            unsigned int len;
 
             p = LockResource(hmem);
+
             for (i = 0; i < (dwId & 0x0f); i++) p += *p + 1;
 
-            memcpy(lpszDest, p + 1, *p * sizeof(WCHAR));
+            if(dwDestSize == 0)
+                return *p + 1;
+
+            len = *p * sizeof(WCHAR);
+
+            if(len + sizeof(WCHAR) > dwDestSize)
+            {
+                SetLastError(ERROR_INSUFFICIENT_BUFFER);
+                return FALSE;
+            }
+
+            memcpy(lpszDest, p + 1, len);
             lpszDest[*p] = '\0';
 
             return TRUE;
         }
     }
 
-    DPRINT1("Could not get codepage name. dwResId = %lu\n", dwResId);
+    DPRINT1("Resource not found: dwResId = %lu\n", dwResId);
+    SetLastError(ERROR_INVALID_PARAMETER);
     return FALSE;
 }
 
@@ -1790,7 +1823,7 @@ GetCPInfoExW(UINT CodePage,
         {
             lpCPInfoEx->CodePage = CP_UTF7;
             lpCPInfoEx->UnicodeDefaultChar = 0x3f;
-            return GetLocalisedText((DWORD)CodePage, lpCPInfoEx->CodePageName);
+            return GetLocalisedText((DWORD)CodePage, lpCPInfoEx->CodePageName, sizeof(lpCPInfoEx->CodePageName)) != 0;
         }
         break;
 
@@ -1798,7 +1831,7 @@ GetCPInfoExW(UINT CodePage,
         {
             lpCPInfoEx->CodePage = CP_UTF8;
             lpCPInfoEx->UnicodeDefaultChar = 0x3f;
-            return GetLocalisedText((DWORD)CodePage, lpCPInfoEx->CodePageName);
+            return GetLocalisedText((DWORD)CodePage, lpCPInfoEx->CodePageName, sizeof(lpCPInfoEx->CodePageName)) != 0;
         }
 
         default:
@@ -1815,7 +1848,7 @@ GetCPInfoExW(UINT CodePage,
 
             lpCPInfoEx->CodePage = CodePageEntry->CodePageTable.CodePage;
             lpCPInfoEx->UnicodeDefaultChar = CodePageEntry->CodePageTable.UniDefaultChar;
-            return GetLocalisedText((DWORD)CodePage, lpCPInfoEx->CodePageName);
+            return GetLocalisedText(CodePageEntry->CodePageTable.CodePage, lpCPInfoEx->CodePageName, sizeof(lpCPInfoEx->CodePageName)) != 0;
         }
         break;
     }

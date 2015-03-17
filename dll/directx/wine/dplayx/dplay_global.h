@@ -19,17 +19,6 @@
 #ifndef __WINE_DPLAY_GLOBAL_INCLUDED
 #define __WINE_DPLAY_GLOBAL_INCLUDED
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-
-//#include <stdarg.h>
-
-//#include "windef.h"
-//#include "winbase.h"
-#include "dplaysp.h"
-#include "lobbysp.h"
-#include "dplayx_queue.h"
-
 extern HRESULT DPL_EnumAddress( LPDPENUMADDRESSCALLBACK lpEnumAddressCallback,
                                 LPCVOID lpAddress, DWORD dwAddressSize,
                                 LPVOID lpContext ) DECLSPEC_HIDDEN;
@@ -211,7 +200,7 @@ extern LPVOID DPSP_CreateSPPlayerData(void) DECLSPEC_HIDDEN;
 
 extern HRESULT dplay_create( REFIID riid, void **ppv ) DECLSPEC_HIDDEN;
 extern HRESULT dplobby_create( REFIID riid, void **ppv ) DECLSPEC_HIDDEN;
-extern HRESULT DPSP_CreateInterface( REFIID riid, void **ppvObj, IDirectPlayImpl *dp ) DECLSPEC_HIDDEN;
-extern HRESULT DPLSP_CreateInterface( REFIID riid, void **ppvObj, IDirectPlayImpl *dp ) DECLSPEC_HIDDEN;
+extern HRESULT dplaysp_create( REFIID riid, void **ppv, IDirectPlayImpl *dp ) DECLSPEC_HIDDEN;
+extern HRESULT dplobbysp_create( REFIID riid, void **ppv, IDirectPlayImpl *dp ) DECLSPEC_HIDDEN;
 
 #endif /* __WINE_DPLAY_GLOBAL_INCLUDED */

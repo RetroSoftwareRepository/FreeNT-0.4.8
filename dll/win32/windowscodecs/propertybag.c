@@ -17,27 +17,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-#define COM_NO_WINDOWS_H
-
-#include <config.h>
-
-#include <stdarg.h>
-
-#define COBJMACROS
-
-#include <windef.h>
-#include <winbase.h>
-#include <ole2.h>
-#include <wincodec.h>
-#include <wine/unicode.h>
-
-//#include "wincodecs_private.h"
-
-#include <wine/debug.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(wincodecs);
+#include "wincodecs_private.h"
 
 typedef struct PropertyBag {
     IPropertyBag2 IPropertyBag2_iface;
@@ -252,7 +232,7 @@ static HRESULT WINAPI PropertyBag_GetPropertyInfo(IPropertyBag2 *iface, ULONG iP
     if (iProperty+cProperties > This->prop_count )
         return WINCODEC_ERR_VALUEOUTOFRANGE;
 
-    *pcProperties = max(cProperties, This->prop_count-iProperty);
+    *pcProperties = min(cProperties, This->prop_count-iProperty);
 
     for (i=0; i < *pcProperties; i++)
     {

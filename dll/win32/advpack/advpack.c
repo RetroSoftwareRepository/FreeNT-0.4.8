@@ -19,23 +19,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-
-#include <stdarg.h>
-
-#include <windef.h>
-#include <winbase.h>
-#include <winuser.h>
-#include <winreg.h>
-#include <winternl.h>
-//#include "winnls.h"
-//#include "setupapi.h"
-#include <advpub.h>
-#include <wine/unicode.h>
-#include <wine/debug.h>
 #include "advpack_private.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(advpack);
 
 typedef HRESULT (WINAPI *DLLREGISTER) (void);
 
@@ -207,19 +191,6 @@ HRESULT WINAPI CloseINFEngine(HINF hInf)
 
     SetupCloseInfFile(hInf);
     return S_OK;
-}
-
-/***********************************************************************
- *           DllMain (ADVPACK.@)
- */
-BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
-{
-    TRACE("(%p, %d, %p)\n", hinstDLL, fdwReason, lpvReserved);
-
-    if (fdwReason == DLL_PROCESS_ATTACH)
-        DisableThreadLibraryCalls(hinstDLL);
-
-    return TRUE;
 }
 
 /***********************************************************************
@@ -694,7 +665,7 @@ HRESULT WINAPI TranslateInfStringA(LPCSTR pszInfFilename, LPCSTR pszInstallSecti
                                     dwBufferSize, NULL, NULL);
             }
             else
-                res = HRESULT_FROM_WIN32(ERROR_INSUFFICIENT_BUFFER);
+                res = E_NOT_SUFFICIENT_BUFFER;
         }
         
         HeapFree(GetProcessHeap(), 0, bufferW);
@@ -754,7 +725,7 @@ HRESULT WINAPI TranslateInfStringW(LPCWSTR pszInfFilename, LPCWSTR pszInstallSec
                            pszBuffer, dwBufferSize, pdwRequiredSize))
     {
         if (dwBufferSize < *pdwRequiredSize)
-            hret = HRESULT_FROM_WIN32(ERROR_INSUFFICIENT_BUFFER);
+            hret = E_NOT_SUFFICIENT_BUFFER;
         else
             hret = SPAPI_E_LINE_NOT_FOUND;
     }
@@ -811,7 +782,7 @@ HRESULT WINAPI TranslateInfStringExA(HINF hInf, LPCSTR pszInfFilename,
                                     dwBufferSize, NULL, NULL);
             }
             else
-                res = HRESULT_FROM_WIN32(ERROR_INSUFFICIENT_BUFFER);
+                res = E_NOT_SUFFICIENT_BUFFER;
         }
         
         HeapFree(GetProcessHeap(), 0, bufferW);
@@ -869,7 +840,7 @@ HRESULT WINAPI TranslateInfStringExW(HINF hInf, LPCWSTR pszInfFilename,
                            pszBuffer, dwBufferSize, pdwRequiredSize))
     {
         if (dwBufferSize < *pdwRequiredSize)
-            return HRESULT_FROM_WIN32(ERROR_INSUFFICIENT_BUFFER);
+            return E_NOT_SUFFICIENT_BUFFER;
 
         return SPAPI_E_LINE_NOT_FOUND;
     }

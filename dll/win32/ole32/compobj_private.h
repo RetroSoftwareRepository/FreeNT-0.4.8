@@ -27,17 +27,6 @@
 
 /* All private prototype functions used by OLE will be added to this header file */
 
-#include <stdarg.h>
-
-#include <wine/list.h>
-
-#include "windef.h"
-#include "winbase.h"
-#include "wtypes.h"
-#include <dcom.h>
-#include "winreg.h"
-#include <winternl.h>
-
 struct apartment;
 typedef struct apartment APARTMENT;
 typedef struct LocalServer LocalServer;
@@ -314,6 +303,8 @@ extern UINT ole_private_data_clipboard_format DECLSPEC_HIDDEN;
 
 extern LSTATUS create_classes_key(HKEY, const WCHAR *, REGSAM, HKEY *) DECLSPEC_HIDDEN;
 extern LSTATUS open_classes_key(HKEY, const WCHAR *, REGSAM, HKEY *) DECLSPEC_HIDDEN;
+
+extern BOOL actctx_get_miscstatus(const CLSID*, DWORD, DWORD*) DECLSPEC_HIDDEN;
 
 static inline void *heap_alloc(size_t len)
 {

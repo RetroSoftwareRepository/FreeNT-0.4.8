@@ -48,7 +48,7 @@ FS_AddProvider(
     Item->FileSystem = FileSystem;
     Item->FormatFunc = FormatFunc;
     Item->ChkdskFunc = ChkdskFunc;
-    Item->QuickFormat = FALSE;
+    Item->QuickFormat = TRUE;
     InsertTailList(&List->ListHead, &Item->ListEntry);
 
     if (!FormatFunc)
@@ -61,9 +61,10 @@ FS_AddProvider(
     Item->FileSystem = FileSystem;
     Item->FormatFunc = FormatFunc;
     Item->ChkdskFunc = ChkdskFunc;
-    Item->QuickFormat = TRUE;
+    Item->QuickFormat = FALSE;
     InsertTailList(&List->ListHead, &Item->ListEntry);
 }
+
 
 PFILE_SYSTEM_LIST
 CreateFileSystemList(
@@ -111,6 +112,7 @@ CreateFileSystemList(
     return List;
 }
 
+
 VOID
 DestroyFileSystemList(
     IN PFILE_SYSTEM_LIST List)
@@ -130,6 +132,7 @@ DestroyFileSystemList(
     }
     RtlFreeHeap(ProcessHeap, 0, List);
 }
+
 
 VOID
 DrawFileSystemList(
@@ -163,12 +166,12 @@ DrawFileSystemList(
         if (Item->FileSystem)
         {
             if (Item->QuickFormat)
-                sprintf(Buffer, MUIGetString(STRING_FORMATDISK1), Item->FileSystem);
+                snprintf(Buffer, sizeof(Buffer), MUIGetString(STRING_FORMATDISK1), Item->FileSystem);
             else
-                sprintf(Buffer, MUIGetString(STRING_FORMATDISK2), Item->FileSystem);
+                snprintf(Buffer, sizeof(Buffer), MUIGetString(STRING_FORMATDISK2), Item->FileSystem);
         }
         else
-            sprintf(Buffer, MUIGetString(STRING_KEEPFORMAT));
+            snprintf(Buffer, sizeof(Buffer), MUIGetString(STRING_KEEPFORMAT));
 
         if (ListEntry == &List->Selected->ListEntry)
             CONSOLE_SetInvertedTextXY(List->Left,
@@ -183,6 +186,7 @@ DrawFileSystemList(
     }
 }
 
+
 VOID
 ScrollDownFileSystemList(
     IN PFILE_SYSTEM_LIST List)
@@ -193,6 +197,7 @@ ScrollDownFileSystemList(
         DrawFileSystemList(List);
     }
 }
+
 
 VOID
 ScrollUpFileSystemList(

@@ -17,10 +17,7 @@
  *
  */
 
-#include <wine/debug.h>
 #include "d3dx9_36_private.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(d3dx);
 
 static void la_from_rgba(const struct vec4 *rgba, struct vec4 *la)
 {
@@ -81,7 +78,11 @@ static const struct pixel_format_desc formats[] =
     {D3DFMT_DXT3,          { 0,  0,  0,  0}, { 0,  0,  0,  0},  1, 4, 4, 16, FORMAT_DXT,     NULL,         NULL      },
     {D3DFMT_DXT4,          { 0,  0,  0,  0}, { 0,  0,  0,  0},  1, 4, 4, 16, FORMAT_DXT,     NULL,         NULL      },
     {D3DFMT_DXT5,          { 0,  0,  0,  0}, { 0,  0,  0,  0},  1, 4, 4, 16, FORMAT_DXT,     NULL,         NULL      },
+    {D3DFMT_R16F,          { 0, 16,  0,  0}, { 0,  0,  0,  0},  2, 1, 1,  2, FORMAT_ARGBF16, NULL,         NULL      },
+    {D3DFMT_G16R16F,       { 0, 16, 16,  0}, { 0,  0, 16,  0},  4, 1, 1,  4, FORMAT_ARGBF16, NULL,         NULL      },
     {D3DFMT_A16B16G16R16F, {16, 16, 16, 16}, {48,  0, 16, 32},  8, 1, 1,  8, FORMAT_ARGBF16, NULL,         NULL      },
+    {D3DFMT_R32F,          { 0, 32,  0,  0}, { 0,  0,  0,  0},  4, 1, 1,  4, FORMAT_ARGBF,   NULL,         NULL      },
+    {D3DFMT_G32R32F,       { 0, 32, 32,  0}, { 0,  0, 32,  0},  8, 1, 1,  8, FORMAT_ARGBF,   NULL,         NULL      },
     {D3DFMT_A32B32G32R32F, {32, 32, 32, 32}, {96,  0, 32, 64}, 16, 1, 1, 16, FORMAT_ARGBF,   NULL,         NULL      },
     {D3DFMT_P8,            { 8,  8,  8,  8}, { 0,  0,  0,  0},  1, 1, 1,  1, FORMAT_INDEX,   NULL,         index_to_rgba},
     /* marks last element */
@@ -156,7 +157,7 @@ error:
  *   The memory doesn't need to be freed by the caller manually
  *
  */
-HRESULT load_resource_into_memory(HMODULE module, HRSRC resinfo, LPVOID *buffer, DWORD *length)
+HRESULT load_resource_into_memory(HMODULE module, HRSRC resinfo, void **buffer, DWORD *length)
 {
     HGLOBAL resource;
 
@@ -177,6 +178,7 @@ HRESULT write_buffer_to_file(const WCHAR *dst_filename, ID3DXBuffer *buffer)
     HRESULT hr = S_OK;
     void *buffer_pointer;
     DWORD buffer_size;
+    DWORD bytes_written;
     HANDLE file = CreateFileW(dst_filename, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (file == INVALID_HANDLE_VALUE)
         return HRESULT_FROM_WIN32(GetLastError());
@@ -184,7 +186,7 @@ HRESULT write_buffer_to_file(const WCHAR *dst_filename, ID3DXBuffer *buffer)
     buffer_pointer = ID3DXBuffer_GetBufferPointer(buffer);
     buffer_size = ID3DXBuffer_GetBufferSize(buffer);
 
-    if (!WriteFile(file, buffer_pointer, buffer_size, NULL, NULL))
+    if (!WriteFile(file, buffer_pointer, buffer_size, &bytes_written, NULL))
         hr = HRESULT_FROM_WIN32(GetLastError());
 
     CloseHandle(file);
@@ -285,7 +287,7 @@ const char *debug_d3dxparameter_registerset(D3DXREGISTER_SET r)
 #undef WINE_D3DX_TO_STR
 
 /* parameter type conversion helpers */
-static BOOL get_bool(D3DXPARAMETER_TYPE type, LPCVOID data)
+static BOOL get_bool(D3DXPARAMETER_TYPE type, const void *data)
 {
     switch (type)
     {
@@ -303,12 +305,12 @@ static BOOL get_bool(D3DXPARAMETER_TYPE type, LPCVOID data)
     }
 }
 
-static INT get_int(D3DXPARAMETER_TYPE type, LPCVOID data)
+static INT get_int(D3DXPARAMETER_TYPE type, const void *data)
 {
     switch (type)
     {
         case D3DXPT_FLOAT:
-            return *(FLOAT *)data;
+            return (INT)(*(FLOAT *)data);
 
         case D3DXPT_INT:
         case D3DXPT_VOID:
@@ -323,7 +325,7 @@ static INT get_int(D3DXPARAMETER_TYPE type, LPCVOID data)
     }
 }
 
-static FLOAT get_float(D3DXPARAMETER_TYPE type, LPCVOID data)
+static FLOAT get_float(D3DXPARAMETER_TYPE type, const void *data)
 {
     switch (type)
     {
@@ -332,10 +334,10 @@ static FLOAT get_float(D3DXPARAMETER_TYPE type, LPCVOID data)
             return *(FLOAT *)data;
 
         case D3DXPT_INT:
-            return *(INT *)data;
+            return (FLOAT)(*(INT *)data);
 
         case D3DXPT_BOOL:
-            return get_bool(type, data);
+            return (FLOAT)get_bool(type, data);
 
         default:
             FIXME("Unhandled type %s.\n", debug_d3dxparameter_type(type));
@@ -343,10 +345,8 @@ static FLOAT get_float(D3DXPARAMETER_TYPE type, LPCVOID data)
     }
 }
 
-void set_number(LPVOID outdata, D3DXPARAMETER_TYPE outtype, LPCVOID indata, D3DXPARAMETER_TYPE intype)
+void set_number(void *outdata, D3DXPARAMETER_TYPE outtype, const void *indata, D3DXPARAMETER_TYPE intype)
 {
-    TRACE("Changing from type %s to type %s\n", debug_d3dxparameter_type(intype), debug_d3dxparameter_type(outtype));
-
     if (outtype == intype)
     {
         *(DWORD *)outdata = *(DWORD *)indata;

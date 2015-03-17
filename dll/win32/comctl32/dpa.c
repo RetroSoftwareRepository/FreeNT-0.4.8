@@ -29,23 +29,7 @@
  *     http://members.ozemail.com.au/~geoffch/samples/win32/shell/comctl32  
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-#define COM_NO_WINDOWS_H
-
-#define COBJMACROS
-
-#include <stdarg.h>
-//#include <limits.h>
-
-#include <windef.h>
-#include <winbase.h>
-//#include "winuser.h"
-//#include "commctrl.h"
-#include <objbase.h>
-
 #include "comctl32.h"
-#include <wine/debug.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(dpa);
 
@@ -133,8 +117,10 @@ HRESULT WINAPI DPA_LoadStream (HDPA *phDpa, PFNDPASTREAM loadProc,
     if (!hDpa)
         return E_OUTOFMEMORY;
 
-    if (!DPA_Grow (hDpa, streamData.dwItems))
+    if (!DPA_Grow (hDpa, streamData.dwItems)) {
+        DPA_Destroy (hDpa);
         return E_OUTOFMEMORY;
+    }
 
     /* load data from the stream into the dpa */
     ptr = hDpa->ptrs;
@@ -178,7 +164,7 @@ HRESULT WINAPI DPA_LoadStream (HDPA *phDpa, PFNDPASTREAM loadProc,
  * NOTES
  *     No more information available yet!
  */
-HRESULT WINAPI DPA_SaveStream (const HDPA hDpa, PFNDPASTREAM saveProc,
+HRESULT WINAPI DPA_SaveStream (HDPA hDpa, PFNDPASTREAM saveProc,
                                IStream *pStream, LPVOID pData)
 {
     LARGE_INTEGER position;
@@ -273,7 +259,7 @@ BOOL WINAPI DPA_Merge (HDPA hdpa1, HDPA hdpa2, DWORD dwFlags,
     INT nResult, i;
     INT nIndex;
 
-    TRACE("%p %p %08x %p %p %08lx)\n",
+    TRACE("(%p %p %08x %p %p %08lx)\n",
            hdpa1, hdpa2, dwFlags, pfnCompare, pfnMerge, lParam);
 
     if (IsBadWritePtr (hdpa1, sizeof(*hdpa1)))
@@ -401,7 +387,7 @@ BOOL WINAPI DPA_Merge (HDPA hdpa1, HDPA hdpa2, DWORD dwFlags,
  *     Success: TRUE
  *     Failure: FALSE
  */
-BOOL WINAPI DPA_Destroy (const HDPA hdpa)
+BOOL WINAPI DPA_Destroy (HDPA hdpa)
 {
     TRACE("(%p)\n", hdpa);
 
@@ -471,11 +457,11 @@ BOOL WINAPI DPA_Grow (HDPA hdpa, INT nGrow)
  *
  * NOTES
  *     - If the 'hdpaNew' is a NULL-Pointer, a copy of the source pointer
- *       array will be created and it's handle (pointer) is returned.
+ *       array will be created and its handle (pointer) is returned.
  *     - If 'hdpa' is a NULL-Pointer, the original implementation crashes,
  *       this implementation just returns NULL.
  */
-HDPA WINAPI DPA_Clone (const HDPA hdpa, const HDPA hdpaNew)
+HDPA WINAPI DPA_Clone (const HDPA hdpa, HDPA hdpaNew)
 {
     INT nNewItems, nSize;
     HDPA hdpaTemp;
@@ -532,7 +518,7 @@ HDPA WINAPI DPA_Clone (const HDPA hdpa, const HDPA hdpaNew)
  *     Success: pointer
  *     Failure: NULL
  */
-LPVOID WINAPI DPA_GetPtr (const HDPA hdpa, INT nIndex)
+LPVOID WINAPI DPA_GetPtr (HDPA hdpa, INT nIndex)
 {
     TRACE("(%p %d)\n", hdpa, nIndex);
 
@@ -596,7 +582,7 @@ INT WINAPI DPA_GetPtrIndex (HDPA hdpa, LPCVOID p)
  *     Success: index of the inserted pointer
  *     Failure: -1
  */
-INT WINAPI DPA_InsertPtr (const HDPA hdpa, INT i, LPVOID p)
+INT WINAPI DPA_InsertPtr (HDPA hdpa, INT i, LPVOID p)
 {
     TRACE("(%p %d %p)\n", hdpa, i, p);
 
@@ -631,7 +617,7 @@ INT WINAPI DPA_InsertPtr (const HDPA hdpa, INT i, LPVOID p)
  *     Success: TRUE
  *     Failure: FALSE
  */
-BOOL WINAPI DPA_SetPtr (const HDPA hdpa, INT i, LPVOID p)
+BOOL WINAPI DPA_SetPtr (HDPA hdpa, INT i, LPVOID p)
 {
     LPVOID *lpTemp;
 
@@ -682,7 +668,7 @@ BOOL WINAPI DPA_SetPtr (const HDPA hdpa, INT i, LPVOID p)
  *     Success: deleted pointer
  *     Failure: NULL
  */
-LPVOID WINAPI DPA_DeletePtr (const HDPA hdpa, INT i)
+LPVOID WINAPI DPA_DeletePtr (HDPA hdpa, INT i)
 {
     LPVOID *lpDest, *lpSrc, lpTemp = NULL;
     INT  nSize;
@@ -735,7 +721,7 @@ LPVOID WINAPI DPA_DeletePtr (const HDPA hdpa, INT i)
  *     Success: TRUE
  *     Failure: FALSE
  */
-BOOL WINAPI DPA_DeleteAllPtrs (const HDPA hdpa)
+BOOL WINAPI DPA_DeleteAllPtrs (HDPA hdpa)
 {
     TRACE("(%p)\n", hdpa);
 
@@ -818,7 +804,7 @@ static VOID DPA_QuickSort (LPVOID *lpPtrs, INT l, INT r,
  *     Success: TRUE
  *     Failure: FALSE
  */
-BOOL WINAPI DPA_Sort (const HDPA hdpa, PFNDPACOMPARE pfnCompare, LPARAM lParam)
+BOOL WINAPI DPA_Sort (HDPA hdpa, PFNDPACOMPARE pfnCompare, LPARAM lParam)
 {
     if (!hdpa || !pfnCompare)
         return FALSE;
@@ -850,7 +836,7 @@ BOOL WINAPI DPA_Sort (const HDPA hdpa, PFNDPACOMPARE pfnCompare, LPARAM lParam)
  *     Success: index of the pointer in the array.
  *     Failure: -1
  */
-INT WINAPI DPA_Search (const HDPA hdpa, LPVOID pFind, INT nStart,
+INT WINAPI DPA_Search (HDPA hdpa, LPVOID pFind, INT nStart,
                        PFNDPACOMPARE pfnCompare, LPARAM lParam, UINT uOptions)
 {
     if (!hdpa || !pfnCompare || !pFind)

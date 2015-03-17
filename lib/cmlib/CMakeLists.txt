@@ -6,16 +6,18 @@ add_definitions(
 
 list(APPEND SOURCE
     cminit.c
+    cmtools.c
     hivebin.c
     hivecell.c
     hiveinit.c
     hivesum.c
-    hivewrt.c)
+    hivewrt.c
+    cmlib.h)
 
 if(CMAKE_CROSSCOMPILING)
     add_library(cmlib ${SOURCE})
     add_dependencies(cmlib bugcodes)
-    add_pch(cmlib cmlib.h)
+    add_pch(cmlib cmlib.h SOURCE)
 else()
     add_definitions(
         -D__NO_CTYPE_INLINES

@@ -18,7 +18,10 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <stdarg.h>
+#ifndef _IEFRAME_H_
+#define _IEFRAME_H_
+
+#include <stdio.h>
 
 #define WIN32_NO_STATUS
 #define _INC_WINDOWS
@@ -26,25 +29,33 @@
 
 #define COBJMACROS
 #define NONAMELESSUNION
+#define NONAMELESSSTRUCT
 
 #include <windef.h>
 #include <winbase.h>
 #include <wingdi.h>
-//#include "winuser.h"
+#include <winreg.h>
 #include <wincon.h>
-
-//#include "ole2.h"
-//#include "olectl.h"
 #include <shlobj.h>
 #include <mshtmhst.h>
-//#include "exdisp.h"
-#include <hlink.h>
+#include <mshtmdid.h>
+#include <exdispid.h>
 #include <htiface.h>
-#include "shdeprecated.h"
+#include <idispids.h>
+#include <intshcut.h>
+#include <perhist.h>
+#include <shellapi.h>
+#include <shlwapi.h>
+#include <shdeprecated.h>
 #include <docobjectservice.h>
 
 #include <wine/unicode.h>
 #include <wine/list.h>
+
+#include <wine/debug.h>
+WINE_DEFAULT_DEBUG_CHANNEL(ieframe);
+
+#include "resource.h"
 
 typedef struct ConnectionPoint ConnectionPoint;
 typedef struct DocHost DocHost;
@@ -63,6 +74,7 @@ typedef struct {
     IHlinkFrame    IHlinkFrame_iface;
     ITargetFrame2  ITargetFrame2_iface;
     ITargetFramePriv2 ITargetFramePriv2_iface;
+    IWebBrowserPriv2IE9 IWebBrowserPriv2IE9_iface;
 
     IUnknown *outer;
     DocHost *doc_host;
@@ -314,8 +326,6 @@ HRESULT WINAPI InternetShortcut_Create(IClassFactory*,IUnknown*,REFIID,void**) D
 HRESULT WINAPI WebBrowser_Create(IClassFactory*,IUnknown*,REFIID,void**) DECLSPEC_HIDDEN;
 HRESULT WINAPI WebBrowserV1_Create(IClassFactory*,IUnknown*,REFIID,void**) DECLSPEC_HIDDEN;
 
-const char *debugstr_variant(const VARIANT*) DECLSPEC_HIDDEN;
-
 extern LONG module_ref DECLSPEC_HIDDEN;
 extern HINSTANCE ieframe_instance DECLSPEC_HIDDEN;
 
@@ -392,3 +402,5 @@ static inline LPSTR co_strdupWtoA(LPCWSTR str)
         WideCharToMultiByte(CP_ACP, 0, str, -1, ret, len, 0, 0);
     return ret;
 }
+
+#endif /* _IEFRAME_H_ */

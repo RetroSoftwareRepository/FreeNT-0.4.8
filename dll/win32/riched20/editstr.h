@@ -21,40 +21,6 @@
 #ifndef __EDITSTR_H
 #define __EDITSTR_H
 
-#ifndef _WIN32_IE
-#define _WIN32_IE 0x0400
-#endif
-
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-#define COM_NO_WINDOWS_H
-
-#include <assert.h>
-//#include <stdarg.h>
-#include <stdio.h>
-//#include <stdlib.h>
-//#include <limits.h>
-
-#define COBJMACROS
-#define NONAMELESSUNION
-#define NONAMELESSSTRUCT
-
-#include <windef.h>
-#include <winbase.h>
-//#include <winnls.h>
-//#include <winnt.h>
-#include <wingdi.h>
-#include <winuser.h>
-#include <richedit.h>
-//#include <commctrl.h>
-#include <ole2.h>
-#include <richole.h>
-#include <imm.h>
-#include <textserv.h>
-
-#include <wine/debug.h>
-#include <wine/list.h>
-
 #ifdef __i386__
 extern const struct ITextHostVtbl itextHostStdcallVtbl;
 #endif /* __i386__ */
@@ -72,6 +38,7 @@ typedef struct tagME_Style
   HFONT hFont; /* cached font for the style */
   TEXTMETRICW tm; /* cached font metrics for the style */
   int nRefs; /* reference count */
+  SCRIPT_CACHE script_cache;
 } ME_Style;
 
 typedef enum {
@@ -138,6 +105,7 @@ typedef enum {
 #define MEPF_CELL     0x04 /* The paragraph is nested in a cell */
 #define MEPF_ROWSTART 0x08 /* Hidden empty paragraph at the start of the row */
 #define MEPF_ROWEND   0x10 /* Visible empty paragraph at the end of the row */
+#define MEPF_COMPLEX  0x20 /* Use uniscribe */
 
 /******************************** structures *************************/
 
@@ -154,6 +122,15 @@ typedef struct tagME_Run
   int nAscent, nDescent; /* pixels above/below baseline */
   POINT pt; /* relative to para's position */
   REOBJECT *ole_obj; /* FIXME: should be a union with strText (at least) */
+
+  SCRIPT_ANALYSIS script_analysis;
+  int num_glyphs, max_glyphs;
+  WORD *glyphs;
+  SCRIPT_VISATTR *vis_attrs;
+  int *advances;
+  GOFFSET *offsets;
+  int max_clusters;
+  WORD *clusters;
 } ME_Run;
 
 typedef struct tagME_Border
@@ -380,6 +357,7 @@ typedef struct tagME_TextEditor
 {
   HWND hWnd, hwndParent;
   ITextHost *texthost;
+  IRichEditOle *reOle;
   BOOL bEmulateVersion10;
   ME_TextBuffer *pBuffer;
   ME_Cursor *pCursors;
@@ -435,6 +413,7 @@ typedef struct tagME_TextEditor
   SCROLLINFO vert_si, horz_si;
 
   BOOL bMouseCaptured;
+  int wheel_remain;
 } ME_TextEditor;
 
 typedef struct tagME_Context

@@ -1,14 +1,15 @@
-﻿; UTF-8
+; UTF-8
+; Turkish translation by Erdem Ersoy (eersoy93) (erdemersoy@live.com)
 
 [Section]
 Name = Notepad++
-Version = 6.5
-Licence = GPL
+Version = 6.7.4
+License = GPL
 Description = A text editor.
-Size = 7.2MB
+Size = 7.6 MB
 Category = 6
 URLSite = http://notepad-plus-plus.org/
-URLDownload = http://download.tuxfamily.org/notepadplus/6.5/npp.6.5.Installer.exe
+URLDownload = http://download.tuxfamily.org/notepadplus/6.7.4/npp.6.7.4.Installer.exe
 CDPath = none
 
 [Section.0407]
@@ -19,7 +20,8 @@ Description = Un editor de text.
 
 [Section.040c]
 Description = Un éditeur de texte.
-Size = 7,2 Mo
+Size = 7,6 Mo
+URLSite = http://notepad-plus-plus.org/fr/
 
 [Section.0410]
 Description = Un editor di testo.
@@ -31,14 +33,18 @@ Description = Een teksteditor.
 Description = Edytor tekstu.
 
 [Section.0418]
-Description = A text editor.
-Size = 7,2 Mo
+Description = Un editor de text.
+Size = 7,6 Mo
 
 [Section.0419]
 Description = Текстовый редактор.
 
 [Section.041b]
 Description = Textový editor.
+
+[Section.041f]
+Description = Bir metin düzenleyicisi.
+Size = 7,6 MB
 
 [Section.0422]
 Description = Текстовый редактор.

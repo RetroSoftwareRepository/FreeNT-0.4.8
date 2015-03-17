@@ -44,10 +44,8 @@ NTAPI
 MiInitSystemMemoryAreas()
 {
     PVOID BaseAddress;
-    PHYSICAL_ADDRESS BoundaryAddressMultiple;
     PMEMORY_AREA MArea;
     NTSTATUS Status;
-    BoundaryAddressMultiple.QuadPart = 0;
 
     //
     // Create the memory area to define the loader mappings
@@ -61,7 +59,7 @@ MiInitSystemMemoryAreas()
                                 &MArea,
                                 TRUE,
                                 0,
-                                BoundaryAddressMultiple);
+                                PAGE_SIZE);
     ASSERT(Status == STATUS_SUCCESS);
 
     //
@@ -76,7 +74,7 @@ MiInitSystemMemoryAreas()
                                 &MArea,
                                 TRUE,
                                 0,
-                                BoundaryAddressMultiple);
+                                PAGE_SIZE);
     ASSERT(Status == STATUS_SUCCESS);
 
     //
@@ -91,7 +89,7 @@ MiInitSystemMemoryAreas()
                                 &MArea,
                                 TRUE,
                                 0,
-                                BoundaryAddressMultiple);
+                                PAGE_SIZE);
     ASSERT(Status == STATUS_SUCCESS);
 
     //
@@ -106,7 +104,7 @@ MiInitSystemMemoryAreas()
                                 &MArea,
                                 TRUE,
                                 0,
-                                BoundaryAddressMultiple);
+                                PAGE_SIZE);
     ASSERT(Status == STATUS_SUCCESS);
 
     //
@@ -121,7 +119,7 @@ MiInitSystemMemoryAreas()
                                 &MArea,
                                 TRUE,
                                 0,
-                                BoundaryAddressMultiple);
+                                PAGE_SIZE);
     ASSERT(Status == STATUS_SUCCESS);
 
     //
@@ -136,7 +134,7 @@ MiInitSystemMemoryAreas()
                                 &MArea,
                                 TRUE,
                                 0,
-                                BoundaryAddressMultiple);
+                                PAGE_SIZE);
     ASSERT(Status == STATUS_SUCCESS);
 
     //
@@ -151,7 +149,7 @@ MiInitSystemMemoryAreas()
                                 &MArea,
                                 TRUE,
                                 0,
-                                BoundaryAddressMultiple);
+                                PAGE_SIZE);
     ASSERT(Status == STATUS_SUCCESS);
 
     //
@@ -167,7 +165,7 @@ MiInitSystemMemoryAreas()
                                 &MArea,
                                 TRUE,
                                 0,
-                                BoundaryAddressMultiple);
+                                PAGE_SIZE);
     ASSERT(Status == STATUS_SUCCESS);
 
     //
@@ -182,7 +180,7 @@ MiInitSystemMemoryAreas()
                                 &MArea,
                                 TRUE,
                                 0,
-                                BoundaryAddressMultiple);
+                                PAGE_SIZE);
     ASSERT(Status == STATUS_SUCCESS);
 #ifndef _M_AMD64
     //
@@ -197,7 +195,7 @@ MiInitSystemMemoryAreas()
                                 &MArea,
                                 TRUE,
                                 0,
-                                BoundaryAddressMultiple);
+                                PAGE_SIZE);
     ASSERT(Status == STATUS_SUCCESS);
 #endif
     //
@@ -212,7 +210,7 @@ MiInitSystemMemoryAreas()
                                 &MArea,
                                 TRUE,
                                 0,
-                                BoundaryAddressMultiple);
+                                PAGE_SIZE);
     ASSERT(Status == STATUS_SUCCESS);
 
     //
@@ -227,7 +225,7 @@ MiInitSystemMemoryAreas()
                                 &MArea,
                                 TRUE,
                                 0,
-                                BoundaryAddressMultiple);
+                                PAGE_SIZE);
     ASSERT(Status == STATUS_SUCCESS);
 
 #if defined(_X86_)
@@ -243,7 +241,7 @@ MiInitSystemMemoryAreas()
                                 &MArea,
                                 TRUE,
                                 0,
-                                BoundaryAddressMultiple);
+                                PAGE_SIZE);
     ASSERT(Status == STATUS_SUCCESS);
 #endif
 }
@@ -301,36 +299,38 @@ VOID
 NTAPI
 MmMpwThreadMain(PVOID Parameter)
 {
-   NTSTATUS Status;
-   ULONG PagesWritten;
-   LARGE_INTEGER Timeout;
+    NTSTATUS Status;
+#ifndef NEWCC
+    ULONG PagesWritten;
+#endif
+    LARGE_INTEGER Timeout;
 
-   UNREFERENCED_PARAMETER(Parameter);
+    UNREFERENCED_PARAMETER(Parameter);
 
-   Timeout.QuadPart = -50000000;
+    Timeout.QuadPart = -50000000;
 
-   for(;;)
-   {
-      Status = KeWaitForSingleObject(&MpwThreadEvent,
-                                     0,
-                                     KernelMode,
-                                     FALSE,
-                                     &Timeout);
-      if (!NT_SUCCESS(Status))
-      {
-         DbgPrint("MpwThread: Wait failed\n");
-         KeBugCheck(MEMORY_MANAGEMENT);
-         return;
-      }
-
-      PagesWritten = 0;
+    for(;;)
+    {
+        Status = KeWaitForSingleObject(&MpwThreadEvent,
+                                       0,
+                                       KernelMode,
+                                       FALSE,
+                                       &Timeout);
+        if (!NT_SUCCESS(Status))
+        {
+            DbgPrint("MpwThread: Wait failed\n");
+            KeBugCheck(MEMORY_MANAGEMENT);
+            return;
+        }
 
 #ifndef NEWCC
-      // XXX arty -- we flush when evicting pages or destorying cache
-      // sections.
-      CcRosFlushDirtyPages(128, &PagesWritten, FALSE);
+        PagesWritten = 0;
+
+        // XXX arty -- we flush when evicting pages or destorying cache
+        // sections.
+        CcRosFlushDirtyPages(128, &PagesWritten, FALSE);
 #endif
-   }
+    }
 }
 
 NTSTATUS
@@ -338,31 +338,31 @@ NTAPI
 INIT_FUNCTION
 MmInitMpwThread(VOID)
 {
-   KPRIORITY Priority;
-   NTSTATUS Status;
-   CLIENT_ID MpwThreadId;
+    KPRIORITY Priority;
+    NTSTATUS Status;
+    CLIENT_ID MpwThreadId;
 
-   KeInitializeEvent(&MpwThreadEvent, SynchronizationEvent, FALSE);
+    KeInitializeEvent(&MpwThreadEvent, SynchronizationEvent, FALSE);
 
-   Status = PsCreateSystemThread(&MpwThreadHandle,
-                                 THREAD_ALL_ACCESS,
-                                 NULL,
-                                 NULL,
-                                 &MpwThreadId,
-                                 MmMpwThreadMain,
-                                 NULL);
-   if (!NT_SUCCESS(Status))
-   {
-      return(Status);
-   }
+    Status = PsCreateSystemThread(&MpwThreadHandle,
+                                  THREAD_ALL_ACCESS,
+                                  NULL,
+                                  NULL,
+                                  &MpwThreadId,
+                                  MmMpwThreadMain,
+                                  NULL);
+    if (!NT_SUCCESS(Status))
+    {
+        return(Status);
+    }
 
-   Priority = 27;
-   NtSetInformationThread(MpwThreadHandle,
-                          ThreadPriority,
-                          &Priority,
-                          sizeof(Priority));
+    Priority = 27;
+    NtSetInformationThread(MpwThreadHandle,
+                           ThreadPriority,
+                           &Priority,
+                           sizeof(Priority));
 
-   return(STATUS_SUCCESS);
+    return(STATUS_SUCCESS);
 }
 
 NTSTATUS
@@ -432,8 +432,8 @@ MmInitSystem(IN ULONG Phase,
     // by the fault handler.
     //
     MmSharedUserDataPte = ExAllocatePoolWithTag(PagedPool,
-                                                sizeof(MMPTE),
-                                                '  mM');
+                          sizeof(MMPTE),
+                          '  mM');
     if (!MmSharedUserDataPte) return FALSE;
 
     //
@@ -449,6 +449,9 @@ MmInitSystem(IN ULONG Phase,
                                 MM_READONLY,
                                 PageFrameNumber);
     *MmSharedUserDataPte = TempPte;
+
+    /* Initialize session working set support */
+    MiInitializeSessionWsSupport();
 
     /* Setup session IDs */
     MiInitializeSessionIds();

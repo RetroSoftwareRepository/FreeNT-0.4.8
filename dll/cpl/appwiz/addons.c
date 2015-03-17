@@ -16,8 +16,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <config.h>
-#include <wine/port.h>
+#include "appwiz.h"
 
 #include <stdio.h>
 
@@ -25,25 +24,13 @@
 # include <unistd.h>
 #endif
 
-#define COBJMACROS
-#define NONAMELESSUNION
-#define NONAMELESSSTRUCT
-
-#include <windef.h>
-#include <winbase.h>
 #include <msi.h>
 
-#include "appwiz.h"
-
-#include <wine/debug.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(appwiz);
-
-#define GECKO_VERSION "2.21"
+#define GECKO_VERSION "2.24"
 
 #ifdef __i386__
 #define ARCH_STRING "x86"
-#define GECKO_SHA "a514fc4d53783a586c7880a676c415695fe934a3"
+#define GECKO_SHA "f6984567b24fef7b0be79837e04d3a913af1a88c"
 #else
 #define ARCH_STRING ""
 #define GECKO_SHA "???"
@@ -73,7 +60,7 @@ static const addon_info_t *addon;
 
 static HWND install_dialog = NULL;
 
-static WCHAR GeckoUrl[] = L"http://dl.dropboxusercontent.com/u/743491/ReactOS/wine_gecko-2.21-x86.msi";
+static WCHAR GeckoUrl[] = L"http://svn.reactos.org/amine/wine_gecko-2.24-x86.msi";
 
 /* SHA definitions are copied from advapi32. They aren't available in headers. */
 
@@ -225,6 +212,18 @@ static enum install_res install_from_registered_dir(void)
     if(res != ERROR_SUCCESS || (type != REG_SZ && type != REG_EXPAND_SZ)) {
         heap_free(package_dir);
         return INSTALL_FAILED;
+    }
+
+    if (type == REG_EXPAND_SZ)
+    {
+        size = ExpandEnvironmentStringsA(package_dir, NULL, 0);
+        if (size)
+        {
+            char* buf = heap_alloc(size + sizeof(addon->file_name));
+            ExpandEnvironmentStringsA(package_dir, buf, size);
+            heap_free(package_dir);
+            package_dir = buf;
+        }
     }
 
     TRACE("Trying %s/%s\n", debugstr_a(package_dir), debugstr_a(addon->file_name));
@@ -398,7 +397,7 @@ static INT_PTR CALLBACK installer_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
     return FALSE;
 }
 
-BOOL install_addon(addon_t addon_type)
+BOOL install_addon(addon_t addon_type, HWND hwnd_parent)
 {
 
     if(!*ARCH_STRING)
@@ -412,7 +411,7 @@ BOOL install_addon(addon_t addon_type)
      * - download the package
      */
     if (install_from_registered_dir() == INSTALL_NEXT)
-        DialogBoxW(hApplet, addon->dialog_template, 0, installer_proc);
+        DialogBoxW(hApplet, addon->dialog_template, hwnd_parent, installer_proc);
 
     return TRUE;
 }

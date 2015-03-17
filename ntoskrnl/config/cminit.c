@@ -197,10 +197,11 @@ CmpInitializeHive(OUT PCMHIVE *RegistryHive,
                           CmpFileRead,
                           CmpFileFlush,
                           Cluster,
-                          (PUNICODE_STRING)FileName);
+                          FileName);
     if (!NT_SUCCESS(Status))
     {
         /* Cleanup allocations and fail */
+        ExDeleteResourceLite(Hive->FlusherLock);
         ExFreePoolWithTag(Hive->FlusherLock, TAG_CM);
         ExFreePoolWithTag(Hive->ViewLock, TAG_CM);
         ExFreePoolWithTag(Hive, TAG_CM);
@@ -214,9 +215,11 @@ CmpInitializeHive(OUT PCMHIVE *RegistryHive,
         (OperationType == HINIT_MAPFILE))
     {
         /* Verify integrity */
-        if (CmCheckRegistry((PCMHIVE)Hive, TRUE))
+        ULONG CheckStatus = CmCheckRegistry(Hive, CheckFlags);
+        if (CheckStatus != 0)
         {
             /* Cleanup allocations and fail */
+            ExDeleteResourceLite(Hive->FlusherLock);
             ExFreePoolWithTag(Hive->FlusherLock, TAG_CM);
             ExFreePoolWithTag(Hive->ViewLock, TAG_CM);
             ExFreePoolWithTag(Hive, TAG_CM);
@@ -235,6 +238,28 @@ CmpInitializeHive(OUT PCMHIVE *RegistryHive,
 
     /* Return the hive and success */
     *RegistryHive = (PCMHIVE)Hive;
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
+CmpDestroyHive(IN PCMHIVE CmHive)
+{
+    /* Remove the hive from the list */
+    ExAcquirePushLockExclusive(&CmpHiveListHeadLock);
+    RemoveEntryList(&CmHive->HiveList);
+    ExReleasePushLock(&CmpHiveListHeadLock);
+
+    /* Delete the flusher lock */
+    ExDeleteResourceLite(CmHive->FlusherLock);
+    ExFreePoolWithTag(CmHive->FlusherLock, TAG_CM);
+
+    /* Delete the view lock */
+    ExFreePoolWithTag(CmHive->ViewLock, TAG_CM);
+
+    /* Free the hive */
+    HvFree(&CmHive->Hive);
+
     return STATUS_SUCCESS;
 }
 

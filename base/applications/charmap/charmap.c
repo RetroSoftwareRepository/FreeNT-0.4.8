@@ -7,7 +7,10 @@
  *
  */
 
-#include <precomp.h>
+#include "precomp.h"
+
+#include <commctrl.h>
+#include <richedit.h>
 
 #define ID_ABOUT    0x1
 
@@ -31,9 +34,12 @@ EnumFontNames(ENUMLOGFONTEXW *lpelfe,
     HWND hwndCombo = (HWND)lParam;
     LPWSTR pszName  = lpelfe->elfLogFont.lfFaceName;
 
+    /* Skip rotated font */
+    if(pszName[0] == L'@') return 1;
+
     /* make sure font doesn't already exist in our list */
     if(SendMessageW(hwndCombo,
-                    CB_FINDSTRING,
+                    CB_FINDSTRINGEXACT,
                     0,
                     (LPARAM)pszName) == CB_ERR)
     {
@@ -318,7 +324,7 @@ CharMapDlgProc(HWND hDlg,
 
             ChangeMapFont(hDlg);
 
-            // Configure Richedi control for sending notification changes.
+            // Configure Richedit control for sending notification changes.
             evMask = SendDlgItemMessage(hDlg, IDC_TEXTBOX, EM_GETEVENTMASK, 0, 0);
             evMask |= ENM_CHANGE;
             SendDlgItemMessage(hDlg, IDC_TEXTBOX, EM_SETEVENTMASK, 0, (LPARAM)evMask);

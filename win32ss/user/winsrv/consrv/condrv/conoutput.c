@@ -1,7 +1,7 @@
 /*
  * COPYRIGHT:       See COPYING in the top level directory
  * PROJECT:         ReactOS Console Driver DLL
- * FILE:            win32ss/user/winsrv/consrv/condrv/conoutput.c
+ * FILE:            consrv/condrv/conoutput.c
  * PURPOSE:         General Console Output Functions
  * PROGRAMMERS:     Jeffrey Morlan
  *                  Hermes Belusca-Maito (hermes.belusca@sfr.fr)
@@ -9,26 +9,22 @@
 
 /* INCLUDES *******************************************************************/
 
-#include "consrv.h"
-#include "console.h"
-#include "include/conio.h"
-#include "include/term.h"
-#include "conoutput.h"
-#include "handle.h"
+#include <consrv.h>
 
 #define NDEBUG
 #include <debug.h>
-
 
 /* PRIVATE FUNCTIONS **********************************************************/
 
 NTSTATUS
 TEXTMODE_BUFFER_Initialize(OUT PCONSOLE_SCREEN_BUFFER* Buffer,
-                           IN OUT PCONSOLE Console,
+                           IN PCONSOLE Console,
+                           IN HANDLE ProcessHandle,
                            IN PTEXTMODE_BUFFER_INFO TextModeInfo);
 NTSTATUS
 GRAPHICS_BUFFER_Initialize(OUT PCONSOLE_SCREEN_BUFFER* Buffer,
-                           IN OUT PCONSOLE Console,
+                           IN PCONSOLE Console,
+                           IN HANDLE ProcessHandle,
                            IN PGRAPHICS_BUFFER_INFO GraphicsInfo);
 
 VOID
@@ -39,7 +35,8 @@ GRAPHICS_BUFFER_Destroy(IN OUT PCONSOLE_SCREEN_BUFFER Buffer);
 
 NTSTATUS
 CONSOLE_SCREEN_BUFFER_Initialize(OUT PCONSOLE_SCREEN_BUFFER* Buffer,
-                                 IN OUT PCONSOLE Console,
+                                 IN PCONSOLE Console,
+                                 IN PCONSOLE_SCREEN_BUFFER_VTBL Vtbl,
                                  IN SIZE_T Size)
 {
     if (Buffer == NULL || Console == NULL)
@@ -50,7 +47,7 @@ CONSOLE_SCREEN_BUFFER_Initialize(OUT PCONSOLE_SCREEN_BUFFER* Buffer,
 
     /* Initialize the header with the default type */
     ConSrvInitObject(&(*Buffer)->Header, SCREEN_BUFFER, Console);
-    (*Buffer)->Vtbl = NULL;
+    (*Buffer)->Vtbl = Vtbl;
     return STATUS_SUCCESS;
 }
 
@@ -67,8 +64,6 @@ CONSOLE_SCREEN_BUFFER_Destroy(IN OUT PCONSOLE_SCREEN_BUFFER Buffer)
     }
     else if (Buffer->Header.Type == SCREEN_BUFFER)
     {
-        // TODO: Free Buffer->Data
-
         /* Free the palette handle */
         if (Buffer->PaletteHandle != NULL) DeleteObject(Buffer->PaletteHandle);
 
@@ -80,9 +75,10 @@ CONSOLE_SCREEN_BUFFER_Destroy(IN OUT PCONSOLE_SCREEN_BUFFER Buffer)
 }
 
 // ConDrvCreateConsoleScreenBuffer
-NTSTATUS FASTCALL
+NTSTATUS
 ConDrvCreateScreenBuffer(OUT PCONSOLE_SCREEN_BUFFER* Buffer,
-                         IN OUT PCONSOLE Console,
+                         IN PCONSOLE Console,
+                         IN HANDLE ProcessHandle OPTIONAL,
                          IN ULONG BufferType,
                          IN PVOID ScreenBufferInfo)
 {
@@ -94,14 +90,18 @@ ConDrvCreateScreenBuffer(OUT PCONSOLE_SCREEN_BUFFER* Buffer,
         return STATUS_INVALID_PARAMETER;
     }
 
+    /* Use the current process if ProcessHandle is NULL */
+    if (ProcessHandle == NULL)
+        ProcessHandle = NtCurrentProcess();
+
     if (BufferType == CONSOLE_TEXTMODE_BUFFER)
     {
-        Status = TEXTMODE_BUFFER_Initialize(Buffer, Console,
+        Status = TEXTMODE_BUFFER_Initialize(Buffer, Console, ProcessHandle,
                                             (PTEXTMODE_BUFFER_INFO)ScreenBufferInfo);
     }
     else if (BufferType == CONSOLE_GRAPHICS_BUFFER)
     {
-        Status = GRAPHICS_BUFFER_Initialize(Buffer, Console,
+        Status = GRAPHICS_BUFFER_Initialize(Buffer, Console, ProcessHandle,
                                             (PGRAPHICS_BUFFER_INFO)ScreenBufferInfo);
     }
     else
@@ -120,7 +120,7 @@ static VOID
 ConioSetActiveScreenBuffer(PCONSOLE_SCREEN_BUFFER Buffer);
 
 VOID NTAPI
-ConioDeleteScreenBuffer(PCONSOLE_SCREEN_BUFFER Buffer)
+ConDrvDeleteScreenBuffer(PCONSOLE_SCREEN_BUFFER Buffer)
 {
     PCONSOLE Console = Buffer->Header.Console;
     PCONSOLE_SCREEN_BUFFER NewBuffer;
@@ -157,19 +157,6 @@ ConioDeleteScreenBuffer(PCONSOLE_SCREEN_BUFFER Buffer)
     CONSOLE_SCREEN_BUFFER_Destroy(Buffer);
 }
 
-VOID FASTCALL
-ConioDrawConsole(PCONSOLE Console)
-{
-    SMALL_RECT Region;
-    PCONSOLE_SCREEN_BUFFER ActiveBuffer = Console->ActiveBuffer;
-
-    if (ActiveBuffer)
-    {
-        ConioInitRect(&Region, 0, 0, ActiveBuffer->ViewSize.Y - 1, ActiveBuffer->ViewSize.X - 1);
-        TermDrawRegion(Console, &Region);
-    }
-}
-
 static VOID
 ConioSetActiveScreenBuffer(PCONSOLE_SCREEN_BUFFER Buffer)
 {
@@ -192,9 +179,9 @@ ConDrvSetConsoleActiveScreenBuffer(IN PCONSOLE Console,
     if (Buffer == Console->ActiveBuffer) return STATUS_SUCCESS;
 
     /* If old buffer has no handles, it's now unreferenced */
-    if (Console->ActiveBuffer->Header.HandleCount == 0)
+    if (Console->ActiveBuffer->Header.ReferenceCount == 0)
     {
-        ConioDeleteScreenBuffer(Console->ActiveBuffer);
+        ConDrvDeleteScreenBuffer(Console->ActiveBuffer);
     }
 
     /* Tie console to new buffer and signal the change to the frontend */

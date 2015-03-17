@@ -13,7 +13,7 @@
 #include <debug.h>
 
 #define MODULE_INVOLVED_IN_ARM3
-#include "../ARM3/miarm.h"
+#include <mm/ARM3/miarm.h>
 
 /* GLOBALS ********************************************************************/
 
@@ -198,7 +198,7 @@ MiMakeProtectionMask(IN ULONG Protect)
         }
 
         /* This actually turns on guard page in this scenario! */
-        ProtectMask |= MM_DECOMMIT;
+        ProtectMask |= MM_GUARDPAGE;
     }
 
     /* Check for nocache option */
@@ -608,6 +608,8 @@ MiSegmentDelete(IN PSEGMENT Segment)
     SEGMENT_FLAGS SegmentFlags;
     PSUBSECTION Subsection;
     PMMPTE PointerPte, LastPte, PteForProto;
+    PMMPFN Pfn1;
+    PFN_NUMBER PageFrameIndex;
     MMPTE TempPte;
     KIRQL OldIrql;
 
@@ -621,7 +623,7 @@ MiSegmentDelete(IN PSEGMENT Segment)
 
     /* These things are not supported yet */
     ASSERT(ControlArea->DereferenceList.Flink == NULL);
-    ASSERT(!(ControlArea->u.Flags.Image) & !(ControlArea->u.Flags.File));
+    ASSERT(!(ControlArea->u.Flags.Image) && !(ControlArea->u.Flags.File));
     ASSERT(ControlArea->u.Flags.GlobalOnlyPerSession == 0);
     ASSERT(ControlArea->u.Flags.Rom == 0);
 
@@ -661,7 +663,52 @@ MiSegmentDelete(IN PSEGMENT Segment)
         TempPte = *PointerPte;
         ASSERT(SegmentFlags.LargePages == 0);
         ASSERT(TempPte.u.Hard.Valid == 0);
-        ASSERT(TempPte.u.Soft.Prototype == 1);
+
+        /* See if we should clean things up */
+        if (!(ControlArea->u.Flags.Image) && !(ControlArea->u.Flags.File))
+        {
+            /*
+             * This is a section backed by the pagefile. Now that it doesn't exist anymore,
+             * we can give everything back to the system.
+             */
+            ASSERT(TempPte.u.Soft.Prototype == 0);
+
+            if (TempPte.u.Soft.Transition == 1)
+            {
+                /* We can give the page back for other use */
+                DPRINT("Releasing page for transition PTE %p\n", PointerPte);
+                PageFrameIndex = PFN_FROM_PTE(&TempPte);
+                Pfn1 = MI_PFN_ELEMENT(PageFrameIndex);
+
+                /* As this is a paged-backed section, nobody should reference it anymore (no cache or whatever) */
+                ASSERT(Pfn1->u3.ReferenceCount == 0);
+
+                /* And it should be in standby or modified list */
+                ASSERT((Pfn1->u3.e1.PageLocation == ModifiedPageList) || (Pfn1->u3.e1.PageLocation == StandbyPageList));
+
+                /* Unlink it and put it back in free list */
+                MiUnlinkPageFromList(Pfn1);
+
+                /* Temporarily mark this as active and make it free again */
+                Pfn1->u3.e1.PageLocation = ActiveAndValid;
+                MI_SET_PFN_DELETED(Pfn1);
+
+                MiInsertPageInFreeList(PageFrameIndex);
+            }
+            else if (TempPte.u.Soft.PageFileHigh != 0)
+            {
+                /* Should not happen for now */
+                ASSERT(FALSE);
+            }
+        }
+        else
+        {
+            /* unsupported for now */
+            ASSERT(FALSE);
+
+            /* File-backed section must have prototype PTEs */
+            ASSERT(TempPte.u.Soft.Prototype == 1);
+        }
 
         /* Zero the PTE and keep going */
         PointerPte->u.Long = 0;
@@ -1080,6 +1127,116 @@ MiMapViewInSystemSpace(IN PVOID Section,
     return STATUS_SUCCESS;
 }
 
+VOID
+NTAPI
+MiSetControlAreaSymbolsLoaded(IN PCONTROL_AREA ControlArea)
+{
+    KIRQL OldIrql;
+
+    ASSERT(KeGetCurrentIrql() <= APC_LEVEL);
+
+    OldIrql = KeAcquireQueuedSpinLock(LockQueuePfnLock);
+    ControlArea->u.Flags.DebugSymbolsLoaded |= 1;
+
+    ASSERT(OldIrql <= APC_LEVEL);
+    KeReleaseQueuedSpinLock(LockQueuePfnLock, OldIrql);
+    ASSERT(KeGetCurrentIrql() <= APC_LEVEL);
+}
+
+VOID
+NTAPI
+MiLoadUserSymbols(IN PCONTROL_AREA ControlArea,
+                  IN PVOID BaseAddress,
+                  IN PEPROCESS Process)
+{
+    NTSTATUS Status;
+    ANSI_STRING FileNameA;
+    PLIST_ENTRY NextEntry;
+    PUNICODE_STRING FileName;
+    PIMAGE_NT_HEADERS NtHeaders;
+    PLDR_DATA_TABLE_ENTRY LdrEntry;
+
+    FileName = &ControlArea->FilePointer->FileName;
+    if (FileName->Length == 0)
+    {
+        return;
+    }
+
+    /* Acquire module list lock */
+    KeEnterCriticalRegion();
+    ExAcquireResourceExclusiveLite(&PsLoadedModuleResource, TRUE);
+
+    /* Browse list to try to find current module */
+    for (NextEntry = MmLoadedUserImageList.Flink;
+         NextEntry != &MmLoadedUserImageList;
+         NextEntry = NextEntry->Flink)
+    {
+        /* Get the entry */
+        LdrEntry = CONTAINING_RECORD(NextEntry,
+                                     LDR_DATA_TABLE_ENTRY,
+                                     InLoadOrderLinks);
+
+        /* If already in the list, increase load count */
+        if (LdrEntry->DllBase == BaseAddress)
+        {
+            ++LdrEntry->LoadCount;
+            break;
+        }
+    }
+
+    /* Not in the list, we'll add it */
+    if (NextEntry == &MmLoadedUserImageList)
+    {
+        /* Allocate our element, taking to the name string and its null char */
+        LdrEntry = ExAllocatePoolWithTag(NonPagedPool, FileName->Length + sizeof(UNICODE_NULL) + sizeof(*LdrEntry), 'bDmM');
+        if (LdrEntry)
+        {
+            memset(LdrEntry, 0, FileName->Length + sizeof(UNICODE_NULL) + sizeof(*LdrEntry));
+
+            _SEH2_TRY
+            {
+                /* Get image checksum and size */
+                NtHeaders = RtlImageNtHeader(BaseAddress);
+                if (NtHeaders)
+                {
+                    LdrEntry->SizeOfImage = NtHeaders->OptionalHeader.SizeOfImage;
+                    LdrEntry->CheckSum = NtHeaders->OptionalHeader.CheckSum;
+                }
+            }
+            _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+            {
+                ExFreePoolWithTag(LdrEntry, 'bDmM');
+                _SEH2_YIELD(return);
+            }
+            _SEH2_END;
+
+            /* Fill all the details */
+            LdrEntry->DllBase = BaseAddress;
+            LdrEntry->FullDllName.Buffer = (PVOID)((ULONG_PTR)LdrEntry + sizeof(*LdrEntry));
+            LdrEntry->FullDllName.Length = FileName->Length;
+            LdrEntry->FullDllName.MaximumLength = FileName->Length + sizeof(UNICODE_NULL);
+            memcpy(LdrEntry->FullDllName.Buffer, FileName->Buffer, FileName->Length);
+            LdrEntry->FullDllName.Buffer[LdrEntry->FullDllName.Length / sizeof(WCHAR)] = UNICODE_NULL;
+            LdrEntry->LoadCount = 1;
+
+            /* Insert! */
+            InsertHeadList(&MmLoadedUserImageList, &LdrEntry->InLoadOrderLinks);
+        }
+    }
+
+    /* Release locks */
+    ExReleaseResourceLite(&PsLoadedModuleResource);
+    KeLeaveCriticalRegion();
+
+    /* Load symbols */
+    Status = RtlUnicodeStringToAnsiString(&FileNameA, FileName, TRUE);
+    if (NT_SUCCESS(Status))
+    {
+        DbgLoadImageSymbols(&FileNameA, BaseAddress, (ULONG_PTR)Process->UniqueProcessId);
+        RtlFreeAnsiString(&FileNameA);
+    }
+}
+
 NTSTATUS
 NTAPI
 MiMapViewOfDataSection(IN PCONTROL_AREA ControlArea,
@@ -1095,8 +1252,8 @@ MiMapViewOfDataSection(IN PCONTROL_AREA ControlArea,
                        IN ULONG AllocationType)
 {
     PMMVAD_LONG Vad;
-    PETHREAD Thread = PsGetCurrentThread();
-    ULONG_PTR StartAddress, EndingAddress;
+    ULONG_PTR StartAddress;
+    ULONG_PTR ViewSizeInPages;
     PSUBSECTION Subsection;
     PSEGMENT Segment;
     PFN_NUMBER PteOffset;
@@ -1104,6 +1261,7 @@ MiMapViewOfDataSection(IN PCONTROL_AREA ControlArea,
     ULONG QuotaCharge = 0, QuotaExcess = 0;
     PMMPTE PointerPte, LastPte;
     MMPTE TempPte;
+    DPRINT("Mapping ARM3 data section\n");
 
     /* Get the segment for this section */
     Segment = ControlArea->Segment;
@@ -1140,9 +1298,12 @@ MiMapViewOfDataSection(IN PCONTROL_AREA ControlArea,
     /* We must be dealing with a 64KB aligned offset. This is a Windows ASSERT */
     ASSERT((SectionOffset->LowPart & ((ULONG)_64K - 1)) == 0);
 
-    /* It's illegal to try to map more than 2GB */
-    /* FIXME: Should dereference the control area */
-    if (*ViewSize >= 0x80000000) return STATUS_INVALID_VIEW_SIZE;
+    /* It's illegal to try to map more than overflows a LONG_PTR */
+    if (*ViewSize >= MAXLONG_PTR)
+    {
+        MiDereferenceControlArea(ControlArea);
+        return STATUS_INVALID_VIEW_SIZE;
+    }
 
     /* Windows ASSERTs for this flag */
     ASSERT(ControlArea->u.Flags.GlobalOnlyPerSession == 0);
@@ -1173,75 +1334,15 @@ MiMapViewOfDataSection(IN PCONTROL_AREA ControlArea,
     /* Compute how much commit space the segment will take */
     if ((CommitSize) && (Segment->NumberOfCommittedPages < Segment->TotalNumberOfPtes))
     {
-        PointerPte = &Subsection->SubsectionBase[PteOffset];
-        LastPte = PointerPte + BYTES_TO_PAGES(CommitSize);
-        QuotaCharge = (ULONG)(LastPte - PointerPte);
+        /* Charge for the maximum pages */
+        QuotaCharge = BYTES_TO_PAGES(CommitSize);
     }
 
     /* ARM3 does not currently support large pages */
     ASSERT(Segment->SegmentFlags.LargePages == 0);
 
-    /* Did the caller specify an address? */
-    if (!(*BaseAddress) && !(Section->Address.StartingVpn))
-    {
-        /* ARM3 does not support these flags yet */
-        ASSERT(Process->VmTopDown == 0);
-        ASSERT(ZeroBits == 0);
-
-        /* Which way should we search? */
-        if (AllocationType & MEM_TOP_DOWN)
-        {
-            /* No, find an address top-down */
-            Status = MiFindEmptyAddressRangeDownTree(*ViewSize,
-                                                     (ULONG_PTR)MM_HIGHEST_VAD_ADDRESS,
-                                                     _64K,
-                                                     &Process->VadRoot,
-                                                     &StartAddress,
-                                                     (PMMADDRESS_NODE*)&Process->VadFreeHint);
-            ASSERT(NT_SUCCESS(Status));
-        }
-        else
-        {
-            /* No, find an address bottom-up */
-            Status = MiFindEmptyAddressRangeInTree(*ViewSize,
-                                                   _64K,
-                                                   &Process->VadRoot,
-                                                   (PMMADDRESS_NODE*)&Process->VadFreeHint,
-                                                   &StartAddress);
-            ASSERT(NT_SUCCESS(Status));
-        }
-
-        /* Get the ending address, which is the last piece we need for the VAD */
-        EndingAddress = (StartAddress + *ViewSize - 1) | (PAGE_SIZE - 1);
-    }
-    else
-    {
-        /* Is it SEC_BASED, or did the caller manually specify an address? */
-        if (!(*BaseAddress))
-        {
-            /* It is a SEC_BASED mapping, use the address that was generated */
-            StartAddress = Section->Address.StartingVpn + SectionOffset->LowPart;
-            DPRINT("BASED: 0x%p\n", StartAddress);
-        }
-        else
-        {
-            /* Just align what the caller gave us */
-            StartAddress = ROUND_UP((ULONG_PTR)*BaseAddress, _64K);
-        }
-
-        /* Get the ending address, which is the last piece we need for the VAD */
-        EndingAddress = (StartAddress + *ViewSize - 1) | (PAGE_SIZE - 1);
-
-        /* Make sure it doesn't conflict with an existing allocation */
-        if (MiCheckForConflictingNode(StartAddress >> PAGE_SHIFT,
-                                      EndingAddress >> PAGE_SHIFT,
-                                      &Process->VadRoot))
-        {
-            DPRINT1("Conflict with SEC_BASED or manually based section!\n");
-            MiDereferenceControlArea(ControlArea);
-            return STATUS_CONFLICTING_ADDRESSES;
-        }
-    }
+    /* Calculate how many pages the region spans */
+    ViewSizeInPages = BYTES_TO_PAGES(*ViewSize);
 
     /* A VAD can now be allocated. Do so and zero it out */
     /* FIXME: we are allocating a LONG VAD for ReactOS compatibility only */
@@ -1252,13 +1353,13 @@ MiMapViewOfDataSection(IN PCONTROL_AREA ControlArea,
         MiDereferenceControlArea(ControlArea);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
+
     RtlZeroMemory(Vad, sizeof(MMVAD_LONG));
     Vad->u4.Banked = (PVOID)0xDEADBABE;
 
     /* Write all the data required in the VAD for handling a fault */
-    Vad->StartingVpn = StartAddress >> PAGE_SHIFT;
-    Vad->EndingVpn = EndingAddress >> PAGE_SHIFT;
     Vad->ControlArea = ControlArea;
+    Vad->u.VadFlags.CommitCharge = 0;
     Vad->u.VadFlags.Protection = ProtectionMask;
     Vad->u2.VadFlags2.FileOffset = (ULONG)(SectionOffset->QuadPart >> 16);
     Vad->u2.VadFlags2.Inherit = (InheritDisposition == ViewShare);
@@ -1271,7 +1372,7 @@ MiMapViewOfDataSection(IN PCONTROL_AREA ControlArea,
 
     /* Finally, write down the first and last prototype PTE */
     Vad->FirstPrototypePte = &Subsection->SubsectionBase[PteOffset];
-    PteOffset += (Vad->EndingVpn - Vad->StartingVpn);
+    PteOffset += ViewSizeInPages - 1;
     ASSERT(PteOffset < Subsection->PtesInSubsection);
     Vad->LastContiguousPte = &Subsection->SubsectionBase[PteOffset];
 
@@ -1280,18 +1381,6 @@ MiMapViewOfDataSection(IN PCONTROL_AREA ControlArea,
 
     /* FIXME: Should setup VAD bitmap */
     Status = STATUS_SUCCESS;
-
-    /* Pretend as if we own the working set */
-    MiLockProcessWorkingSetUnsafe(Process, Thread);
-
-    /* Insert the VAD */
-    MiInsertVad((PMMVAD)Vad, Process);
-
-    /* Release the working set */
-    MiUnlockProcessWorkingSetUnsafe(Process, Thread);
-
-    /* Windows stores this for accounting purposes, do so as well */
-    if (!Segment->u2.FirstMappedVa) Segment->u2.FirstMappedVa = (PVOID)StartAddress;
 
     /* Check if anything was committed */
     if (QuotaCharge)
@@ -1302,7 +1391,7 @@ MiMapViewOfDataSection(IN PCONTROL_AREA ControlArea,
         TempPte = Segment->SegmentPteTemplate;
 
         /* Acquire the commit lock and loop all prototype PTEs to be committed */
-        KeAcquireGuardedMutexUnsafe(&MmSectionCommitMutex);
+        KeAcquireGuardedMutex(&MmSectionCommitMutex);
         while (PointerPte < LastPte)
         {
             /* Make sure the PTE is already invalid */
@@ -1328,11 +1417,42 @@ MiMapViewOfDataSection(IN PCONTROL_AREA ControlArea,
         ASSERT(Segment->NumberOfCommittedPages <= Segment->TotalNumberOfPtes);
 
         /* Now that we're done, release the lock */
-        KeReleaseGuardedMutexUnsafe(&MmSectionCommitMutex);
+        KeReleaseGuardedMutex(&MmSectionCommitMutex);
     }
 
+    /* Is it SEC_BASED, or did the caller manually specify an address? */
+    if (*BaseAddress != NULL)
+    {
+        /* Just align what the caller gave us */
+        StartAddress = ROUND_UP((ULONG_PTR)*BaseAddress, _64K);
+    }
+    else if (Section->Address.StartingVpn != 0)
+    {
+        /* It is a SEC_BASED mapping, use the address that was generated */
+        StartAddress = Section->Address.StartingVpn + SectionOffset->LowPart;
+    }
+    else
+    {
+        StartAddress = 0;
+    }
+
+    /* Insert the VAD */
+    Status = MiInsertVadEx((PMMVAD)Vad,
+                           &StartAddress,
+                           ViewSizeInPages * PAGE_SIZE,
+                           MAXULONG_PTR >> ZeroBits,
+                           MM_VIRTMEM_GRANULARITY,
+                           AllocationType);
+    if (!NT_SUCCESS(Status))
+    {
+        return Status;
+    }
+
+    /* Windows stores this for accounting purposes, do so as well */
+    if (!Segment->u2.FirstMappedVa) Segment->u2.FirstMappedVa = (PVOID)StartAddress;
+
     /* Finally, let the caller know where, and for what size, the view was mapped */
-    *ViewSize = (ULONG_PTR)EndingAddress - (ULONG_PTR)StartAddress + 1;
+    *ViewSize = ViewSizeInPages * PAGE_SIZE;
     *BaseAddress = (PVOID)StartAddress;
     DPRINT("Start and region: 0x%p, 0x%p\n", *BaseAddress, *ViewSize);
     return STATUS_SUCCESS;
@@ -1507,7 +1627,6 @@ MmGetImageInformation (OUT PSECTION_IMAGE_INFORMATION ImageInformation)
     ASSERT(MiIsRosSectionObject(SectionObject) == TRUE);
 
     /* Return the image information */
-    DPRINT1("HERE!\n");
     *ImageInformation = ((PROS_SECTION_OBJECT)SectionObject)->ImageSection->ImageInformation;
 }
 
@@ -1804,10 +1923,7 @@ MiFlushTbAndCapture(IN PMMVAD FoundVad,
     //
     // Write the new PTE, making sure we are only changing the bits
     //
-    ASSERT(PointerPte->u.Hard.Valid == 1);
-    ASSERT(TempPte.u.Hard.Valid == 1);
-    ASSERT(PointerPte->u.Hard.PageFrameNumber == TempPte.u.Hard.PageFrameNumber);
-    *PointerPte = TempPte;
+    MI_UPDATE_VALID_PTE(PointerPte, TempPte);
 
     //
     // Flush the TLB
@@ -2011,12 +2127,14 @@ MiRemoveMappedPtes(IN PVOID BaseAddress,
                    IN PCONTROL_AREA ControlArea,
                    IN PMMSUPPORT Ws)
 {
-    PMMPTE PointerPte;//, FirstPte;
+    PMMPTE PointerPte, ProtoPte;//, FirstPte;
     PMMPDE PointerPde, SystemMapPde;
     PMMPFN Pfn1, Pfn2;
     MMPTE PteContents;
     KIRQL OldIrql;
     DPRINT("Removing mapped view at: 0x%p\n", BaseAddress);
+
+    ASSERT(Ws == NULL);
 
     /* Get the PTE and loop each one */
     PointerPte = MiAddressToPte(BaseAddress);
@@ -2037,7 +2155,9 @@ MiRemoveMappedPtes(IN PVOID BaseAddress,
             OldIrql = KeAcquireQueuedSpinLock(LockQueuePfnLock);
             ASSERT(((Pfn1->u3.e1.PrototypePte) && (Pfn1->OriginalPte.u.Soft.Prototype)) == 0);
 
-            /* FIXME: Dirty bit management */
+            /* Mark the page as modified accordingly */
+            if (PteContents.u.Hard.Dirty)
+                Pfn1->u3.e1.Modified = 1;
 
             /* Was the PDE invalid */
             if (PointerPde->u.Long == 0)
@@ -2056,7 +2176,7 @@ MiRemoveMappedPtes(IN PVOID BaseAddress,
 
             /* Dereference the PDE and the PTE */
             Pfn2 = MiGetPfnEntry(PFN_FROM_PTE(PointerPde));
-            //MiDecrementShareCount(Pfn2, PFN_FROM_PTE(PointerPde));
+            MiDecrementShareCount(Pfn2, PFN_FROM_PTE(PointerPde));
             DBG_UNREFERENCED_LOCAL_VARIABLE(Pfn2);
             MiDecrementShareCount(Pfn1, PFN_FROM_PTE(&PteContents));
 
@@ -2068,8 +2188,15 @@ MiRemoveMappedPtes(IN PVOID BaseAddress,
             /* Windows ASSERT */
             ASSERT((PteContents.u.Long == 0) || (PteContents.u.Soft.Prototype == 1));
 
-            /* But not handled in ARM3 */
-            ASSERT(PteContents.u.Soft.Prototype == 0);
+            /* Check if this is a prototype pointer PTE */
+            if (PteContents.u.Soft.Prototype == 1)
+            {
+                /* Get the prototype PTE */
+                ProtoPte = MiProtoPteToPte(&PteContents);
+
+                /* We don't support anything else atm */
+                ASSERT(ProtoPte->u.Long == 0);
+            }
         }
 
         /* Make the PTE into a zero PTE */
@@ -2146,9 +2273,6 @@ MiUnmapViewInSystemSpace(IN PMMSESSION Session,
     ULONG Size;
     PCONTROL_AREA ControlArea;
     PAGED_CODE();
-
-    /* Only global mappings supported for now */
-    ASSERT(Session == &MmSession);
 
     /* Remove this mapping */
     KeAcquireGuardedMutex(Session->SystemSpaceViewLockPointer);
@@ -2531,8 +2655,14 @@ MmMapViewOfArm3Section(IN PVOID SectionObject,
     ASSERT(Section->u.Flags.Image == 0);
     ASSERT(Section->u.Flags.NoCache == 0);
     ASSERT(Section->u.Flags.WriteCombined == 0);
-    ASSERT((AllocationType & MEM_RESERVE) == 0);
     ASSERT(ControlArea->u.Flags.PhysicalMemory == 0);
+
+    /* FIXME */
+    if ((AllocationType & MEM_RESERVE) != 0)
+    {
+        DPRINT1("MmMapViewOfArm3Section called with MEM_RESERVE, this is not implemented yet!!!\n");
+        return STATUS_NOT_IMPLEMENTED;
+    }
 
     /* Check if the mapping protection is compatible with the create */
     if (!MiIsProtectionCompatible(Section->InitialPageProtection, Protect))
@@ -2608,33 +2738,20 @@ MmMapViewOfArm3Section(IN PVOID SectionObject,
         Attached = TRUE;
     }
 
-    /* Lock the address space and make sure the process is alive */
-    MmLockAddressSpace(&Process->Vm);
-    if (!Process->VmDeleted)
-    {
-        /* Do the actual mapping */
-        DPRINT("Mapping ARM3 data section\n");
-        Status = MiMapViewOfDataSection(ControlArea,
-                                        Process,
-                                        BaseAddress,
-                                        SectionOffset,
-                                        ViewSize,
-                                        Section,
-                                        InheritDisposition,
-                                        ProtectionMask,
-                                        CommitSize,
-                                        ZeroBits,
-                                        AllocationType);
-    }
-    else
-    {
-        /* The process is being terminated, fail */
-        DPRINT1("The process is dying\n");
-        Status = STATUS_PROCESS_IS_TERMINATING;
-    }
+    /* Do the actual mapping */
+    Status = MiMapViewOfDataSection(ControlArea,
+                                    Process,
+                                    BaseAddress,
+                                    SectionOffset,
+                                    ViewSize,
+                                    Section,
+                                    InheritDisposition,
+                                    ProtectionMask,
+                                    CommitSize,
+                                    ZeroBits,
+                                    AllocationType);
 
-    /* Unlock the address space and detatch if needed, then return status */
-    MmUnlockAddressSpace(&Process->Vm);
+    /* Detatch if needed, then return status */
     if (Attached) KeUnstackDetachProcess(&ApcState);
     return Status;
 }
@@ -2673,6 +2790,12 @@ MmMapViewInSessionSpace(IN PVOID Section,
 {
     PAGED_CODE();
 
+    // HACK
+    if (MiIsRosSectionObject(Section))
+    {
+        return MmMapViewInSystemSpace(Section, MappedBase, ViewSize);
+    }
+
     /* Process must be in a session */
     if (PsGetCurrentProcess()->ProcessInSession == FALSE)
     {
@@ -2696,6 +2819,12 @@ NTAPI
 MmUnmapViewInSessionSpace(IN PVOID MappedBase)
 {
     PAGED_CODE();
+
+    // HACK
+    if (!MI_IS_SESSION_ADDRESS(MappedBase))
+    {
+        return MmUnmapViewInSystemSpace(MappedBase);
+    }
 
     /* Process must be in a session */
     if (PsGetCurrentProcess()->ProcessInSession == FALSE)
@@ -2880,6 +3009,7 @@ MmCommitSessionMappedView(IN PVOID MappedBase,
     ASSERT(TempPte.u.Long != 0);
 
     /* Loop all prototype PTEs to be committed */
+    PointerPte = ProtoPte;
     while (PointerPte < LastProtoPte)
     {
         /* Make sure the PTE is already invalid */
@@ -2905,6 +3035,34 @@ MmCommitSessionMappedView(IN PVOID MappedBase,
     KeReleaseGuardedMutexUnsafe(&MmSectionCommitMutex);
     KeReleaseGuardedMutex(Session->SystemSpaceViewLockPointer);
     return STATUS_SUCCESS;
+}
+
+VOID
+NTAPI
+MiDeleteARM3Section(PVOID ObjectBody)
+{
+    PSECTION SectionObject;
+    PCONTROL_AREA ControlArea;
+    KIRQL OldIrql;
+
+    SectionObject = (PSECTION)ObjectBody;
+
+    /* Lock the PFN database */
+    OldIrql = KeAcquireQueuedSpinLock(LockQueuePfnLock);
+
+    ASSERT(SectionObject->Segment);
+    ASSERT(SectionObject->Segment->ControlArea);
+
+    ControlArea = SectionObject->Segment->ControlArea;
+
+    /* Dereference */
+    ControlArea->NumberOfSectionReferences--;
+    ControlArea->NumberOfUserReferences--;
+
+    ASSERT(ControlArea->u.Flags.BeingDeleted == 0);
+
+    /* Check it. It will delete it if there is no more reference to it */
+    MiCheckControlArea(ControlArea, OldIrql);
 }
 
 /* SYSTEM CALLS ***************************************************************/

@@ -2,7 +2,7 @@
  *
  * COPYRIGHT:       See COPYING in the top level directory
  * PROJECT:         ReactOS user32.dll
- * FILE:            dll/win32/user32/windows/defwnd.c
+ * FILE:            win32ss/user/user32/windows/defwnd.c
  * PURPOSE:         Window management
  * PROGRAMMER:      Casper S. Hornstrup (chorns@users.sourceforge.net)
  * UPDATE HISTORY:
@@ -36,7 +36,9 @@ static short iMenuSysKey = 0;
 /*
  * @implemented
  */
-DWORD WINAPI
+DWORD
+WINAPI
+DECLSPEC_HOTPATCH
 GetSysColor(int nIndex)
 {
   if(nIndex >= 0 && nIndex < NUM_SYSCOLORS)
@@ -51,7 +53,9 @@ GetSysColor(int nIndex)
 /*
  * @implemented
  */
-HBRUSH WINAPI
+HBRUSH
+WINAPI
+DECLSPEC_HOTPATCH
 GetSysColorBrush(int nIndex)
 {
   if(nIndex >= 0 && nIndex < NUM_SYSCOLORS)
@@ -92,9 +96,6 @@ DefSetText(HWND hWnd, PCWSTR String, BOOL Ansi)
   }
   Ret = NtUserDefSetText(hWnd, (String ? &lsString : NULL));
 
-  if (Ret)
-     IntNotifyWinEvent(EVENT_OBJECT_NAMECHANGE, hWnd, OBJID_WINDOW, CHILDID_SELF, 0);
-
   return Ret;
 }
 
@@ -119,15 +120,13 @@ UserGetInsideRectNC(PWND Wnd, RECT *rect)
     /* Remove frame from rectangle */
     if (UserHasThickFrameStyle(Style, ExStyle ))
     {
-        InflateRect(rect, -GetSystemMetrics(SM_CXFRAME),
-                    -GetSystemMetrics(SM_CYFRAME));
+        InflateRect(rect, -GetSystemMetrics(SM_CXFRAME), -GetSystemMetrics(SM_CYFRAME));
     }
     else
     {
         if (UserHasDlgFrameStyle(Style, ExStyle ))
         {
-            InflateRect(rect, -GetSystemMetrics(SM_CXDLGFRAME),
-                        -GetSystemMetrics(SM_CYDLGFRAME));
+            InflateRect(rect, -GetSystemMetrics(SM_CXDLGFRAME), -GetSystemMetrics(SM_CYDLGFRAME));
             /* FIXME: this isn't in NC_AdjustRect? why not? */
             if (ExStyle & WS_EX_DLGMODALFRAME)
 	            InflateRect( rect, -1, 0 );
@@ -136,581 +135,50 @@ UserGetInsideRectNC(PWND Wnd, RECT *rect)
         {
             if (UserHasThinFrameStyle(Style, ExStyle))
             {
-                InflateRect(rect, -GetSystemMetrics(SM_CXBORDER),
-                            -GetSystemMetrics(SM_CYBORDER));
+                InflateRect(rect, -GetSystemMetrics(SM_CXBORDER), -GetSystemMetrics(SM_CYBORDER));
             }
         }
     }
+    /* We have additional border information if the window
+     * is a child (but not an MDI child) */
+    if ((Style & WS_CHILD) && !(ExStyle & WS_EX_MDICHILD))
+    {
+       if (ExStyle & WS_EX_CLIENTEDGE)
+          InflateRect (rect, -GetSystemMetrics(SM_CXEDGE), -GetSystemMetrics(SM_CYEDGE));
+       if (ExStyle & WS_EX_STATICEDGE)
+          InflateRect (rect, -GetSystemMetrics(SM_CXBORDER), -GetSystemMetrics(SM_CYBORDER));
+    }
 }
 
-
-VOID
-DefWndSetRedraw(HWND hWnd, WPARAM wParam)
+HWND FASTCALL
+IntFindChildWindowToOwner(HWND hRoot, HWND hOwner)
 {
-    LONG Style = GetWindowLongPtr(hWnd, GWL_STYLE);
-    /* Content can be redrawn after a change. */
-    if (wParam)
-    {
-       if (!(Style & WS_VISIBLE)) /* Not Visible */
-       {
-          SetWindowLongPtr(hWnd, GWL_STYLE, WS_VISIBLE);
-       }
-    }
-    else /* Content cannot be redrawn after a change. */
-    {
-       if (Style & WS_VISIBLE) /* Visible */
-       {
-            RedrawWindow( hWnd, NULL, 0, RDW_ALLCHILDREN | RDW_VALIDATE );
-            Style &= ~WS_VISIBLE;
-            SetWindowLongPtr(hWnd, GWL_STYLE, Style); /* clear bits */
-       }
-    }
-    return;
+   HWND Ret;
+   PWND Child, OwnerWnd, Root, Owner;
+
+   Root = ValidateHwnd(hRoot);
+   Owner = ValidateHwnd(hOwner);
+
+   for( Child = Root->spwndChild ? DesktopPtrToUser(Root->spwndChild) : NULL;
+        Child;
+        Child = Child->spwndNext ? DesktopPtrToUser(Child->spwndNext) : NULL )
+   {
+      OwnerWnd = Child->spwndOwner ? DesktopPtrToUser(Child->spwndOwner) : NULL;
+      if(!OwnerWnd)
+         continue;
+
+      if (!(Child->style & WS_POPUP) || !(Child->style & WS_VISIBLE))
+         continue;
+
+      if(OwnerWnd == Owner)
+      {
+         Ret = Child->head.h;
+         return Ret;
+      }
+   }
+   ERR("IDCWTO Nothing found\n");
+   return NULL;
 }
-
-
-LRESULT
-DefWndHandleSetCursor(HWND hWnd, WPARAM wParam, LPARAM lParam, ULONG Style)
-{
-  /* Not for child windows. */
-  if (hWnd != (HWND)wParam)
-    {
-      return(0);
-    }
-
-  switch((INT_PTR) LOWORD(lParam))
-    {
-    case HTERROR:
-      {
-	WORD Msg = HIWORD(lParam);
-	if (Msg == WM_LBUTTONDOWN || Msg == WM_MBUTTONDOWN ||
-	    Msg == WM_RBUTTONDOWN || Msg == WM_XBUTTONDOWN)
-	  {
-	    MessageBeep(0);
-	  }
-	break;
-      }
-
-    case HTCLIENT:
-      {
-	HICON hCursor = (HICON)GetClassLongPtrW(hWnd, GCL_HCURSOR);
-	if (hCursor)
-	  {
-	    SetCursor(hCursor);
-	    return(TRUE);
-	  }
-	return(FALSE);
-      }
-
-    case HTLEFT:
-    case HTRIGHT:
-      {
-        if (Style & WS_MAXIMIZE)
-        {
-          break;
-        }
-	return((LRESULT)SetCursor(LoadCursorW(0, IDC_SIZEWE)));
-      }
-
-    case HTTOP:
-    case HTBOTTOM:
-      {
-        if (Style & WS_MAXIMIZE)
-        {
-          break;
-        }
-	return((LRESULT)SetCursor(LoadCursorW(0, IDC_SIZENS)));
-      }
-
-    case HTTOPLEFT:
-    case HTBOTTOMRIGHT:
-      {
-        if (Style & WS_MAXIMIZE)
-        {
-          break;
-        }
-	return((LRESULT)SetCursor(LoadCursorW(0, IDC_SIZENWSE)));
-      }
-
-    case HTBOTTOMLEFT:
-    case HTTOPRIGHT:
-      {
-        if (GetWindowLongPtrW(hWnd, GWL_STYLE) & WS_MAXIMIZE)
-        {
-          break;
-        }
-	return((LRESULT)SetCursor(LoadCursorW(0, IDC_SIZENESW)));
-      }
-    }
-  return((LRESULT)SetCursor(LoadCursorW(0, IDC_ARROW)));
-}
-
-static LONG
-DefWndStartSizeMove(HWND hWnd, PWND Wnd, WPARAM wParam, POINT *capturePoint)
-{
-  LONG hittest = 0;
-  POINT pt;
-  MSG msg;
-  RECT rectWindow;
-  ULONG Style = Wnd->style;
-
-  rectWindow = Wnd->rcWindow;
-
-  if ((wParam & 0xfff0) == SC_MOVE)
-    {
-      /* Move pointer at the center of the caption */
-      RECT rect;
-      UserGetInsideRectNC(Wnd, &rect);
-      if (Style & WS_SYSMENU)
-	rect.left += GetSystemMetrics(SM_CXSIZE) + 1;
-      if (Style & WS_MINIMIZEBOX)
-	rect.right -= GetSystemMetrics(SM_CXSIZE) + 1;
-      if (Style & WS_MAXIMIZEBOX)
-	rect.right -= GetSystemMetrics(SM_CXSIZE) + 1;
-      pt.x = rectWindow.left + (rect.right - rect.left) / 2;
-      pt.y = rectWindow.top + rect.top + GetSystemMetrics(SM_CYSIZE)/2;
-      hittest = HTCAPTION;
-      *capturePoint = pt;
-    }
-  else  /* SC_SIZE */
-    {
-      pt.x = pt.y = 0;
-      while(!hittest)
-	{
-          if (!GetMessageW(&msg, NULL, 0, 0)) break; //return 0;
-          if (CallMsgFilterW( &msg, MSGF_SIZE )) continue;
-
-	  switch(msg.message)
-	    {
-	    case WM_MOUSEMOVE:
-	      hittest = DefWndNCHitTest(hWnd, msg.pt);
-	      if ((hittest < HTLEFT) || (hittest > HTBOTTOMRIGHT))
-		hittest = 0;
-	      break;
-
-	    case WM_LBUTTONUP:
-	      return 0;
-
-	    case WM_KEYDOWN:
-	      switch(msg.wParam)
-		{
-		case VK_UP:
-		  hittest = HTTOP;
-		  pt.x =(rectWindow.left+rectWindow.right)/2;
-		  pt.y = rectWindow.top + GetSystemMetrics(SM_CYFRAME) / 2;
-		  break;
-		case VK_DOWN:
-		  hittest = HTBOTTOM;
-		  pt.x =(rectWindow.left+rectWindow.right)/2;
-		  pt.y = rectWindow.bottom - GetSystemMetrics(SM_CYFRAME) / 2;
-		  break;
-		case VK_LEFT:
-		  hittest = HTLEFT;
-		  pt.x = rectWindow.left + GetSystemMetrics(SM_CXFRAME) / 2;
-		  pt.y =(rectWindow.top+rectWindow.bottom)/2;
-		  break;
-		case VK_RIGHT:
-		  hittest = HTRIGHT;
-		  pt.x = rectWindow.right - GetSystemMetrics(SM_CXFRAME) / 2;
-		  pt.y =(rectWindow.top+rectWindow.bottom)/2;
-		  break;
-		case VK_RETURN:
-		case VK_ESCAPE:
-		  return 0;
-		}
-            default:
-              TranslateMessage( &msg );
-              DispatchMessageW( &msg );
-              break;
-	    }
-	}
-      *capturePoint = pt;
-    }
-    SetCursorPos( pt.x, pt.y );
-    DefWndHandleSetCursor(hWnd, (WPARAM)hWnd, MAKELONG(hittest, WM_MOUSEMOVE), Style);
-    return hittest;
-}
-
-#define ON_LEFT_BORDER(hit) \
- (((hit) == HTLEFT) || ((hit) == HTTOPLEFT) || ((hit) == HTBOTTOMLEFT))
-#define ON_RIGHT_BORDER(hit) \
- (((hit) == HTRIGHT) || ((hit) == HTTOPRIGHT) || ((hit) == HTBOTTOMRIGHT))
-#define ON_TOP_BORDER(hit) \
- (((hit) == HTTOP) || ((hit) == HTTOPLEFT) || ((hit) == HTTOPRIGHT))
-#define ON_BOTTOM_BORDER(hit) \
- (((hit) == HTBOTTOM) || ((hit) == HTBOTTOMLEFT) || ((hit) == HTBOTTOMRIGHT))
-
-static VOID
-UserDrawWindowFrame(HDC hdc, const RECT *rect,
-		    ULONG width, ULONG height)
-{
-  static HBRUSH hDraggingRectBrush = NULL;
-  HBRUSH hbrush;
-
-  if(!hDraggingRectBrush)
-  {
-    static HBITMAP hDraggingPattern = NULL;
-    const DWORD Pattern[4] = {0x5555AAAA, 0x5555AAAA, 0x5555AAAA, 0x5555AAAA};
-
-    hDraggingPattern = CreateBitmap(8, 8, 1, 1, Pattern);
-    hDraggingRectBrush = CreatePatternBrush(hDraggingPattern);
-  }
-
-  hbrush = SelectObject( hdc, hDraggingRectBrush );
-  PatBlt( hdc, rect->left, rect->top,
-	  rect->right - rect->left - width, height, PATINVERT );
-  PatBlt( hdc, rect->left, rect->top + height, width,
-	  rect->bottom - rect->top - height, PATINVERT );
-  PatBlt( hdc, rect->left + width, rect->bottom - 1,
-	  rect->right - rect->left - width, -height, PATINVERT );
-  PatBlt( hdc, rect->right - 1, rect->top, -width,
-	  rect->bottom - rect->top - height, PATINVERT );
-  SelectObject( hdc, hbrush );
-}
-
-static VOID
-UserDrawMovingFrame(HDC hdc, RECT *rect, BOOL thickframe)
-{
-  if(thickframe)
-  {
-    UserDrawWindowFrame(hdc, rect, GetSystemMetrics(SM_CXFRAME), GetSystemMetrics(SM_CYFRAME));
-  }
-  else
-  {
-    UserDrawWindowFrame(hdc, rect, 1, 1);
-  }
-}
-
-static VOID
-DefWndDoSizeMove(HWND hwnd, WORD wParam)
-{
-  HRGN DesktopRgn;
-  MSG msg;
-  RECT sizingRect, mouseRect, origRect, clipRect, unmodRect;
-  HDC hdc;
-  LONG hittest = (LONG)(wParam & 0x0f);
-  HCURSOR hDragCursor = 0, hOldCursor = 0;
-  POINT minTrack, maxTrack;
-  POINT capturePoint, pt;
-  ULONG Style, ExStyle;
-  BOOL thickframe;
-  BOOL iconic;
-  BOOL moved = FALSE;
-  DWORD dwPoint = GetMessagePos();
-  BOOL DragFullWindows = FALSE;
-  HWND hWndParent = NULL;
-  PWND Wnd;
-
-  Wnd = ValidateHwnd(hwnd);
-  if (!Wnd)
-      return;
-
-  Style = Wnd->style;
-  ExStyle = Wnd->ExStyle;
-  iconic = (Style & WS_MINIMIZE) != 0;
-
-  SystemParametersInfoA(SPI_GETDRAGFULLWINDOWS, 0, &DragFullWindows, 0);
-
-  pt.x = GET_X_LPARAM(dwPoint);
-  pt.y = GET_Y_LPARAM(dwPoint);
-  capturePoint = pt;
-
-  if ((Style & WS_MAXIMIZE) || !IsWindowVisible(hwnd))
-    {
-      return;
-    }
-
-  thickframe = UserHasThickFrameStyle(Style, ExStyle) && !(Style & WS_MINIMIZE);
-  if ((wParam & 0xfff0) == SC_MOVE)
-    {
-      if (!hittest)
-	{
-	  hittest = DefWndStartSizeMove(hwnd, Wnd, wParam, &capturePoint);
-	}
-      if (!hittest)
-	{
-	  return;
-	}
-    }
-  else  /* SC_SIZE */
-    {
-      if (!thickframe)
-	{
-	  return;
-	}
-      if (hittest && ((wParam & 0xfff0) != SC_MOUSEMENU))
-	{
-          hittest += (HTLEFT - WMSZ_LEFT);
-	}
-      else
-	{
-	  SetCapture(hwnd);
-	  hittest = DefWndStartSizeMove(hwnd, Wnd, wParam, &capturePoint);
-	  if (!hittest)
-	    {
-	      ReleaseCapture();
-	      return;
-	    }
-	}
-    }
-
-  /* Get min/max info */
-
-  WinPosGetMinMaxInfo(hwnd, NULL, NULL, &minTrack, &maxTrack);
-  sizingRect = Wnd->rcWindow;
-  if (Style & WS_CHILD)
-    {
-      hWndParent = GetParent(hwnd);
-      MapWindowPoints( 0, hWndParent, (LPPOINT)&sizingRect, 2 );
-      unmodRect = sizingRect;
-      GetClientRect(hWndParent, &mouseRect );
-      clipRect = mouseRect;
-      MapWindowPoints(hWndParent, HWND_DESKTOP, (LPPOINT)&clipRect, 2);
-    }
-  else
-    {
-      if(!(ExStyle & WS_EX_TOPMOST))
-      {
-        SystemParametersInfoW(SPI_GETWORKAREA, 0, &clipRect, 0);
-        mouseRect = clipRect;
-      }
-      else
-      {
-        SetRect(&mouseRect, 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
-        clipRect = mouseRect;
-      }
-      unmodRect = sizingRect;
-    }
-  ClipCursor(&clipRect);
-
-  origRect = sizingRect;
-  if (ON_LEFT_BORDER(hittest))
-    {
-      mouseRect.left  = max( mouseRect.left, sizingRect.right-maxTrack.x );
-      mouseRect.right = min( mouseRect.right, sizingRect.right-minTrack.x );
-    }
-  else if (ON_RIGHT_BORDER(hittest))
-    {
-      mouseRect.left  = max( mouseRect.left, sizingRect.left+minTrack.x );
-      mouseRect.right = min( mouseRect.right, sizingRect.left+maxTrack.x );
-    }
-  if (ON_TOP_BORDER(hittest))
-    {
-      mouseRect.top    = max( mouseRect.top, sizingRect.bottom-maxTrack.y );
-      mouseRect.bottom = min( mouseRect.bottom,sizingRect.bottom-minTrack.y);
-    }
-  else if (ON_BOTTOM_BORDER(hittest))
-    {
-      mouseRect.top    = max( mouseRect.top, sizingRect.top+minTrack.y );
-      mouseRect.bottom = min( mouseRect.bottom, sizingRect.top+maxTrack.y );
-    }
-  if (Style & WS_CHILD)
-    {
-      MapWindowPoints( hWndParent, 0, (LPPOINT)&mouseRect, 2 );
-    }
-
-  SendMessageA( hwnd, WM_ENTERSIZEMOVE, 0, 0 );
-  NtUserxSetGUIThreadHandle(MSQ_STATE_MOVESIZE, hwnd);
-  if (GetCapture() != hwnd) SetCapture( hwnd );
-
-  if (Style & WS_CHILD)
-    {
-      /* Retrieve a default cache DC (without using the window style) */
-      hdc = GetDCEx(hWndParent, 0, DCX_CACHE);
-      DesktopRgn = NULL;
-    }
-  else
-    {
-      hdc = GetDC( 0 );
-      DesktopRgn = CreateRectRgnIndirect(&clipRect);
-    }
-
-  SelectObject(hdc, DesktopRgn);
-
-  if( iconic ) /* create a cursor for dragging */
-    {
-      HICON hIcon = (HICON)GetClassLongPtrW(hwnd, GCL_HICON);
-      if(!hIcon) hIcon = (HICON)SendMessageW( hwnd, WM_QUERYDRAGICON, 0, 0L);
-      if( hIcon ) hDragCursor = CursorIconToCursor( hIcon, TRUE );
-      if( !hDragCursor ) iconic = FALSE;
-    }
-
-  /* invert frame if WIN31_LOOK to indicate mouse click on caption */
-  if( !iconic && !DragFullWindows)
-    {
-      UserDrawMovingFrame( hdc, &sizingRect, thickframe);
-    }
-
-  for(;;)
-    {
-      int dx = 0, dy = 0;
-
-      if (!GetMessageW(&msg, 0, 0, 0)) break;
-      if (CallMsgFilterW( &msg, MSGF_SIZE )) continue;
-
-      /* Exit on button-up, Return, or Esc */
-      if ((msg.message == WM_LBUTTONUP) ||
-	  ((msg.message == WM_KEYDOWN) &&
-	   ((msg.wParam == VK_RETURN) || (msg.wParam == VK_ESCAPE)))) break;
-
-      if (msg.message == WM_PAINT)
-        {
-	  if(!iconic && !DragFullWindows) UserDrawMovingFrame( hdc, &sizingRect, thickframe );
-	  UpdateWindow( msg.hwnd );
-	  if(!iconic && !DragFullWindows) UserDrawMovingFrame( hdc, &sizingRect, thickframe );
-	  continue;
-        }
-
-      if ((msg.message != WM_KEYDOWN) && (msg.message != WM_MOUSEMOVE))
-      {
-         TranslateMessage( &msg );
-         DispatchMessageW( &msg );
-         continue;  /* We are not interested in other messages */
-      }
-
-      pt = msg.pt;
-
-      if (msg.message == WM_KEYDOWN) switch(msg.wParam)
-	{
-	case VK_UP:    pt.y -= 8; break;
-	case VK_DOWN:  pt.y += 8; break;
-	case VK_LEFT:  pt.x -= 8; break;
-	case VK_RIGHT: pt.x += 8; break;
-	}
-
-      pt.x = max( pt.x, mouseRect.left );
-      pt.x = min( pt.x, mouseRect.right );
-      pt.y = max( pt.y, mouseRect.top );
-      pt.y = min( pt.y, mouseRect.bottom );
-
-      dx = pt.x - capturePoint.x;
-      dy = pt.y - capturePoint.y;
-
-      if (dx || dy)
-	{
-	  if( !moved )
-	    {
-	      moved = TRUE;
-
-		if( iconic ) /* ok, no system popup tracking */
-		  {
-		    hOldCursor = SetCursor(hDragCursor);
-		    ShowCursor( TRUE );
-		  }
-	    }
-
-	  if (msg.message == WM_KEYDOWN) SetCursorPos( pt.x, pt.y );
-	  else
-	    {
-	      RECT newRect = unmodRect;
-	      WPARAM wpSizingHit = 0;
-
-	      if (hittest == HTCAPTION) OffsetRect( &newRect, dx, dy );
-	      if (ON_LEFT_BORDER(hittest)) newRect.left += dx;
-	      else if (ON_RIGHT_BORDER(hittest)) newRect.right += dx;
-	      if (ON_TOP_BORDER(hittest)) newRect.top += dy;
-	      else if (ON_BOTTOM_BORDER(hittest)) newRect.bottom += dy;
-	      if(!iconic && !DragFullWindows) UserDrawMovingFrame( hdc, &sizingRect, thickframe );
-	      capturePoint = pt;
-
-	      /* determine the hit location */
-	      if (hittest >= HTLEFT && hittest <= HTBOTTOMRIGHT)
-		wpSizingHit = WMSZ_LEFT + (hittest - HTLEFT);
-	      unmodRect	= newRect;
-	      SendMessageA( hwnd, WM_SIZING, wpSizingHit, (LPARAM)&newRect );
-
-	      if (!iconic)
-		{
-		  if(!DragFullWindows)
-		    UserDrawMovingFrame( hdc, &newRect, thickframe );
-		  else {
-		    /* To avoid any deadlocks, all the locks on the windows
-		       structures must be suspended before the SetWindowPos */
-		    SetWindowPos( hwnd, 0, newRect.left, newRect.top,
-				  newRect.right - newRect.left,
-				  newRect.bottom - newRect.top,
-				  ( hittest == HTCAPTION ) ? SWP_NOSIZE : 0 );
-		  }
-		}
-	      sizingRect = newRect;
-	    }
-	}
-    }
-
-  ReleaseCapture();
-  ClipCursor(NULL);
-  if( iconic )
-    {
-      if( moved ) /* restore cursors, show icon title later on */
-	{
-	  ShowCursor( FALSE );
-	  SetCursor( hOldCursor );
-	}
-      DestroyCursor( hDragCursor );
-    }
-  else if(!DragFullWindows)
-      UserDrawMovingFrame( hdc, &sizingRect, thickframe );
-
-  if (Style & WS_CHILD)
-    ReleaseDC( hWndParent, hdc );
-  else
-  {
-    ReleaseDC( 0, hdc );
-    if(DesktopRgn)
-    {
-      DeleteObject(DesktopRgn);
-    }
-  }
-
-  if (ISITHOOKED(WH_CBT))
-  {
-      LRESULT lResult;
-      NtUserMessageCall( hwnd, WM_CBT, HCBT_MOVESIZE, (LPARAM)&sizingRect, (ULONG_PTR)&lResult, FNID_DEFWINDOWPROC, FALSE);
-      if (lResult) moved = FALSE;
-  }
-
-  NtUserxSetGUIThreadHandle(MSQ_STATE_MOVESIZE, NULL);
-  SendMessageA( hwnd, WM_EXITSIZEMOVE, 0, 0 );
-  SendMessageA( hwnd, WM_SETVISIBLE, !IsIconic(hwnd), 0L);
-
-  /* window moved or resized */
-  if (moved)
-    {
-      /* if the moving/resizing isn't canceled call SetWindowPos
-       * with the new position or the new size of the window
-       */
-      if (!((msg.message == WM_KEYDOWN) && (msg.wParam == VK_ESCAPE)) )
-        {
-	  /* NOTE: SWP_NOACTIVATE prevents document window activation in Word 6 */
-	  if(!DragFullWindows)
-	    SetWindowPos( hwnd, 0, sizingRect.left, sizingRect.top,
-			  sizingRect.right - sizingRect.left,
-			  sizingRect.bottom - sizingRect.top,
-			  ( hittest == HTCAPTION ) ? SWP_NOSIZE : 0 );
-        }
-      else { /* restore previous size/position */
-	if(DragFullWindows)
-	  SetWindowPos( hwnd, 0, origRect.left, origRect.top,
-			origRect.right - origRect.left,
-			origRect.bottom - origRect.top,
-			( hittest == HTCAPTION ) ? SWP_NOSIZE : 0 );
-      }
-    }
-
-  if( IsWindow(hwnd) )
-    if( Style & WS_MINIMIZE )
-      {
-	/* Single click brings up the system menu when iconized */
-
-	if( !moved )
-	  {
-	    if( Style & WS_SYSMENU )
-	      SendMessageA( hwnd, WM_SYSCOMMAND,
-			    SC_MOUSEMENU + HTSYSMENU, MAKELONG(pt.x,pt.y));
-	  }
-      }
-}
-
 
 /***********************************************************************
  *           DefWndTrackScrollBar
@@ -746,7 +214,6 @@ LRESULT WINAPI DoAppSwitch( WPARAM wParam, LPARAM lParam);
 LRESULT
 DefWndHandleSysCommand(HWND hWnd, WPARAM wParam, LPARAM lParam)
 {
-//  WINDOWPLACEMENT wp;
   POINT Pt;
   LRESULT lResult;
 
@@ -762,8 +229,9 @@ DefWndHandleSysCommand(HWND hWnd, WPARAM wParam, LPARAM lParam)
     {
       case SC_MOVE:
       case SC_SIZE:
-	DefWndDoSizeMove(hWnd, wParam);
+	NtUserMessageCall( hWnd, WM_SYSCOMMAND, wParam, lParam, (ULONG_PTR)&lResult, FNID_DEFWINDOWPROC, FALSE);
 	break;
+
     case SC_MINIMIZE:
         if (hWnd == GetActiveWindow())
             ShowOwnedPopups(hWnd,FALSE);
@@ -784,6 +252,7 @@ DefWndHandleSysCommand(HWND hWnd, WPARAM wParam, LPARAM lParam)
 
       case SC_CLOSE:
         return SendMessageW(hWnd, WM_CLOSE, 0, 0);
+
 //      case SC_DEFAULT:
       case SC_MOUSEMENU:
         {
@@ -847,64 +316,6 @@ DefWndHandleSysCommand(HWND hWnd, WPARAM wParam, LPARAM lParam)
     }
 
   return(0);
-}
-
-LRESULT
-DefWndHandleWindowPosChanging(HWND hWnd, WINDOWPOS* Pos)
-{
-    POINT maxTrack, minTrack;
-    LONG style = GetWindowLongPtrA(hWnd, GWL_STYLE);
-
-    if (Pos->flags & SWP_NOSIZE) return 0;
-    if ((style & WS_THICKFRAME) || ((style & (WS_POPUP | WS_CHILD)) == 0))
-    {
-        WinPosGetMinMaxInfo(hWnd, NULL, NULL, &minTrack, &maxTrack);
-        Pos->cx = min(Pos->cx, maxTrack.x);
-        Pos->cy = min(Pos->cy, maxTrack.y);
-        if (!(style & WS_MINIMIZE))
-        {
-            if (Pos->cx < minTrack.x) Pos->cx = minTrack.x;
-            if (Pos->cy < minTrack.y) Pos->cy = minTrack.y;
-        }
-    }
-    else
-    {
-        Pos->cx = max(Pos->cx, 0);
-        Pos->cy = max(Pos->cy, 0);
-    }
-    return 0;
-}
-
-LRESULT
-DefWndHandleWindowPosChanged(HWND hWnd, WINDOWPOS* Pos)
-{
-  RECT Rect;
-
-  GetClientRect(hWnd, &Rect);
-  MapWindowPoints(hWnd, (GetWindowLongPtrW(hWnd, GWL_STYLE) & WS_CHILD ?
-                         GetParent(hWnd) : NULL), (LPPOINT) &Rect, 2);
-
-  if (! (Pos->flags & SWP_NOCLIENTMOVE))
-    {
-      SendMessageW(hWnd, WM_MOVE, 0, MAKELONG(Rect.left, Rect.top));
-    }
-
-  if (! (Pos->flags & SWP_NOCLIENTSIZE))
-    {
-      WPARAM wp = SIZE_RESTORED;
-      if (IsZoomed(hWnd))
-        {
-          wp = SIZE_MAXIMIZED;
-        }
-      else if (IsIconic(hWnd))
-        {
-          wp = SIZE_MINIMIZED;
-        }
-      SendMessageW(hWnd, WM_SIZE, wp,
-                   MAKELONG(Rect.right - Rect.left, Rect.bottom - Rect.top));
-    }
-
-  return 0;
 }
 
 /***********************************************************************
@@ -987,12 +398,48 @@ UserSendUiUpdateMsg(HWND hwnd, LPARAM lParam)
     return TRUE;
 }
 
+/*
+ RealUserDrawCaption: This function is passed through RegisterUserApiHook to uxtheme
+                      to call it when the classic caption is needed to be drawn.
+ */
+LRESULT WINAPI
+RealUserDrawCaption(HWND hWnd, HDC hDC, LPCRECT lpRc, UINT uFlags)
+{
+    return DefWndNCPaint(hWnd, HRGN_WINDOW, -1);
+}
+
+static void
+UserPaintCaption(HWND hwnd)
+{
+    /* FIXME: this is not 100% correct */
+
+    /* 
+     * When themes are not enabled we can go on and paint the non client area.
+     * However if we do that with themes enabled we will draw a classic frame.
+     * This is sovled by sending a themes specific message to notify the themes
+     * engine that the caption needs to be redrawn 
+     */
+    if(gpsi->dwSRVIFlags & SRVINFO_APIHOOK)
+    {
+        /* 
+         * This will cause uxtheme to either paint the themed caption or call
+         * RealUserDrawCaption in order to draw the classic caption when themes
+         * are disabled but the themes service is enabled
+         */
+        SendMessage(hwnd, WM_NCUAHDRAWCAPTION,0,0);
+    }
+    else
+    {
+        DefWndNCPaint(hwnd, HRGN_WINDOW, -1);
+    }
+}
+
 // WM_SETICON
 LRESULT FASTCALL
 DefWndSetIcon(PWND pWnd, WPARAM wParam, LPARAM lParam)
 {
     HICON hIcon, hIconSmall, hIconOld;
- 
+
     if ( wParam > ICON_SMALL2 )
     {  
         SetLastError(ERROR_INVALID_PARAMETER);
@@ -1021,7 +468,7 @@ DefWndSetIcon(PWND pWnd, WPARAM wParam, LPARAM lParam)
     NtUserSetProp(UserHMGetHandle(pWnd), gpsi->atomIconSmProp, hIconSmall);
 
     if ((pWnd->style & WS_CAPTION ) == WS_CAPTION)
-       DefWndNCPaint(UserHMGetHandle(pWnd), HRGN_WINDOW, -1);  /* Repaint caption */
+       UserPaintCaption(UserHMGetHandle(pWnd));  /* Repaint caption */
 
     return (LRESULT)hIconOld;
 }
@@ -1082,7 +529,6 @@ DefWndScreenshot(HWND hWnd)
     ReleaseDC(hWnd, hdc2);
 
     CloseClipboard();
-
 }
 
 
@@ -1157,26 +603,13 @@ User32DefWindowProc(HWND hWnd,
             return (DefWndNCLButtonDblClk(hWnd, wParam, lParam));
         }
 
-        case WM_WINDOWPOSCHANGING:
-        {
-            return (DefWndHandleWindowPosChanging(hWnd, (WINDOWPOS*)lParam));
-        }
-
-        case WM_WINDOWPOSCHANGED:
-        {
-            return (DefWndHandleWindowPosChanged(hWnd, (WINDOWPOS*)lParam));
-        }
-
         case WM_NCRBUTTONDOWN:
             return NC_HandleNCRButtonDown( hWnd, wParam, lParam );
 
         case WM_RBUTTONUP:
         {
             POINT Pt;
-            if (hWnd == GetCapture())
-            {
-                ReleaseCapture();
-            }
+
             Pt.x = GET_X_LPARAM(lParam);
             Pt.y = GET_Y_LPARAM(lParam);
             ClientToScreen(hWnd, &Pt);
@@ -1305,34 +738,7 @@ User32DefWindowProc(HWND hWnd,
             }
             return (0);
         }
-/*
-        case WM_SYNCPAINT:
-        {
-            HRGN hRgn;
-            hRgn = CreateRectRgn(0, 0, 0, 0);
-            if (GetUpdateRgn(hWnd, hRgn, FALSE) != NULLREGION)
-            {
-                RedrawWindow(hWnd, NULL, hRgn,
-			        RDW_ERASENOW | RDW_ERASE | RDW_FRAME |
-                    RDW_ALLCHILDREN);
-            }
-            DeleteObject(hRgn);
-            return (0);
-        }
 
-        case WM_SETREDRAW:
-        {
-            LONG_PTR Style = GetWindowLongPtrW(hWnd, GWL_STYLE);
-            if (wParam) SetWindowLongPtr(hWnd, GWL_STYLE, Style | WS_VISIBLE);
-            else
-            {
-                RedrawWindow(hWnd, NULL, 0, RDW_ALLCHILDREN | RDW_VALIDATE);
-                Style &= ~WS_VISIBLE;
-                SetWindowLongPtr(hWnd, GWL_STYLE, Style);
-            }
-            return (0);
-        }
-*/
         case WM_CLOSE:
             DestroyWindow(hWnd);
             return (0);
@@ -1396,34 +802,6 @@ User32DefWindowProc(HWND hWnd,
 
         case WM_CTLCOLOR:
             return (LRESULT) DefWndControlColor((HDC)wParam, HIWORD(lParam));
-
-        case WM_SETCURSOR:
-        {
-            LONG_PTR Style = GetWindowLongPtrW(hWnd, GWL_STYLE);
-
-            if (Style & WS_CHILD)
-            {
-                /* with the exception of the border around a resizable wnd,
-                 * give the parent first chance to set the cursor */
-                if (LOWORD(lParam) < HTLEFT || LOWORD(lParam) > HTBOTTOMRIGHT)
-                {
-                    HWND parent = GetParent( hWnd );
-                    if (bUnicode)
-                    {
-                       if (parent != GetDesktopWindow() &&
-                           SendMessageW( parent, WM_SETCURSOR, wParam, lParam))
-                          return TRUE;
-                    }
-                    else
-                    {
-                       if (parent != GetDesktopWindow() &&                    
-                           SendMessageA( parent, WM_SETCURSOR, wParam, lParam))
-                          return TRUE;
-                    }
-                }
-            }
-            return (DefWndHandleSetCursor(hWnd, wParam, lParam, Style));
-        }
 
         case WM_SYSCOMMAND:
             return (DefWndHandleSysCommand(hWnd, wParam, lParam));
@@ -1602,22 +980,6 @@ User32DefWindowProc(HWND hWnd,
                 SendMessageA(GetParent(hWnd), Msg, wParam, lParam);
             }
             break;
-        }
-
-        case WM_SYSTIMER:
-        {
-          THRDCARETINFO CaretInfo;
-          switch(wParam)
-          {
-            case 0xffff: /* Caret timer */
-              /* switch showing byte in win32k and get information about the caret */
-              if(NtUserxSwitchCaretShowing(&CaretInfo) && (CaretInfo.hWnd == hWnd))
-              {
-                DrawCaret(hWnd, &CaretInfo);
-              }
-              break;
-          }
-          break;
         }
 
         case WM_QUERYOPEN:
@@ -1836,7 +1198,7 @@ User32DefWindowProc(HWND hWnd,
             break;
         }
 
-/* Move to win32k !*/
+/* Move to Win32k !*/
         case WM_SHOWWINDOW:
             if (!lParam) break; // Call when it is necessary.
         case WM_SYNCPAINT:
@@ -1844,6 +1206,10 @@ User32DefWindowProc(HWND hWnd,
         case WM_CLIENTSHUTDOWN:
         case WM_GETHOTKEY:
         case WM_SETHOTKEY:
+        case WM_WINDOWPOSCHANGING:
+        case WM_WINDOWPOSCHANGED:
+        case WM_APPCOMMAND:
+        case WM_SETCURSOR:
         {
             LRESULT lResult;
             NtUserMessageCall( hWnd, Msg, wParam, lParam, (ULONG_PTR)&lResult, FNID_DEFWINDOWPROC, !bUnicode);
@@ -2033,15 +1399,8 @@ RealDefWindowProcA(HWND hWnd,
 
             if ((GetWindowLongPtrW(hWnd, GWL_STYLE) & WS_CAPTION) == WS_CAPTION)
             {
-                /* FIXME: this is not 100% correct */
-                if(gpsi->dwSRVIFlags & SRVINFO_APIHOOK)
-                {
-                    SendMessage(hWnd, WM_NCUAHDRAWCAPTION,0,0);
-                }
-                else
-                {
-                    DefWndNCPaint(hWnd, HRGN_WINDOW, -1);
-                }
+                UserPaintCaption(hWnd);
+                IntNotifyWinEvent(EVENT_OBJECT_NAMECHANGE, hWnd, OBJID_WINDOW, CHILDID_SELF, 0);
             }
             Result = 1;
             break;
@@ -2072,6 +1431,7 @@ RealDefWindowProcA(HWND hWnd,
         case WM_IME_ENDCOMPOSITION:
         case WM_IME_SELECT:
         case WM_IME_NOTIFY:
+        case WM_IME_CONTROL:
         {
             HWND hwndIME;
 
@@ -2204,17 +1564,7 @@ RealDefWindowProcW(HWND hWnd,
             DefSetText(hWnd, (PCWSTR)lParam, FALSE);
 
             if ((GetWindowLongPtrW(hWnd, GWL_STYLE) & WS_CAPTION) == WS_CAPTION)
-            {
-                /* FIXME: this is not 100% correct */
-                if(gpsi->dwSRVIFlags & SRVINFO_APIHOOK)
-                {
-                    SendMessage(hWnd, WM_NCUAHDRAWCAPTION,0,0);
-                }
-                else
-                {
-                    DefWndNCPaint(hWnd, HRGN_WINDOW, -1);
-                }
-            }
+                UserPaintCaption(hWnd);
             Result = 1;
             break;
         }
@@ -2243,6 +1593,7 @@ RealDefWindowProcW(HWND hWnd,
         case WM_IME_ENDCOMPOSITION:
         case WM_IME_SELECT:
         case WM_IME_NOTIFY:
+        case WM_IME_CONTROL:
         {
             HWND hwndIME;
 

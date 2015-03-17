@@ -22,9 +22,9 @@
 
 #include "wordpad.h"
 
-#define REACTOS_STR_FILE_DESCRIPTION  "ReactOS WordPad\0"
-#define REACTOS_STR_INTERNAL_NAME     "wordpad\0"
-#define REACTOS_STR_ORIGINAL_FILENAME "wordpad.exe\0"
+#define REACTOS_STR_FILE_DESCRIPTION  "ReactOS WordPad"
+#define REACTOS_STR_INTERNAL_NAME     "wordpad"
+#define REACTOS_STR_ORIGINAL_FILENAME "wordpad.exe"
 
 #include <reactos/version.rc>
 
@@ -32,11 +32,11 @@ MAINACCELTABLE ACCELERATORS
 BEGIN
     "1",          ID_BACK_1,          VIRTKEY, CONTROL
     "2",          ID_BACK_2,          VIRTKEY, CONTROL
+    VK_F3,        ID_FIND_NEXT,       VIRTKEY
     "L",          ID_ALIGN_LEFT,      VIRTKEY, CONTROL
     "E",          ID_ALIGN_CENTER,    VIRTKEY, CONTROL
     "R",          ID_ALIGN_RIGHT,     VIRTKEY, CONTROL
     "F",          ID_FIND,            VIRTKEY, CONTROL
-    VK_F3,        ID_FIND_NEXT,       VIRTKEY
     "H",          ID_REPLACE,         VIRTKEY, CONTROL
     "A",          ID_EDIT_SELECTALL,  VIRTKEY, CONTROL
     "X",          ID_EDIT_CUT,        VIRTKEY, CONTROL
@@ -66,19 +66,6 @@ IDC_ZOOM CURSOR "res/zoom.cur"
 
 #include <reactos/manifest_exe.rc>
 
-#ifdef LANGUAGE_EN_US
-    #include "lang/En.rc"
-#endif
-#ifdef LANGUAGE_HU_HU
-    #include "lang/Hu.rc"
-#endif
-#ifdef LANGUAGE_KO_KR
-    #include "lang/Ko.rc"
-#endif
-#ifdef LANGUAGE_PL_PL
-    #include "lang/Pl.rc"
-#endif
-
 /* UTF-8 */
 #ifdef LANGUAGE_DA_DK
     #include "lang/Da.rc"
@@ -86,17 +73,29 @@ IDC_ZOOM CURSOR "res/zoom.cur"
 #ifdef LANGUAGE_DE_DE
     #include "lang/De.rc"
 #endif
+#ifdef LANGUAGE_EN_US
+    #include "lang/En.rc"
+#endif
+#ifdef LANGUAGE_ES_ES
+    #include "lang/Es.rc"
+#endif
 #ifdef LANGUAGE_FR_FR
     #include "lang/Fr.rc"
 #endif
 #ifdef LANGUAGE_HE_IL
     #include "lang/He.rc"
 #endif
+#ifdef LANGUAGE_HU_HU
+    #include "lang/Hu.rc"
+#endif
 #ifdef LANGUAGE_IT_IT
     #include "lang/It.rc"
 #endif
 #ifdef LANGUAGE_JA_JP
     #include "lang/Ja.rc"
+#endif
+#ifdef LANGUAGE_KO_KR
+    #include "lang/Ko.rc"
 #endif
 #ifdef LANGUAGE_LT_LT
     #include "lang/Lt.rc"
@@ -106,6 +105,9 @@ IDC_ZOOM CURSOR "res/zoom.cur"
 #endif
 #ifdef LANGUAGE_NO_NO
     #include "lang/No.rc"
+#endif
+#ifdef LANGUAGE_PL_PL
+    #include "lang/Pl.rc"
 #endif
 #ifdef LANGUAGE_PT_PT
     #include "lang/Pt.rc"
@@ -118,6 +120,9 @@ IDC_ZOOM CURSOR "res/zoom.cur"
 #endif
 #ifdef LANGUAGE_SL_SI
     #include "lang/Si.rc"
+#endif
+#ifdef LANGUAGE_SQ_AL
+    #include "lang/Sq.rc"
 #endif
 #ifdef LANGUAGE_SV_SE
     #include "lang/Sv.rc"

@@ -20,6 +20,10 @@
 
 #include "regedit.h"
 
+#include <commdlg.h>
+#include <cderr.h>
+#include <objsel.h>
+
 /********************************************************************************
  * Global and Local Variables:
  */
@@ -583,7 +587,7 @@ BOOL ExportRegistryFile(HWND hWnd)
 {
     BOOL bRet = FALSE;
     OPENFILENAME ofn;
-    WCHAR ExportKeyPath[_MAX_PATH];
+    WCHAR ExportKeyPath[_MAX_PATH] = {0};
     WCHAR Caption[128], szTitle[512], szText[512];
     HKEY hKeyRoot;
     LPCWSTR pszKeyPath;

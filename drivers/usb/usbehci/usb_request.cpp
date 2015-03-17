@@ -8,10 +8,10 @@
  *              Johannes Anderwald (johannes.anderwald@reactos.org)
  */
 
-#define INITGUID
-
 #include "usbehci.h"
-#include "hardware.h"
+
+#define NDEBUG
+#include <debug.h>
 
 class CUSBRequest : public IEHCIRequest
 {
@@ -894,7 +894,7 @@ CUSBRequest::BuildControlTransferQueueHead(
     //
     QueueHead->EndPointCharacteristics.DeviceAddress = GetDeviceAddress();
 
-    ASSERT(m_EndpointDescriptor == FALSE);
+    ASSERT(m_EndpointDescriptor == NULL);
 
     //
     // init setup descriptor

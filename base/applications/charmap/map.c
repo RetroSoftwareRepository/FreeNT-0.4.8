@@ -7,10 +7,14 @@
  *
  */
 
-#include <precomp.h>
+#include "precomp.h"
+
+#include <stdlib.h>
 
 static const WCHAR szMapWndClass[] = L"FontMapWnd";
 static const WCHAR szLrgCellWndClass[] = L"LrgCellWnd";
+
+#define MAX_ROWS (0xFFFF / XCELLS) + 1 - YCELLS
 
 static
 VOID
@@ -226,8 +230,9 @@ SetFont(PMAP infoPtr,
     ReleaseDC(infoPtr->hMapWnd, hdc);
 
     infoPtr->CurrentFont.lfCharSet =  DEFAULT_CHARSET;
-    wcscpy(infoPtr->CurrentFont.lfFaceName,
-           lpFontName);
+    wcsncpy(infoPtr->CurrentFont.lfFaceName,
+            lpFontName,
+            sizeof(infoPtr->CurrentFont.lfFaceName) / sizeof(infoPtr->CurrentFont.lfFaceName[0]));
 
     infoPtr->hFont = CreateFontIndirectW(&infoPtr->CurrentFont);
 
@@ -374,7 +379,7 @@ OnCreate(PMAP infoPtr,
 
             SetGrid(infoPtr);
 
-            SetScrollRange(hwnd, SB_VERT, 0, 255, FALSE);
+            SetScrollRange(hwnd, SB_VERT, 0, MAX_ROWS, FALSE);
             SetScrollPos(hwnd, SB_VERT, 0, TRUE);
 
             Ret = TRUE;
@@ -420,7 +425,7 @@ OnVScroll(PMAP infoPtr,
        }
 
     infoPtr->iYStart = max(0,
-                         min(infoPtr->iYStart, 255*16));
+                         min(infoPtr->iYStart, MAX_ROWS));
 
     iYDiff = iOldYStart - infoPtr->iYStart;
     if (iYDiff)

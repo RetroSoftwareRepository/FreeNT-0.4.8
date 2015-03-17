@@ -81,7 +81,7 @@ PDEVOBJ_vRelease(PPDEVOBJ ppdev)
     if (ppdev->cPdevRefs == 0)
     {
         /* Do we have a surface? */
-        if(ppdev->pSurface)
+        if (ppdev->pSurface)
         {
             /* Release the surface and let the driver free it */
             SURFACE_ShareUnlockSurface(ppdev->pSurface);
@@ -94,8 +94,12 @@ PDEVOBJ_vRelease(PPDEVOBJ ppdev)
             PALETTE_ShareUnlockPalette(ppdev->ppalSurf);
         }
 
-        /* Disable PDEV */
-        ppdev->pfn.DisablePDEV(ppdev->dhpdev);
+        /* Check if the PDEV was enabled */
+        if (ppdev->dhpdev != NULL)
+        {
+            /* Disable the PDEV */
+            ppdev->pfn.DisablePDEV(ppdev->dhpdev);
+        }
 
         /* Remove it from list */
         if( ppdev == gppdevList )
@@ -155,6 +159,11 @@ PDEVOBJ_bEnablePDEV(
                                   (HDEV)ppdev,
                                   ppdev->pGraphicsDevice->pwszDescription,
                                   ppdev->pGraphicsDevice->DeviceObject);
+    if (ppdev->dhpdev == NULL)
+    {
+        DPRINT1("Failed to enable PDEV\n");
+        return FALSE;
+    }
 
     /* Fix up some values */
     if (ppdev->gdiinfo.ulLogPixelsX == 0)
@@ -203,20 +212,18 @@ PDEVOBJ_pSurface(
 {
     HSURF hsurf;
 
-    /* Check if we already have a surface */
-    if (ppdev->pSurface)
-    {
-        /* Increment reference count */
-        GDIOBJ_vReferenceObjectByPointer(&ppdev->pSurface->BaseObject);
-    }
-    else
+    /* Check if there is no surface for this PDEV yet */
+    if (ppdev->pSurface == NULL)
     {
         /* Call the drivers DrvEnableSurface */
         hsurf = ppdev->pldev->pfn.EnableSurface(ppdev->dhpdev);
 
-        /* Lock the surface */
+        /* Get a reference to the surface */
         ppdev->pSurface = SURFACE_ShareLockSurface(hsurf);
     }
+
+    /* Increment reference count */
+    GDIOBJ_vReferenceObjectByPointer(&ppdev->pSurface->BaseObject);
 
     DPRINT("PDEVOBJ_pSurface() returning %p\n", ppdev->pSurface);
     return ppdev->pSurface;
@@ -337,7 +344,8 @@ EngpCreatePDEV(
     if (!PDEVOBJ_bEnablePDEV(ppdev, pdm, NULL))
     {
         DPRINT1("Failed to enable PDEV!\n");
-        ASSERT(FALSE);
+        PDEVOBJ_vRelease(ppdev);
+        return NULL;
     }
 
     /* FIXME: this must be done in a better way */
@@ -350,8 +358,8 @@ EngpCreatePDEV(
     return ppdev;
 }
 
-VOID
 FORCEINLINE
+VOID
 SwitchPointer(
     _Inout_ PVOID pvPointer1,
     _Inout_ PVOID pvPointer2)

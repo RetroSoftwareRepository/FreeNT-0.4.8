@@ -9,11 +9,12 @@
 
 #include <pseh/pseh2.h>
 
-#include <wine/debug.h>
 WINE_DEFAULT_DEBUG_CHANNEL(wgl);
 
 static CRITICAL_SECTION dc_data_cs = {NULL, -1, 0, 0, 0, 0};
 static struct wgl_dc_data* dc_data_list = NULL;
+
+LIST_ENTRY ContextListHead;
 
 /* FIXME: suboptimal */
 static
@@ -78,6 +79,7 @@ get_dc_data(HDC hdc)
         data->nb_icd_formats = data->icd_data->DrvDescribePixelFormat(hdc, 0, 0, NULL);
     else
         data->nb_icd_formats = 0;
+    TRACE("ICD %S has %u formats for HDC %x.\n", data->icd_data->DriverName, data->nb_icd_formats, hdc);
     data->nb_sw_formats = sw_DescribePixelFormat(hdc, 0, 0, NULL);
     data->next = dc_data_list;
     dc_data_list = data;
@@ -139,7 +141,11 @@ INT WINAPI wglDescribePixelFormat(HDC hdc, INT format, UINT size, PIXELFORMATDES
     /* Query ICD if needed */
     if(format <= dc_data->nb_icd_formats)
     {
-        if(!dc_data->icd_data->DrvDescribePixelFormat(hdc, format, size, descr))
+        struct ICD_Data* icd_data = dc_data->icd_data;
+        /* SetPixelFormat may have NULLified this */
+        if (!icd_data)
+            icd_data = IntGetIcdData(hdc);
+        if(!icd_data->DrvDescribePixelFormat(hdc, format, size, descr))
         {
             ret = 0;
         }
@@ -174,7 +180,7 @@ INT WINAPI wglChoosePixelFormat(HDC hdc, const PIXELFORMATDESCRIPTOR* ppfd)
     if (!count) return 0;
 
     best_format = 0;
-    best.dwFlags = 0;
+    best.dwFlags = PFD_GENERIC_FORMAT;
     best.cAlphaBits = -1;
     best.cColorBits = -1;
     best.cDepthBits = -1;
@@ -191,10 +197,31 @@ INT WINAPI wglChoosePixelFormat(HDC hdc, const PIXELFORMATDESCRIPTOR* ppfd)
             continue;
         }
 
-        /* only use bitmap capable for formats for bitmap rendering */
-        if( (ppfd->dwFlags & PFD_DRAW_TO_BITMAP) != (format.dwFlags & PFD_DRAW_TO_BITMAP))
+        /* only use bitmap capable formats for bitmap rendering */
+        if ((ppfd->dwFlags & PFD_DRAW_TO_BITMAP) != (format.dwFlags & PFD_DRAW_TO_BITMAP))
         {
             TRACE( "PFD_DRAW_TO_BITMAP mismatch for iPixelFormat=%d\n", i );
+            continue;
+        }
+
+        /* only use window capable formats for window rendering */
+        if ((ppfd->dwFlags & PFD_DRAW_TO_WINDOW) != (format.dwFlags & PFD_DRAW_TO_WINDOW))
+        {
+            TRACE( "PFD_DRAW_TO_WINDOW mismatch for iPixelFormat=%d\n", i );
+            continue;
+        }
+
+        /* only use opengl capable formats for opengl rendering */
+        if ((ppfd->dwFlags & PFD_SUPPORT_OPENGL) != (format.dwFlags & PFD_SUPPORT_OPENGL))
+        {
+            TRACE( "PFD_SUPPORT_OPENGL mismatch for iPixelFormat=%d\n", i );
+            continue;
+        }
+
+        /* only use GDI capable formats for GDI rendering */
+        if ((ppfd->dwFlags & PFD_SUPPORT_GDI) != (format.dwFlags & PFD_SUPPORT_GDI))
+        {
+            TRACE( "PFD_SUPPORT_GDI mismatch for iPixelFormat=%d\n", i );
             continue;
         }
 
@@ -308,6 +335,9 @@ INT WINAPI wglChoosePixelFormat(HDC hdc, const PIXELFORMATDESCRIPTOR* ppfd)
         continue;
 
     found:
+        /* Prefer HW accelerated formats */
+        if ((format.dwFlags & PFD_GENERIC_FORMAT) && !(best.dwFlags & PFD_GENERIC_FORMAT))
+            continue;
         best_format = i;
         best = format;
         bestDBuffer = format.dwFlags & PFD_DOUBLEBUFFER;
@@ -401,6 +431,9 @@ HGLRC WINAPI wglCreateContext(HDC hdc)
     context->pixelformat = dc_data->pixelformat;
     context->thread_id = 0;
     
+    /* Insert into the list */
+    InsertTailList(&ContextListHead, &context->ListEntry);
+
     context->magic = 'GLRC';
     TRACE("Success!\n");
     return (HGLRC)context;
@@ -504,6 +537,7 @@ BOOL WINAPI wglDeleteContext(HGLRC hglrc)
         sw_DeleteContext(context->dhglrc);
     
     context->magic = 0;
+    RemoveEntryList(&context->ListEntry);
     HeapFree(GetProcessHeap(), 0, context);
     
     return TRUE;
@@ -850,7 +884,7 @@ BOOL WINAPI wglShareLists(HGLRC hglrcSrc, HGLRC hglrcDst)
     return sw_ShareLists(ctx_src->dhglrc, ctx_dst->dhglrc);
 }
 
-BOOL WINAPI wglSwapBuffers(HDC hdc)
+BOOL WINAPI DECLSPEC_HOTPATCH wglSwapBuffers(HDC hdc)
 {
     struct wgl_dc_data* dc_data = get_dc_data(hdc);
     
@@ -880,4 +914,19 @@ BOOL WINAPI wglSwapLayerBuffers(HDC hdc, UINT fuPlanes)
 DWORD WINAPI wglSwapMultipleBuffers(UINT count, CONST WGLSWAP * toSwap)
 {
     return 0;
+}
+
+/* Clean up on DLL unload */
+void
+IntDeleteAllContexts(void)
+{
+    struct wgl_context* context;
+    LIST_ENTRY* Entry = ContextListHead.Flink;
+
+    while (Entry != &ContextListHead)
+    {
+        context = CONTAINING_RECORD(Entry, struct wgl_context, ListEntry);
+        wglDeleteContext((HGLRC)context);
+        Entry = ContextListHead.Flink;
+    }
 }

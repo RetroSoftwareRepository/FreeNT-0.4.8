@@ -19,9 +19,6 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "cdlg.h"
-#include "filedlgbrowser.h"
-
 LANGUAGE LANG_DANISH, SUBLANG_DEFAULT
 
 STRINGTABLE
@@ -37,6 +34,7 @@ Vil du erstatte den?"
                           / : < > |"
     IDS_PATHNOTEXISTING     "Stien eksisterer ikke."
     IDS_FILENOTEXISTING     "Filen eksisterer ikke."
+    IDS_INVALID_FOLDERNAME  "The selection contains a non-folder object"
 }
 
 STRINGTABLE
@@ -139,6 +137,7 @@ STRINGTABLE
     IDS_SAVE        "Gem"
     IDS_SAVE_AS     "Gem som"
     IDS_OPEN_FILE   "Åben fil"
+    IDS_SELECT_FOLDER "Select Folder"
 }
 
 /*

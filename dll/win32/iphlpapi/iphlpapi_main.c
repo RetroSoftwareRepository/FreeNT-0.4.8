@@ -781,11 +781,24 @@ DWORD WINAPI GetBestRoute(DWORD dwDestAddr, DWORD dwSourceAddr, PMIB_IPFORWARDRO
  *
  * NOTES
  */
+
 DWORD WINAPI GetExtendedTcpTable(PVOID pTcpTable, PDWORD pdwSize, BOOL bOrder, ULONG ulAf, TCP_TABLE_CLASS TableClass, ULONG Reserved)
 {
 	DWORD ret = NO_ERROR;
-	UNIMPLEMENTED;
-	return ret;	
+
+  if (TableClass == TCP_TABLE_OWNER_PID_ALL) {
+    if (*pdwSize == 0) {
+      *pdwSize = sizeof(MIB_TCPTABLE_OWNER_PID);
+      return ERROR_INSUFFICIENT_BUFFER; 
+    } else {
+      ZeroMemory(pTcpTable, sizeof(MIB_TCPTABLE_OWNER_PID));
+      return NO_ERROR;
+    }
+  }
+
+
+    UNIMPLEMENTED;
+    return ret;	
 }
 
 
@@ -2132,7 +2145,7 @@ DWORD WINAPI SetIpNetEntry(PMIB_IPNETROW pArpEntry)
   if (!pArpEntry)
       return ERROR_INVALID_PARAMETER;
 
-  if (!NT_SUCCESS(openTcpFile( &tcpFile )))
+  if (!NT_SUCCESS(openTcpFile( &tcpFile, FILE_READ_DATA | FILE_WRITE_DATA )))
       return ERROR_NOT_SUPPORTED;
 
   if (!NT_SUCCESS(getNthIpEntity( tcpFile, pArpEntry->dwIndex, &id )))
@@ -2281,9 +2294,9 @@ PIP_ADAPTER_ORDER_MAP WINAPI GetAdapterOrderMap(VOID)
 /*
  * @implemented
  */
-DWORD WINAPI GetAdaptersAddresses(ULONG Family,ULONG Flags,PVOID Reserved,PIP_ADAPTER_ADDRESSES pAdapterAddresses,PULONG pOutBufLen)
-{
 #if 0
+DWORD WINAPI DECLSPEC_HOTPATCH GetAdaptersAddresses(ULONG Family,ULONG Flags,PVOID Reserved,PIP_ADAPTER_ADDRESSES pAdapterAddresses,PULONG pOutBufLen)
+{
     InterfaceIndexTable *indexTable;
     IFInfo ifInfo;
     int i;
@@ -2299,7 +2312,7 @@ DWORD WINAPI GetAdaptersAddresses(ULONG Family,ULONG Flags,PVOID Reserved,PIP_AD
     if (!indexTable)
         return ERROR_NOT_ENOUGH_MEMORY;
 
-    ret = openTcpFile(&tcpFile);
+    ret = openTcpFile(&tcpFile, FILE_READ_DATA);
     if (!NT_SUCCESS(ret))
         return ERROR_NO_DATA;
 
@@ -2470,16 +2483,8 @@ DWORD WINAPI GetAdaptersAddresses(ULONG Family,ULONG Flags,PVOID Reserved,PIP_AD
     free(indexTable);
 
     return NO_ERROR;
-#else
-    if (!pOutBufLen) return ERROR_INVALID_PARAMETER;
-    if (!pAdapterAddresses || *pOutBufLen == 0)
-      return ERROR_BUFFER_OVERFLOW;
-    if (Reserved) return ERROR_INVALID_PARAMETER;
-
-    FIXME(":stub\n");
-    return ERROR_NO_DATA;
-#endif
 }
+#endif
 
 /*
  * @unimplemented
@@ -2515,35 +2520,6 @@ DWORD WINAPI GetIcmpStatisticsEx(PMIB_ICMP_EX pStats,DWORD dwFamily)
 {
     FIXME(":stub\n");
     return 0L;
-}
-
-/******************************************************************
- *    GetIfTable2 (IPHLPAPI.@)
- *
- * PARAMS
- *  pIfTable [In/Out]
- */
- 
-NETIOAPI_API WINAPI GetIfTable2(PMIB_IF_TABLE2 *pIfTable)
-{
-    UNIMPLEMENTED;
-    return ERROR_NOT_SUPPORTED;
-}
-
-/******************************************************************
- *    GetIfEntry2 (IPHLPAPI.@)
- *
- * PARAMS
- *  pIfRow [In/Out]
- */
-NETIOAPI_API WINAPI GetIfEntry2(IN OUT PMIB_IF_ROW2 pIfRow)
-{
-  TRACE("pIfRow %p\n", pIfRow);
-  if (!pIfRow)
-    return ERROR_INVALID_PARAMETER;
-    
-  UNIMPLEMENTED;
-  return ERROR_NOT_SUPPORTED;
 }
 
 DWORD WINAPI

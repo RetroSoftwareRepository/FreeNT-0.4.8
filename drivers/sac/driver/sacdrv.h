@@ -6,17 +6,14 @@
  * PROGRAMMERS: ReactOS Portable Systems Group
  */
 
+#ifndef _SACDRV_H_
+#define _SACDRV_H_
+
 /* INCLUDES *******************************************************************/
 
 #include <ntifs.h>
-#include <intrin.h>
-#include <wchar.h>
 #include <stdio.h>
-#include <ndk/obtypes.h>
-#include <ndk/exfuncs.h>
-#include <ndk/rtlfuncs.h>
-#include <../../../ntoskrnl/include/internal/hdl.h>
-#include <initguid.h>
+#include <ntoskrnl/include/internal/hdl.h>
 #include <sacmsg.h>
 
 /* DEFINES ********************************************************************/
@@ -1400,8 +1397,8 @@ typedef enum _VT_ANSI_ATTRIBUTES
     AlteronateFont5,
     AlteronateFont6,
     AlternateFont7,
-    AlternatEfont8,
-    Alternatefont9,
+    AlternateFont8,
+    AlternateFont9,
 
     //
     // Additional attributes (not supported)
@@ -1517,3 +1514,5 @@ typedef enum _VT_ANSI_ATTRIBUTES
 #define VT_ANSI_HVP_CURSOR_CHAR     L'f'
 #define VT_ANSI_CUP_CURSOR_CHAR     L'H'
 #define VT_ANSI_SCROLL_CHAR         L'r'
+
+#endif /* _SACDRV_H_ */

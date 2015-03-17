@@ -32,9 +32,9 @@ AddServiceToList(LPWSTR *lpServiceList,
         if (lpNewList)
         {
             /* Copy the service name */
-            wcscpy_s(lpNewList,
-                     dwToAddSize,
-                     lpServiceToAdd);
+            StringCchCopy(lpNewList,
+                          dwToAddSize,
+                          lpServiceToAdd);
 
             /* Add the double null char */
             lpNewList[dwToAddSize - 1] = L'\0';
@@ -68,9 +68,9 @@ AddServiceToList(LPWSTR *lpServiceList,
         if (lpNewList)
         {
             /* Copy the service name */
-            wcscpy_s(&lpNewList[dwCurSize - 1],
-                     dwToAddSize,
-                     lpServiceToAdd);
+            StringCchCopy(&lpNewList[dwCurSize - 1],
+                          dwToAddSize,
+                          lpServiceToAdd);
 
             /* Add the double null char */
             lpNewList[dwCurSize + dwToAddSize - 1] = L'\0';
@@ -163,6 +163,8 @@ AddServiceNamesToStop(HWND hServiceListBox,
                          LB_ADDSTRING,
                          0,
                          (LPARAM)lpServiceConfig->lpDisplayName);
+
+            HeapFree(GetProcessHeap(), 0, lpServiceConfig);
         }
 
         /* Move onto the next string */
@@ -238,9 +240,7 @@ DoInitDependsDialog(PMAIN_WND_INFO pInfo,
                 bRet = TRUE;
             }
 
-            HeapFree(ProcessHeap,
-                     0,
-                     lpPartialStr);
+            LocalFree(lpPartialStr);
         }
 
         /* Display the list of services which need stopping */

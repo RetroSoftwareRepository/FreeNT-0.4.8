@@ -17,31 +17,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define COBJMACROS
-#include <config.h>
-//#include "wine/port.h"
-
-//#include <stdarg.h>
-//#include <string.h>
-
-#define NONAMELESSUNION
-#define NONAMELESSSTRUCT
-#include <windef.h>
-//#include "winerror.h"
-//#include "winbase.h"
-//#include "winnt.h"
-#include <winreg.h>
-//#include "winnls.h"
-#include <wine/unicode.h>
-#include <wine/debug.h>
-
 #include "dplayx_global.h"
-#include "name_server.h"
-//#include "dplayx_queue.h"
-//#include "dplaysp.h"
-//#include "dplay_global.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(dplay);
 
 /* FIXME: Should this be externed? */
 extern HRESULT DPL_CreateCompoundAddress
@@ -173,9 +149,7 @@ static BOOL DP_CreateDirectPlay2( LPVOID lpDP )
   This->dp2->spData.lpCB->dwVersion = DPSP_MAJORVERSION;
 
   /* This is the pointer to the service provider */
-  if( FAILED( DPSP_CreateInterface( &IID_IDirectPlaySP,
-                                    (LPVOID*)&This->dp2->spData.lpISP, This ) )
-    )
+  if ( FAILED( dplaysp_create( &IID_IDirectPlaySP, (void**)&This->dp2->spData.lpISP, This ) ) )
   {
     /* FIXME: Memory leak */
     return FALSE;
@@ -187,8 +161,7 @@ static BOOL DP_CreateDirectPlay2( LPVOID lpDP )
                                          sizeof( *This->dp2->dplspData.lpCB ) );
   This->dp2->dplspData.lpCB->dwSize = sizeof(  *This->dp2->dplspData.lpCB );
 
-  if( FAILED( DPLSP_CreateInterface( &IID_IDPLobbySP,
-                                     (LPVOID*)&This->dp2->dplspData.lpISP, This ) )
+  if( FAILED( dplobbysp_create( &IID_IDPLobbySP, (void**)&This->dp2->dplspData.lpISP, This ) )
     )
   {
     /* FIXME: Memory leak */
@@ -327,28 +300,17 @@ HRESULT DP_HandleMessage( IDirectPlayImpl *This, const void *lpcMessageBody,
 
     case DPMSGCMD_GETNAMETABLEREPLY:
     case DPMSGCMD_NEWPLAYERIDREPLY:
-#if 0
-      if( wCommandId == DPMSGCMD_NEWPLAYERIDREPLY )
-        DebugBreak();
-#endif
       DP_MSG_ReplyReceived( This, wCommandId, lpcMessageBody, dwMessageBodySize );
       break;
 
-#if 1
     case DPMSGCMD_JUSTENVELOPE:
       TRACE( "GOT THE SELF MESSAGE: %p -> 0x%08x\n", lpcMessageHeader, ((const DWORD *)lpcMessageHeader)[1] );
       NS_SetLocalAddr( This->dp2->lpNameServerData, lpcMessageHeader, 20 );
       DP_MSG_ReplyReceived( This, wCommandId, lpcMessageBody, dwMessageBodySize );
-#endif
 
     case DPMSGCMD_FORWARDADDPLAYER:
-#if 0
-      DebugBreak();
-#endif
-#if 1
       TRACE( "Sending message to self to get my addr\n" );
       DP_MSG_ToSelf( This, 1 ); /* This is a hack right now */
-#endif
       break;
 
     case DPMSGCMD_FORWARDADDPLAYERNACK:
@@ -1674,7 +1636,7 @@ static HRESULT DP_IF_CreatePlayer( IDirectPlayImpl *This, void *lpMsgHdr, DPID *
   }
 
 #if 1
-  if( This->dp2->bHostInterface == FALSE )
+  if( !This->dp2->bHostInterface )
   {
     /* Let the name server know about the creation of this player */
     /* FIXME: Is this only to be done for the creation of a server player or
@@ -4648,7 +4610,7 @@ static HMODULE DP_LoadSP( LPCGUID lpcGuid, LPSPINITDATA lpSpData, LPBOOL lpbIsDp
     FILETIME filetime;
 
     (i == 0) ? (searchSubKey = spSubKey ) : (searchSubKey = lpSubKey );
-    *lpbIsDpSp = (i == 0) ? TRUE : FALSE;
+    *lpbIsDpSp = (i == 0);
 
 
     /* Need to loop over the service providers in the registry */
@@ -5799,6 +5761,11 @@ static HRESULT DirectPlayEnumerateAW(LPDPENUMDPCALLBACKA lpEnumCallbackA,
     DWORD max_sizeOfDescriptionA = 0;
     WCHAR *descriptionW = NULL;
     DWORD max_sizeOfDescriptionW = 0;
+    DWORD sizeOfSubKeyName;
+    WCHAR subKeyName[255]; /* 255 is the maximum key size according to MSDN */
+    LONG  ret_value;
+    static GUID *guid_cache;
+    static int cache_count;
     
     if (!lpEnumCallbackA && !lpEnumCallbackW)
     {
@@ -5813,19 +5780,37 @@ static HRESULT DirectPlayEnumerateAW(LPDPENUMDPCALLBACKA lpEnumCallbackA,
 	ERR(": no service provider key in the registry - check your Wine installation !!!\n");
 	return DPERR_GENERIC;
     }
-    
+
+    dwIndex = 0;
+    do
+    {
+	sizeOfSubKeyName = sizeof(subKeyName) / sizeof(WCHAR);
+	ret_value = RegEnumKeyW(hkResult, dwIndex, subKeyName, sizeOfSubKeyName);
+	dwIndex++;
+    }
+    while (ret_value == ERROR_SUCCESS);
+    /* The game Swing from bug 37185 expects GUID values to persist after
+     * the end of the enumeration. */
+    if (cache_count < dwIndex)
+    {
+	HeapFree(GetProcessHeap(), 0, guid_cache);
+	guid_cache = HeapAlloc(GetProcessHeap(), 0, sizeof(GUID) * dwIndex);
+	if (!guid_cache)
+	{
+	    ERR(": failed to alloc required memory.\n");
+	    return DPERR_EXCEPTION;
+	}
+	cache_count = dwIndex;
+    }
     /* Traverse all the service providers we have available */
     dwIndex = 0;
     while (1)
     {
-	WCHAR subKeyName[255]; /* 255 is the maximum key size according to MSDN */
-	DWORD sizeOfSubKeyName = sizeof(subKeyName) / sizeof(WCHAR);
 	HKEY  hkServiceProvider;
-	GUID  serviceProviderGUID;
 	WCHAR guidKeyContent[(2 * 16) + 1 + 6 /* This corresponds to '{....-..-..-..-......}' */ ];
 	DWORD sizeOfGuidKeyContent = sizeof(guidKeyContent);
-	LONG  ret_value;
 	
+	sizeOfSubKeyName = sizeof(subKeyName) / sizeof(WCHAR);
 	ret_value = RegEnumKeyExW(hkResult, dwIndex, subKeyName, &sizeOfSubKeyName,
 				  NULL, NULL, NULL, &filetime);
 	if (ret_value == ERROR_NO_MORE_ITEMS)
@@ -5856,7 +5841,7 @@ static HRESULT DirectPlayEnumerateAW(LPDPENUMDPCALLBACKA lpEnumCallbackA,
 	    ERR(": invalid format for the GUID registry data member for service provider %s (%s).\n", debugstr_w(subKeyName), debugstr_w(guidKeyContent));
 	    continue;
 	}
-	CLSIDFromString(guidKeyContent, &serviceProviderGUID );
+	CLSIDFromString(guidKeyContent, &guid_cache[dwIndex]);
 	
 	/* The enumeration will return FALSE if we are not to continue.
 	 *
@@ -5884,7 +5869,7 @@ static HRESULT DirectPlayEnumerateAW(LPDPENUMDPCALLBACKA lpEnumCallbackA,
 	    RegQueryValueExA(hkServiceProvider, "DescriptionA",
 			     NULL, NULL, (LPBYTE) descriptionA, &sizeOfDescription);
 	    
-	    if (!lpEnumCallbackA(&serviceProviderGUID, descriptionA, 6, 0, lpContext))
+	    if (!lpEnumCallbackA(&guid_cache[dwIndex], descriptionA, 6, 0, lpContext))
 		goto end;
 	}
 	else
@@ -5906,7 +5891,7 @@ static HRESULT DirectPlayEnumerateAW(LPDPENUMDPCALLBACKA lpEnumCallbackA,
 	    RegQueryValueExW(hkServiceProvider, descW,
 			     NULL, NULL, (LPBYTE) descriptionW, &sizeOfDescription);
 
-	    if (!lpEnumCallbackW(&serviceProviderGUID, descriptionW, 6, 0, lpContext))
+	    if (!lpEnumCallbackW(&guid_cache[dwIndex], descriptionW, 6, 0, lpContext))
 		goto end;
 	}
       

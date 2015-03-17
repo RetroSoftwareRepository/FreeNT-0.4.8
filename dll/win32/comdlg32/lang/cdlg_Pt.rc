@@ -19,9 +19,6 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "cdlg.h"
-#include "filedlgbrowser.h"
-
 LANGUAGE LANG_PORTUGUESE, SUBLANG_DEFAULT
 
 STRINGTABLE
@@ -37,6 +34,7 @@ Gostaria de o substituir?"
                           / : < > |"
     IDS_PATHNOTEXISTING     "A localização não existe"
     IDS_FILENOTEXISTING     "O ficheiro não existe"
+    IDS_INVALID_FOLDERNAME  "The selection contains a non-folder object"
 }
 
 STRINGTABLE
@@ -139,6 +137,7 @@ STRINGTABLE
     IDS_SAVE        "Gravar"
     IDS_SAVE_AS     "Gravar Como"
     IDS_OPEN_FILE   "Abrir Ficheiro"
+    IDS_SELECT_FOLDER "Select Folder"
 }
 
 /*

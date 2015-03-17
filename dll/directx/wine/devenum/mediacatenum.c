@@ -23,19 +23,18 @@
  */
 
 #include "devenum_private.h"
-//#include "oleauto.h"
+
 #include <ocidl.h>
-
-#include <wine/debug.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(devenum);
+#include <oleauto.h>
 
 typedef struct
 {
     IEnumMoniker IEnumMoniker_iface;
     LONG ref;
     DWORD index;
+    DWORD subkey_cnt;
     HKEY hkey;
+    HKEY special_hkey;
 } EnumMonikerImpl;
 
 typedef struct
@@ -147,15 +146,15 @@ static HRESULT WINAPI DEVENUM_IPropertyBag_Read(
             switch (V_VT(pVar))
             {
             case VT_LPWSTR:
-                V_UNION(pVar, bstrVal) = CoTaskMemAlloc(received);
-                memcpy(V_UNION(pVar, bstrVal), pData, received);
+                V_BSTR(pVar) = CoTaskMemAlloc(received);
+                memcpy(V_BSTR(pVar), pData, received);
                 res = S_OK;
                 break;
             case VT_EMPTY:
                 V_VT(pVar) = VT_BSTR;
             /* fall through */
             case VT_BSTR:
-                V_UNION(pVar, bstrVal) = SysAllocStringLen(pData, received/sizeof(WCHAR) - 1);
+                V_BSTR(pVar) = SysAllocStringLen(pData, received/sizeof(WCHAR) - 1);
                 res = S_OK;
                 break;
             }
@@ -169,7 +168,7 @@ static HRESULT WINAPI DEVENUM_IPropertyBag_Read(
                 /* fall through */
             case VT_I4:
             case VT_UI4:
-                V_UNION(pVar, ulVal) = *(DWORD *)pData;
+                V_I4(pVar) = *(DWORD *)pData;
                 res = S_OK;
                 break;
             }
@@ -187,7 +186,7 @@ static HRESULT WINAPI DEVENUM_IPropertyBag_Read(
                     V_VT(pVar) = VT_ARRAY | VT_UI1;
                     /* fall through */
                 case VT_ARRAY | VT_UI1:
-                    if (!(V_UNION(pVar, parray) = SafeArrayCreate(VT_UI1, 1, &bound)))
+                    if (!(V_ARRAY(pVar) = SafeArrayCreate(VT_UI1, 1, &bound)))
                         res = E_OUTOFMEMORY;
                     else
                         res = S_OK;
@@ -197,12 +196,12 @@ static HRESULT WINAPI DEVENUM_IPropertyBag_Read(
                 if (res == E_INVALIDARG)
                     break;
 
-                res = SafeArrayAccessData(V_UNION(pVar, parray), &pArrayElements);
+                res = SafeArrayAccessData(V_ARRAY(pVar), &pArrayElements);
                 if (FAILED(res))
                     break;
 
                 CopyMemory(pArrayElements, pData, received);
-                res = SafeArrayUnaccessData(V_UNION(pVar, parray));
+                res = SafeArrayUnaccessData(V_ARRAY(pVar));
                 break;
             }
         }
@@ -233,15 +232,15 @@ static HRESULT WINAPI DEVENUM_IPropertyBag_Write(
     {
     case VT_BSTR:
     case VT_LPWSTR:
-        TRACE("writing %s\n", debugstr_w(V_UNION(pVar, bstrVal)));
-        lpData = V_UNION(pVar, bstrVal);
+        TRACE("writing %s\n", debugstr_w(V_BSTR(pVar)));
+        lpData = V_BSTR(pVar);
         dwType = REG_SZ;
-        cbData = (lstrlenW(V_UNION(pVar, bstrVal)) + 1) * sizeof(WCHAR);
+        cbData = (lstrlenW(V_BSTR(pVar)) + 1) * sizeof(WCHAR);
         break;
     case VT_I4:
     case VT_UI4:
-        TRACE("writing %u\n", V_UNION(pVar, ulVal));
-        lpData = &V_UNION(pVar, ulVal);
+        TRACE("writing %u\n", V_UI4(pVar));
+        lpData = &V_UI4(pVar);
         dwType = REG_DWORD;
         cbData = sizeof(DWORD);
         break;
@@ -250,11 +249,11 @@ static HRESULT WINAPI DEVENUM_IPropertyBag_Write(
         LONG lUbound = 0;
         LONG lLbound = 0;
         dwType = REG_BINARY;
-        res = SafeArrayGetLBound(V_UNION(pVar, parray), 1, &lLbound);
-        res = SafeArrayGetUBound(V_UNION(pVar, parray), 1, &lUbound);
+        res = SafeArrayGetLBound(V_ARRAY(pVar), 1, &lLbound);
+        res = SafeArrayGetUBound(V_ARRAY(pVar), 1, &lUbound);
         cbData = (lUbound - lLbound + 1) /* * sizeof(BYTE)*/;
         TRACE("cbData: %d\n", cbData);
-        res = SafeArrayAccessData(V_UNION(pVar, parray), &lpData);
+        res = SafeArrayAccessData(V_ARRAY(pVar), &lpData);
         break;
     }
     default:
@@ -268,7 +267,7 @@ static HRESULT WINAPI DEVENUM_IPropertyBag_Write(
         res = E_FAIL;
 
     if (V_VT(pVar) & VT_ARRAY)
-        res = SafeArrayUnaccessData(V_UNION(pVar, parray));
+        res = SafeArrayUnaccessData(V_ARRAY(pVar));
 
     return res;
 }
@@ -419,8 +418,8 @@ static HRESULT WINAPI DEVENUM_IMediaCatMoniker_BindToObject(IMoniker *iface, IBi
             }
             if (SUCCEEDED(res))
             {
-                res = CLSIDFromString(V_UNION(&var,bstrVal), &clsID);
-                CoTaskMemFree(V_UNION(&var, bstrVal));
+                res = CLSIDFromString(V_BSTR(&var), &clsID);
+                CoTaskMemFree(V_BSTR(&var));
             }
             if (SUCCEEDED(res))
             {
@@ -717,6 +716,8 @@ static ULONG WINAPI DEVENUM_IEnumMoniker_Release(IEnumMoniker *iface)
 
     if (!ref)
     {
+        if(This->special_hkey)
+            RegCloseKey(This->special_hkey);
         RegCloseKey(This->hkey);
         CoTaskMemFree(This);
         DEVENUM_UnlockModule();
@@ -738,7 +739,12 @@ static HRESULT WINAPI DEVENUM_IEnumMoniker_Next(IEnumMoniker *iface, ULONG celt,
 
     while (fetched < celt)
     {
-        res = RegEnumKeyW(This->hkey, This->index, buffer, sizeof(buffer) / sizeof(WCHAR));
+        if(This->index+fetched < This->subkey_cnt)
+            res = RegEnumKeyW(This->hkey, This->index+fetched, buffer, sizeof(buffer) / sizeof(WCHAR));
+        else if(This->special_hkey)
+            res = RegEnumKeyW(This->special_hkey, This->index+fetched-This->subkey_cnt, buffer, sizeof(buffer) / sizeof(WCHAR));
+        else
+            break;
         if (res != ERROR_SUCCESS)
         {
             break;
@@ -747,7 +753,8 @@ static HRESULT WINAPI DEVENUM_IEnumMoniker_Next(IEnumMoniker *iface, ULONG celt,
         if (!pMoniker)
             return E_OUTOFMEMORY;
 
-        if (RegOpenKeyW(This->hkey, buffer, &pMoniker->hkey) != ERROR_SUCCESS)
+        if (RegOpenKeyW(This->index+fetched < This->subkey_cnt ? This->hkey : This->special_hkey,
+                        buffer, &pMoniker->hkey) != ERROR_SUCCESS)
         {
             IMoniker_Release(&pMoniker->IMoniker_iface);
             break;
@@ -772,17 +779,16 @@ static HRESULT WINAPI DEVENUM_IEnumMoniker_Next(IEnumMoniker *iface, ULONG celt,
 static HRESULT WINAPI DEVENUM_IEnumMoniker_Skip(IEnumMoniker *iface, ULONG celt)
 {
     EnumMonikerImpl *This = impl_from_IEnumMoniker(iface);
-    DWORD subKeys;
+    DWORD special_subkeys = 0;
 
     TRACE("(%p)->(%d)\n", iface, celt);
 
     /* Before incrementing, check if there are any more values to run through.
        Some programs use the Skip() function to get the number of devices */
-    if(RegQueryInfoKeyW(This->hkey, NULL, NULL, NULL, &subKeys, NULL, NULL, NULL, NULL, NULL, NULL, NULL) != ERROR_SUCCESS)
-    {
-        return S_FALSE;
-    }
-    if((This->index + celt) >= subKeys)
+    if(This->special_hkey)
+        RegQueryInfoKeyW(This->special_hkey, NULL, NULL, NULL, &special_subkeys, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+
+    if((This->index + celt) >= This->subkey_cnt + special_subkeys)
     {
         return S_FALSE;
     }
@@ -824,7 +830,7 @@ static const IEnumMonikerVtbl IEnumMoniker_Vtbl =
     DEVENUM_IEnumMoniker_Clone
 };
 
-HRESULT DEVENUM_IEnumMoniker_Construct(HKEY hkey, IEnumMoniker ** ppEnumMoniker)
+HRESULT DEVENUM_IEnumMoniker_Construct(HKEY hkey, HKEY special_hkey, IEnumMoniker ** ppEnumMoniker)
 {
     EnumMonikerImpl * pEnumMoniker = CoTaskMemAlloc(sizeof(EnumMonikerImpl));
     if (!pEnumMoniker)
@@ -834,8 +840,13 @@ HRESULT DEVENUM_IEnumMoniker_Construct(HKEY hkey, IEnumMoniker ** ppEnumMoniker)
     pEnumMoniker->ref = 1;
     pEnumMoniker->index = 0;
     pEnumMoniker->hkey = hkey;
+    pEnumMoniker->special_hkey = special_hkey;
 
     *ppEnumMoniker = &pEnumMoniker->IEnumMoniker_iface;
+
+    if(RegQueryInfoKeyW(pEnumMoniker->hkey, NULL, NULL, NULL, &pEnumMoniker->subkey_cnt, NULL, NULL, NULL, NULL, NULL, NULL, NULL) != ERROR_SUCCESS)
+        pEnumMoniker->subkey_cnt = 0;
+
 
     DEVENUM_LockModule();
 

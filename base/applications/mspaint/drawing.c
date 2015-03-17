@@ -67,11 +67,16 @@ RRect(HDC hdc, LONG x1, LONG y1, LONG x2, LONG y2, COLORREF fg,  COLORREF bg, in
 }
 
 void
-Poly(HDC hdc, POINT * lpPoints, int nCount,  COLORREF fg,  COLORREF bg, int thickness, int style, BOOL closed)
+Poly(HDC hdc, POINT * lpPoints, int nCount,  COLORREF fg,  COLORREF bg, int thickness, int style, BOOL closed, BOOL inverted)
 {
     LOGBRUSH logbrush;
     HBRUSH oldBrush;
     HPEN oldPen = SelectObject(hdc, CreatePen(PS_SOLID, thickness, fg));
+    UINT oldRop = GetROP2(hdc);
+
+    if (inverted)
+      SetROP2(hdc, R2_NOTXORPEN);
+
     logbrush.lbStyle = (style == 0) ? BS_HOLLOW : BS_SOLID;
     logbrush.lbColor = (style == 2) ? fg : bg;
     logbrush.lbHatch = 0;
@@ -82,6 +87,8 @@ Poly(HDC hdc, POINT * lpPoints, int nCount,  COLORREF fg,  COLORREF bg, int thic
         Polyline(hdc, lpPoints, nCount);
     DeleteObject(SelectObject(hdc, oldBrush));
     DeleteObject(SelectObject(hdc, oldPen));
+
+    SetROP2(hdc, oldRop);
 }
 
 void
@@ -128,7 +135,7 @@ Replace(HDC hdc, LONG x1, LONG y1, LONG x2, LONG y2, COLORREF fg, COLORREF bg, L
 {
     LONG a, b, x, y;
     b = max(1, max(abs(x2 - x1), abs(y2 - y1)));
-    
+
     for(a = 0; a <= b; a++)
         for(y = (y1 * (b - a) + y2 * a) / b - radius + 1;
             y < (y1 * (b - a) + y2 * a) / b + radius + 1; y++)
@@ -142,7 +149,7 @@ void
 Airbrush(HDC hdc, LONG x, LONG y, COLORREF color, LONG r)
 {
     LONG a, b;
-    
+
     for(b = -r; b <= r; b++)
         for(a = -r; a <= r; a++)
             if ((a * a + b * b <= r * r) && (rand() % 4 == 0))
@@ -195,7 +202,7 @@ Brush(HDC hdc, LONG x1, LONG y1, LONG x2, LONG y2, COLORREF color, LONG style)
         case 10:
         case 11:
         {
-            POINT offsTop[] = {{4, -3}, {2, -2}, {0, 0}, 
+            POINT offsTop[] = {{4, -3}, {2, -2}, {0, 0},
                                {-3, -3}, {-2, -2}, {-1, 0}};
             POINT offsBtm[] = {{-3, 4}, {-2, 2}, {-1, 1},
                                {4, 4}, {2, 2}, {0, 1}};
@@ -223,6 +230,10 @@ RectSel(HDC hdc, LONG x1, LONG y1, LONG x2, LONG y2)
     HBRUSH oldBrush;
     LOGBRUSH logbrush;
     HPEN oldPen = SelectObject(hdc, CreatePen(PS_DOT, 1, 0x00000000));
+    UINT oldRop = GetROP2(hdc);
+
+    SetROP2(hdc, R2_NOTXORPEN);
+
     logbrush.lbStyle = BS_HOLLOW;
     logbrush.lbColor = 0;
     logbrush.lbHatch = 0;
@@ -230,23 +241,26 @@ RectSel(HDC hdc, LONG x1, LONG y1, LONG x2, LONG y2)
     Rectangle(hdc, x1, y1, x2, y2);
     DeleteObject(SelectObject(hdc, oldBrush));
     DeleteObject(SelectObject(hdc, oldPen));
+
+    SetROP2(hdc, oldRop);
 }
 
 void
-SelectionFrame(HDC hdc, LONG x1, LONG y1, LONG x2, LONG y2)
+SelectionFrame(HDC hdc, LONG x1, LONG y1, LONG x2, LONG y2, DWORD system_selection_color)
 {
     HBRUSH oldBrush;
     LOGBRUSH logbrush;
-    HPEN oldPen = SelectObject(hdc, CreatePen(PS_DOT, 1, 0x00000000));
+    HPEN oldPen = SelectObject(hdc, CreatePen(PS_DOT, 1, system_selection_color));
+
     logbrush.lbStyle = BS_HOLLOW;
     logbrush.lbColor = 0;
     logbrush.lbHatch = 0;
     oldBrush = SelectObject(hdc, CreateBrushIndirect(&logbrush));
-    Rectangle(hdc, x1, y1, x2, y2);
+    Rectangle(hdc, x1, y1, x2, y2); /* SEL BOX FRAME */
     DeleteObject(SelectObject(hdc, oldBrush));
     DeleteObject(SelectObject(hdc, oldPen));
-    oldPen = SelectObject(hdc, CreatePen(PS_SOLID, 1, 0x00000000));
-    oldBrush = SelectObject(hdc, CreateSolidBrush(0x00000000));
+    oldPen = SelectObject(hdc, CreatePen(PS_SOLID, 1, system_selection_color));
+    oldBrush = SelectObject(hdc, CreateSolidBrush(system_selection_color));
     Rectangle(hdc, x1 - 1, y1 - 1, x1 + 2, y1 + 2);
     Rectangle(hdc, x2 - 2, y1 - 1, x2 + 2, y1 + 2);
     Rectangle(hdc, x1 - 1, y2 - 2, x1 + 2, y2 + 1);
@@ -257,4 +271,25 @@ SelectionFrame(HDC hdc, LONG x1, LONG y1, LONG x2, LONG y2)
     Rectangle(hdc, x2 - 2, (y1 + y2) / 2 - 1, x2 + 1, (y1 + y2) / 2 + 2);
     DeleteObject(SelectObject(hdc, oldBrush));
     DeleteObject(SelectObject(hdc, oldPen));
+}
+
+void
+Text(HDC hdc, LONG x1, LONG y1, LONG x2, LONG y2, COLORREF fg, COLORREF bg, LPCTSTR lpchText, HFONT font, LONG style)
+{
+    HFONT oldFont;
+    RECT rect = {x1, y1, x2, y2};
+    COLORREF oldColor;
+    COLORREF oldBkColor;
+    int oldBkMode;
+    oldFont = SelectObject(hdc, font);
+    oldColor = SetTextColor(hdc, fg);
+    oldBkColor = SetBkColor(hdc, bg);
+    oldBkMode = SetBkMode(hdc, TRANSPARENT);
+    if (style == 0)
+        Rect(hdc, x1, y1, x2, y2, bg, bg, 1, 2);
+    DrawText(hdc, lpchText, -1, &rect, DT_EDITCONTROL);
+    SelectObject(hdc, oldFont);
+    SetTextColor(hdc, oldColor);
+    SetBkColor(hdc, oldBkColor);
+    SetBkMode(hdc, oldBkMode);
 }

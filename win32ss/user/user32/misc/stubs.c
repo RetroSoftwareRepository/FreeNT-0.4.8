@@ -297,6 +297,7 @@ DefRawInputProc(
  */
 UINT
 WINAPI
+DECLSPEC_HOTPATCH
 GetRawInputBuffer(
     PRAWINPUT pData,
     PUINT pcbSize,
@@ -345,6 +346,7 @@ GetRawInputDeviceList(
  */
 UINT
 WINAPI
+DECLSPEC_HOTPATCH
 GetRegisteredRawInputDevices(
     PRAWINPUTDEVICE pRawInputDevices,
     PUINT puiNumDevices,
@@ -359,6 +361,7 @@ GetRegisteredRawInputDevices(
  */
 BOOL
 WINAPI
+DECLSPEC_HOTPATCH
 RegisterRawInputDevices(
     PCRAWINPUTDEVICE pRawInputDevices,
     UINT uiNumDevices,
@@ -465,33 +468,6 @@ VOID WINAPI ShowStartGlass(DWORD unknown)
 }
 
 /*
- * @unimplemented
- */
-BOOL WINAPI DdeGetQualityOfService(HWND hWnd, DWORD Reserved, PSECURITY_QUALITY_OF_SERVICE pqosPrev)
-{
-  UNIMPLEMENTED;
-  return FALSE;
-}
-
-/*
- * @unimplemented
- */
-BOOL WINAPI SetProcessDPIAware(VOID)
-{
-    UNIMPLEMENTED;
-    return TRUE;
-}
-
-/*
- * @unimplemented
- */
-BOOL WINAPI CliImmSetHotKey(DWORD dwID, UINT uModifiers, UINT uVirtualKey, HKL hKl)
-{
-  UNIMPLEMENTED;
-  return FALSE;
-}
-
-/*
  * @implemented
  */
 DWORD WINAPI GetMenuIndex(HMENU hMenu, HMENU hSubMenu)
@@ -518,9 +494,10 @@ BuildReasonArray(PVOID Pointer)
 
 VOID
 WINAPI
-CreateSystemThreads(DWORD dwUnknown)
+CreateSystemThreads(DWORD Unused)
 {
-    NtUserxCreateSystemThreads(dwUnknown);
+    /* Thread call for remote processes (non-CSRSS) only */
+    NtUserxCreateSystemThreads(TRUE);
     ExitThread(0);
 }
 
@@ -538,15 +515,6 @@ DeviceEventWorker(DWORD dw1, DWORD dw2, DWORD dw3, DWORD dw4, DWORD dw5)
 {
     UNIMPLEMENTED;
     return FALSE;
-}
-
-HCURSOR
-WINAPI
-GetCursorFrameInfo(HCURSOR hCursor, LPCWSTR name, DWORD istep, PDWORD rate_jiffies, INT *num_steps)
-{
-   if (hCursor) return NtUserGetCursorFrameInfo(hCursor, istep, rate_jiffies, num_steps);
-
-   return LoadImageW( NULL, name, IMAGE_CURSOR, 0, 0, LR_DEFAULTSIZE );
 }
 
 BOOL

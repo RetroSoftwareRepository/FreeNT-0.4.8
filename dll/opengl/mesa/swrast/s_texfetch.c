@@ -23,7 +23,6 @@
  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-
 /**
  * \file s_texfetch.c
  *
@@ -32,42 +31,7 @@
  * \author Gareth Hughes
  */
 
-
-#include "main/colormac.h"
-#include "main/macros.h"
-#include "main/teximage.h"
-#include "s_context.h"
-#include "s_texfetch.h"
-
-
-/**
- * Convert an 8-bit sRGB value from non-linear space to a
- * linear RGB value in [0, 1].
- * Implemented with a 256-entry lookup table.
- */
-static inline GLfloat
-nonlinear_to_linear(GLubyte cs8)
-{
-   static GLfloat table[256];
-   static GLboolean tableReady = GL_FALSE;
-   if (!tableReady) {
-      /* compute lookup table now */
-      GLuint i;
-      for (i = 0; i < 256; i++) {
-         const GLfloat cs = UBYTE_TO_FLOAT(i);
-         if (cs <= 0.04045) {
-            table[i] = cs / 12.92f;
-         }
-         else {
-            table[i] = (GLfloat) pow((cs + 0.055) / 1.055, 2.4);
-         }
-      }
-      tableReady = GL_TRUE;
-   }
-   return table[cs8];
-}
-
-
+#include <precomp.h>
 
 /* Texel fetch routines for all supported formats
  */
@@ -332,79 +296,6 @@ texfetch_funcs[MESA_FORMAT_COUNT] =
       NULL,
       NULL
    },
-   {
-      MESA_FORMAT_RGBA_FLOAT32,
-      fetch_texel_1d_f_rgba_f32,
-      fetch_texel_2d_f_rgba_f32,
-      fetch_texel_3d_f_rgba_f32
-   },
-   {
-      MESA_FORMAT_RGBA_FLOAT16,
-      fetch_texel_1d_f_rgba_f16,
-      fetch_texel_2d_f_rgba_f16,
-      fetch_texel_3d_f_rgba_f16
-   },
-   {
-      MESA_FORMAT_RGB_FLOAT32,
-      fetch_texel_1d_f_rgb_f32,
-      fetch_texel_2d_f_rgb_f32,
-      fetch_texel_3d_f_rgb_f32
-   },
-   {
-      MESA_FORMAT_RGB_FLOAT16,
-      fetch_texel_1d_f_rgb_f16,
-      fetch_texel_2d_f_rgb_f16,
-      fetch_texel_3d_f_rgb_f16
-   },
-   {
-      MESA_FORMAT_ALPHA_FLOAT32,
-      fetch_texel_1d_f_alpha_f32,
-      fetch_texel_2d_f_alpha_f32,
-      fetch_texel_3d_f_alpha_f32
-   },
-   {
-      MESA_FORMAT_ALPHA_FLOAT16,
-      fetch_texel_1d_f_alpha_f16,
-      fetch_texel_2d_f_alpha_f16,
-      fetch_texel_3d_f_alpha_f16
-   },
-   {
-      MESA_FORMAT_LUMINANCE_FLOAT32,
-      fetch_texel_1d_f_luminance_f32,
-      fetch_texel_2d_f_luminance_f32,
-      fetch_texel_3d_f_luminance_f32
-   },
-   {
-      MESA_FORMAT_LUMINANCE_FLOAT16,
-      fetch_texel_1d_f_luminance_f16,
-      fetch_texel_2d_f_luminance_f16,
-      fetch_texel_3d_f_luminance_f16
-   },
-   {
-      MESA_FORMAT_LUMINANCE_ALPHA_FLOAT32,
-      fetch_texel_1d_f_luminance_alpha_f32,
-      fetch_texel_2d_f_luminance_alpha_f32,
-      fetch_texel_3d_f_luminance_alpha_f32
-   },
-   {
-      MESA_FORMAT_LUMINANCE_ALPHA_FLOAT16,
-      fetch_texel_1d_f_luminance_alpha_f16,
-      fetch_texel_2d_f_luminance_alpha_f16,
-      fetch_texel_3d_f_luminance_alpha_f16
-   },
-   {
-      MESA_FORMAT_INTENSITY_FLOAT32,
-      fetch_texel_1d_f_intensity_f32,
-      fetch_texel_2d_f_intensity_f32,
-      fetch_texel_3d_f_intensity_f32
-   },
-   {
-      MESA_FORMAT_INTENSITY_FLOAT16,
-      fetch_texel_1d_f_intensity_f16,
-      fetch_texel_2d_f_intensity_f16,
-      fetch_texel_3d_f_intensity_f16
-   },
-
    {
       MESA_FORMAT_ALPHA_UINT8,
       NULL,

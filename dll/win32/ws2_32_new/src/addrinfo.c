@@ -7,7 +7,10 @@
  */
 
 /* INCLUDES ******************************************************************/
+
 #include <ws2_32.h>
+
+#include <ws2tcpip.h>
 
 //#define NDEBUG
 #include <debug.h>
@@ -87,15 +90,18 @@ WINAPI
 ParseV4Address(IN PCWSTR AddressString,
                OUT PDWORD pAddress)
 {
-    DWORD Address;
-    LPWSTR Ip = 0;
+    IN_ADDR Address;
+    PCWSTR Terminator;
+    NTSTATUS Status;
 
-    /* Do the conversion, don't accept wildcard */
-    RtlIpv4StringToAddressW((LPWSTR)AddressString, 0, &Ip, (IN_ADDR *)&Address);
+    *pAddress = 0;
+    Status = RtlIpv4StringToAddressW(AddressString, FALSE, &Terminator, &Address);
 
-    /* Return the address and success */
-    *pAddress = Address;
-    return FALSE;
+    if (!NT_SUCCESS(Status))
+        return FALSE;
+
+    *pAddress = Address.S_un.S_addr;
+    return TRUE;
 }
 
 static
@@ -912,7 +918,7 @@ getnameinfo(const struct sockaddr FAR *sa,
     WCHAR ServiceBuffer[17];
     DWORD HostLength = 0, ServLength = 0;
     PWCHAR ServiceString = NULL, HostString = NULL;
-    DPRINT("getaddrinfo: %p, %p, %p, %lx\n", host, serv, sa, salen);
+    DPRINT("getnameinfo: %p, %p, %p, %lx\n", host, serv, sa, salen);
 
     /* Check for WSAStartup */
     if ((ErrorCode = WsQuickProlog()) != ERROR_SUCCESS) return ErrorCode;

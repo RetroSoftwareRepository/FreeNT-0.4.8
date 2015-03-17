@@ -16,20 +16,8 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <config.h>
-#include <wine/port.h>
-
-//#include <math.h>
-//#include <limits.h>
-
 #include "jscript.h"
-#include "engine.h"
 
-#include <wine/debug.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(jscript);
-
-#define LONGLONG_MAX (((LONGLONG)0x7fffffff<<32)|0xffffffff)
 
 static const WCHAR NaNW[] = {'N','a','N',0};
 static const WCHAR InfinityW[] = {'I','n','f','i','n','i','t','y',0};
@@ -554,7 +542,7 @@ static HRESULT JSGlobal_parseFloat(script_ctx_t *ctx, vdisp_t *jsthis, WORD flag
 
     while(isdigitW(*str)) {
         hlp = d*10 + *(str++) - '0';
-        if(d>LONGLONG_MAX/10 || hlp<0) {
+        if(d>MAXLONGLONG/10 || hlp<0) {
             exp++;
             break;
         }
@@ -573,7 +561,7 @@ static HRESULT JSGlobal_parseFloat(script_ctx_t *ctx, vdisp_t *jsthis, WORD flag
 
     while(isdigitW(*str)) {
         hlp = d*10 + *(str++) - '0';
-        if(d>LONGLONG_MAX/10 || hlp<0)
+        if(d>MAXLONGLONG/10 || hlp<0)
             break;
 
         d = hlp;
@@ -755,8 +743,10 @@ static HRESULT JSGlobal_ScriptEngineBuildVersion(script_ctx_t *ctx, vdisp_t *jst
 static HRESULT JSGlobal_CollectGarbage(script_ctx_t *ctx, vdisp_t *jsthis, WORD flags, unsigned argc, jsval_t *argv,
         jsval_t *r)
 {
-    FIXME("\n");
-    return E_NOTIMPL;
+    static int once = 0;
+    if (!once++)
+        FIXME(": stub\n");
+    return S_OK;
 }
 
 static HRESULT JSGlobal_encodeURI(script_ctx_t *ctx, vdisp_t *jsthis, WORD flags, unsigned argc, jsval_t *argv,

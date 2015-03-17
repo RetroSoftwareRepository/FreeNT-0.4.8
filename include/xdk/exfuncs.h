@@ -379,6 +379,7 @@ $if (_NTIFS_)
 #define ExDisableResourceBoost ExDisableResourceBoostLite
 
 VOID
+NTAPI
 ExInitializePushLock(
   _Out_ PEX_PUSH_LOCK PushLock);
 $endif (_NTIFS_)
@@ -605,14 +606,14 @@ NTKERNELAPI
 VOID
 NTAPI
 ExFreePool(
-  _In_ __drv_freesMem(Mem) PVOID P);
+  _Pre_notnull_ __drv_freesMem(Mem) PVOID P);
 
 _IRQL_requires_max_(DISPATCH_LEVEL)
 NTKERNELAPI
 VOID
 NTAPI
 ExFreePoolWithTag(
-  _In_ __drv_freesMem(Mem) PVOID P,
+  _Pre_notnull_ __drv_freesMem(Mem) PVOID P,
   _In_ ULONG Tag);
 
 _IRQL_requires_max_(DISPATCH_LEVEL)

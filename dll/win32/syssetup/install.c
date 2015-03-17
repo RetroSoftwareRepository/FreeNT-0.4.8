@@ -28,7 +28,14 @@
 
 #include "precomp.h"
 
+#include <tchar.h>
+#include <wincon.h>
+#include <winsvc.h>
+#include <userenv.h>
+#include <shlobj.h>
+#include <shlwapi.h>
 #include <rpcproxy.h>
+#include <ndk/cmfuncs.h>
 
 #define NDEBUG
 #include <debug.h>
@@ -36,9 +43,13 @@
 DWORD WINAPI
 CMP_WaitNoPendingInstallEvents(DWORD dwTimeout);
 
+DWORD WINAPI
+SetupStartService(LPCWSTR lpServiceName, BOOL bWait);
+
 /* GLOBALS ******************************************************************/
 
 HINF hSysSetupInf = INVALID_HANDLE_VALUE;
+ADMIN_INFO AdminInfo;
 
 /* FUNCTIONS ****************************************************************/
 
@@ -233,7 +244,6 @@ static BOOL CreateShortcuts(HINF hinf, LPCWSTR szSection)
     WCHAR szFolder[MAX_PATH];
     WCHAR szFolderSection[MAX_PATH];
     INT csidl;
-    LPWSTR p;
 
     CoInitialize(NULL);
 
@@ -254,19 +264,8 @@ static BOOL CreateShortcuts(HINF hinf, LPCWSTR szSection)
         if (!SetupGetStringFieldW(&Context, 2, szFolder, MAX_PATH, NULL))
             continue;
 
-        if (!SHGetSpecialFolderPathW(0, szPath, csidl, TRUE))
+        if (FAILED(SHGetFolderPathAndSubDirW(NULL, csidl|CSIDL_FLAG_CREATE, (HANDLE)-1, SHGFP_TYPE_DEFAULT, szFolder, szPath)))
             continue;
-
-        p = PathAddBackslash(szPath);
-        _tcscpy(p, szFolder);
-
-        if (!CreateDirectory(szPath, NULL))
-        {
-            if (GetLastError() != ERROR_ALREADY_EXISTS) 
-            {
-                continue;
-            }
-        }
 
         CreateShortcutsFromSection(hinf, szFolderSection, szPath);
 
@@ -479,7 +478,7 @@ RegisterTypeLibraries (HINF hinf, LPCWSTR szSection)
         hret = SHGetFolderPathW(NULL, csidl, NULL, 0, szPath);
         if (FAILED(hret))
         {
-            FatalError("SHGetSpecialFolderPathW failed hret=0x%d\n", hret);
+            FatalError("SHGetFolderPathW failed hret=0x%lx\n", hret);
             continue;
         }
 
@@ -847,6 +846,72 @@ SetSetupType(DWORD dwSetupType)
     return TRUE;
 }
 
+/* Install a section of a .inf file
+ * Returns TRUE if success, FALSE if failure. Error code can
+ * be retrieved with GetLastError()
+ */
+static
+BOOL
+InstallInfSection(
+    IN HWND hWnd,
+    IN LPCWSTR InfFile,
+    IN LPCWSTR InfSection OPTIONAL,
+    IN LPCWSTR InfService OPTIONAL)
+{
+    WCHAR Buffer[MAX_PATH];
+    HINF hInf = INVALID_HANDLE_VALUE;
+    UINT BufferSize;
+    PVOID Context = NULL;
+    BOOL ret = FALSE;
+
+    /* Get Windows directory */
+    BufferSize = MAX_PATH - 5 - wcslen(InfFile);
+    if (GetWindowsDirectoryW(Buffer, BufferSize) > BufferSize)
+    {
+        /* Function failed */
+        SetLastError(ERROR_GEN_FAILURE);
+        goto cleanup;
+    }
+    /* We have enough space to add some information in the buffer */
+    if (Buffer[wcslen(Buffer) - 1] != '\\')
+        wcscat(Buffer, L"\\");
+    wcscat(Buffer, L"Inf\\");
+    wcscat(Buffer, InfFile);
+
+    /* Install specified section */
+    hInf = SetupOpenInfFileW(Buffer, NULL, INF_STYLE_WIN4, NULL);
+    if (hInf == INVALID_HANDLE_VALUE)
+        goto cleanup;
+
+    Context = SetupInitDefaultQueueCallback(hWnd);
+    if (Context == NULL)
+        goto cleanup;
+
+    ret = TRUE;
+    if (ret && InfSection)
+    {
+        ret = SetupInstallFromInfSectionW(
+            hWnd, hInf,
+            InfSection, SPINST_ALL,
+            NULL, NULL, SP_COPY_NEWER,
+            SetupDefaultQueueCallbackW, Context,
+            NULL, NULL);
+    }
+    if (ret && InfService)
+    {
+        ret = SetupInstallServicesFromInfSectionW(
+            hInf, InfService, 0);
+    }
+
+cleanup:
+    if (Context)
+        SetupTermDefaultQueueCallback(Context);
+    if (hInf != INVALID_HANDLE_VALUE)
+        SetupCloseInfFile(hInf);
+    return ret;
+}
+
+
 DWORD WINAPI
 InstallReactOS(HINSTANCE hInstance)
 {
@@ -855,6 +920,7 @@ InstallReactOS(HINSTANCE hInstance)
     TOKEN_PRIVILEGES privs;
     HKEY hKey;
     HINF hShortcutsInf;
+    BOOL ret;
 
     InitializeSetupActionLog(FALSE);
     LogItem(SYSSETUP_SEVERITY_INFORMATION, L"Installing ReactOS");
@@ -898,12 +964,30 @@ InstallReactOS(HINSTANCE hInstance)
         CreateDirectory(szBuffer, NULL);
     }
 
+    /* Hack: Install TCP/IP protocol driver */
+    ret = InstallInfSection(NULL,
+                            L"nettcpip.inf",
+                            L"MS_TCPIP.PrimaryInstall",
+                            L"MS_TCPIP.PrimaryInstall.Services");
+    if (!ret && GetLastError() != ERROR_FILE_NOT_FOUND)
+    {
+        DPRINT("InstallInfSection() failed with error 0x%lx\n", GetLastError());
+    }
+    else 
+    {
+        /* Start the TCP/IP protocol driver */
+        SetupStartService(L"Tcpip", FALSE);
+    }
+
+
     if (!CommonInstall())
         return 0;
 
     InstallWizard();
 
     InstallSecurity();
+
+    SetAutoAdminLogon();
 
     hShortcutsInf = SetupOpenInfFileW(L"shortcuts.inf",
                                       NULL,
@@ -933,7 +1017,12 @@ InstallReactOS(HINSTANCE hInstance)
             HANDLE hToken;
             BOOL ret;
 
-            ret = LogonUserW(L"Administrator", L"", L"", LOGON32_LOGON_NETWORK, LOGON32_PROVIDER_DEFAULT, &hToken);
+            ret = LogonUserW(AdminInfo.Name,
+                             AdminInfo.Domain,
+                             AdminInfo.Password,
+                             LOGON32_LOGON_INTERACTIVE,
+                             LOGON32_PROVIDER_DEFAULT,
+                             &hToken);
             if (!ret)
             {
                 FatalError("LogonUserW() failed!");
@@ -958,6 +1047,15 @@ InstallReactOS(HINSTANCE hInstance)
 
     LogItem(SYSSETUP_SEVERITY_INFORMATION, L"Installing ReactOS done");
     TerminateSetupActionLog();
+
+    if (AdminInfo.Name != NULL)
+        RtlFreeHeap(RtlGetProcessHeap(), 0, AdminInfo.Name);
+
+    if (AdminInfo.Domain != NULL)
+        RtlFreeHeap(RtlGetProcessHeap(), 0, AdminInfo.Domain);
+
+    if (AdminInfo.Password != NULL)
+        RtlFreeHeap(RtlGetProcessHeap(), 0, AdminInfo.Password);
 
     /* Get shutdown privilege */
     if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES, &token))
@@ -1026,4 +1124,49 @@ DWORD WINAPI
 SetupChangeLocale(HWND hWnd, LCID Lcid)
 {
     return SetupChangeLocaleEx(hWnd, Lcid, NULL, 0, 0, 0);
+}
+
+
+DWORD
+WINAPI
+SetupStartService(
+    LPCWSTR lpServiceName,
+    BOOL bWait)
+{
+    SC_HANDLE hManager = NULL;
+    SC_HANDLE hService = NULL;
+    DWORD dwError = ERROR_SUCCESS;
+
+    hManager = OpenSCManagerW(NULL,
+                              NULL,
+                              SC_MANAGER_ALL_ACCESS);
+    if (hManager == NULL)
+    {
+        dwError = GetLastError();
+        goto done;
+    }
+
+    hService = OpenServiceW(hManager,
+                            lpServiceName,
+                            SERVICE_START);
+    if (hService == NULL)
+    {
+        dwError = GetLastError();
+        goto done;
+    }
+
+    if (!StartService(hService, 0, NULL))
+    {
+        dwError = GetLastError();
+        goto done;
+    }
+
+done:
+    if (hService != NULL)
+        CloseServiceHandle(hService);
+
+    if (hManager != NULL)
+        CloseServiceHandle(hManager);
+
+    return dwError;
 }

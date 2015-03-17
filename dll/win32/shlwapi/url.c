@@ -18,33 +18,14 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-#define COM_NO_WINDOWS_H
+#include "precomp.h"
 
-#include <config.h>
-//#include "wine/port.h"
-#include <stdarg.h>
-//#include <string.h>
-//#include <stdlib.h>
-#include <windef.h>
-#include <winbase.h>
-//#include "winnls.h"
-//#include "winerror.h"
-#include <wine/unicode.h>
 #include <wininet.h>
-#include <winreg.h>
-#include <winternl.h>
-#define NO_SHLWAPI_STREAM
-#include <shlwapi.h>
 #include <intshcut.h>
-#include <wine/debug.h>
 
 HMODULE WINAPI MLLoadLibraryW(LPCWSTR,HMODULE,DWORD);
 BOOL    WINAPI MLFreeLibrary(HMODULE);
 HRESULT WINAPI MLBuildResURLW(LPCWSTR,HMODULE,DWORD,LPCWSTR,LPWSTR,DWORD);
-
-WINE_DEFAULT_DEBUG_CHANNEL(shell);
 
 static inline WCHAR *heap_strdupAtoW(const char *str)
 {
@@ -669,6 +650,7 @@ HRESULT WINAPI UrlCombineW(LPCWSTR pszBase, LPCWSTR pszRelative,
     DWORD i, len, res1, res2, process_case = 0;
     LPWSTR work, preliminary, mbase, mrelative;
     static const WCHAR myfilestr[] = {'f','i','l','e',':','/','/','/','\0'};
+    static const WCHAR fragquerystr[] = {'#','?',0};
     HRESULT ret;
 
     TRACE("(base %s, Relative %s, Combine size %d, flags %08x)\n",
@@ -740,17 +722,19 @@ HRESULT WINAPI UrlCombineW(LPCWSTR pszBase, LPCWSTR pszRelative,
             }
         }
 
-        /* If there is a '#' and the characters immediately preceding it are
-         * ".htm[l]", then begin looking for the last leaf starting from
-         * the '#'. Otherwise the '#' is not meaningful and just start
-         * looking from the end. */
-        if ((work = strchrW(base.pszSuffix + sizeloc, '#'))) {
+        /* If there is a '?', then the remaining part can only contain a
+         * query string or fragment, so start looking for the last leaf
+         * from the '?'. Otherwise, if there is a '#' and the characters
+         * immediately preceding it are ".htm[l]", then begin looking for
+         * the last leaf starting from the '#'. Otherwise the '#' is not
+         * meaningful and just start looking from the end. */
+        if ((work = strpbrkW(base.pszSuffix + sizeloc, fragquerystr))) {
             const WCHAR htmlW[] = {'.','h','t','m','l',0};
             const int len_htmlW = 5;
             const WCHAR htmW[] = {'.','h','t','m',0};
             const int len_htmW = 4;
 
-            if (base.nScheme == URL_SCHEME_HTTP || base.nScheme == URL_SCHEME_HTTPS)
+            if (*work == '?' || base.nScheme == URL_SCHEME_HTTP || base.nScheme == URL_SCHEME_HTTPS)
                 manual_search = TRUE;
             else if (work - base.pszSuffix > len_htmW) {
                 work -= len_htmW;
@@ -987,57 +971,43 @@ HRESULT WINAPI UrlEscapeA(
 #define WINE_URL_STOP_ON_HASH     0x20
 #define WINE_URL_STOP_ON_QUESTION 0x40
 
-static inline BOOL URL_NeedEscapeW(WCHAR ch, DWORD dwFlags, DWORD int_flags)
+static inline BOOL URL_NeedEscapeW(WCHAR ch, DWORD flags, DWORD int_flags)
 {
+    if (flags & URL_ESCAPE_SPACES_ONLY)
+        return ch == ' ';
+
+    if ((flags & URL_ESCAPE_PERCENT) && (ch == '%'))
+	return TRUE;
+
+    if (ch <= 31 || (ch >= 127 && ch <= 255) )
+	return TRUE;
 
     if (isalnumW(ch))
         return FALSE;
 
-    if(dwFlags & URL_ESCAPE_SPACES_ONLY) {
-        if(ch == ' ')
-	    return TRUE;
-	else
-	    return FALSE;
-    }
-
-    if ((dwFlags & URL_ESCAPE_PERCENT) && (ch == '%'))
-	return TRUE;
-
-    if (ch <= 31 || ch >= 127)
-	return TRUE;
-
-    else {
-        switch (ch) {
-	case ' ':
-	case '<':
-	case '>':
-	case '\"':
-	case '{':
-	case '}':
-	case '|':
-	case '\\':
-	case '^':
-	case ']':
-	case '[':
-	case '`':
-	case '&':
-	    return TRUE;
-
-	case '/':
-            if (int_flags & WINE_URL_ESCAPE_SLASH) return TRUE;
-            return FALSE;
-
-	case '?':
-	    if (int_flags & WINE_URL_ESCAPE_QUESTION) return TRUE;
-            return FALSE;
-
-        case '#':
-            if (int_flags & WINE_URL_ESCAPE_HASH) return TRUE;
-            return FALSE;
-
-	default:
-	    return FALSE;
-	}
+    switch (ch) {
+    case ' ':
+    case '<':
+    case '>':
+    case '\"':
+    case '{':
+    case '}':
+    case '|':
+    case '\\':
+    case '^':
+    case ']':
+    case '[':
+    case '`':
+    case '&':
+        return TRUE;
+    case '/':
+        return !!(int_flags & WINE_URL_ESCAPE_SLASH);
+    case '?':
+        return !!(int_flags & WINE_URL_ESCAPE_QUESTION);
+    case '#':
+        return !!(int_flags & WINE_URL_ESCAPE_HASH);
+    default:
+        return FALSE;
     }
 }
 

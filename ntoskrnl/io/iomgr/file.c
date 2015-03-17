@@ -15,6 +15,8 @@
 #define NDEBUG
 #include <debug.h>
 
+extern ERESOURCE IopSecurityResource;
+
 /* PRIVATE FUNCTIONS *********************************************************/
 
 VOID
@@ -162,6 +164,107 @@ IopCheckDeviceAndDriver(IN POPEN_PACKET OpenPacket,
     }
 }
 
+VOID
+NTAPI
+IopDoNameTransmogrify(IN PIRP Irp,
+                      IN PFILE_OBJECT FileObject,
+                      IN PREPARSE_DATA_BUFFER DataBuffer)
+{
+    PWSTR Buffer;
+    USHORT Length;
+    USHORT RequiredLength;
+    PWSTR NewBuffer;
+
+    PAGED_CODE();
+
+    ASSERT(Irp->IoStatus.Status == STATUS_REPARSE);
+    ASSERT(Irp->IoStatus.Information == IO_REPARSE_TAG_MOUNT_POINT);
+    ASSERT(Irp->Tail.Overlay.AuxiliaryBuffer != NULL);
+    ASSERT(DataBuffer != NULL);
+    ASSERT(DataBuffer->ReparseTag == IO_REPARSE_TAG_MOUNT_POINT);
+    ASSERT(DataBuffer->ReparseDataLength < MAXIMUM_REPARSE_DATA_BUFFER_SIZE);
+    ASSERT(DataBuffer->Reserved < MAXIMUM_REPARSE_DATA_BUFFER_SIZE);
+
+    /* First of all, validate data */
+    if (DataBuffer->ReparseDataLength < REPARSE_DATA_BUFFER_HEADER_SIZE ||
+        (DataBuffer->SymbolicLinkReparseBuffer.PrintNameLength +
+         DataBuffer->SymbolicLinkReparseBuffer.SubstituteNameLength +
+         FIELD_OFFSET(REPARSE_DATA_BUFFER, MountPointReparseBuffer.PathBuffer[0])) > MAXIMUM_REPARSE_DATA_BUFFER_SIZE)
+    {
+        Irp->IoStatus.Status = STATUS_IO_REPARSE_DATA_INVALID;
+    }
+
+    /* Everything went right */
+    if (NT_SUCCESS(Irp->IoStatus.Status))
+    {
+        /* Compute buffer & length */
+        Buffer = (PWSTR)((ULONG_PTR)DataBuffer->MountPointReparseBuffer.PathBuffer +
+                                    DataBuffer->MountPointReparseBuffer.SubstituteNameOffset);
+        Length = DataBuffer->MountPointReparseBuffer.SubstituteNameLength;
+
+        /* Check we don't overflow */
+        if ((MAXUSHORT - DataBuffer->Reserved) <= (Length + sizeof(UNICODE_NULL)))
+        {
+            Irp->IoStatus.Status = STATUS_IO_REPARSE_DATA_INVALID;
+        }
+        else
+        {
+            /* Compute how much mem we'll need */
+            RequiredLength = DataBuffer->Reserved + Length + sizeof(UNICODE_NULL);
+
+            /* Check if FileObject can already hold what we need */
+            if (FileObject->FileName.MaximumLength >= RequiredLength)
+            {
+                NewBuffer = FileObject->FileName.Buffer;
+            }
+            else
+            {
+                /* Allocate otherwise */
+                NewBuffer = ExAllocatePoolWithTag(PagedPool, RequiredLength, TAG_IO_NAME);
+                if (NewBuffer == NULL)
+                {
+                     Irp->IoStatus.Status = STATUS_INSUFFICIENT_RESOURCES;
+                }
+            }
+        }
+    }
+
+    /* Everything went right */
+    if (NT_SUCCESS(Irp->IoStatus.Status))
+    {
+        /* Copy reserved */
+        if (DataBuffer->Reserved)
+        {
+            RtlMoveMemory((PWSTR)((ULONG_PTR)NewBuffer + Length),
+                          (PWSTR)((ULONG_PTR)FileObject->FileName.Buffer + FileObject->FileName.Length - DataBuffer->Reserved),
+                          DataBuffer->Reserved);
+        }
+
+        /* Then, buffer */
+        if (Length)
+        {
+            RtlCopyMemory(NewBuffer, Buffer, Length);
+        }
+
+        /* And finally replace buffer if new one was allocated */
+        FileObject->FileName.Length = RequiredLength - sizeof(UNICODE_NULL);
+        if (NewBuffer != FileObject->FileName.Buffer)
+        {
+            if (FileObject->FileName.Buffer)
+            {
+                ExFreePoolWithTag(FileObject->FileName.Buffer, TAG_IO_NAME);
+            }
+
+            FileObject->FileName.Buffer = NewBuffer;
+            FileObject->FileName.MaximumLength = RequiredLength;
+            FileObject->FileName.Buffer[RequiredLength / sizeof(WCHAR) - 1] = UNICODE_NULL;
+        }
+    }
+
+    /* We don't need them anymore - it was allocated by the driver */
+    ExFreePool(DataBuffer);
+}
+
 NTSTATUS
 NTAPI
 IopParseDevice(IN PVOID ParseObject,
@@ -205,6 +308,23 @@ IopParseDevice(IN PVOID ParseObject,
 
     /* Validate the open packet */
     if (!IopValidateOpenPacket(OpenPacket)) return STATUS_OBJECT_TYPE_MISMATCH;
+
+    /* Valide reparse point in case we traversed a mountpoint */
+    if (OpenPacket->TraversedMountPoint)
+    {
+        /* This is a reparse point we understand */
+        ASSERT(OpenPacket->Information == IO_REPARSE_TAG_MOUNT_POINT);
+
+        /* Make sure we're dealing with correct DO */
+        if (OriginalDeviceObject->DeviceType != FILE_DEVICE_DISK &&
+            OriginalDeviceObject->DeviceType != FILE_DEVICE_CD_ROM &&
+            OriginalDeviceObject->DeviceType != FILE_DEVICE_VIRTUAL_DISK &&
+            OriginalDeviceObject->DeviceType != FILE_DEVICE_TAPE)
+        {
+            OpenPacket->FinalStatus = STATUS_IO_REPARSE_DATA_INVALID;
+            return STATUS_IO_REPARSE_DATA_INVALID;
+        }
+    }
 
     /* Check if we have a related file object */
     if (OpenPacket->RelatedFileObject)
@@ -273,6 +393,9 @@ IopParseDevice(IN PVOID ParseObject,
         (!(OpenPacket->RelatedFileObject) || (VolumeOpen)) &&
         !(OpenPacket->Override))
     {
+        KeEnterCriticalRegion();
+        ExAcquireResourceSharedLite(&IopSecurityResource, TRUE);
+
         /* Check if a device object is being parsed  */
         if (!RemainingName->Length)
         {
@@ -384,6 +507,9 @@ IopParseDevice(IN PVOID ParseObject,
             }
         }
 
+        ExReleaseResourceLite(&IopSecurityResource);
+        KeLeaveCriticalRegion();
+
         /* Check if we hold the lock */
         if (LockHeld)
         {
@@ -404,6 +530,29 @@ IopParseDevice(IN PVOID ParseObject,
     /* Check if we can simply use a dummy file */
     UseDummyFile = ((OpenPacket->QueryOnly) || (OpenPacket->DeleteOnly));
 
+#if 1
+    /* FIXME: Small hack still exists, have to check why...
+     * This is triggered multiple times by usetup and then once per boot.
+     */
+    if (ExpInTextModeSetup &&
+        !(DirectOpen) &&
+        !(RemainingName->Length) &&
+        !(OpenPacket->RelatedFileObject) &&
+        ((wcsstr(CompleteName->Buffer, L"Harddisk")) ||
+        (wcsstr(CompleteName->Buffer, L"Floppy"))) &&
+        !(UseDummyFile))
+    {
+        DPRINT1("Using IopParseDevice() hack. Requested invalid attributes: %lx\n",
+        DesiredAccess & ~(SYNCHRONIZE |
+                          FILE_READ_ATTRIBUTES |
+                          READ_CONTROL |
+                          ACCESS_SYSTEM_SECURITY |
+                          WRITE_OWNER |
+                          WRITE_DAC));
+        DirectOpen = TRUE;
+    }
+#endif
+
     /* Check if this is a direct open */
     if (!(RemainingName->Length) &&
         !(OpenPacket->RelatedFileObject) &&
@@ -416,26 +565,6 @@ IopParseDevice(IN PVOID ParseObject,
         !(UseDummyFile))
     {
         /* Remember this for later */
-        DirectOpen = TRUE;
-    }
-
-    /* FIXME: Small hack still exists, have to check why...
-     * This is triggered multiple times by usetup and then once per boot.
-     */
-    if (!(DirectOpen) &&
-        !(RemainingName->Length) &&
-        !(OpenPacket->RelatedFileObject) &&
-        ((wcsstr(CompleteName->Buffer, L"Harddisk")) ||
-         (wcsstr(CompleteName->Buffer, L"Floppy"))) &&
-        !(UseDummyFile))
-    {
-        DPRINT1("Using IopParseDevice() hack. Requested invalid attributes: %lx\n",
-        DesiredAccess & ~(SYNCHRONIZE |
-                          FILE_READ_ATTRIBUTES |
-                          READ_CONTROL |
-                          ACCESS_SYSTEM_SECURITY |
-                          WRITE_OWNER |
-                          WRITE_DAC));
         DirectOpen = TRUE;
     }
 
@@ -481,6 +610,12 @@ IopParseDevice(IN PVOID ParseObject,
             /* Get the attached device */
             DeviceObject = IoGetAttachedDevice(DeviceObject);
         }
+    }
+
+    /* If we traversed a mount point, reset the information */
+    if (OpenPacket->TraversedMountPoint)
+    {
+        OpenPacket->TraversedMountPoint = FALSE;
     }
 
     /* Check if this is a secure FSD */
@@ -739,6 +874,26 @@ IopParseDevice(IN PVOID ParseObject,
         ASSERT(!Irp->PendingReturned);
         ASSERT(!Irp->MdlAddress);
 
+        /* Handle name change if required */
+        if (Status == STATUS_REPARSE)
+        {
+            /* Check this is a mount point */
+            if (Irp->IoStatus.Information == IO_REPARSE_TAG_MOUNT_POINT)
+            {
+                PREPARSE_DATA_BUFFER ReparseData;
+
+                /* Reparse point attributes were passed by the driver in the auxiliary buffer */
+                ASSERT(Irp->Tail.Overlay.AuxiliaryBuffer != NULL);
+                ReparseData = (PREPARSE_DATA_BUFFER)Irp->Tail.Overlay.AuxiliaryBuffer;
+
+                ASSERT(ReparseData->ReparseTag == IO_REPARSE_TAG_MOUNT_POINT);
+                ASSERT(ReparseData->ReparseDataLength < MAXIMUM_REPARSE_DATA_BUFFER_SIZE);
+                ASSERT(ReparseData->Reserved < MAXIMUM_REPARSE_DATA_BUFFER_SIZE);
+
+                IopDoNameTransmogrify(Irp, FileObject, ReparseData);
+            }
+        }
+
         /* Completion happens at APC_LEVEL */
         KeRaiseIrql(APC_LEVEL, &OldIrql);
 
@@ -804,7 +959,90 @@ IopParseDevice(IN PVOID ParseObject,
     }
     else if (Status == STATUS_REPARSE)
     {
-        /* FIXME: We don't handle this at all! */
+        if (OpenPacket->Information == IO_REPARSE ||
+            OpenPacket->Information == IO_REPARSE_TAG_MOUNT_POINT)
+        {
+            /* Update CompleteName with reparse info which got updated in IopDoNameTransmogrify() */
+            if (CompleteName->MaximumLength < FileObject->FileName.Length)
+            {
+                PWSTR NewCompleteName;
+
+                /* Allocate a new buffer for the string */
+                NewCompleteName = ExAllocatePoolWithTag(PagedPool, FileObject->FileName.Length, TAG_IO_NAME);
+                if (NewCompleteName == NULL)
+                {
+                    OpenPacket->FinalStatus = STATUS_INSUFFICIENT_RESOURCES;
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+
+                /* Release the old one */
+                if (CompleteName->Buffer != NULL)
+                {
+                    ExFreePoolWithTag(CompleteName->Buffer, TAG_IO_NAME);
+                }
+
+                /* And setup the new one */
+                CompleteName->Buffer = NewCompleteName;
+                CompleteName->MaximumLength = FileObject->FileName.Length;
+            }
+
+            /* Copy our new complete name */
+            RtlCopyUnicodeString(CompleteName, &FileObject->FileName);
+
+            if (OpenPacket->Information == IO_REPARSE_TAG_MOUNT_POINT)
+            {
+                OpenPacket->RelatedFileObject = NULL;
+            }
+        }
+
+        /* Check if we have a name */
+        if (FileObject->FileName.Length)
+        {
+            /* Free it */
+            ExFreePoolWithTag(FileObject->FileName.Buffer, TAG_IO_NAME);
+            FileObject->FileName.Length = 0;
+        }
+
+        /* Clear its device object */
+        FileObject->DeviceObject = NULL;
+
+        /* Clear the file object in the open packet */
+        OpenPacket->FileObject = NULL;
+
+        /* Dereference the file object */
+        if (!UseDummyFile) ObDereferenceObject(FileObject);
+
+        /* Dereference the device object */
+        IopDereferenceDeviceObject(OriginalDeviceObject, FALSE);
+
+        /* Unless the driver cancelled the open, dereference the VPB */
+        if (Vpb != NULL) IopDereferenceVpbAndFree(Vpb);
+
+        if (OpenPacket->Information != IO_REMOUNT)
+        {
+            OpenPacket->RelatedFileObject = NULL;
+
+            /* Inform we traversed a mount point for later attempt */
+            if (OpenPacket->Information == IO_REPARSE_TAG_MOUNT_POINT)
+            {
+                OpenPacket->TraversedMountPoint = 1;
+            }
+
+            /* In case we override checks, but got this on volume open, fail hard */
+            if (OpenPacket->Override)
+            {
+                KeBugCheckEx(DRIVER_RETURNED_STATUS_REPARSE_FOR_VOLUME_OPEN,
+                             (ULONG_PTR)OriginalDeviceObject,
+                             (ULONG_PTR)DeviceObject,
+                             (ULONG_PTR)CompleteName,
+                             OpenPacket->Information);
+            }
+
+            /* Return to IO/OB so that information can be upgraded */
+            return STATUS_REPARSE;
+        }
+
+        /* FIXME: At that point, we should loop again and reattempt an opening */
         ASSERT(FALSE);
     }
 
@@ -1078,16 +1316,184 @@ IopDeleteFile(IN PVOID ObjectBody)
     }
 }
 
+PDEVICE_OBJECT
+NTAPI
+IopGetDeviceAttachmentBase(IN PDEVICE_OBJECT DeviceObject)
+{
+    PDEVICE_OBJECT PDO = DeviceObject;
+
+    /* Go down the stack to attempt to get the PDO */
+    for (; ((PEXTENDED_DEVOBJ_EXTENSION)PDO->DeviceObjectExtension)->AttachedTo != NULL;
+           PDO = ((PEXTENDED_DEVOBJ_EXTENSION)PDO->DeviceObjectExtension)->AttachedTo);
+
+    return PDO;
+}
+
+PDEVICE_OBJECT
+NTAPI
+IopGetDevicePDO(IN PDEVICE_OBJECT DeviceObject)
+{
+    KIRQL OldIrql;
+    PDEVICE_OBJECT PDO;
+
+    ASSERT(DeviceObject != NULL);
+
+    OldIrql = KeAcquireQueuedSpinLock(LockQueueIoDatabaseLock);
+    /* Get the base DO */
+    PDO = IopGetDeviceAttachmentBase(DeviceObject);
+    /* Check whether that's really a PDO and if so, keep it */
+    if ((PDO->Flags & DO_BUS_ENUMERATED_DEVICE) != DO_BUS_ENUMERATED_DEVICE)
+    {
+        PDO = NULL;
+    }
+    else
+    {
+        ObReferenceObject(PDO);
+    }
+    KeReleaseQueuedSpinLock(LockQueueIoDatabaseLock, OldIrql);
+
+    return PDO;
+}
+
 NTSTATUS
 NTAPI
-IopSecurityFile(IN PVOID ObjectBody,
-                IN SECURITY_OPERATION_CODE OperationCode,
-                IN PSECURITY_INFORMATION SecurityInformation,
-                IN PSECURITY_DESCRIPTOR SecurityDescriptor,
-                IN OUT PULONG BufferLength,
-                IN OUT PSECURITY_DESCRIPTOR *OldSecurityDescriptor,
-                IN POOL_TYPE PoolType,
-                IN OUT PGENERIC_MAPPING GenericMapping)
+IopSetDeviceSecurityDescriptor(IN PDEVICE_OBJECT DeviceObject,
+                               IN PSECURITY_INFORMATION SecurityInformation,
+                               IN PSECURITY_DESCRIPTOR SecurityDescriptor,
+                               IN POOL_TYPE PoolType,
+                               IN PGENERIC_MAPPING GenericMapping)
+{
+    NTSTATUS Status;
+    PSECURITY_DESCRIPTOR OldSecurityDescriptor, CachedSecurityDescriptor, NewSecurityDescriptor;
+
+    PAGED_CODE();
+
+    /* Keep attempting till we find our old SD or fail */
+    while (TRUE)
+    {
+        KeEnterCriticalRegion();
+        ExAcquireResourceSharedLite(&IopSecurityResource, TRUE);
+
+        /* Get our old SD and reference it */
+        OldSecurityDescriptor = DeviceObject->SecurityDescriptor;
+        if (OldSecurityDescriptor != NULL)
+        {
+            ObReferenceSecurityDescriptor(OldSecurityDescriptor, 1);
+        }
+
+        ExReleaseResourceLite(&IopSecurityResource);
+        KeLeaveCriticalRegion();
+
+        /* Set the SD information */
+        NewSecurityDescriptor = OldSecurityDescriptor;
+        Status = SeSetSecurityDescriptorInfo(NULL, SecurityInformation,
+                                             SecurityDescriptor, &NewSecurityDescriptor,
+                                             PoolType, GenericMapping);
+
+        if (!NT_SUCCESS(Status))
+        {
+            if (OldSecurityDescriptor != NULL)
+            {
+                ObDereferenceSecurityDescriptor(OldSecurityDescriptor, 1);
+            }
+
+            break;
+        }
+
+        /* Add the new DS to the internal cache */
+        Status = ObLogSecurityDescriptor(NewSecurityDescriptor,
+                                         &CachedSecurityDescriptor, 1);
+        ExFreePool(NewSecurityDescriptor);
+        if (!NT_SUCCESS(Status))
+        {
+            ObDereferenceSecurityDescriptor(OldSecurityDescriptor, 1);
+            break;
+        }
+
+        KeEnterCriticalRegion();
+        ExAcquireResourceExclusiveLite(&IopSecurityResource, TRUE);
+        /* Check if someone changed it in our back */
+        if (DeviceObject->SecurityDescriptor == OldSecurityDescriptor)
+        {
+            /* We're clear, do the swap */
+            DeviceObject->SecurityDescriptor = CachedSecurityDescriptor;
+            ExReleaseResourceLite(&IopSecurityResource);
+            KeLeaveCriticalRegion();
+
+            /* And dereference old SD (twice - us + not in use) */
+            ObDereferenceSecurityDescriptor(OldSecurityDescriptor, 2);
+
+            break;
+        }
+        ExReleaseResourceLite(&IopSecurityResource);
+        KeLeaveCriticalRegion();
+
+        /* If so, try again */
+        ObDereferenceSecurityDescriptor(OldSecurityDescriptor, 1);
+        ObDereferenceSecurityDescriptor(CachedSecurityDescriptor, 1);
+    }
+
+    return Status;
+}
+
+NTSTATUS
+NTAPI
+IopSetDeviceSecurityDescriptors(IN PDEVICE_OBJECT UpperDeviceObject,
+                                IN PDEVICE_OBJECT PhysicalDeviceObject,
+                                IN PSECURITY_INFORMATION SecurityInformation,
+                                IN PSECURITY_DESCRIPTOR SecurityDescriptor,
+                                IN POOL_TYPE PoolType,
+                                IN PGENERIC_MAPPING GenericMapping)
+{
+    PDEVICE_OBJECT CurrentDO = PhysicalDeviceObject, NextDevice;
+    NTSTATUS Status = STATUS_SUCCESS, TmpStatus;
+
+    PAGED_CODE();
+
+    ASSERT(PhysicalDeviceObject != NULL);
+
+    /* We always reference the DO we're working on */
+    ObReferenceObject(CurrentDO);
+
+    /* Go up from PDO to latest DO */
+    do
+    {
+        /* Attempt to set the new SD on it */
+        TmpStatus = IopSetDeviceSecurityDescriptor(CurrentDO, SecurityInformation,
+                                                   SecurityDescriptor, PoolType,
+                                                   GenericMapping);
+        /* Was our last one? Remember that status then */
+        if (CurrentDO == UpperDeviceObject)
+        {
+            Status = TmpStatus;
+        }
+
+        /* Try to move to the next DO (and thus, reference it) */
+        NextDevice = CurrentDO->AttachedDevice;
+        if (NextDevice)
+        {
+            ObReferenceObject(NextDevice);
+        }
+
+        /* Dereference current DO and move to the next one */
+        ObDereferenceObject(CurrentDO);
+        CurrentDO = NextDevice;
+    }
+    while (CurrentDO != NULL);
+
+    return Status;
+}
+
+NTSTATUS
+NTAPI
+IopGetSetSecurityObject(IN PVOID ObjectBody,
+                        IN SECURITY_OPERATION_CODE OperationCode,
+                        IN PSECURITY_INFORMATION SecurityInformation,
+                        IN PSECURITY_DESCRIPTOR SecurityDescriptor,
+                        IN OUT PULONG BufferLength,
+                        IN OUT PSECURITY_DESCRIPTOR *OldSecurityDescriptor,
+                        IN POOL_TYPE PoolType,
+                        IN OUT PGENERIC_MAPPING GenericMapping)
 {
     IO_STATUS_BLOCK IoStatusBlock;
     PIO_STACK_LOCATION StackPtr;
@@ -1145,21 +1551,59 @@ IopSecurityFile(IN PVOID ObjectBody,
         }
         else if (OperationCode == AssignSecurityDescriptor)
         {
+            Status = STATUS_SUCCESS;
+
             /* Make absolutely sure this is a device object */
             if (!(FileObject) || !(FileObject->Flags & FO_STREAM_FILE))
             {
-                /* Assign the Security Descriptor */
-                DeviceObject->SecurityDescriptor = SecurityDescriptor;
+                PSECURITY_DESCRIPTOR CachedSecurityDescriptor;
+
+                /* Add the security descriptor in cache */
+                Status = ObLogSecurityDescriptor(SecurityDescriptor, &CachedSecurityDescriptor, 1);
+                if (NT_SUCCESS(Status))
+                {
+                    KeEnterCriticalRegion();
+                    ExAcquireResourceExclusiveLite(&IopSecurityResource, TRUE);
+
+                    /* Assign the Security Descriptor */
+                    DeviceObject->SecurityDescriptor = CachedSecurityDescriptor;
+
+                    ExReleaseResourceLite(&IopSecurityResource);
+                    KeLeaveCriticalRegion();
+                }
             }
 
-            /* Return success */
-            return STATUS_SUCCESS;
+            /* Return status */
+            return Status;
         }
-        else
+        else if (OperationCode == SetSecurityDescriptor)
         {
-            DPRINT1("FIXME: Set SD unimplemented for Devices\n");
+            /* Get the Physical Device Object if any */
+            PDEVICE_OBJECT PDO = IopGetDevicePDO(DeviceObject);
+
+            if (PDO != NULL)
+            {
+                /* Apply the new SD to any DO in the path from PDO to current DO */
+                Status = IopSetDeviceSecurityDescriptors(DeviceObject, PDO,
+                                                         SecurityInformation,
+                                                         SecurityDescriptor,
+                                                         PoolType, GenericMapping);
+                ObDereferenceObject(PDO);
+            }
+            else
+            {
+                /* Otherwise, just set for ourselves */
+                Status = IopSetDeviceSecurityDescriptor(DeviceObject,
+                                                        SecurityInformation,
+                                                        SecurityDescriptor,
+                                                        PoolType, GenericMapping);
+            }
+
             return STATUS_SUCCESS;
         }
+
+        /* Shouldn't happen */
+        return STATUS_SUCCESS;
     }
     else if (OperationCode == DeleteSecurityDescriptor)
     {
@@ -1600,6 +2044,8 @@ IopQueryAttributesFile(IN POBJECT_ATTRIBUTES ObjectAttributes,
     if (OpenPacket.ParseCheck != TRUE)
     {
         /* Parse failed */
+        DPRINT("IopQueryAttributesFile failed for '%wZ' with 0x%lx\n",
+               ObjectAttributes->ObjectName, Status);
         return Status;
     }
     else
@@ -1719,10 +2165,6 @@ IoCreateFile(OUT PHANDLE FileHandle,
     PAGED_CODE();
     IOTRACE(IO_FILE_DEBUG, "FileName: %wZ\n", ObjectAttributes->ObjectName);
 
-    /* Allocate the open packet */
-    OpenPacket = ExAllocatePoolWithTag(NonPagedPool, sizeof(*OpenPacket), 'pOoI');
-    if (!OpenPacket) return STATUS_INSUFFICIENT_RESOURCES;
-    RtlZeroMemory(OpenPacket, sizeof(*OpenPacket));
 
     /* Check if we have no parameter checking to do */
     if (Options & IO_NO_PARAMETER_CHECKING)
@@ -1736,35 +2178,31 @@ IoCreateFile(OUT PHANDLE FileHandle,
         AccessMode = ExGetPreviousMode();
     }
 
-    /* Check if the call came from user mode */
+    /* Check if we need to do parameter checking */
     if ((AccessMode != KernelMode) || (Options & IO_CHECK_CREATE_PARAMETERS))
     {
         /* Validate parameters */
         if (FileAttributes & ~FILE_ATTRIBUTE_VALID_FLAGS)
         {
             DPRINT1("File Create 'FileAttributes' Parameter contains invalid flags!\n");
-            ExFreePool(OpenPacket);
             return STATUS_INVALID_PARAMETER;
         }
 
         if (ShareAccess & ~FILE_SHARE_VALID_FLAGS)
         {
             DPRINT1("File Create 'ShareAccess' Parameter contains invalid flags!\n");
-            ExFreePool(OpenPacket);
             return STATUS_INVALID_PARAMETER;
         }
 
         if (Disposition > FILE_MAXIMUM_DISPOSITION)
         {
             DPRINT1("File Create 'Disposition' Parameter is out of range!\n");
-            ExFreePool(OpenPacket);
             return STATUS_INVALID_PARAMETER;
         }
 
         if (CreateOptions & ~FILE_VALID_OPTION_FLAGS)
         {
             DPRINT1("File Create 'CreateOptions' parameter contains invalid flags!\n");
-            ExFreePool(OpenPacket);
             return STATUS_INVALID_PARAMETER;
         }
 
@@ -1772,14 +2210,12 @@ IoCreateFile(OUT PHANDLE FileHandle,
             (!(DesiredAccess & SYNCHRONIZE)))
         {
             DPRINT1("File Create 'CreateOptions' parameter FILE_SYNCHRONOUS_IO_* requested, but 'DesiredAccess' does not have SYNCHRONIZE!\n");
-            ExFreePool(OpenPacket);
             return STATUS_INVALID_PARAMETER;
         }
 
         if ((CreateOptions & FILE_DELETE_ON_CLOSE) && (!(DesiredAccess & DELETE)))
         {
             DPRINT1("File Create 'CreateOptions' parameter FILE_DELETE_ON_CLOSE requested, but 'DesiredAccess' does not have DELETE!\n");
-            ExFreePool(OpenPacket);
             return STATUS_INVALID_PARAMETER;
         }
 
@@ -1787,7 +2223,6 @@ IoCreateFile(OUT PHANDLE FileHandle,
             (FILE_SYNCHRONOUS_IO_NONALERT | FILE_SYNCHRONOUS_IO_ALERT))
         {
             DPRINT1("File Create 'FileAttributes' parameter both FILE_SYNCHRONOUS_IO_NONALERT and FILE_SYNCHRONOUS_IO_ALERT specified!\n");
-            ExFreePool(OpenPacket);
             return STATUS_INVALID_PARAMETER;
         }
 
@@ -1805,7 +2240,6 @@ IoCreateFile(OUT PHANDLE FileHandle,
                                FILE_OPEN_REPARSE_POINT)))
         {
             DPRINT1("File Create 'CreateOptions' Parameter has flags incompatible with FILE_DIRECTORY_FILE!\n");
-            ExFreePool(OpenPacket);
             return STATUS_INVALID_PARAMETER;
         }
 
@@ -1813,21 +2247,18 @@ IoCreateFile(OUT PHANDLE FileHandle,
             (Disposition != FILE_CREATE) && (Disposition != FILE_OPEN) && (Disposition != FILE_OPEN_IF))
         {
             DPRINT1("File Create 'CreateOptions' Parameter FILE_DIRECTORY_FILE requested, but 'Disposition' is not FILE_CREATE/FILE_OPEN/FILE_OPEN_IF!\n");
-            ExFreePool(OpenPacket);
             return STATUS_INVALID_PARAMETER;
         }
 
         if ((CreateOptions & FILE_COMPLETE_IF_OPLOCKED) && (CreateOptions & FILE_RESERVE_OPFILTER))
         {
             DPRINT1("File Create 'CreateOptions' Parameter both FILE_COMPLETE_IF_OPLOCKED and FILE_RESERVE_OPFILTER specified!\n");
-            ExFreePool(OpenPacket);
             return STATUS_INVALID_PARAMETER;
         }
 
         if ((CreateOptions & FILE_NO_INTERMEDIATE_BUFFERING) && (DesiredAccess & FILE_APPEND_DATA))
         {
             DPRINT1("File Create 'CreateOptions' parameter FILE_NO_INTERMEDIATE_BUFFERING requested, but 'DesiredAccess' FILE_APPEND_DATA requires it!\n");
-            ExFreePool(OpenPacket);
             return STATUS_INVALID_PARAMETER;
         }
 
@@ -1837,26 +2268,21 @@ IoCreateFile(OUT PHANDLE FileHandle,
             /* Make sure we have extra parameters */
             if (!ExtraCreateParameters)
             {
-                ExFreePool(OpenPacket);
+                DPRINT1("Invalid parameter: ExtraCreateParameters == 0!\n");
                 return STATUS_INVALID_PARAMETER;
             }
 
             /* Get the parameters and validate them */
             NamedPipeCreateParameters = ExtraCreateParameters;
             if ((NamedPipeCreateParameters->NamedPipeType > FILE_PIPE_MESSAGE_TYPE) ||
-
                 (NamedPipeCreateParameters->ReadMode > FILE_PIPE_MESSAGE_MODE) ||
-
                 (NamedPipeCreateParameters->CompletionMode > FILE_PIPE_COMPLETE_OPERATION) ||
-
                 (ShareAccess & FILE_SHARE_DELETE) ||
-
                 ((Disposition < FILE_OPEN) || (Disposition > FILE_OPEN_IF)) ||
-
                 (CreateOptions & ~FILE_VALID_PIPE_OPTION_FLAGS))
             {
                 /* Invalid named pipe create */
-                ExFreePool(OpenPacket);
+                DPRINT1("Invalid named pipe create\n");
                 return STATUS_INVALID_PARAMETER;
             }
         }
@@ -1865,25 +2291,31 @@ IoCreateFile(OUT PHANDLE FileHandle,
             /* Make sure we have extra parameters */
             if (!ExtraCreateParameters)
             {
-                ExFreePool(OpenPacket);
+                DPRINT1("Invalid parameter: ExtraCreateParameters == 0!\n");
                 return STATUS_INVALID_PARAMETER;
             }
 
             /* Get the parameters and validate them */
             if ((ShareAccess & FILE_SHARE_DELETE) ||
-
                 !(ShareAccess & ~FILE_SHARE_WRITE) ||
-
                 (Disposition != FILE_CREATE) ||
-
                 (CreateOptions & ~FILE_VALID_MAILSLOT_OPTION_FLAGS))
             {
                 /* Invalid mailslot create */
-                ExFreePool(OpenPacket);
+                DPRINT1("Invalid mailslot create\n");
                 return STATUS_INVALID_PARAMETER;
             }
         }
+    }
 
+    /* Allocate the open packet */
+    OpenPacket = ExAllocatePoolWithTag(NonPagedPool, sizeof(*OpenPacket), 'pOoI');
+    if (!OpenPacket) return STATUS_INSUFFICIENT_RESOURCES;
+    RtlZeroMemory(OpenPacket, sizeof(*OpenPacket));
+
+    /* Check if the call came from user mode */
+    if (AccessMode != KernelMode)
+    {
         _SEH2_TRY
         {
             /* Probe the output parameters */
@@ -1974,6 +2406,7 @@ IoCreateFile(OUT PHANDLE FileHandle,
             if (!OpenPacket->EaBuffer)
             {
                 ExFreePool(OpenPacket);
+                DPRINT1("Failed to allocate open packet EA buffer\n");
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
@@ -2114,7 +2547,7 @@ IoCreateFile(OUT PHANDLE FileHandle,
     }
 
     /* Check if we were 100% successful */
-    if ((OpenPacket->ParseCheck == TRUE) && (OpenPacket->FileObject))
+    if ((OpenPacket->ParseCheck != FALSE) && (OpenPacket->FileObject))
     {
         /* Dereference the File Object */
         ObDereferenceObject(OpenPacket->FileObject);
@@ -2385,7 +2818,7 @@ IoFastQueryNetworkAttributes(IN POBJECT_ATTRIBUTES ObjectAttributes,
                                 DesiredAccess,
                                 &OpenPacket,
                                 &Handle);
-    if (OpenPacket.ParseCheck != TRUE)
+    if (OpenPacket.ParseCheck == FALSE)
     {
         /* Parse failed */
         IoStatus->Status = Status;
@@ -3198,7 +3631,7 @@ NtDeleteFile(IN POBJECT_ATTRIBUTES ObjectAttributes)
                                 DELETE,
                                 &OpenPacket,
                                 &Handle);
-    if (OpenPacket.ParseCheck != TRUE) return Status;
+    if (OpenPacket.ParseCheck == FALSE) return Status;
 
     /* Retrn the Io status */
     return OpenPacket.FinalStatus;

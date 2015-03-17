@@ -20,25 +20,13 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
+#include "precomp.h"
 
-//#include <stdarg.h>
-#include <windef.h>
-//#include "winbase.h"
-//#include "winnls.h"
 #include <winioctl.h>
-#include <winnetwk.h>
 #include <npapi.h>
-#include <winreg.h>
-//#include "winuser.h"
 #define WINE_MOUNTMGR_EXTENSIONS
 #include <ddk/mountmgr.h>
-#include <wine/debug.h>
 #include <wine/unicode.h>
-#include "mprres.h"
-//#include "wnetpriv.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(mpr);
 
 /* Data structures representing network service providers.  Assumes only one
  * thread creates them, and that they are constant for the life of the process
@@ -1765,6 +1753,7 @@ static DWORD get_drive_connection( WCHAR letter, LPWSTR remote, LPDWORD size )
     struct mountmgr_unix_drive *data = (struct mountmgr_unix_drive *)buffer;
     HANDLE mgr;
     DWORD ret = WN_NOT_CONNECTED;
+    DWORD bytes_returned;
 
     if ((mgr = CreateFileW( MOUNTMGR_DOS_DEVICE_NAME, GENERIC_READ|GENERIC_WRITE,
                             FILE_SHARE_READ|FILE_SHARE_WRITE, NULL, OPEN_EXISTING,
@@ -1776,7 +1765,7 @@ static DWORD get_drive_connection( WCHAR letter, LPWSTR remote, LPDWORD size )
     memset( data, 0, sizeof(*data) );
     data->letter = letter;
     if (DeviceIoControl( mgr, IOCTL_MOUNTMGR_QUERY_UNIX_DRIVE, data, sizeof(*data),
-                         data, sizeof(buffer), NULL, NULL ))
+                         data, sizeof(buffer), &bytes_returned, NULL ))
     {
         char *p, *mount_point = buffer + data->mount_point_offset;
         DWORD len;

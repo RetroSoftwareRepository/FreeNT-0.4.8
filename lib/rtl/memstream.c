@@ -1,4 +1,5 @@
-/* COPYRIGHT:       See COPYING in the top level directory
+/*
+ * COPYRIGHT:       See COPYING in the top level directory
  * PROJECT:         ReactOS system libraries
  * FILE:            lib/rtl/mem.c
  * PURPOSE:         MemoryStream functions
@@ -6,9 +7,6 @@
  */
 
 /* INCLUDES *******************************************************************/
-
-#define COBJMACROS
-#define CONST_VTABLE
 
 #include <rtl.h>
 

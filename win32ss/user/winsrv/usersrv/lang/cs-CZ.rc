@@ -1,41 +1,26 @@
-/* FILE:        subsystems/win32/csrss/win32csr/lang/cs-CZ.rc
- * TRANSLATOR:  Radek Liska aka Black_Fox (radekliska at gmail dot com)
- * UPDATED:     2011-04-09
- */
+/* Translated by Radek Liska aka Black_Fox (radekliska at gmail dot com) */
 
 LANGUAGE LANG_CZECH, SUBLANG_DEFAULT
 
 IDD_END_NOW DIALOGEX 0, 0, 200, 95
 STYLE DS_SHELLFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
-CAPTION "UkonËit program - "
+CAPTION "Ukonƒçit program - "
 FONT 8, "MS Shell Dlg"
 BEGIN
-    LTEXT           "ProbÌh· ukonËenÌ programu... »ekejte, prosÌm",IDC_STATIC,7,7,186,11
-    CONTROL         "Progress",IDC_PROGRESS,"msctls_progress32",WS_BORDER,
-                    7,20,186,13
-    LTEXT           "IPokud zvolÌte okamûitÈ ukonËenÌ programu, vöechna neuloûen· data budou ztracena. KliknutÌm na UkonËit okamûitÏ ukonËÌte program.",
-                    IDC_STATIC,7,40,186,26
-    DEFPUSHBUTTON   "&UkonËit okamûitÏ",IDC_END_NOW,150,71,43,17
+    LTEXT "Prob√≠h√° ukonƒçen√≠ programu... ƒåekejte, pros√≠m", IDC_STATIC, 7, 7, 186, 11
+    CONTROL "Progress", IDC_PROGRESS, "msctls_progress32", WS_BORDER, 7, 20, 186, 13
+    LTEXT "IPokud zvol√≠te okam≈æit√© ukonƒçen√≠ programu, v≈°echna neulo≈æen√° data budou ztracena. Kliknut√≠m na Ukonƒçit okam≈æitƒõ ukonƒç√≠te program.", IDC_STATIC, 7, 40, 186, 26
+    DEFPUSHBUTTON "&Ukonƒçit okam≈æitƒõ", IDC_END_NOW, 150, 71, 43, 17
 END
 
 IDD_NOT_RESPONDING DIALOGEX 0, 0, 192, 122
 STYLE DS_SHELLFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
-CAPTION "UkonËit program - "
+CAPTION "Ukonƒçit program - "
 FONT 8, "MS Shell Dlg"
 BEGIN
-    DEFPUSHBUTTON   "Storno",IDCANCEL,142,98,43,17
-    PUSHBUTTON      "&UkonËit okamûitÏ",IDC_END_NOW,78,98,43,17
-    LTEXT           "Tento program neodpovÌd·.",IDC_STATIC,7,7,178,8
-    LTEXT           "KliknutÌm na Storno se lze vr·tit do systÈmu ReactOS a ovÏ¯it stav programu.",
-                    IDC_STATIC,7,26,178,16
-    LTEXT           "Pokud zvolÌte okamûitÈ ukonËenÌ programu, vöechna neuloûen· data budou ztracena. KliknutÌm na UkonËit okamûitÏ ukonËÌte program.",
-                    IDC_STATIC,7,53,178,26
-END
-
-IDD_SWITCH_APP DIALOGEX 90, 90, 265, 170
-STYLE DS_SYSMODAL | DS_SETFONT | DS_SETFOREGROUND | DS_3DLOOK | DS_FIXEDSYS | WS_POPUP | WS_VISIBLE
-EXSTYLE WS_EX_TOPMOST | WS_EX_WINDOWEDGE
-FONT 8, "MS Shell Dlg", 400, 0, 0x1
-BEGIN
-    LTEXT           "",IDC_STATIC_CUR_APP,39,139,204,16,SS_SUNKEN,WS_EX_STATICEDGE
+    DEFPUSHBUTTON "Storno", IDCANCEL, 142, 98, 43, 17
+    PUSHBUTTON "&Ukonƒçit okam≈æitƒõ", IDC_END_NOW, 78, 98, 43, 17
+    LTEXT "Tento program neodpov√≠d√°.", IDC_STATIC, 7, 7, 178, 8
+    LTEXT "Kliknut√≠m na Storno se lze vr√°tit do syst√©mu ReactOS a ovƒõ≈ôit stav programu.", IDC_STATIC, 7, 26, 178, 16
+    LTEXT "Pokud zvol√≠te okam≈æit√© ukonƒçen√≠ programu, v≈°echna neulo≈æen√° data budou ztracena. Kliknut√≠m na Ukonƒçit okam≈æitƒõ ukonƒç√≠te program.", IDC_STATIC, 7, 53, 178, 26
 END

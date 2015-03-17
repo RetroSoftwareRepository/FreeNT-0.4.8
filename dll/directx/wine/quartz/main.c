@@ -17,13 +17,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <config.h>
-#include <wine/debug.h>
-
 #include "quartz_private.h"
-#include <wine/unicode.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(quartz);
 
 extern HRESULT WINAPI QUARTZ_DllGetClassObject(REFCLSID, REFIID, LPVOID *) DECLSPEC_HIDDEN;
 extern HRESULT WINAPI QUARTZ_DllCanUnloadNow(void) DECLSPEC_HIDDEN;
@@ -75,6 +69,7 @@ static const struct object_creation_info object_creation[] =
     { &CLSID_MPEG1Splitter, MPEGSplitter_create },
     { &CLSID_VideoRenderer, VideoRenderer_create },
     { &CLSID_NullRenderer, NullRenderer_create },
+    { &CLSID_VideoMixingRenderer, VMR7Impl_create },
     { &CLSID_VideoMixingRenderer9, VMR9Impl_create },
     { &CLSID_VideoRendererDefault, VideoRendererDefault_create },
     { &CLSID_DSoundRender, DSoundRender_create },
@@ -273,11 +268,10 @@ HRESULT __RPC_STUB ICaptureGraphBuilder2_FindInterface_Stub( ICaptureGraphBuilde
 const char * qzdebugstr_guid( const GUID * id )
 {
     int i;
-    char * name = NULL;
 
-    for (i=0;InterfaceDesc[i].name && !name;i++) {
+    for (i=0; InterfaceDesc[i].name; i++)
         if (IsEqualGUID(&InterfaceDesc[i].riid, id)) return InterfaceDesc[i].name;
-    }
+
     return debugstr_guid(id);
 }
 

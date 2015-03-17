@@ -19,9 +19,6 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "cdlg.h"
-#include "filedlgbrowser.h"
-
 LANGUAGE LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED
 
 STRINGTABLE
@@ -37,6 +34,7 @@ STRINGTABLE
                           / : < > |"
     IDS_PATHNOTEXISTING     "路径不存在"
     IDS_FILENOTEXISTING     "文件不存在"
+    IDS_INVALID_FOLDERNAME  "所选内容包含一个非文件夹物体"
 }
 
 STRINGTABLE
@@ -139,6 +137,7 @@ STRINGTABLE
     IDS_SAVE        "保存"
     IDS_SAVE_AS     "另存为"
     IDS_OPEN_FILE   "打开文件"
+    IDS_SELECT_FOLDER "Select Folder"
 }
 
 /*

@@ -2,8 +2,11 @@
 #define _SETUPAPI_H_
 
 #include <commctrl.h>
+#if defined(_WIN64)
+#include <pshpack8.h>
+#else
 #include <pshpack1.h>
-
+#endif
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -155,7 +158,9 @@ extern "C" {
 #define DIF_POWERMESSAGEWAKE               39
 #define DIF_ADDREMOTEPROPERTYPAGE_ADVANCED 40
 #define DIF_UPDATEDRIVER_UI                41
-#define DIF_RESERVED2                      42
+#define DIF_FINISHINSTALL_ACTION           42
+#define DIF_RESERVED2                      48
+
 #define DIGCDP_FLAG_BASIC	0x00000001
 #define DIGCDP_FLAG_ADVANCED	0x00000002
 #if (_SETUPAPI_VER >= 0x0501)
@@ -611,16 +616,20 @@ extern "C" {
 #define SPQ_SCAN_INFORM_USER	0x00000010
 #define SPQ_SCAN_PRUNE_COPY_QUEUE	0x00000020
 #define SPRDI_FIND_DUPS	0x00000001
-#define SPSVCINST_TAGTOFRONT	0x00000001
-#define SPSVCINST_ASSOCSERVICE	0x00000002
-#define SPSVCINST_DELETEEVENTLOGENTRY	0x00000004
-#define SPSVCINST_NOCLOBBER_DISPLAYNAME	0x00000008
-#define SPSVCINST_NOCLOBBER_STARTTYPE	0x00000010
-#define SPSVCINST_NOCLOBBER_ERRORCONTROL	0x00000020
-#define SPSVCINST_NOCLOBBER_LOADORDERGROUP	0x00000040
-#define SPSVCINST_NOCLOBBER_DEPENDENCIES	0x00000080
-#define SPSVCINST_NOCLOBBER_DESCRIPTION	0x00000100
-#define SPSVCINST_STOPSERVICE	0x00000200
+
+#define SPSVCINST_TAGTOFRONT               0x00000001
+#define SPSVCINST_ASSOCSERVICE             0x00000002
+#define SPSVCINST_DELETEEVENTLOGENTRY      0x00000004
+#define SPSVCINST_NOCLOBBER_DISPLAYNAME    0x00000008
+#define SPSVCINST_NOCLOBBER_STARTTYPE      0x00000010
+#define SPSVCINST_NOCLOBBER_ERRORCONTROL   0x00000020
+#define SPSVCINST_NOCLOBBER_LOADORDERGROUP 0x00000040
+#define SPSVCINST_NOCLOBBER_DEPENDENCIES   0x00000080
+#define SPSVCINST_NOCLOBBER_DESCRIPTION    0x00000100
+#define SPSVCINST_STOPSERVICE              0x00000200
+#define SPSVCINST_CLOBBER_SECURITY         0x00000400
+#define SPSVCINST_STARTSERVICE             0x00000800
+
 #define SPWPT_SELECTDEVICE	0x00000001
 #define SPWP_USE_DEVINFO_DATA	0x00000001
 #define SRCINFO_PATH	1
@@ -2350,6 +2359,22 @@ SetupSetSourceListW(
 WINSETUPAPI VOID WINAPI SetupTermDefaultQueueCallback(_In_ PVOID);
 WINSETUPAPI BOOL WINAPI SetupTerminateFileLog(_In_ HSPFILELOG);
 
+WINSETUPAPI
+BOOL
+WINAPI
+SetupUninstallOEMInfA(
+  _In_ PCSTR InfFileName,
+  _In_ DWORD Flags,
+  _In_ PVOID Reserved);
+
+WINSETUPAPI
+BOOL
+WINAPI
+SetupUninstallOEMInfW(
+  _In_ PCWSTR InfFileName,
+  _In_ DWORD Flags,
+  _In_ PVOID Reserved);
+
 WINSETUPAPI DWORD WINAPI StampFileSecurity(PCWSTR, PSECURITY_DESCRIPTOR);
 
 
@@ -2520,6 +2545,7 @@ WINSETUPAPI PSTR WINAPI UnicodeToMultiByte(PCWSTR lpUnicodeStr, UINT uCodePage);
 #define SetupSetFileQueueAlternatePlatform	SetupSetFileQueueAlternatePlatformW
 #define SetupSetPlatformPathOverride	SetupSetPlatformPathOverrideW
 #define SetupSetSourceList	SetupSetSourceListW
+#define SetupUninstallOEMInf    SetupUninstallOEMInfW
 #else
 #define PSP_FILE_CALLBACK PSP_FILE_CALLBACK_A
 #define SetupAddInstallSectionToDiskSpaceList	SetupAddInstallSectionToDiskSpaceListA
@@ -2642,6 +2668,7 @@ WINSETUPAPI PSTR WINAPI UnicodeToMultiByte(PCWSTR lpUnicodeStr, UINT uCodePage);
 #define SetupSetFileQueueAlternatePlatform	SetupSetFileQueueAlternatePlatformA
 #define SetupSetPlatformPathOverride	SetupSetPlatformPathOverrideA
 #define SetupSetSourceList	SetupSetSourceListA
+#define SetupUninstallOEMInf    SetupUninstallOEMInfA
 #endif	/* UNICODE */
 
 #endif /* RC_INVOKED */

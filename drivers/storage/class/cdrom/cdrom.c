@@ -8,6 +8,13 @@
 
 #include "precomp.h"
 
+#include <ntddk.h>
+#include <scsi.h>
+#include <ntdddisk.h>
+#include <ntddcdrm.h>
+#include <include/class2.h>
+#include <stdio.h>
+
 //#define NDEBUG
 #include <debug.h>
 
@@ -3924,10 +3931,7 @@ CdRomSwitchModeCompletion(
                 IoCompleteRequest(realIrp, IO_DISK_INCREMENT);
 
                 ExFreePool(srb->SenseInfoBuffer);
-                ExFreePool(srb->DataBuffer);
                 ExFreePool(srb);
-                IoFreeMdl(Irp->MdlAddress);
-                IoFreeIrp(Irp);
 
                 IoStartNextPacket(DeviceObject, FALSE);
 

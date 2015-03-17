@@ -18,20 +18,10 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  *
  */
-#include <stdarg.h>
-#include <stdlib.h>
-
-#include <windef.h>
-#include <winbase.h>
-#include <wingdi.h>
-//#include "winuser.h"
-//#include "winnls.h"
-#include <usp10.h>
-#include <winternl.h>
 
 #include "usp10_internal.h"
 
-#include <wine/debug.h>
+#include <winternl.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(uniscribe);
 
@@ -943,7 +933,9 @@ static INT GSUB_apply_ChainContextSubst(const OT_LookupList* lookup, const OT_Lo
         }
         else if (GET_BE_WORD(ccsf1->SubstFormat) == 2)
         {
+#ifndef __REACTOS__
             FIXME("  TODO: subtype 2 (Class-based Chaining Context Glyph Substitution)\n");
+#endif
             continue;
         }
         else if (GET_BE_WORD(ccsf1->SubstFormat) == 3)

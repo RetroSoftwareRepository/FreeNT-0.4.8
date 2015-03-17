@@ -22,23 +22,16 @@
  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#include "main/glheader.h"
-#include "main/colormac.h"
-#include "main/feedback.h"
-#include "main/macros.h"
+#include <precomp.h>
 
-#include "s_context.h"
-#include "s_feedback.h"
-#include "s_triangle.h"
-
-
+#include <main/feedback.h>
 
 static void
 feedback_vertex(struct gl_context * ctx, const SWvertex * v, const SWvertex * pv)
 {
    GLfloat win[4];
    const GLfloat *vtc = v->attrib[FRAG_ATTRIB_TEX];
-   const GLfloat *color = v->attrib[FRAG_ATTRIB_COL0];
+   const GLfloat *color = v->attrib[FRAG_ATTRIB_COL];
 
    win[0] = v->attrib[FRAG_ATTRIB_WPOS][0];
    win[1] = v->attrib[FRAG_ATTRIB_WPOS][1];

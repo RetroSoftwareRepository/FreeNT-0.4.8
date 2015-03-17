@@ -16,27 +16,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-
-//#include <stdarg.h>
-#include <stdio.h>
-
-#define COBJMACROS
-
-#include <windef.h>
-#include <winbase.h>
-//#include "winuser.h"
-#include <ole2.h>
-#include <mshtmcid.h>
-#include <shlguid.h>
-
-#include <wine/debug.h>
-
 #include "mshtml_private.h"
-#include "resource.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(mshtml);
 
 #define NSCMD_ALIGN        "cmd_align"
 #define NSCMD_BEGINLINE    "cmd_beginLine"
@@ -266,7 +246,7 @@ static void remove_child_attr(nsIDOMElement *elem, LPCWSTR tag, nsAString *attr_
 static void get_font_size(HTMLDocument *This, WCHAR *ret)
 {
     nsISelection *nsselection = get_ns_selection(This);
-    nsIDOMElement *elem = NULL;
+    nsIDOMHTMLElement *elem = NULL;
     nsIDOMNode *node = NULL, *tmp_node;
     nsAString tag_str;
     LPCWSTR tag;
@@ -287,36 +267,29 @@ static void get_font_size(HTMLDocument *This, WCHAR *ret)
             break;
 
         if(node_type == ELEMENT_NODE) {
-            nsIDOMNode_QueryInterface(node, &IID_nsIDOMElement, (void**)&elem);
+            nsIDOMNode_QueryInterface(node, &IID_nsIDOMHTMLElement, (void**)&elem);
 
             nsAString_Init(&tag_str, NULL);
-            nsIDOMElement_GetTagName(elem, &tag_str);
+            nsIDOMHTMLElement_GetTagName(elem, &tag_str);
             nsAString_GetData(&tag_str, &tag);
 
             if(!strcmpiW(tag, fontW)) {
-                nsAString size_str, val_str;
-                LPCWSTR val;
+                nsAString val_str;
+                const PRUnichar *val;
 
                 TRACE("found font tag %p\n", elem);
 
-                nsAString_InitDepend(&size_str, sizeW);
-                nsAString_Init(&val_str, NULL);
-
-                nsIDOMElement_GetAttribute(elem, &size_str, &val_str);
-                nsAString_GetData(&val_str, &val);
-
+                get_elem_attr_value(elem, sizeW, &val_str, &val);
                 if(*val) {
                     TRACE("found size %s\n", debugstr_w(val));
                     strcpyW(ret, val);
                 }
 
-                nsAString_Finish(&size_str);
                 nsAString_Finish(&val_str);
             }
 
             nsAString_Finish(&tag_str);
-
-            nsIDOMElement_Release(elem);
+            nsIDOMHTMLElement_Release(elem);
         }
 
         if(*ret)

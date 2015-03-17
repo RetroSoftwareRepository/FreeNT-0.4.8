@@ -16,24 +16,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-
-#include <stdarg.h>
-
-#define COBJMACROS
-
-#include <windef.h>
-#include <winbase.h>
-//#include "winuser.h"
-#include <ole2.h>
-
-#include <wine/debug.h>
-
 #include "mshtml_private.h"
-#include "htmlevent.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(mshtml);
 
 static inline HTMLElement *impl_from_IHTMLElement3(IHTMLElement3 *iface)
 {
@@ -177,15 +160,34 @@ static HRESULT WINAPI HTMLElement3_setActive(IHTMLElement3 *iface)
 static HRESULT WINAPI HTMLElement3_put_contentEditable(IHTMLElement3 *iface, BSTR v)
 {
     HTMLElement *This = impl_from_IHTMLElement3(iface);
-    FIXME("(%p)->(%s)\n", This, debugstr_w(v));
-    return E_NOTIMPL;
+    nsresult nsres;
+    nsAString str;
+
+    TRACE("(%p)->(%s)\n", This, debugstr_w(v));
+
+    nsAString_InitDepend(&str, v);
+    nsres = nsIDOMHTMLElement_SetContentEditable(This->nselem, &str);
+    nsAString_Finish(&str);
+
+    if (NS_FAILED(nsres)){
+        ERR("SetContentEditable(%s) failed!\n", debugstr_w(v));
+        return E_FAIL;
+    }
+
+    return S_OK;
 }
 
 static HRESULT WINAPI HTMLElement3_get_contentEditable(IHTMLElement3 *iface, BSTR *p)
 {
     HTMLElement *This = impl_from_IHTMLElement3(iface);
-    FIXME("(%p)->(%p)\n", This, p);
-    return E_NOTIMPL;
+    nsresult nsres;
+    nsAString str;
+
+    TRACE("(%p)->(%p)\n", This, p);
+
+    nsAString_Init(&str, NULL);
+    nsres = nsIDOMHTMLElement_GetContentEditable(This->nselem, &str);
+    return return_nsstr(nsres, &str, p);
 }
 
 static HRESULT WINAPI HTMLElement3_get_isContentEditable(IHTMLElement3 *iface, VARIANT_BOOL *p)
@@ -541,15 +543,19 @@ static HRESULT WINAPI HTMLElement4_Invoke(IHTMLElement4 *iface, DISPID dispIdMem
 static HRESULT WINAPI HTMLElement4_put_onmousewheel(IHTMLElement4 *iface, VARIANT v)
 {
     HTMLElement *This = impl_from_IHTMLElement4(iface);
-    FIXME("(%p)->(%s)\n", This, debugstr_variant(&v));
-    return E_NOTIMPL;
+
+    FIXME("(%p)->(%s) semi-stub\n", This, debugstr_variant(&v));
+
+    return set_node_event(&This->node, EVENTID_MOUSEWHEEL, &v);
 }
 
 static HRESULT WINAPI HTMLElement4_get_onmousewheel(IHTMLElement4 *iface, VARIANT *p)
 {
     HTMLElement *This = impl_from_IHTMLElement4(iface);
-    FIXME("(%p)->(%p)\n", This, p);
-    return E_NOTIMPL;
+
+    TRACE("(%p)->(%p)\n", This, p);
+
+    return get_node_event(&This->node, EVENTID_MOUSEWHEEL, p);
 }
 
 static HRESULT WINAPI HTMLElement4_normalize(IHTMLElement4 *iface)

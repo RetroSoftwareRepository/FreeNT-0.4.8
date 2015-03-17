@@ -672,7 +672,7 @@ xHalIoAssignDriveLetters(IN PLOADER_PARAMETER_BLOCK LoaderBlock,
             /* Search for bootable partition */
             for (j = 0; j < NUM_PARTITION_TABLE_ENTRIES && j < LayoutArray[DiskNumber]->PartitionCount; j++)
             {
-                if ((LayoutArray[DiskNumber]->PartitionEntry[j].BootIndicator == TRUE) &&
+                if ((LayoutArray[DiskNumber]->PartitionEntry[j].BootIndicator != FALSE) &&
                     IsRecognizedPartition(LayoutArray[DiskNumber]->PartitionEntry[j].PartitionType))
                 {
                     if (LayoutArray[DiskNumber]->PartitionEntry[j].RewritePartition == FALSE)
@@ -1655,7 +1655,8 @@ xHalIoReadPartitionTable(IN PDEVICE_OBJECT DeviceObject,
                     UInt32x32To64(GET_PARTITION_LENGTH(PartitionDescriptor),
                                   SectorSize);
 
-                /* FIXME: REACTOS HACK */
+                // BUGBUGBUG: The correct partition numbers seem to cause boot failures!!!
+//                PartitionInfo->PartitionNumber = (!IsContainerPartition(PartitionType)) ? i : 0;
                 PartitionInfo->PartitionNumber = i + 1;
             }
             else
@@ -1667,7 +1668,6 @@ xHalIoReadPartitionTable(IN PDEVICE_OBJECT DeviceObject,
                 PartitionInfo->PartitionLength.QuadPart = 0;
                 PartitionInfo->HiddenSectors = 0;
 
-                /* FIXME: REACTOS HACK */
                 PartitionInfo->PartitionNumber = 0;
             }
         }
@@ -1787,7 +1787,11 @@ xHalIoReadPartitionTable(IN PDEVICE_OBJECT DeviceObject,
 
     /* Free the buffer and check for success */
     if (Buffer) ExFreePoolWithTag(Buffer, TAG_FILE_SYSTEM);
-    if (!NT_SUCCESS(Status)) ExFreePoolWithTag(*PartitionBuffer, TAG_FILE_SYSTEM);
+    if (!NT_SUCCESS(Status))
+    {
+        ExFreePoolWithTag(*PartitionBuffer, TAG_FILE_SYSTEM);
+        *PartitionBuffer = NULL;
+    }
 
     /* Return status */
     return Status;

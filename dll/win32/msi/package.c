@@ -18,39 +18,9 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-#define COM_NO_WINDOWS_H
-
-#define NONAMELESSUNION
-#define NONAMELESSSTRUCT
-#define COBJMACROS
-
-#include <stdarg.h>
-#include <windef.h>
-#include <winbase.h>
-#include <winreg.h>
-//#include "winnls.h"
-#include <shlwapi.h>
-#include <wingdi.h>
-#include <wincon.h>
-#include <wine/debug.h>
-//#include "msi.h"
-//#include "msiquery.h"
-//#include "objidl.h"
-//#include "wincrypt.h"
-//#include "winuser.h"
-#include <wininet.h>
-//#include "winver.h"
-//#include "urlmon.h"
-#include <shlobj.h>
-#include <wine/unicode.h>
-//#include "objbase.h"
-//#include "msidefs.h"
-#include <sddl.h>
-
 #include "msipriv.h"
-#include <msiserver.h>
+
+#include <wininet.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(msi);
 
@@ -391,7 +361,7 @@ static UINT create_temp_property_table(MSIPACKAGE *package)
     return rc;
 }
 
-UINT msi_clone_properties(MSIPACKAGE *package)
+UINT msi_clone_properties( MSIDATABASE *db )
 {
     static const WCHAR query_select[] = {
         'S','E','L','E','C','T',' ','*',' ','F','R','O','M',' ',
@@ -408,7 +378,7 @@ UINT msi_clone_properties(MSIPACKAGE *package)
     MSIQUERY *view_select;
     UINT rc;
 
-    rc = MSI_DatabaseOpenViewW( package->db, query_select, &view_select );
+    rc = MSI_DatabaseOpenViewW( db, query_select, &view_select );
     if (rc != ERROR_SUCCESS)
         return rc;
 
@@ -429,7 +399,7 @@ UINT msi_clone_properties(MSIPACKAGE *package)
         if (rc != ERROR_SUCCESS)
             break;
 
-        rc = MSI_DatabaseOpenViewW( package->db, query_insert, &view_insert );
+        rc = MSI_DatabaseOpenViewW( db, query_insert, &view_insert );
         if (rc != ERROR_SUCCESS)
         {
             msiobj_release( &rec_select->hdr );
@@ -445,7 +415,7 @@ UINT msi_clone_properties(MSIPACKAGE *package)
 
             TRACE("insert failed, trying update\n");
 
-            rc = MSI_DatabaseOpenViewW( package->db, query_update, &view_update );
+            rc = MSI_DatabaseOpenViewW( db, query_update, &view_update );
             if (rc != ERROR_SUCCESS)
             {
                 WARN("open view failed %u\n", rc);
@@ -1082,6 +1052,7 @@ static UINT msi_load_summary_properties( MSIPACKAGE *package )
     if (rc != ERROR_SUCCESS)
     {
         WARN("Unable to query rev number: %d\n", rc);
+        msi_free( package_code );
         goto done;
     }
 
@@ -1179,13 +1150,12 @@ MSIPACKAGE *MSI_CreatePackage( MSIDATABASE *db, LPCWSTR base_url )
         package->BaseURL = strdupW( base_url );
 
         create_temp_property_table( package );
-        msi_clone_properties( package );
+        msi_clone_properties( package->db );
         msi_adjust_privilege_properties( package );
 
         package->ProductCode = msi_dup_property( package->db, szProductCode );
         package->script = msi_alloc_zero( sizeof(MSISCRIPT) );
 
-        set_installed_prop( package );
         set_installer_properties( package );
 
         package->ui_level = gUILevel;
@@ -1276,7 +1246,7 @@ UINT msi_create_empty_local_file( LPWSTR path, LPCWSTR suffix )
     return ERROR_SUCCESS;
 }
 
-static enum platform parse_platform( WCHAR *str )
+enum platform parse_platform( const WCHAR *str )
 {
     if (!str[0] || !strcmpW( str, szIntel )) return PLATFORM_INTEL;
     else if (!strcmpW( str, szIntel64 )) return PLATFORM_INTEL64;
@@ -1660,6 +1630,7 @@ UINT MSI_OpenPackageW(LPCWSTR szPackage, MSIPACKAGE **pPackage)
         return r;
     }
     msi_set_property( package->db, szDatabase, db->path, -1 );
+    set_installed_prop( package );
     msi_set_context( package );
 
     while (1)
@@ -1681,11 +1652,8 @@ UINT MSI_OpenPackageW(LPCWSTR szPackage, MSIPACKAGE **pPackage)
         }
         index++;
     }
-    if (index)
-    {
-        msi_clone_properties( package );
-        msi_adjust_privilege_properties( package );
-    }
+    if (index) msi_adjust_privilege_properties( package );
+
     r = msi_set_original_database_property( package->db, szPackage );
     if (r != ERROR_SUCCESS)
     {

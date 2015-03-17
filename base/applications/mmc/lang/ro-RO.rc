@@ -1,8 +1,7 @@
 /* 
- * FILE:             base/applications/mmc/lang/ro-RO.rc
- *                   ReactOS Project (http://www.reactos.org)
- * TRANSLATOR:       Fulea Ștefan (PM on ReactOS Forum at fulea.stefan)
- * CHANGE LOG:       2011-08-21  initial translation
+ * FILE:       base/applications/mmc/lang/ro-RO.rc
+ *             ReactOS Project (http://www.reactos.org)
+ * TRANSLATOR: Ștefan Fulea (stefan dot fulea at mail dot md)
  */
  
 LANGUAGE LANG_ROMANIAN, SUBLANG_NEUTRAL
@@ -11,12 +10,11 @@ IDM_CONSOLE_SMALL MENU
 BEGIN
     POPUP "&Fișier"
     BEGIN
-        MENUITEM "New\tStrg+N", IDM_FILE_NEW
+        MENUITEM "&Nou\tCtrl+N", IDM_FILE_NEW
         MENUITEM SEPARATOR
         MENUITEM "I&eșire\tAlt+F4", IDM_FILE_EXIT
     END
-
-    POPUP "&?"
+    POPUP "Aj&utor"
     BEGIN
         MENUITEM "&Despre…", IDM_HELP_ABOUT
     END
@@ -26,17 +24,15 @@ IDM_CONSOLE_LARGE MENU
 BEGIN
     POPUP "&Fișier"
     BEGIN
-        MENUITEM "New\tStrg+N", IDM_FILE_NEW
+        MENUITEM "&Nou\tCtrl+N", IDM_FILE_NEW
         MENUITEM SEPARATOR
         MENUITEM "I&eșire\tAlt+F4", IDM_FILE_EXIT
     END
-
     POPUP "&Windows"
     BEGIN
         MENUITEM "List", IDM_WINDOWS_LIST
     END
-
-    POPUP "&?"
+    POPUP "Aj&utor"
     BEGIN
         MENUITEM "&Despre…", IDM_HELP_ABOUT
     END

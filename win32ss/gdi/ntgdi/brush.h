@@ -9,31 +9,40 @@
  */
 typedef struct _BRUSH
 {
-  /* Header for all gdi objects in the handle table.
-     Do not (re)move this. */
-   BASEOBJECT    BaseObject;
+    /* Header for all gdi objects in the handle table.
+       Do not (re)move this. */
+    BASEOBJECT BaseObject;
 
-   ULONG ulStyle;
-   HBITMAP hbmPattern;
-   HANDLE hbmClient;
-   ULONG flAttrs;
+    ULONG iHatch;           // This is not the brush style, but the hatch style!
+    HBITMAP hbmPattern;
+    HBITMAP hbmClient;
+    ULONG flAttrs;
 
-   ULONG ulBrushUnique;
-   BRUSH_ATTR *pBrushAttr; // Just like DC_ATTR, pointer to user data
-   BRUSH_ATTR BrushAttr;   // "    "    DCOBJ, internal if pBrushAttr == Zero
-   POINT ptOrigin;
-   ULONG bCacheGrabbed;
-   COLORREF crBack;
-   COLORREF crFore;
-   ULONG ulPalTime;
-   ULONG ulSurfTime;
-   PVOID ulRealization;
-   ULONG Unknown4C[3];
-   POINT ptPenWidth;
-   ULONG ulPenStyle;
-   DWORD *pStyle;
-   ULONG dwStyleCount;
-   ULONG Unknown6C;
+    ULONG ulBrushUnique;
+    BRUSH_ATTR *pBrushAttr; // Pointer to the currently active brush attribute
+    BRUSH_ATTR BrushAttr;   // Internal brush attribute for global brushes
+    POINT ptOrigin;
+    ULONG bCacheGrabbed;
+    COLORREF crBack;
+    COLORREF crFore;
+    ULONG ulPalTime;
+    ULONG ulSurfTime;
+    PVOID pvRBrush;
+    HDEV hdev;
+    //DWORD unk054;
+    LONG lWidth;
+    FLOAT eWidth;
+    ULONG ulPenStyle;
+    DWORD *pStyle;
+    ULONG dwStyleCount;
+    BYTE jJoin;             // 0x06c Join styles for geometric wide lines
+    BYTE jEndCap;           //       end cap style for a geometric wide line
+    //WORD unk06e;          // 0x06e
+    INT iBrushStyle;        // 0x070
+    //PREGION prgn;           // 0x074
+    //DWORD unk078;         // 0x078
+    DWORD unk07c;           // 0x07c
+    LIST_ENTRY ListHead;    // 0x080
 } BRUSH, *PBRUSH;
 
 typedef struct _EBRUSHOBJ
@@ -60,6 +69,8 @@ typedef struct _EBRUSHOBJ
     DWORD       ulUnique;
 //    DWORD       dwUnknown54;
 //    DWORD       dwUnknown58;
+
+    SURFOBJ *psoMask;
 } EBRUSHOBJ, *PEBRUSHOBJ;
 
 /* GDI Brush Attributes */
@@ -87,9 +98,20 @@ typedef struct _EBRUSHOBJ
 
 #define GDIObjType_PEN_TYPE 0x30
 #define GDIObjType_EXTPEN_TYPE 0x50
+INT
+FASTCALL
+BRUSH_GetObject(
+    PBRUSH GdiObject,
+    INT Count,
+    LPLOGBRUSH Buffer);
 
 #define DIB_DEFPAL_COLORS 2 /* Colors are indices into the default palette */
 #define DIB_PAL_BRUSHHACK 3 /* Used as iUsage to create a PAL_BRUSHHACK palete */
+
+VOID
+NTAPI
+BRUSH_vCleanup(
+    PVOID ObjectBody);
 
 extern HSURF gahsurfHatch[HS_DDI_MAX];
 
@@ -137,8 +159,15 @@ EBRUSHOBJ_psoPattern(EBRUSHOBJ *pebo);
 #define BRUSHOBJ_psoPattern(pbo) \
     EBRUSHOBJ_psoPattern(CONTAINING_RECORD(pbo, EBRUSHOBJ, BrushObject))
 
-ULONG
+SURFOBJ*
+NTAPI
+EBRUSHOBJ_psoMask(EBRUSHOBJ *pebo);
+
+#define BRUSHOBJ_psoMask(pbo) \
+    EBRUSHOBJ_psoMask(CONTAINING_RECORD(pbo, EBRUSHOBJ, BrushObject))
+
 FORCEINLINE
+ULONG
 EBRUSHOBJ_iSetSolidColor(EBRUSHOBJ *pebo, ULONG iSolidColor)
 {
     ULONG iOldColor = pebo->BrushObject.iSolidColor;
@@ -157,9 +186,6 @@ BRUSH_AllocBrushOrPen(UCHAR objt);
 PBRUSH
 NTAPI
 BRUSH_AllocBrushOrPenWithHandle(UCHAR objt, ULONG ulOwner);
-
-#define BRUSH_AllocBrushWithHandle(ulOwner) \
-    BRUSH_AllocBrushOrPenWithHandle(GDIObjType_BRUSH_TYPE, ulOwner)
 
 INT
 FASTCALL

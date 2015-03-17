@@ -1,6 +1,7 @@
 /*
  * Copyright 2008 Luis Busquets
  * Copyright 2009 Matteo Bruni
+ * Copyright 2010, 2013 Christian Costa
  * Copyright 2011 Travis Athougies
  *
  * This library is free software; you can redistribute it and/or
@@ -18,25 +19,14 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <config.h>
-//#include "wine/port.h"
-#define NONAMELESSUNION
-#define NONAMELESSSTRUCT
-#include <wine/debug.h>
-//#include "wine/unicode.h"
-//#include "windef.h"
-//#include "wingdi.h"
-//#include "d3dx9.h"
-#include "d3dcompiler.h"
 #include "d3dx9_36_private.h"
+#include "d3dcompiler.h"
 
-WINE_DEFAULT_DEBUG_CHANNEL(d3dx);
 
-/* This function is not declared in the SDK headers yet */
-HRESULT WINAPI D3DAssemble(LPCVOID data, SIZE_T datasize, LPCSTR filename,
-                           const D3D_SHADER_MACRO *defines, ID3DInclude *include,
-                           UINT flags,
-                           ID3DBlob **shader, ID3DBlob **error_messages);
+/* This function is not declared in the SDK headers yet. */
+HRESULT WINAPI D3DAssemble(const void *data, SIZE_T datasize, const char *filename,
+        const D3D_SHADER_MACRO *defines, ID3DInclude *include, UINT flags,
+        ID3DBlob **shader, ID3DBlob **error_messages);
 
 static inline BOOL is_valid_bytecode(DWORD token)
 {
@@ -153,6 +143,7 @@ const char * WINAPI D3DXGetVertexShaderProfile(struct IDirect3DDevice9 *device)
 HRESULT WINAPI D3DXFindShaderComment(const DWORD *byte_code, DWORD fourcc, const void **data, UINT *size)
 {
     const DWORD *ptr = byte_code;
+    DWORD version;
 
     TRACE("byte_code %p, fourcc %x, data %p, size %p\n", byte_code, fourcc, data, size);
 
@@ -160,7 +151,18 @@ HRESULT WINAPI D3DXFindShaderComment(const DWORD *byte_code, DWORD fourcc, const
     if (size) *size = 0;
 
     if (!byte_code) return D3DERR_INVALIDCALL;
-    if (!is_valid_bytecode(*byte_code)) return D3DXERR_INVALIDDATA;
+
+    version = *ptr >> 16;
+    if (version != 0x4658         /* FX */
+            && version != 0x5458  /* TX */
+            && version != 0x7ffe
+            && version != 0x7fff
+            && version != 0xfffe  /* VS */
+            && version != 0xffff) /* PS */
+    {
+        WARN("Invalid data supplied\n");
+        return D3DXERR_INVALIDDATA;
+    }
 
     while (*++ptr != D3DSIO_END)
     {
@@ -173,7 +175,7 @@ HRESULT WINAPI D3DXFindShaderComment(const DWORD *byte_code, DWORD fourcc, const
             if (*(ptr + 1) == fourcc)
             {
                 UINT ctab_size = (comment_size - 1) * sizeof(DWORD);
-                LPCVOID ctab_data = ptr + 2;
+                const void *ctab_data = ptr + 2;
                 if (size)
                     *size = ctab_size;
                 if (data)
@@ -206,34 +208,63 @@ HRESULT WINAPI D3DXAssembleShader(const char *data, UINT data_len, const D3DXMAC
     return hr;
 }
 
+static const void *main_file_data;
+
+static CRITICAL_SECTION from_file_mutex;
+static CRITICAL_SECTION_DEBUG from_file_mutex_debug =
+{
+    0, 0, &from_file_mutex,
+    {
+        &from_file_mutex_debug.ProcessLocksList,
+        &from_file_mutex_debug.ProcessLocksList
+    },
+    0, 0, {(DWORD_PTR)(__FILE__ ": from_file_mutex")}
+};
+static CRITICAL_SECTION from_file_mutex = {&from_file_mutex_debug, -1, 0, 0, 0, 0};
+
 /* D3DXInclude private implementation, used to implement
-   D3DXAssembleShaderFromFile from D3DXAssembleShader */
-/* To be able to correctly resolve include search paths we have to store
-   the pathname of each include file. We store the pathname pointer right
-   before the file data. */
-static HRESULT WINAPI d3dincludefromfile_open(ID3DXInclude *iface,
-                                              D3DXINCLUDE_TYPE include_type,
-                                              LPCSTR filename, LPCVOID parent_data,
-                                              LPCVOID *data, UINT *bytes) {
+ * D3DXAssembleShaderFromFile() from D3DXAssembleShader(). */
+/* To be able to correctly resolve include search paths we have to store the
+ * pathname of each include file. We store the pathname pointer right before
+ * the file data. */
+static HRESULT WINAPI d3dincludefromfile_open(ID3DXInclude *iface, D3DXINCLUDE_TYPE include_type,
+        const char *filename, const void *parent_data, const void **data, UINT *bytes)
+{
     const char *p, *parent_name = "";
-    char *pathname = NULL;
+    char *pathname = NULL, *ptr;
     char **buffer = NULL;
     HANDLE file;
     UINT size;
 
-    if(parent_data != NULL)
+    if (parent_data)
+    {
         parent_name = *((const char **)parent_data - 1);
+    }
+    else
+    {
+        if (main_file_data)
+            parent_name = *((const char **)main_file_data - 1);
+    }
 
     TRACE("Looking up for include file %s, parent %s\n", debugstr_a(filename), debugstr_a(parent_name));
 
-    if ((p = strrchr(parent_name, '\\')) || (p = strrchr(parent_name, '/'))) p++;
-    else p = parent_name;
+    if ((p = strrchr(parent_name, '\\')))
+        ++p;
+    else
+        p = parent_name;
     pathname = HeapAlloc(GetProcessHeap(), 0, (p - parent_name) + strlen(filename) + 1);
     if(!pathname)
         return HRESULT_FROM_WIN32(GetLastError());
 
     memcpy(pathname, parent_name, p - parent_name);
     strcpy(pathname + (p - parent_name), filename);
+    ptr = pathname + (p - parent_name);
+    while (*ptr)
+    {
+        if (*ptr == '/')
+            *ptr = '\\';
+        ++ptr;
+    }
 
     file = CreateFileA(pathname, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
     if(file == INVALID_HANDLE_VALUE)
@@ -253,6 +284,8 @@ static HRESULT WINAPI d3dincludefromfile_open(ID3DXInclude *iface,
         goto error;
 
     *data = buffer + 1;
+    if (!main_file_data)
+        main_file_data = *data;
 
     CloseHandle(file);
     return S_OK;
@@ -264,9 +297,12 @@ error:
     return HRESULT_FROM_WIN32(GetLastError());
 }
 
-static HRESULT WINAPI d3dincludefromfile_close(ID3DXInclude *iface, LPCVOID data) {
+static HRESULT WINAPI d3dincludefromfile_close(ID3DXInclude *iface, const void *data)
+{
     HeapFree(GetProcessHeap(), 0, *((char **)data - 1));
     HeapFree(GetProcessHeap(), 0, (char **)data - 1);
+    if (main_file_data == data)
+        main_file_data = NULL;
     return S_OK;
 }
 
@@ -282,9 +318,12 @@ struct D3DXIncludeImpl {
 HRESULT WINAPI D3DXAssembleShaderFromFileA(const char *filename, const D3DXMACRO *defines,
         ID3DXInclude *include, DWORD flags, ID3DXBuffer **shader, ID3DXBuffer **error_messages)
 {
-    LPWSTR filename_w = NULL;
+    WCHAR *filename_w;
     DWORD len;
     HRESULT ret;
+
+    TRACE("filename %s, defines %p, include %p, flags %#x, shader %p, error_messages %p.\n",
+            debugstr_a(filename), defines, include, flags, shader, error_messages);
 
     if (!filename) return D3DXERR_INVALIDDATA;
 
@@ -302,13 +341,14 @@ HRESULT WINAPI D3DXAssembleShaderFromFileA(const char *filename, const D3DXMACRO
 HRESULT WINAPI D3DXAssembleShaderFromFileW(const WCHAR *filename, const D3DXMACRO *defines,
         ID3DXInclude *include, DWORD flags, ID3DXBuffer **shader, ID3DXBuffer **error_messages)
 {
-    void *buffer;
+    const void *buffer;
     DWORD len;
     HRESULT hr;
     struct D3DXIncludeImpl includefromfile;
+    char *filename_a;
 
-    if(FAILED(map_view_of_file(filename, &buffer, &len)))
-        return D3DXERR_INVALIDDATA;
+    TRACE("filename %s, defines %p, include %p, flags %#x, shader %p, error_messages %p.\n",
+            debugstr_w(filename), defines, include, flags, shader, error_messages);
 
     if(!include)
     {
@@ -316,10 +356,26 @@ HRESULT WINAPI D3DXAssembleShaderFromFileW(const WCHAR *filename, const D3DXMACR
         include = &includefromfile.ID3DXInclude_iface;
     }
 
-    hr = D3DXAssembleShader(buffer, len, defines, include, flags,
-                            shader, error_messages);
+    len = WideCharToMultiByte(CP_ACP, 0, filename, -1, NULL, 0, NULL, NULL);
+    filename_a = HeapAlloc(GetProcessHeap(), 0, len * sizeof(char));
+    if (!filename_a)
+        return E_OUTOFMEMORY;
+    WideCharToMultiByte(CP_ACP, 0, filename, -1, filename_a, len, NULL, NULL);
 
-    UnmapViewOfFile(buffer);
+    EnterCriticalSection(&from_file_mutex);
+    hr = ID3DXInclude_Open(include, D3D_INCLUDE_LOCAL, filename_a, NULL, &buffer, &len);
+    if (FAILED(hr))
+    {
+        LeaveCriticalSection(&from_file_mutex);
+        HeapFree(GetProcessHeap(), 0, filename_a);
+        return D3DXERR_INVALIDDATA;
+    }
+
+    hr = D3DXAssembleShader(buffer, len, defines, include, flags, shader, error_messages);
+
+    ID3DXInclude_Close(include, buffer);
+    LeaveCriticalSection(&from_file_mutex);
+    HeapFree(GetProcessHeap(), 0, filename_a);
     return hr;
 }
 
@@ -330,7 +386,10 @@ HRESULT WINAPI D3DXAssembleShaderFromResourceA(HMODULE module, const char *resou
     HRSRC res;
     DWORD len;
 
-    if (!(res = FindResourceA(module, resource, (LPCSTR)RT_RCDATA)))
+    TRACE("module %p, resource %s, defines %p, include %p, flags %#x, shader %p, error_messages %p.\n",
+            module, debugstr_a(resource), defines, include, flags, shader, error_messages);
+
+    if (!(res = FindResourceA(module, resource, (const char *)RT_RCDATA)))
         return D3DXERR_INVALIDDATA;
     if (FAILED(load_resource_into_memory(module, res, &buffer, &len)))
         return D3DXERR_INVALIDDATA;
@@ -362,8 +421,10 @@ HRESULT WINAPI D3DXCompileShader(const char *data, UINT length, const D3DXMACRO 
 {
     HRESULT hr;
 
-    TRACE("data %p, length %u, defines %p, include %p, function %s, profile %s, flags %#x, shader %p, error_msgs %p, constant_table %p\n",
-          data, length, defines, include, function, profile, flags, shader, error_msgs, constant_table);
+    TRACE("data %s, length %u, defines %p, include %p, function %s, profile %s, "
+            "flags %#x, shader %p, error_msgs %p, constant_table %p.\n",
+            debugstr_a(data), length, defines, include, debugstr_a(function), debugstr_a(profile),
+            flags, shader, error_msgs, constant_table);
 
     hr = D3DCompile(data, length, NULL, (D3D_SHADER_MACRO *)defines, (ID3DInclude *)include,
                     function, profile, flags, 0, (ID3DBlob **)shader, (ID3DBlob **)error_msgs);
@@ -378,6 +439,41 @@ HRESULT WINAPI D3DXCompileShader(const char *data, UINT length, const D3DXMACRO 
         }
     }
 
+    /* Filter out D3DCompile warning messages that are not present with D3DCompileShader */
+    if (SUCCEEDED(hr) && error_msgs && *error_msgs)
+    {
+        char *messages = ID3DXBuffer_GetBufferPointer(*error_msgs);
+        DWORD size     = ID3DXBuffer_GetBufferSize(*error_msgs);
+
+        /* Ensure messages are null terminated for safe processing */
+        if (size) messages[size - 1] = 0;
+
+        while (size > 1)
+        {
+            char *prev, *next;
+
+            /* Warning has the form "warning X3206: ... implicit truncation of vector type"
+               but we only search for "X3206:" in case d3dcompiler_43 has localization */
+            prev = next = strstr(messages, "X3206:");
+            if (!prev) break;
+
+            /* get pointer to beginning and end of current line */
+            while (prev > messages && *(prev - 1) != '\n') prev--;
+            while (next < messages + size - 1 && *next != '\n') next++;
+            if (next < messages + size - 1 && *next == '\n') next++;
+
+            memmove(prev, next, messages + size - next);
+            size -= (next - prev);
+        }
+
+        /* Only return a buffer if the resulting string is not empty as some apps depend on that */
+        if (size <= 1)
+        {
+            ID3DXBuffer_Release(*error_msgs);
+            *error_msgs = NULL;
+        }
+    }
+
     return hr;
 }
 
@@ -385,9 +481,14 @@ HRESULT WINAPI D3DXCompileShaderFromFileA(const char *filename, const D3DXMACRO 
         ID3DXInclude *include, const char *entrypoint, const char *profile, DWORD flags,
         ID3DXBuffer **shader, ID3DXBuffer **error_messages, ID3DXConstantTable **constant_table)
 {
-    LPWSTR filename_w = NULL;
+    WCHAR *filename_w;
     DWORD len;
     HRESULT ret;
+
+    TRACE("filename %s, defines %p, include %p, entrypoint %s, profile %s, "
+            "flags %#x, shader %p, error_messages %p, constant_table %p.\n",
+            debugstr_a(filename), defines, include, debugstr_a(entrypoint),
+            debugstr_a(profile), flags, shader, error_messages, constant_table);
 
     if (!filename) return D3DXERR_INVALIDDATA;
 
@@ -408,14 +509,16 @@ HRESULT WINAPI D3DXCompileShaderFromFileW(const WCHAR *filename, const D3DXMACRO
         ID3DXInclude *include, const char *entrypoint, const char *profile, DWORD flags,
         ID3DXBuffer **shader, ID3DXBuffer **error_messages, ID3DXConstantTable **constant_table)
 {
-    void *buffer;
+    const void *buffer;
     DWORD len, filename_len;
     HRESULT hr;
     struct D3DXIncludeImpl includefromfile;
     char *filename_a;
 
-    if (FAILED(map_view_of_file(filename, &buffer, &len)))
-        return D3DXERR_INVALIDDATA;
+    TRACE("filename %s, defines %p, include %p, entrypoint %s, profile %s, "
+            "flags %#x, shader %p, error_messages %p, constant_table %p.\n",
+            debugstr_w(filename), defines, include, debugstr_a(entrypoint), debugstr_a(profile),
+            flags, shader, error_messages, constant_table);
 
     if (!include)
     {
@@ -426,11 +529,17 @@ HRESULT WINAPI D3DXCompileShaderFromFileW(const WCHAR *filename, const D3DXMACRO
     filename_len = WideCharToMultiByte(CP_ACP, 0, filename, -1, NULL, 0, NULL, NULL);
     filename_a = HeapAlloc(GetProcessHeap(), 0, filename_len * sizeof(char));
     if (!filename_a)
-    {
-        UnmapViewOfFile(buffer);
         return E_OUTOFMEMORY;
-    }
     WideCharToMultiByte(CP_ACP, 0, filename, -1, filename_a, filename_len, NULL, NULL);
+
+    EnterCriticalSection(&from_file_mutex);
+    hr = ID3DXInclude_Open(include, D3D_INCLUDE_LOCAL, filename_a, NULL, &buffer, &len);
+    if (FAILED(hr))
+    {
+        LeaveCriticalSection(&from_file_mutex);
+        HeapFree(GetProcessHeap(), 0, filename_a);
+        return D3DXERR_INVALIDDATA;
+    }
 
     hr = D3DCompile(buffer, len, filename_a, (const D3D_SHADER_MACRO *)defines,
                     (ID3DInclude *)include, entrypoint, profile, flags, 0,
@@ -440,8 +549,9 @@ HRESULT WINAPI D3DXCompileShaderFromFileW(const WCHAR *filename, const D3DXMACRO
         hr = D3DXGetShaderConstantTable(ID3DXBuffer_GetBufferPointer(*shader),
                                         constant_table);
 
+    ID3DXInclude_Close(include, buffer);
+    LeaveCriticalSection(&from_file_mutex);
     HeapFree(GetProcessHeap(), 0, filename_a);
-    UnmapViewOfFile(buffer);
     return hr;
 }
 
@@ -453,7 +563,12 @@ HRESULT WINAPI D3DXCompileShaderFromResourceA(HMODULE module, const char *resour
     HRSRC res;
     DWORD len;
 
-    if (!(res = FindResourceA(module, resource, (LPCSTR)RT_RCDATA)))
+    TRACE("module %p, resource %s, defines %p, include %p, entrypoint %s, profile %s, "
+            "flags %#x, shader %p, error_messages %p, constant_table %p.\n",
+            module, debugstr_a(resource), defines, include, debugstr_a(entrypoint), debugstr_a(profile),
+            flags, shader, error_messages, constant_table);
+
+    if (!(res = FindResourceA(module, resource, (const char *)RT_RCDATA)))
         return D3DXERR_INVALIDDATA;
     if (FAILED(load_resource_into_memory(module, res, &buffer, &len)))
         return D3DXERR_INVALIDDATA;
@@ -485,7 +600,9 @@ HRESULT WINAPI D3DXCompileShaderFromResourceW(HMODULE module, const WCHAR *resou
 HRESULT WINAPI D3DXPreprocessShader(const char *data, UINT data_len, const D3DXMACRO *defines,
         ID3DXInclude *include, ID3DXBuffer **shader, ID3DXBuffer **error_messages)
 {
-    TRACE("Forward to D3DPreprocess\n");
+    TRACE("data %s, data_len %u, defines %p, include %p, shader %p, error_messages %p.\n",
+            debugstr_a(data), data_len, defines, include, shader, error_messages);
+
     return D3DPreprocess(data, data_len, NULL,
                          (const D3D_SHADER_MACRO *)defines, (ID3DInclude *)include,
                          (ID3DBlob **)shader, (ID3DBlob **)error_messages);
@@ -497,6 +614,9 @@ HRESULT WINAPI D3DXPreprocessShaderFromFileA(const char *filename, const D3DXMAC
     WCHAR *filename_w = NULL;
     DWORD len;
     HRESULT ret;
+
+    TRACE("filename %s, defines %p, include %p, shader %p, error_messages %p.\n",
+            debugstr_a(filename), defines, include, shader, error_messages);
 
     if (!filename) return D3DXERR_INVALIDDATA;
 
@@ -514,13 +634,14 @@ HRESULT WINAPI D3DXPreprocessShaderFromFileA(const char *filename, const D3DXMAC
 HRESULT WINAPI D3DXPreprocessShaderFromFileW(const WCHAR *filename, const D3DXMACRO *defines,
         ID3DXInclude *include, ID3DXBuffer **shader, ID3DXBuffer **error_messages)
 {
-    void *buffer;
+    const void *buffer;
     DWORD len;
     HRESULT hr;
     struct D3DXIncludeImpl includefromfile;
+    char *filename_a;
 
-    if (FAILED(map_view_of_file(filename, &buffer, &len)))
-        return D3DXERR_INVALIDDATA;
+    TRACE("filename %s, defines %p, include %p, shader %p, error_messages %p.\n",
+            debugstr_w(filename), defines, include, shader, error_messages);
 
     if (!include)
     {
@@ -528,12 +649,29 @@ HRESULT WINAPI D3DXPreprocessShaderFromFileW(const WCHAR *filename, const D3DXMA
         include = &includefromfile.ID3DXInclude_iface;
     }
 
+    len = WideCharToMultiByte(CP_ACP, 0, filename, -1, NULL, 0, NULL, NULL);
+    filename_a = HeapAlloc(GetProcessHeap(), 0, len * sizeof(char));
+    if (!filename_a)
+        return E_OUTOFMEMORY;
+    WideCharToMultiByte(CP_ACP, 0, filename, -1, filename_a, len, NULL, NULL);
+
+    EnterCriticalSection(&from_file_mutex);
+    hr = ID3DXInclude_Open(include, D3D_INCLUDE_LOCAL, filename_a, NULL, &buffer, &len);
+    if (FAILED(hr))
+    {
+        LeaveCriticalSection(&from_file_mutex);
+        HeapFree(GetProcessHeap(), 0, filename_a);
+        return D3DXERR_INVALIDDATA;
+    }
+
     hr = D3DPreprocess(buffer, len, NULL,
                        (const D3D_SHADER_MACRO *)defines,
                        (ID3DInclude *) include,
                        (ID3DBlob **)shader, (ID3DBlob **)error_messages);
 
-    UnmapViewOfFile(buffer);
+    ID3DXInclude_Close(include, buffer);
+    LeaveCriticalSection(&from_file_mutex);
+    HeapFree(GetProcessHeap(), 0, filename_a);
     return hr;
 }
 
@@ -544,7 +682,10 @@ HRESULT WINAPI D3DXPreprocessShaderFromResourceA(HMODULE module, const char *res
     HRSRC res;
     DWORD len;
 
-    if (!(res = FindResourceA(module, resource, (LPCSTR)RT_RCDATA)))
+    TRACE("module %p, resource %s, defines %p, include %p, shader %p, error_messages %p.\n",
+            module, debugstr_a(resource), defines, include, shader, error_messages);
+
+    if (!(res = FindResourceA(module, resource, (const char *)RT_RCDATA)))
         return D3DXERR_INVALIDDATA;
     if (FAILED(load_resource_into_memory(module, res, &buffer, &len)))
         return D3DXERR_INVALIDDATA;
@@ -558,6 +699,9 @@ HRESULT WINAPI D3DXPreprocessShaderFromResourceW(HMODULE module, const WCHAR *re
     void *buffer;
     HRSRC res;
     DWORD len;
+
+    TRACE("module %p, resource %s, defines %p, include %p, shader %p, error_messages %p.\n",
+            module, debugstr_w(resource), defines, include, shader, error_messages);
 
     if (!(res = FindResourceW(module, resource, (const WCHAR *)RT_RCDATA)))
         return D3DXERR_INVALIDDATA;
@@ -626,12 +770,13 @@ static inline D3DXHANDLE handle_from_constant(struct ctab_constant *constant)
     return (D3DXHANDLE)constant;
 }
 
-static struct ctab_constant *get_constant_by_name(struct ID3DXConstantTableImpl *, struct ctab_constant *, LPCSTR);
+static struct ctab_constant *get_constant_by_name(struct ID3DXConstantTableImpl *table,
+        struct ctab_constant *constant, const char *name);
 
-static struct ctab_constant *get_constant_element_by_name(struct ctab_constant *constant, LPCSTR name)
+static struct ctab_constant *get_constant_element_by_name(struct ctab_constant *constant, const char *name)
 {
+    const char *part;
     UINT element;
-    LPCSTR part;
 
     TRACE("constant %p, name %s\n", constant, debugstr_a(name));
 
@@ -667,11 +812,11 @@ static struct ctab_constant *get_constant_element_by_name(struct ctab_constant *
 }
 
 static struct ctab_constant *get_constant_by_name(struct ID3DXConstantTableImpl *table,
-        struct ctab_constant *constant, LPCSTR name)
+        struct ctab_constant *constant, const char *name)
 {
     UINT i, count, length;
     struct ctab_constant *handles;
-    LPCSTR part;
+    const char *part;
 
     TRACE("table %p, constant %p, name %s\n", table, constant, debugstr_a(name));
 
@@ -799,13 +944,13 @@ static ULONG WINAPI ID3DXConstantTableImpl_Release(ID3DXConstantTable *iface)
 }
 
 /*** ID3DXBuffer methods ***/
-static LPVOID WINAPI ID3DXConstantTableImpl_GetBufferPointer(ID3DXConstantTable *iface)
+static void * WINAPI ID3DXConstantTableImpl_GetBufferPointer(ID3DXConstantTable *iface)
 {
-    struct ID3DXConstantTableImpl *This = impl_from_ID3DXConstantTable(iface);
+    struct ID3DXConstantTableImpl *table = impl_from_ID3DXConstantTable(iface);
 
-    TRACE("(%p)->()\n", This);
+    TRACE("iface %p.\n", iface);
 
-    return This->ctab;
+    return table->ctab;
 }
 
 static DWORD WINAPI ID3DXConstantTableImpl_GetBufferSize(ID3DXConstantTable *iface)
@@ -900,12 +1045,13 @@ static D3DXHANDLE WINAPI ID3DXConstantTableImpl_GetConstant(ID3DXConstantTable *
     return NULL;
 }
 
-static D3DXHANDLE WINAPI ID3DXConstantTableImpl_GetConstantByName(ID3DXConstantTable *iface, D3DXHANDLE constant, LPCSTR name)
+static D3DXHANDLE WINAPI ID3DXConstantTableImpl_GetConstantByName(ID3DXConstantTable *iface,
+        D3DXHANDLE constant, const char *name)
 {
     struct ID3DXConstantTableImpl *This = impl_from_ID3DXConstantTable(iface);
     struct ctab_constant *c = get_valid_constant(This, constant);
 
-    TRACE("(%p)->(%p, %s)\n", This, constant, name);
+    TRACE("iface %p, constant %p, name %s.\n", iface, constant, debugstr_a(name));
 
     c = get_constant_by_name(This, c, name);
     TRACE("Returning constant %p\n", c);
@@ -950,7 +1096,7 @@ static UINT set(struct ID3DXConstantTableImpl *table, IDirect3DDevice9 *device, 
     UINT l, i, regcount = 1, regsize = 1, cin = 1, rin = 1, ret, last = 0;
     DWORD tmp;
 
-    /* size to small to set anything */
+    /* size too small to set anything */
     if (*size < desc->Rows * desc->Columns)
     {
         *size = 0;
@@ -1070,7 +1216,7 @@ static UINT set(struct ID3DXConstantTableImpl *table, IDirect3DDevice9 *device, 
             break;
 
         case D3DXPC_MATRIX_COLUMNS:
-            regcount = desc->Columns;
+            regcount = min(desc->RegisterCount, desc->Columns);
             if (inclass == D3DXPC_MATRIX_ROWS) rin = incol;
             else cin = incol;
             regsize = desc->Rows;
@@ -1696,7 +1842,7 @@ static const struct ID3DXConstantTableVtbl ID3DXConstantTable_Vtbl =
 };
 
 static HRESULT parse_ctab_constant_type(const char *ctab, DWORD typeoffset, struct ctab_constant *constant,
-        BOOL is_element, WORD index, WORD max, DWORD *offset, DWORD nameoffset, UINT regset)
+        BOOL is_element, WORD index, WORD max_index, DWORD *offset, DWORD nameoffset, UINT regset)
 {
     const D3DXSHADER_TYPEINFO *type = (LPD3DXSHADER_TYPEINFO)(ctab + typeoffset);
     const D3DXSHADER_STRUCTMEMBERINFO *memberinfo = NULL;
@@ -1745,7 +1891,7 @@ static HRESULT parse_ctab_constant_type(const char *ctab, DWORD typeoffset, stru
         for (i = 0; i < count; ++i)
         {
             hr = parse_ctab_constant_type(ctab, memberinfo ? memberinfo[i].TypeInfo : typeoffset,
-                    &constant->constants[i], memberinfo == NULL, index + size, max, offset,
+                    &constant->constants[i], memberinfo == NULL, index + size, max_index, offset,
                     memberinfo ? memberinfo[i].Name : nameoffset, regset);
             if (hr != D3D_OK)
                 goto error;
@@ -1780,7 +1926,7 @@ static HRESULT parse_ctab_constant_type(const char *ctab, DWORD typeoffset, stru
 
                     case D3DXPC_MATRIX_ROWS:
                         offsetdiff = type->Rows * 4;
-                        size = is_element ? type->Rows : max(type->Rows, type->Columns);
+                        size = type->Rows;
                         break;
 
                     case D3DXPC_MATRIX_COLUMNS:
@@ -1814,7 +1960,7 @@ static HRESULT parse_ctab_constant_type(const char *ctab, DWORD typeoffset, stru
         if (offset) *offset += offsetdiff * 4;
     }
 
-    constant->desc.RegisterCount = max(0, min(max - index, size));
+    constant->desc.RegisterCount = max(0, min(max_index - index, size));
     constant->desc.Bytes = 4 * constant->desc.Elements * type->Rows * type->Columns;
 
     return D3D_OK;
@@ -1836,8 +1982,8 @@ error:
 HRESULT WINAPI D3DXGetShaderConstantTableEx(const DWORD *byte_code, DWORD flags, ID3DXConstantTable **constant_table)
 {
     struct ID3DXConstantTableImpl *object = NULL;
+    const void *data;
     HRESULT hr;
-    LPCVOID data;
     UINT size;
     const D3DXSHADER_CONSTANTTABLE *ctab_header;
     const D3DXSHADER_CONSTANTINFO *constant_info;
@@ -2001,6 +2147,121 @@ HRESULT WINAPI D3DXGetShaderSamplers(const DWORD *byte_code, const char **sample
     TRACE("Found %u samplers\n", sampler_count);
 
     if (count) *count = sampler_count;
+
+    return D3D_OK;
+}
+
+HRESULT WINAPI D3DXDisassembleShader(const DWORD *shader, BOOL colorcode, const char *comments, ID3DXBuffer **disassembly)
+{
+   FIXME("%p %d %s %p: stub\n", shader, colorcode, debugstr_a(comments), disassembly);
+   return E_OUTOFMEMORY;
+}
+
+const DWORD* skip_instruction(const DWORD *byte_code, UINT shader_model)
+{
+    TRACE("Shader model %u\n", shader_model);
+
+    /* Handle all special instructions whose arguments may contain D3DSIO_DCL */
+    if ((*byte_code & D3DSI_OPCODE_MASK) == D3DSIO_COMMENT)
+    {
+        byte_code += 1 + ((*byte_code & D3DSI_COMMENTSIZE_MASK) >> D3DSI_COMMENTSIZE_SHIFT);
+    }
+    else if (shader_model >= 2)
+    {
+        byte_code += 1 + ((*byte_code & D3DSI_INSTLENGTH_MASK) >> D3DSI_INSTLENGTH_SHIFT);
+    }
+    else if ((*byte_code & D3DSI_OPCODE_MASK) == D3DSIO_DEF)
+    {
+        byte_code += 1 + 5;
+    }
+    else
+    {
+        /* Handle remaining safe instructions */
+        while (*++byte_code & (1 << 31));
+    }
+
+    return byte_code;
+}
+
+static UINT get_shader_semantics(const DWORD *byte_code, D3DXSEMANTIC *semantics, BOOL input)
+{
+    const DWORD *ptr = byte_code;
+    UINT shader_model = (*ptr >> 8) & 0xff;
+    UINT i = 0;
+
+    TRACE("Shader version: %#x\n", *ptr);
+    ptr++;
+
+    while (*ptr != D3DSIO_END)
+    {
+        if (*ptr & (1 << 31))
+        {
+            FIXME("Opcode expected but got %#x\n", *ptr);
+            return 0;
+        }
+        else if ((*ptr & D3DSI_OPCODE_MASK) == D3DSIO_DCL)
+        {
+            DWORD param1 = *++ptr;
+            DWORD param2 = *++ptr;
+            DWORD usage = param1 & 0x1f;
+            DWORD usage_index = (param1 >> 16) & 0xf;
+            DWORD reg_type = (((param2 >> 11) & 0x3) << 3) | ((param2 >> 28) & 0x7);
+
+            TRACE("D3DSIO_DCL param1: %#x, param2: %#x, usage: %u, usage_index: %u, reg_type: %u\n",
+                   param1, param2, usage, usage_index, reg_type);
+
+            if ((input && (reg_type == D3DSPR_INPUT)) || (!input && (reg_type == D3DSPR_OUTPUT)))
+            {
+                if (semantics)
+                {
+                    semantics[i].Usage = usage;
+                    semantics[i].UsageIndex = usage_index;
+                }
+                i++;
+            }
+
+            ptr++;
+        }
+        else
+        {
+            ptr = skip_instruction(ptr, shader_model);
+        }
+    }
+
+    return i;
+}
+
+HRESULT WINAPI D3DXGetShaderInputSemantics(const DWORD *byte_code, D3DXSEMANTIC *semantics, UINT *count)
+{
+    UINT nb_semantics;
+
+    TRACE("byte_code %p, semantics %p, count %p\n", byte_code, semantics, count);
+
+    if (!byte_code)
+        return D3DERR_INVALIDCALL;
+
+    nb_semantics = get_shader_semantics(byte_code, semantics, TRUE);
+
+    if (count)
+        *count = nb_semantics;
+
+    return D3D_OK;
+}
+
+
+HRESULT WINAPI D3DXGetShaderOutputSemantics(const DWORD *byte_code, D3DXSEMANTIC *semantics, UINT *count)
+{
+    UINT nb_semantics;
+
+    TRACE("byte_code %p, semantics %p, count %p\n", byte_code, semantics, count);
+
+    if (!byte_code)
+        return D3DERR_INVALIDCALL;
+
+    nb_semantics = get_shader_semantics(byte_code, semantics, FALSE);
+
+    if (count)
+        *count = nb_semantics;
 
     return D3D_OK;
 }

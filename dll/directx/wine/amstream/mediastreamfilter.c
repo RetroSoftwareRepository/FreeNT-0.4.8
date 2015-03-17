@@ -18,22 +18,9 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <wine/debug.h>
-
-#define COBJMACROS
-
-//#include "winbase.h"
-//#include "wingdi.h"
-#include <dshow.h>
+#include "amstream_private.h"
 
 #include <wine/strmbase.h>
-
-//#include "amstream_private.h"
-#include <amstream.h>
-
-//#include "ddstream.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(amstream);
 
 typedef struct MediaStreamFilter_InputPin
 {
@@ -191,14 +178,13 @@ static HRESULT WINAPI BasePinImp_GetMediaType(BasePin *This, int index, AM_MEDIA
     return S_OK;
 }
 
-static const  BasePinFuncTable input_BaseFuncTable = {
-    BasePinImpl_CheckMediaType,
-    NULL,
-    BasePinImp_GetMediaTypeVersion,
-    BasePinImp_GetMediaType
-};
-
 static const BaseInputPinFuncTable input_BaseInputFuncTable = {
+    {
+        BasePinImpl_CheckMediaType,
+        NULL,
+        BasePinImp_GetMediaTypeVersion,
+        BasePinImp_GetMediaType
+    },
     NULL
 };
 
@@ -239,7 +225,7 @@ static ULONG WINAPI MediaStreamFilterImpl_AddRef(IMediaStreamFilter *iface)
 static ULONG WINAPI MediaStreamFilterImpl_Release(IMediaStreamFilter *iface)
 {
     IMediaStreamFilterImpl *This = impl_from_IMediaStreamFilter(iface);
-    ULONG ref = BaseFilterImpl_Release(&This->filter.IBaseFilter_iface);
+    ULONG ref = InterlockedDecrement(&This->filter.refCount);
 
     TRACE("(%p)->(): new ref = %u\n", iface, ref);
 
@@ -251,6 +237,7 @@ static ULONG WINAPI MediaStreamFilterImpl_Release(IMediaStreamFilter *iface)
             IMediaStream_Release(This->streams[i]);
             IPin_Release(This->pins[i]);
         }
+        BaseFilter_Destroy(&This->filter);
         HeapFree(GetProcessHeap(), 0, This);
     }
 
@@ -367,7 +354,8 @@ static HRESULT WINAPI MediaStreamFilterImpl_AddMediaStream(IMediaStreamFilter* i
     /* Pin name is "I{guid MSPID_PrimaryVideo or MSPID_PrimaryAudio}" */
     info.achName[0] = 'I';
     StringFromGUID2(&purpose_id, info.achName + 1, 40);
-    hr = BaseInputPin_Construct(&MediaStreamFilter_InputPin_Vtbl, &info, &input_BaseFuncTable, &input_BaseInputFuncTable, &This->filter.csFilter, NULL, &This->pins[This->nb_streams]);
+    hr = BaseInputPin_Construct(&MediaStreamFilter_InputPin_Vtbl, sizeof(BaseInputPin), &info,
+            &input_BaseInputFuncTable, &This->filter.csFilter, NULL, &This->pins[This->nb_streams]);
     if (FAILED(hr))
         return hr;
 

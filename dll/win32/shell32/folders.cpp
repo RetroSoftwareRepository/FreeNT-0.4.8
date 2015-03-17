@@ -19,8 +19,6 @@
 
 #include "precomp.h"
 
-WINE_DEFAULT_DEBUG_CHANNEL(shell);
-
 WCHAR swShell32Name[MAX_PATH];
 
 DWORD NumIconOverlayHandlers = 0;
@@ -30,6 +28,7 @@ static HRESULT getIconLocationForFolder(LPCITEMIDLIST pidl, UINT uFlags,
                                         LPWSTR szIconFile, UINT cchMax, int *piIndex, UINT *pwFlags)
 {
     int icon_idx;
+    bool cont=TRUE;
     WCHAR wszPath[MAX_PATH];
     WCHAR wszCLSIDValue[CHARS_IN_GUID];
     static const WCHAR shellClassInfo[] = { '.', 'S', 'h', 'e', 'l', 'l', 'C', 'l', 'a', 's', 's', 'I', 'n', 'f', 'o', 0 };
@@ -38,31 +37,44 @@ static HRESULT getIconLocationForFolder(LPCITEMIDLIST pidl, UINT uFlags,
     static const WCHAR clsid2[] = { 'C', 'L', 'S', 'I', 'D', '2', 0 };
     static const WCHAR iconIndex[] = { 'I', 'c', 'o', 'n', 'I', 'n', 'd', 'e', 'x', 0 };
 
-    if (SHELL32_GetCustomFolderAttribute(pidl, shellClassInfo, iconFile,
-                                         wszPath, MAX_PATH))
+    /*
+    Optimisation. GetCustomFolderAttribute has a critical lock on it, and isn't fast.
+    Test the water (i.e., see if the attribute exists) before questioning it three times
+    when most folders don't use it at all.
+    */
+    WCHAR wszBigToe[3];
+    if (!(uFlags & GIL_DEFAULTICON) && SHELL32_GetCustomFolderAttributes(pidl, shellClassInfo,
+                                         wszBigToe, 3))
     {
-        WCHAR wszIconIndex[10];
-        SHELL32_GetCustomFolderAttribute(pidl, shellClassInfo, iconIndex,
-                                         wszIconIndex, 10);
-        *piIndex = _wtoi(wszIconIndex);
+        if (SHELL32_GetCustomFolderAttribute(pidl, shellClassInfo, iconFile,
+                                             wszPath, MAX_PATH))
+        {
+            WCHAR wszIconIndex[10];
+            SHELL32_GetCustomFolderAttribute(pidl, shellClassInfo, iconIndex,
+                                             wszIconIndex, 10);
+            *piIndex = _wtoi(wszIconIndex);
+            cont=FALSE;
+        }
+        else if (SHELL32_GetCustomFolderAttribute(pidl, shellClassInfo, clsid,
+                 wszCLSIDValue, CHARS_IN_GUID) &&
+                 HCR_GetIconW(wszCLSIDValue, szIconFile, NULL, cchMax, &icon_idx))
+        {
+            *piIndex = icon_idx;
+            cont=FALSE;
+        }
+        else if (SHELL32_GetCustomFolderAttribute(pidl, shellClassInfo, clsid2,
+                 wszCLSIDValue, CHARS_IN_GUID) &&
+                 HCR_GetIconW(wszCLSIDValue, szIconFile, NULL, cchMax, &icon_idx))
+        {
+            *piIndex = icon_idx;
+            cont=FALSE;
+        }
     }
-    else if (SHELL32_GetCustomFolderAttribute(pidl, shellClassInfo, clsid,
-             wszCLSIDValue, CHARS_IN_GUID) &&
-             HCR_GetDefaultIconW(wszCLSIDValue, szIconFile, cchMax, &icon_idx))
-    {
-        *piIndex = icon_idx;
-    }
-    else if (SHELL32_GetCustomFolderAttribute(pidl, shellClassInfo, clsid2,
-             wszCLSIDValue, CHARS_IN_GUID) &&
-             HCR_GetDefaultIconW(wszCLSIDValue, szIconFile, cchMax, &icon_idx))
-    {
-        *piIndex = icon_idx;
-    }
-    else
+    if (cont)
     {
         static const WCHAR folder[] = { 'F', 'o', 'l', 'd', 'e', 'r', 0 };
 
-        if (!HCR_GetDefaultIconW(folder, szIconFile, cchMax, &icon_idx))
+        if (!HCR_GetIconW(folder, szIconFile, NULL, cchMax, &icon_idx))
         {
             lstrcpynW(szIconFile, swShell32Name, cchMax);
             icon_idx = -IDI_SHELL_FOLDER;
@@ -84,7 +96,6 @@ void InitIconOverlays(void)
     WCHAR szName[MAX_PATH];
     WCHAR szValue[100];
     CLSID clsid;
-    IShellIconOverlayIdentifier * Overlay;
 
     if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\ShellIconOverlayIdentifiers", 0, KEY_READ, &hKey) != ERROR_SUCCESS)
         return;
@@ -119,12 +130,13 @@ void InitIconOverlays(void)
             dwSize = sizeof(szValue) / sizeof(WCHAR);
             if (RegGetValueW(hKey, szName, NULL, RRF_RT_REG_SZ, NULL, szValue, &dwSize) == ERROR_SUCCESS)
             {
+                CComPtr<IShellIconOverlayIdentifier> Overlay;
 
                 CLSIDFromString(szValue, &clsid);
-                dwResult = CoCreateInstance(clsid, NULL, CLSCTX_INPROC_SERVER, IID_IUnknown, (LPVOID*)&Overlay);
+                dwResult = CoCreateInstance(clsid, NULL, CLSCTX_INPROC_SERVER, IID_PPV_ARG(IShellIconOverlayIdentifier, &Overlay));
                 if (dwResult == S_OK)
                 {
-                    Handlers[NumIconOverlayHandlers] = Overlay;
+                    Handlers[NumIconOverlayHandlers] = Overlay.Detach();
                     NumIconOverlayHandlers++;
                 }
             }
@@ -188,7 +200,7 @@ GetIconOverlay(LPCITEMIDLIST pidl, WCHAR * wTemp, int* pIndex)
 IExtractIconW* IExtractIconW_Constructor(LPCITEMIDLIST pidl)
 {
     CComPtr<IDefaultExtractIconInit>    initIcon;
-    IExtractIconW *extractIcon;
+    CComPtr<IExtractIconW> extractIcon;
     GUID const * riid;
     int icon_idx;
     UINT flags;
@@ -197,11 +209,11 @@ IExtractIconW* IExtractIconW_Constructor(LPCITEMIDLIST pidl)
     LPITEMIDLIST pSimplePidl = ILFindLastID(pidl);
     HRESULT hr;
 
-    hr = SHCreateDefaultExtractIcon(IID_IDefaultExtractIconInit, (void **)&initIcon);
+    hr = SHCreateDefaultExtractIcon(IID_PPV_ARG(IDefaultExtractIconInit,&initIcon));
     if (FAILED(hr))
         return NULL;
 
-    hr = initIcon->QueryInterface(IID_IExtractIconW, (void **)&extractIcon);
+    hr = initIcon->QueryInterface(IID_PPV_ARG(IExtractIconW,&extractIcon));
     if (FAILED(hr))
         return NULL;
 
@@ -224,7 +236,35 @@ IExtractIconW* IExtractIconW_Constructor(LPCITEMIDLIST pidl)
                  riid->Data4[0], riid->Data4[1], riid->Data4[2], riid->Data4[3],
                  riid->Data4[4], riid->Data4[5], riid->Data4[6], riid->Data4[7]);
 
-        if (HCR_GetDefaultIconW(xriid, wTemp, MAX_PATH, &icon_idx))
+        const WCHAR* iconname = NULL;
+        if (_ILIsBitBucket(pSimplePidl))
+        {
+            static const WCHAR szFull[] = {'F','u','l','l',0};
+            static const WCHAR szEmpty[] = {'E','m','p','t','y',0};
+            CComPtr<IEnumIDList> EnumIDList;
+            CoInitialize(NULL);
+
+            CComPtr<IShellFolder2> psfRecycleBin;
+            CComPtr<IShellFolder> psfDesktop;
+            hr = SHGetDesktopFolder(&psfDesktop);
+
+            if (SUCCEEDED(hr))
+                hr = psfDesktop->BindToObject(pSimplePidl, NULL, IID_PPV_ARG(IShellFolder2, &psfRecycleBin));
+            if (SUCCEEDED(hr))
+                hr = psfRecycleBin->EnumObjects(NULL, SHCONTF_FOLDERS | SHCONTF_NONFOLDERS, &EnumIDList);
+
+            ULONG itemcount;
+            LPITEMIDLIST pidl = NULL;
+            if (SUCCEEDED(hr) && (hr = EnumIDList->Next(1, &pidl, &itemcount)) == S_OK)
+            {
+                CoTaskMemFree(pidl);
+                iconname = szFull;
+            } else {
+                iconname = szEmpty;
+            }
+        }
+
+        if (HCR_GetIconW(xriid, wTemp, iconname, MAX_PATH, &icon_idx))
         {
             initIcon->SetNormalIcon(wTemp, icon_idx);
         }
@@ -274,7 +314,7 @@ IExtractIconW* IExtractIconW_Constructor(LPCITEMIDLIST pidl)
         }
         else
         {
-            if (HCR_GetDefaultIconW(drive, wTemp, MAX_PATH, &icon_idx))
+            if (HCR_GetIconW(drive, wTemp, NULL, MAX_PATH, &icon_idx))
                 initIcon->SetNormalIcon(wTemp, icon_idx);
             else
                 initIcon->SetNormalIcon(swShell32Name, -IDI_SHELL_DRIVE);
@@ -289,6 +329,10 @@ IExtractIconW* IExtractIconW_Constructor(LPCITEMIDLIST pidl)
                           &flags)))
         {
             initIcon->SetNormalIcon(wTemp, icon_idx);
+            // FIXME: if/when getIconLocationForFolder does something for 
+            //        GIL_FORSHORTCUT, code below should be uncommented. and
+            //        the following line removed.
+            initIcon->SetShortcutIcon(wTemp, icon_idx);
         }
         if (SUCCEEDED(getIconLocationForFolder(
                           pidl, GIL_DEFAULTICON, wTemp, MAX_PATH,
@@ -297,13 +341,13 @@ IExtractIconW* IExtractIconW_Constructor(LPCITEMIDLIST pidl)
         {
             initIcon->SetDefaultIcon(wTemp, icon_idx);
         }
-        if (SUCCEEDED(getIconLocationForFolder(
-                          pidl, GIL_FORSHORTCUT, wTemp, MAX_PATH,
-                          &icon_idx,
-                          &flags)))
-        {
-            initIcon->SetShortcutIcon(wTemp, icon_idx);
-        }
+        // if (SUCCEEDED(getIconLocationForFolder(
+        //                   pidl, GIL_FORSHORTCUT, wTemp, MAX_PATH,
+        //                   &icon_idx,
+        //                   &flags)))
+        // {
+        //     initIcon->SetShortcutIcon(wTemp, icon_idx);
+        // }
         if (SUCCEEDED(getIconLocationForFolder(
                           pidl, GIL_OPENICON, wTemp, MAX_PATH,
                           &icon_idx,
@@ -324,7 +368,7 @@ IExtractIconW* IExtractIconW_Constructor(LPCITEMIDLIST pidl)
         else if (_ILGetExtension(pSimplePidl, sTemp, MAX_PATH))
         {
             if (HCR_MapTypeToValueA(sTemp, sTemp, MAX_PATH, TRUE)
-                    && HCR_GetDefaultIconA(sTemp, sTemp, MAX_PATH, &icon_idx))
+                    && HCR_GetIconA(sTemp, sTemp, NULL, MAX_PATH, &icon_idx))
             {
                 if (!lstrcmpA("%1", sTemp)) /* icon is in the file */
                 {
@@ -346,7 +390,7 @@ IExtractIconW* IExtractIconW_Constructor(LPCITEMIDLIST pidl)
 
                 if (SUCCEEDED(SHGetDesktopFolder(&dsf)))
                 {
-                    HRESULT hr = dsf->GetUIObjectOf(NULL, 1, (LPCITEMIDLIST*)&pidl, IID_IShellLinkW, NULL, (LPVOID *)&psl);
+                    HRESULT hr = dsf->GetUIObjectOf(NULL, 1, (LPCITEMIDLIST*) &pidl, IID_NULL_PPV_ARG(IShellLinkW, &psl));
 
                     if (SUCCEEDED(hr))
                     {
@@ -367,7 +411,7 @@ IExtractIconW* IExtractIconW_Constructor(LPCITEMIDLIST pidl)
             initIcon->SetNormalIcon(wTemp, icon_idx);
     }
 
-    return extractIcon;
+    return extractIcon.Detach();
 }
 
 /**************************************************************************
@@ -375,17 +419,16 @@ IExtractIconW* IExtractIconW_Constructor(LPCITEMIDLIST pidl)
 */
 IExtractIconA* IExtractIconA_Constructor(LPCITEMIDLIST pidl)
 {
-    IExtractIconW *extractIconW;
-    IExtractIconA *extractIconA;
+    CComPtr<IExtractIconW> extractIconW;
+    CComPtr<IExtractIconA> extractIconA;
     HRESULT hr;
 
     extractIconW = IExtractIconW_Constructor(pidl);
     if (!extractIconW)
         return NULL;
 
-    hr = extractIconW->QueryInterface(IID_IExtractIconA, (void **)&extractIconA);
-    extractIconW->Release();
+    hr = extractIconW->QueryInterface(IID_PPV_ARG(IExtractIconA, &extractIconA));
     if (FAILED(hr))
         return NULL;
-    return extractIconA;
+    return extractIconA.Detach();
 }

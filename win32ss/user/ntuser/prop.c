@@ -5,7 +5,7 @@
  * FILE:             subsys/win32k/ntuser/prop.c
  * PROGRAMER:        Casper S. Hornstrup (chorns@users.sourceforge.net)
  */
- 
+
 #include <win32k.h>
 DBG_DEFAULT_CHANNEL(UserProp);
 
@@ -16,12 +16,21 @@ IntGetProp(PWND Window, ATOM Atom)
 {
    PLIST_ENTRY ListEntry;
    PPROPERTY Property;
-   int i;
+   UINT i;
 
    ListEntry = Window->PropListHead.Flink;
+
    for (i = 0; i < Window->PropListItems; i++ )
    {
       Property = CONTAINING_RECORD(ListEntry, PROPERTY, PropListEntry);
+
+      if (ListEntry == NULL)
+      {
+          ERR("Corrupted (or uninitialized?) property list for window %p. Prop count %u. Atom %u.\n",
+              Window, Window->PropListItems, Atom);
+          return NULL;
+      }
+
       if (Property->Atom == Atom)
       {
          return(Property);
@@ -84,16 +93,14 @@ IntRemoveWindowProp(PWND Window)
 {
    PLIST_ENTRY ListEntry;
    PPROPERTY Property;
-   int i, Count = Window->PropListItems;
 
-   ListEntry = Window->PropListHead.Flink;
-   for (i = 0; i < Count; i++ )
+   while (!IsListEmpty(&Window->PropListHead))
    {
-      Property = CONTAINING_RECORD(ListEntry, PROPERTY, PropListEntry);
-      ListEntry = ListEntry->Flink;
-      RemoveEntryList(&Property->PropListEntry);
-      UserHeapFree(Property);
-      Window->PropListItems--;
+       ListEntry = Window->PropListHead.Flink;
+       Property = CONTAINING_RECORD(ListEntry, PROPERTY, PropListEntry);
+       RemoveEntryList(&Property->PropListEntry);
+       UserHeapFree(Property);
+       Window->PropListItems--;
    }
    return;
 }

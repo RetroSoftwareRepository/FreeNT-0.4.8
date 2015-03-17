@@ -19,18 +19,12 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-//#include <assert.h>
-
-//#include "ntstatus.h"
-#define WIN32_NO_STATUS
 #include "dbghelp_private.h"
-//#include "winternl.h"
-#include <wine/debug.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(dbghelp);
 
-static unsigned arm_get_addr(HANDLE hThread, const CONTEXT* ctx,
-                             enum cpu_addr ca, ADDRESS64* addr)
+static BOOL arm_get_addr(HANDLE hThread, const CONTEXT* ctx,
+                         enum cpu_addr ca, ADDRESS64* addr)
 {
     addr->Mode    = AddrModeFlat;
     addr->Segment = 0; /* don't need segment */

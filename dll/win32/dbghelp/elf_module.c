@@ -19,8 +19,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "config.h"
-#include "wine/port.h"
+#include "dbghelp_private.h"
 
 #if defined(__svr4__) || defined(__sun)
 #define __ELF__ 1
@@ -29,26 +28,10 @@
 #define _FILE_OFFSET_BITS 32
 #endif
 
-#include <assert.h>
-#include <stdio.h>
 #include <stdlib.h>
-#ifdef HAVE_SYS_STAT_H
-# include <sys/stat.h>
-#endif
 #include <fcntl.h>
-#ifdef HAVE_SYS_MMAN_H
-#include <sys/mman.h>
-#endif
-#ifdef HAVE_UNISTD_H
-# include <unistd.h>
-#endif
 
-#include "dbghelp_private.h"
-
-#include "image_private.h"
-
-#include "wine/library.h"
-#include "wine/debug.h"
+#include <wine/library.h>
 
 #ifdef __ELF__
 
@@ -59,6 +42,32 @@
 #ifndef NT_GNU_BUILD_ID
 #define NT_GNU_BUILD_ID 3
 #endif
+
+#ifndef HAVE_STRUCT_R_DEBUG
+struct r_debug
+{
+    int r_version;
+    struct link_map *r_map;
+    ElfW(Addr) r_brk;
+    enum
+    {
+        RT_CONSISTENT,
+        RT_ADD,
+        RT_DELETE
+    } r_state;
+    ElfW(Addr) r_ldbase;
+};
+#endif /* HAVE_STRUCT_R_DEBUG */
+
+#ifndef HAVE_STRUCT_LINK_MAP
+struct link_map
+{
+    ElfW(Addr) l_addr;
+    char *l_name;
+    ElfW(Dyn) *l_ld;
+    struct link_map *l_next, *l_prev;
+};
+#endif /* HAVE_STRUCT_LINK_MAP */
 
 WINE_DEFAULT_DEBUG_CHANNEL(dbghelp);
 
@@ -1444,7 +1453,7 @@ static BOOL elf_search_and_load_file(struct process* pcs, const WCHAR* filename,
 {
     BOOL                ret = FALSE;
     struct module*      module;
-    static WCHAR        S_libstdcPPW[] = {'l','i','b','s','t','d','c','+','+','\0'};
+    static const WCHAR  S_libstdcPPW[] = {'l','i','b','s','t','d','c','+','+','\0'};
 
     if (filename == NULL || *filename == '\0') return FALSE;
     if ((module = module_is_already_loaded(pcs, filename)))
@@ -1699,8 +1708,8 @@ struct module*  elf_load_module(struct process* pcs, const WCHAR* name, unsigned
 /******************************************************************
  *		elf_synchronize_module_list
  *
- * this functions rescans the debuggee module's list and synchronizes it with
- * the one from 'pcs', ie:
+ * this function rescans the debuggee module's list and synchronizes it with
+ * the one from 'pcs', i.e.:
  * - if a module is in debuggee and not in pcs, it's loaded into pcs
  * - if a module is in pcs and not in debuggee, it's unloaded from pcs
  */

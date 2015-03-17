@@ -19,9 +19,6 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "cdlg.h"
-#include "filedlgbrowser.h"
-
 LANGUAGE LANG_SWEDISH, SUBLANG_DEFAULT
 
 STRINGTABLE
@@ -37,6 +34,7 @@ Vill du ersätta den?"
                                                / : < > |"
     IDS_PATHNOTEXISTING     "Sökvägen finns inte"
     IDS_FILENOTEXISTING     "Filen finns inte"
+    IDS_INVALID_FOLDERNAME  "The selection contains a non-folder object"
 }
 
 STRINGTABLE
@@ -138,6 +136,7 @@ STRINGTABLE
     IDS_SAVE        "Spara"
     IDS_SAVE_AS     "Spara som"
     IDS_OPEN_FILE   "Öppna fil"
+    IDS_SELECT_FOLDER "Select Folder"
 }
 
 /*

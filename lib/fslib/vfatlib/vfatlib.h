@@ -4,6 +4,9 @@
  * FILE:        vfatlib.h
  */
 
+#ifndef _VFATLIB_H_
+#define _VFATLIB_H_
+
 #include <stdio.h>
 
 #define WIN32_NO_STATUS
@@ -11,7 +14,6 @@
 #define COM_NO_WINDOWS_H
 #include <windef.h>
 #include <winbase.h>
-#include <objbase.h>
 #define NTOS_MODE_USER
 #include <ndk/iofuncs.h>
 #include <ndk/kefuncs.h>
@@ -19,17 +21,10 @@
 #include <ndk/rtlfuncs.h>
 #include <fmifs/fmifs.h>
 
-#include <time.h>
-#include <limits.h> // for INT_MAX definition
-
-#include "check/dosfsck.h"
 #include "check/common.h"
 #include "check/io.h"
-#include "check/lfn.h"
-#include "check/boot.h"
 #include "check/fat.h"
 #include "check/file.h"
-#include "check/check.h"
 
 #include <pshpack1.h>
 typedef struct _FAT16_BOOT_SECTOR
@@ -151,5 +146,7 @@ UpdateProgress(PFORMAT_CONTEXT Context,
 
 VOID
 VfatPrint(PCHAR Format, ...);
+
+#endif /* _VFATLIB_H_ */
 
 /* EOF */

@@ -23,14 +23,34 @@
 #ifndef _WINE_INTERNET_H_
 #define _WINE_INTERNET_H_
 
-#ifndef __WINE_CONFIG_H
-# error You must include config.h to use this header
+#include <wine/config.h>
+
+#include <assert.h>
+#include <stdio.h>
+
+#define _INC_WINDOWS
+#define COM_NO_WINDOWS_H
+
+#define NONAMELESSUNION
+#define NONAMELESSSTRUCT
+
+#include <windef.h>
+#include <winbase.h>
+#include <winreg.h>
+#include <winuser.h>
+#include <wininet.h>
+#define NO_SHLWAPI_STREAM
+#define NO_SHLWAPI_REG
+#define NO_SHLWAPI_GDI
+#include <shlwapi.h>
+
+#include <wine/list.h>
+#include <wine/debug.h>
+#include <wine/unicode.h>
+
+#ifdef HAVE_ARPA_INET_H
+# include <arpa/inet.h>
 #endif
-
-#include "wine/unicode.h"
-#include "wine/list.h"
-
-#include <time.h>
 #ifdef HAVE_NETDB_H
 # include <netdb.h>
 #endif
@@ -38,16 +58,34 @@
 # include <sys/types.h>
 # include <netinet/in.h>
 #endif
+#ifdef HAVE_SYS_IOCTL_H
+# include <sys/ioctl.h>
+#endif
+#ifdef HAVE_SYS_POLL_H
+# include <sys/poll.h>
+#endif
 #ifdef HAVE_SYS_SOCKET_H
 # include <sys/socket.h>
 #endif
+#ifdef HAVE_SYS_TIME_H
+# include <sys/time.h>
+#endif
+#ifdef HAVE_UNISTD_H
+# include <unistd.h>
+#endif
 
-#if !defined(__MINGW32__) && !defined(_MSC_VER)
+#if defined(__MINGW32__) || defined (_MSC_VER)
+#include <ws2tcpip.h>
+#else
 #define closesocket close
 #define ioctlsocket ioctl
 #endif /* __MINGW32__ */
 
 #include <winineti.h>
+
+#include "resource.h"
+
+WINE_DEFAULT_DEBUG_CHANNEL(wininet);
 
 extern HMODULE WININET_hModule DECLSPEC_HIDDEN;
 
@@ -107,6 +145,9 @@ typedef struct
     DWORD64 keep_until;
     struct list pool_entry;
 } netconn_t;
+
+BOOL is_valid_netconn(netconn_t *) DECLSPEC_HIDDEN;
+void close_netconn(netconn_t *) DECLSPEC_HIDDEN;
 
 static inline void * __WINE_ALLOC_SIZE(1) heap_alloc(size_t len)
 {
@@ -247,6 +288,14 @@ typedef enum
 #define INET_OPENURL 0x0001
 #define INET_CALLBACKW 0x0002
 
+typedef struct
+{
+    LONG ref;
+    HANDLE file_handle;
+    WCHAR *file_name;
+    BOOL is_committed;
+} req_file_t;
+
 typedef struct _object_header_t object_header_t;
 
 typedef struct {
@@ -259,6 +308,7 @@ typedef struct {
     DWORD (*WriteFile)(object_header_t*,const void*,DWORD,DWORD*);
     DWORD (*QueryDataAvailable)(object_header_t*,DWORD*,DWORD,DWORD_PTR);
     DWORD (*FindNextFileW)(object_header_t*,void*);
+    DWORD (*LockRequestFile)(object_header_t*,req_file_t**);
 } object_vtbl_t;
 
 #define INTERNET_HANDLE_IN_USE 1
@@ -279,7 +329,6 @@ struct _object_header_t
     struct list entry;
     struct list children;
 };
-
 
 typedef struct
 {
@@ -357,7 +406,7 @@ typedef struct
     DWORD nCustHeaders;
     FILETIME last_modified;
     HANDLE hCacheFile;
-    LPWSTR cacheFile;
+    req_file_t *req_file;
     FILETIME expires;
     struct HttpAuthInfo *authInfo;
     struct HttpAuthInfo *proxyAuthInfo;
@@ -409,8 +458,8 @@ DWORD HTTP_Connect(appinfo_t*,LPCWSTR,
 BOOL GetAddress(LPCWSTR lpszServerName, INTERNET_PORT nServerPort,
 	struct sockaddr *psa, socklen_t *sa_len) DECLSPEC_HIDDEN;
 
-DWORD get_cookie(const WCHAR*,const WCHAR*,WCHAR*,DWORD*) DECLSPEC_HIDDEN;
-BOOL set_cookie(const WCHAR*,const WCHAR*,const WCHAR*,const WCHAR*) DECLSPEC_HIDDEN;
+DWORD get_cookie_header(const WCHAR*,const WCHAR*,WCHAR**) DECLSPEC_HIDDEN;
+DWORD set_cookie(const WCHAR*,const WCHAR*,const WCHAR*,const WCHAR*,DWORD) DECLSPEC_HIDDEN;
 
 void INTERNET_SetLastError(DWORD dwError) DECLSPEC_HIDDEN;
 DWORD INTERNET_GetLastError(void) DECLSPEC_HIDDEN;
@@ -427,14 +476,19 @@ VOID INTERNET_SendCallback(object_header_t *hdr, DWORD_PTR dwContext,
                            DWORD dwStatusInfoLength) DECLSPEC_HIDDEN;
 BOOL INTERNET_FindProxyForProtocol(LPCWSTR szProxy, LPCWSTR proto, WCHAR *foundProxy, DWORD *foundProxyLen) DECLSPEC_HIDDEN;
 
+typedef enum {
+    BLOCKING_ALLOW,
+    BLOCKING_DISALLOW,
+    BLOCKING_WAITALL
+} blocking_mode_t;
+
 DWORD create_netconn(BOOL,server_t*,DWORD,BOOL,DWORD,netconn_t**) DECLSPEC_HIDDEN;
 void free_netconn(netconn_t*) DECLSPEC_HIDDEN;
 void NETCON_unload(void) DECLSPEC_HIDDEN;
 DWORD NETCON_secure_connect(netconn_t*,server_t*) DECLSPEC_HIDDEN;
 DWORD NETCON_send(netconn_t *connection, const void *msg, size_t len, int flags,
 		int *sent /* out */) DECLSPEC_HIDDEN;
-DWORD NETCON_recv(netconn_t *connection, void *buf, size_t len, int flags,
-		int *recvd /* out */) DECLSPEC_HIDDEN;
+DWORD NETCON_recv(netconn_t*,void*,size_t,blocking_mode_t,int*) DECLSPEC_HIDDEN;
 BOOL NETCON_query_data_available(netconn_t *connection, DWORD *available) DECLSPEC_HIDDEN;
 BOOL NETCON_is_alive(netconn_t*) DECLSPEC_HIDDEN;
 LPCVOID NETCON_GetCert(netconn_t *connection) DECLSPEC_HIDDEN;
@@ -443,6 +497,7 @@ DWORD NETCON_set_timeout(netconn_t *connection, BOOL send, DWORD value) DECLSPEC
 #ifndef __REACTOS__
 int sock_get_error(int) DECLSPEC_HIDDEN;
 #else
+
 #define sock_get_error(x) WSAGetLastError()
 const char *inet_ntop(int, const void *, char *, socklen_t);
 
@@ -463,9 +518,22 @@ static inline int unix_getsockopt(int socket, int level, int option_name, void *
     return getsockopt(socket, level, option_name, option_value, option_len);
 }
 #define getsockopt unix_getsockopt
-#endif
+
+#endif /* !__REACTOS__ */
+
+int sock_send(int fd, const void *msg, size_t len, int flags) DECLSPEC_HIDDEN;
+int sock_recv(int fd, void *msg, size_t len, int flags) DECLSPEC_HIDDEN;
 
 server_t *get_server(const WCHAR*,INTERNET_PORT,BOOL,BOOL);
+
+DWORD create_req_file(const WCHAR*,req_file_t**) DECLSPEC_HIDDEN;
+void req_file_release(req_file_t*) DECLSPEC_HIDDEN;
+
+static inline req_file_t *req_file_addref(req_file_t *req_file)
+{
+    InterlockedIncrement(&req_file->ref);
+    return req_file;
+}
 
 BOOL init_urlcache(void) DECLSPEC_HIDDEN;
 void free_urlcache(void) DECLSPEC_HIDDEN;

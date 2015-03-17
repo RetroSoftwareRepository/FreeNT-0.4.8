@@ -16,31 +16,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-
-#include <config.h>
-
-#include <stdarg.h>
-#include <assert.h>
-
-#define COBJMACROS
-
-#include <windef.h>
-#include <winbase.h>
-//#include "winuser.h"
-#include <winreg.h>
-#include <ole2.h>
-#include <shlguid.h>
-#include <wininet.h>
-#include <shlwapi.h>
-
-#include <wine/debug.h>
-
 #include "mshtml_private.h"
-#include "binding.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(mshtml);
 
 #define NS_IOSERVICE_CLASSNAME "nsIOService"
 #define NS_IOSERVICE_CONTRACTID "@mozilla.org/network/io-service;1"
@@ -142,6 +118,23 @@ static BOOL compare_ignoring_frag(IUri *uri1, IUri *uri2)
 
     IUri_Release(uri_nofrag1);
     return ret;
+}
+
+static HRESULT combine_url(IUri *base_uri, const WCHAR *rel_url, IUri **ret)
+{
+    IUri *uri_nofrag;
+    HRESULT hres;
+
+    uri_nofrag = get_uri_nofrag(base_uri);
+    if(!uri_nofrag)
+        return E_FAIL;
+
+    hres = CoInternetCombineUrlEx(uri_nofrag, rel_url, URL_ESCAPE_SPACES_ONLY|URL_DONT_ESCAPE_EXTRA_INFO,
+                ret, 0);
+    IUri_Release(uri_nofrag);
+    if(FAILED(hres))
+        WARN("CoInternetCombineUrlEx failed: %08x\n", hres);
+    return hres;
 }
 
 static nsresult create_nsuri(IUri*,HTMLOuterWindow*,NSContainer*,const char*,nsWineURI**);
@@ -1504,9 +1497,6 @@ static nsresult NSAPI nsUploadChannel_SetUploadStream(nsIUploadChannel *iface,
         }
     }
 
-    if(This->post_data_stream)
-        nsIInputStream_Release(This->post_data_stream);
-
     if(aContentLength != -1)
         FIXME("Unsupported acontentLength = %s\n", wine_dbgstr_longlong(aContentLength));
 
@@ -2410,12 +2400,10 @@ static nsresult NSAPI nsURI_Resolve(nsIFileURL *iface, const nsACString *aRelati
     if(!path)
         return NS_ERROR_OUT_OF_MEMORY;
 
-    hres = CoInternetCombineUrlEx(This->uri, path, URL_ESCAPE_SPACES_ONLY|URL_DONT_ESCAPE_EXTRA_INFO, &new_uri, 0);
+    hres = combine_url(This->uri, path, &new_uri);
     heap_free(path);
-    if(FAILED(hres)) {
-        ERR("CoIntenetCombineUrlEx failed: %08x\n", hres);
+    if(FAILED(hres))
         return NS_ERROR_FAILURE;
-    }
 
     hres = IUri_GetDisplayUri(new_uri, &ret);
     IUri_Release(new_uri);
@@ -2618,10 +2606,27 @@ static nsresult NSAPI nsURL_SetFilePath(nsIFileURL *iface, const nsACString *aFi
 static nsresult NSAPI nsURL_GetQuery(nsIFileURL *iface, nsACString *aQuery)
 {
     nsWineURI *This = impl_from_nsIFileURL(iface);
+    WCHAR *ptr;
+    BSTR query;
+    nsresult nsres;
+    HRESULT hres;
 
     TRACE("(%p)->(%p)\n", This, aQuery);
 
-    return get_uri_string(This, Uri_PROPERTY_QUERY, aQuery);
+    if(!ensure_uri(This))
+        return NS_ERROR_UNEXPECTED;
+
+    hres = IUri_GetQuery(This->uri, &query);
+    if(FAILED(hres))
+        return NS_ERROR_FAILURE;
+
+    ptr = query;
+    if(ptr && *ptr == '?')
+        ptr++;
+
+    nsres = return_wstr_nsacstr(aQuery, ptr, -1);
+    SysFreeString(query);
+    return nsres;
 }
 
 static nsresult NSAPI nsURL_SetQuery(nsIFileURL *iface, const nsACString *aQuery)
@@ -3320,10 +3325,7 @@ static nsresult NSAPI nsIOService_NewURI(nsIIOService *iface, const nsACString *
     MultiByteToWideChar(CP_ACP, 0, spec, -1, new_spec, sizeof(new_spec)/sizeof(WCHAR));
 
     if(base_wine_uri) {
-        hres = CoInternetCombineUrlEx(base_wine_uri->uri, new_spec, URL_ESCAPE_SPACES_ONLY|URL_DONT_ESCAPE_EXTRA_INFO,
-                &urlmon_uri, 0);
-        if(FAILED(hres))
-            WARN("CoInternetCombineUrlEx failed: %08x\n", hres);
+        hres = combine_url(base_wine_uri->uri, new_spec, &urlmon_uri);
     }else {
         hres = create_uri(new_spec, 0, &urlmon_uri);
         if(FAILED(hres))

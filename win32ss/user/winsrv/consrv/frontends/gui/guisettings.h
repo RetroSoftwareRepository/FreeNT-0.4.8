@@ -1,7 +1,7 @@
 /*
  * COPYRIGHT:       See COPYING in the top level directory
  * PROJECT:         ReactOS Console Server DLL
- * FILE:            win32ss/user/winsrv/consrv/guisettings.h
+ * FILE:            consrv/guisettings.h
  * PURPOSE:         GUI front-end settings management
  * PROGRAMMERS:     Johannes Anderwald
  *                  Hermes Belusca-Maito (hermes.belusca@sfr.fr)
@@ -14,18 +14,25 @@
 #ifndef WM_APP
     #define WM_APP 0x8000
 #endif
-#define PM_APPLY_CONSOLE_INFO (WM_APP + 100)
+/* Message sent by ReactOS' console.dll for applying console info */
+#define PM_APPLY_CONSOLE_INFO   (WM_APP + 100)
+
+/*
+ * Undocumented message sent by Windows' console.dll for applying console info.
+ * See http://www.catch22.net/sites/default/source/files/setconsoleinfo.c
+ * and http://www.scn.rain.com/~neighorn/PDF/MSBugPaper.pdf
+ * for more information.
+ */
+#define WM_SETCONSOLEINFO       (WM_USER + 201)
 
 /* STRUCTURES *****************************************************************/
 
 typedef struct _GUI_CONSOLE_INFO
 {
-    // FONTSIGNATURE FontSignature;
     WCHAR FaceName[LF_FACESIZE];
-    UINT  FontFamily;
-    DWORD FontSize;
-    DWORD FontWeight;
-    BOOL  UseRasterFonts;
+    ULONG FontFamily;
+    COORD FontSize;
+    ULONG FontWeight;
 
     BOOL  FullScreen;       /* Whether the console is displayed in full-screen or windowed mode */
 //  ULONG HardwareState;    /* _GDI_MANAGED, _DIRECT */
@@ -35,52 +42,49 @@ typedef struct _GUI_CONSOLE_INFO
     POINT WindowOrigin;
 } GUI_CONSOLE_INFO, *PGUI_CONSOLE_INFO;
 
+/*
+ * Undocumented structure used by Windows' console.dll for setting console info.
+ * See http://www.catch22.net/sites/default/source/files/setconsoleinfo.c
+ * and http://www.scn.rain.com/~neighorn/PDF/MSBugPaper.pdf
+ * for more information.
+ */
+#pragma pack(push, 1)
+typedef struct _CONSOLE_STATE_INFO
+{
+    ULONG       cbSize;
+    COORD       ScreenBufferSize;
+    COORD       WindowSize;
+    POINT       WindowPosition; // WindowPosX and Y
+
+    COORD       FontSize;
+    ULONG       FontFamily;
+    ULONG       FontWeight;
+    WCHAR       FaceName[LF_FACESIZE];
+
+    ULONG       CursorSize;
+    BOOL        FullScreen;
+    BOOL        QuickEdit;
+    BOOL        AutoPosition;
+    BOOL        InsertMode;
+
+    USHORT      ScreenColors;   // ScreenAttributes
+    USHORT      PopupColors;    // PopupAttributes
+    BOOL        HistoryNoDup;
+    ULONG       HistoryBufferSize;
+    ULONG       NumberOfHistoryBuffers;
+
+    COLORREF    ColorTable[16];
+
+    ULONG       CodePage;
+    HWND        hWnd;
+
+    WCHAR       ConsoleTitle[256];
+} CONSOLE_STATE_INFO, *PCONSOLE_STATE_INFO;
+#pragma pack(pop)
+
 #ifndef CONSOLE_H__ // If we aren't included by console.dll
 
-typedef struct _GUI_CONSOLE_DATA
-{
-    CRITICAL_SECTION Lock;
-    BOOL WindowSizeLock;
-    HANDLE hGuiInitEvent;
-
-    POINT OldCursor;
-
-    LONG_PTR WndStyle;
-    LONG_PTR WndStyleEx;
-    BOOL IsWndMax;
-    WINDOWPLACEMENT WndPl;
-
-    HWND hWindow;               /* Handle to the console's window            */
-    HDC  hMemDC;                /* Memory DC holding the console framebuffer */
-    HBITMAP hBitmap;            /* Console framebuffer                       */
-    HPALETTE hSysPalette;       /* Handle to the original system palette     */
-
-    HICON hIcon;                /* Handle to the console's icon (big)   */
-    HICON hIconSm;              /* Handle to the console's icon (small) */
-
-/*** The following may be put per-screen-buffer !! ***/
-    HCURSOR hCursor;            /* Handle to the mouse cursor */
-    INT  MouseCursorRefCount;   /* The reference counter associated with the mouse cursor. >= 0 and the cursor is shown; < 0 and the cursor is hidden. */
-    BOOL IgnoreNextMouseSignal; /* Used in cases where we don't want to treat a mouse signal */
-
-    BOOL IsCloseButtonEnabled;  /* TRUE if the Close button and the corresponding system menu item are enabled (default), FALSE otherwise */
-    UINT cmdIdLow ;             /* Lowest menu id of the user-reserved menu id range */
-    UINT cmdIdHigh;             /* Highest menu id of the user-reserved menu id range */
-
-//  COLORREF Colors[16];
-
-//  PVOID   ScreenBuffer;       /* Hardware screen buffer */
-
-    HFONT Font;
-    UINT CharWidth;
-    UINT CharHeight;
-/*****************************************************/
-
-    PCONSOLE Console;           /* Pointer to the owned console */
-    PCONSOLE_SCREEN_BUFFER ActiveBuffer;    /* Pointer to the active screen buffer (then maybe the previous Console member is redundant?? Or not...) */
-
-    GUI_CONSOLE_INFO GuiInfo;   /* GUI terminal settings */
-} GUI_CONSOLE_DATA, *PGUI_CONSOLE_DATA;
+#include "conwnd.h"
 
 /* FUNCTIONS ******************************************************************/
 
@@ -98,10 +102,13 @@ GuiConsoleGetDefaultSettings(IN OUT PGUI_CONSOLE_INFO TermInfo,
 VOID
 GuiConsoleShowConsoleProperties(PGUI_CONSOLE_DATA GuiData,
                                 BOOL Defaults);
-NTSTATUS
+VOID
 GuiApplyUserSettings(PGUI_CONSOLE_DATA GuiData,
                      HANDLE hClientSection,
                      BOOL SaveSettings);
+VOID
+GuiApplyWindowsConsoleSettings(PGUI_CONSOLE_DATA GuiData,
+                               HANDLE hClientSection);
 
 #endif
 

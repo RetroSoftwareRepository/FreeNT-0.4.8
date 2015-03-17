@@ -12,70 +12,63 @@
 
 #include <windef.h>
 #include <winbase.h>
-#include <wingdi.h>
 #include <winreg.h>
 #include <winuser.h>
 #include <wincon.h>
-#include <shellapi.h>
 #include <commdlg.h>
 #include <ddeml.h>
-#include <mmsystem.h>
-#include <winspool.h>
-#include <shlguid_undoc.h>
 #include <shlwapi.h>
 #include <shlobj.h>
-#include <shlobj_undoc.h>
-#include <shlwapi_undoc.h>
-#include <appmgmt.h>
-#include <ntquery.h>
 #include <recyclebin.h>
 #include <ndk/rtlfuncs.h>
 #include <fmifs/fmifs.h>
-#include <sddl.h>
-#include <commoncontrols.h>
-
 #include <tchar.h>
 #include <strsafe.h>
 #include <atlbase.h>
 #include <atlcom.h>
-#include <atlwin.h>
+#include <powrprof.h>
 
-//#include "base/shell/explorer-new/todo.h"
-//#include "dlgs.h"
-#include "pidl.h"
+#include <comctl32_undoc.h>
+#include <shlguid_undoc.h>
+#include <shlobj_undoc.h>
+#include <shlwapi_undoc.h>
+#include <undocshell.h>
+#include <browseui_undoc.h>
+
+#include <shellutils.h>
+
+#include "wine/pidl.h"
 #include "debughlp.h"
-#include "undocshell.h"
-#include "shell32_main.h"
+#include "wine/shell32_main.h"
 #include "shresdef.h"
 #include "cpanel.h"
-#include "enumidlist.h"
+#include "CEnumIDListBase.h"
 #include "shfldr.h"
 #include "shellfolder.h"
-#include "xdg.h"
-
-#include "shellitem.h"
-#include "shelllink.h"
-#include "dragdrophelper.h"
-#include "autocomplete.h"
-#include "folders/fs.h"
-#include "folders/mycomp.h"
-#include "folders/desktop.h"
-#include "folders/cpanel.h"
-#include "folders/mydocuments.h"
-#include "folders/netplaces.h"
-#include "folders/fonts.h"
-#include "folders/printers.h"
-#include "folders/admintools.h"
-#include "folders/recyclebin.h"
-#include "openwithmenu.h"
-#include "newmenu.h"
-#include "startmenu.h"
+#include "CShellItem.h"
+#include "CShellLink.h"
+#include "CDropTargetHelper.h"
+#include "folders/CFSFolder.h"
+#include "folders/CDrivesFolder.h"
+#include "folders/CDesktopFolder.h"
+#include "folders/CControlPanelFolder.h"
+#include "folders/CMyDocsFolder.h"
+#include "folders/CNetFolder.h"
+#include "folders/CFontsFolder.h"
+#include "folders/CPrinterFolder.h"
+#include "folders/CAdminToolsFolder.h"
+#include "folders/CRecycleBin.h"
+#include "droptargets/CexeDropHandler.h"
+#include "COpenWithMenu.h"
+#include "CNewMenu.h"
+#include "CStartMenu.h"
 #include "filedefext.h"
 #include "drvdefext.h"
 #include "CMenuBand.h"
 #include "CMenuDeskBar.h"
 
 #include <wine/debug.h>
+#include <wine/unicode.h>
 
 extern const GUID CLSID_AdminFolderShortcut;
 extern const GUID CLSID_FontsFolderShortcut;
@@ -87,4 +80,4 @@ extern const GUID CLSID_UnixDosFolder;
 extern const GUID SHELL32_AdvtShortcutProduct;
 extern const GUID SHELL32_AdvtShortcutComponent;
 
-#endif
+#endif /* _PRECOMP_H__ */

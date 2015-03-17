@@ -16,8 +16,6 @@ DBG_DEFAULT_CHANNEL(UserTimer);
 static LIST_ENTRY TimersListHead;
 static LONG TimeLast = 0;
 
-#define MAX_ELAPSE_TIME 0x7FFFFFFF
-
 /* Windows 2000 has room for 32768 window-less timers */
 #define NUM_WINDOW_LESS_TIMERS   32768
 
@@ -189,25 +187,25 @@ IntSetTimer( PWND Window,
 
 #if 0
   /* Windows NT/2k/XP behaviour */
-  if (Elapse > MAX_ELAPSE_TIME)
+  if (Elapse > USER_TIMER_MAXIMUM)
   {
      TRACE("Adjusting uElapse\n");
      Elapse = 1;
   }
 #else
   /* Windows XP SP2 and Windows Server 2003 behaviour */
-  if (Elapse > MAX_ELAPSE_TIME)
+  if (Elapse > USER_TIMER_MAXIMUM)
   {
      TRACE("Adjusting uElapse\n");
-     Elapse = MAX_ELAPSE_TIME;
+     Elapse = USER_TIMER_MAXIMUM;
   }
 #endif
 
   /* Windows 2k/XP and Windows Server 2003 SP1 behaviour */
-  if (Elapse < 10)
+  if (Elapse < USER_TIMER_MINIMUM)
   {
      TRACE("Adjusting uElapse\n");
-     Elapse = 10; // 1024hz .9765625 ms, set to 10.0 ms (+/-)1 ms
+     Elapse = USER_TIMER_MINIMUM; // 1024hz .9765625 ms, set to 10.0 ms (+/-)1 ms
   }
 
   /* Passing an IDEvent of 0 and the SetTimer returns 1.
@@ -317,12 +315,12 @@ SystemTimerProc(HWND hwnd,
           if ( pDesk->dwDTFlags & DF_TME_HOVER &&
                pWnd == pDesk->spwndTrack )
           {
-             Point = pWnd->head.pti->MessageQueue->MouseMoveMsg.pt;
+             Point = gpsi->ptCursor;
              if ( RECTL_bPointInRect(&pDesk->rcMouseHover, Point.x, Point.y) )
              {
                 if (pDesk->htEx == HTCLIENT) // In a client area.
                 {
-                   wParam = UserGetMouseButtonsState();
+                   wParam = MsqGetDownKeyState(pWnd->head.pti->MessageQueue);
                    Msg = WM_MOUSEHOVER;
 
                    if (pWnd->ExStyle & WS_EX_LAYOUTRTL)
@@ -346,6 +344,17 @@ SystemTimerProc(HWND hwnd,
           }
        }
        return; // Not this window so just return.
+
+     case ID_EVENT_SYSTIMER_FLASHWIN:
+       {
+          FLASHWINFO fwi =
+            {sizeof(FLASHWINFO),
+             UserHMGetHandle(pWnd),
+             FLASHW_SYSTIMER,0,0};
+
+          IntFlashWindowEx(pWnd, &fwi);
+       }
+       return;
 
      default:
        ERR("System Timer Proc invalid id %u!\n", idEvent);
@@ -407,9 +416,9 @@ PostTimerMessages(PWND Window)
            Msg.wParam  = (WPARAM) pTmr->nID;
            Msg.lParam  = (LPARAM) pTmr->pfn;
 
-           MsqPostMessage(pti, &Msg, FALSE, QS_TIMER, 0);
+           MsqPostMessage(pti, &Msg, FALSE, (QS_POSTMESSAGE|QS_ALLPOSTMESSAGE), 0, 0);
            pTmr->flags &= ~TMRF_READY;
-           pti->cTimersReady++;
+           ClearMsgBitsMask(pti, QS_TIMER);
            Hit = TRUE;
            // Now move this entry to the end of the list so it will not be
            // called again in the next msg loop.
@@ -480,10 +489,11 @@ ProcessTimers(VOID)
              {
                 pTmr->flags |= TMRF_READY; // Set timer ready to be ran.
                 // Set thread message queue for this timer.
-                if (pTmr->pti->MessageQueue)
+                if (pTmr->pti)
                 {  // Wakeup thread
+                   pTmr->pti->cTimersReady++;
                    ASSERT(pTmr->pti->pEventQueueServer != NULL);
-                   KeSetEvent(pTmr->pti->pEventQueueServer, IO_NO_INCREMENT, FALSE);
+                   MsqWakeQueue(pTmr->pti, QS_TIMER, TRUE);
                 }
              }
           }
@@ -513,7 +523,7 @@ DestroyTimersForWindow(PTHREADINFO pti, PWND Window)
    PTIMER pTmr;
    BOOL TimersRemoved = FALSE;
 
-   if ((Window == NULL))
+   if (Window == NULL)
       return FALSE;
 
    TimerEnterExclusive();
@@ -561,7 +571,7 @@ BOOL FASTCALL
 IntKillTimer(PWND Window, UINT_PTR IDEvent, BOOL SystemTimer)
 {
    PTIMER pTmr = NULL;
-   TRACE("IntKillTimer Window %p id %p systemtimer %s\n",
+   TRACE("IntKillTimer Window %p id %uI systemtimer %s\n",
          Window, IDEvent, SystemTimer ? "TRUE" : "FALSE");
 
    TimerEnterExclusive();
@@ -592,7 +602,7 @@ InitTimerImpl(VOID)
 
    ExInitializeFastMutex(Mutex);
 
-   BitmapBytes = ROUND_UP(NUM_WINDOW_LESS_TIMERS, sizeof(ULONG) * 8) / 8;
+   BitmapBytes = ALIGN_UP_BY(NUM_WINDOW_LESS_TIMERS, sizeof(ULONG) * 8) / 8;
    WindowLessTimersBitMapBuffer = ExAllocatePoolWithTag(NonPagedPool, BitmapBytes, TAG_TIMERBMP);
    if (WindowLessTimersBitMapBuffer == NULL)
    {

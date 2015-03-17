@@ -163,7 +163,6 @@ BOOL bUnicodeOutput = FALSE;
 BOOL bDisableBatchEcho = FALSE;
 BOOL bDelayedExpansion = FALSE;
 DWORD dwChildProcessId = 0;
-OSVERSIONINFO osvi;
 HANDLE hIn;
 HANDLE hOut;
 LPTSTR lpOriginalEnvironment;
@@ -397,13 +396,13 @@ Execute(LPTSTR Full, LPTSTR First, LPTSTR Rest, PARSED_COMMAND *Cmd)
         /* build command line for CreateProcess(): FullName + " " + rest */
         BOOL quoted = !!_tcschr(First, ' ');
         _tcscpy(szFullCmdLine, quoted ? _T("\"") : _T(""));
-        _tcsncat(szFullCmdLine, First, CMDLINE_LENGTH - _tcslen(szFullCmdLine));
-        _tcsncat(szFullCmdLine, quoted ? _T("\"") : _T(""), CMDLINE_LENGTH - _tcslen(szFullCmdLine));
+        _tcsncat(szFullCmdLine, First, CMDLINE_LENGTH - _tcslen(szFullCmdLine) - 1);
+        _tcsncat(szFullCmdLine, quoted ? _T("\"") : _T(""), CMDLINE_LENGTH - _tcslen(szFullCmdLine) - 1);
 
         if (*rest)
         {
-            _tcsncat(szFullCmdLine, _T(" "), CMDLINE_LENGTH - _tcslen(szFullCmdLine));
-            _tcsncat(szFullCmdLine, rest, CMDLINE_LENGTH - _tcslen(szFullCmdLine));
+            _tcsncat(szFullCmdLine, _T(" "), CMDLINE_LENGTH - _tcslen(szFullCmdLine) - 1);
+            _tcsncat(szFullCmdLine, rest, CMDLINE_LENGTH - _tcslen(szFullCmdLine) - 1);
         }
 
         TRACE ("[EXEC: %s]\n", debugstr_aw(szFullCmdLine));
@@ -1622,9 +1621,8 @@ Initialize()
     BOOL AlwaysStrip = FALSE;
     BOOL AutoRun = TRUE;
 
-    /* get version information */
-    osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
-    GetVersionEx (&osvi);
+    /* Get version information */
+    InitOSVersion();
 
     /* Some people like to run ReactOS cmd.exe on Win98, it helps in the
      * build process. So don't link implicitly against ntdll.dll, load it
@@ -1838,6 +1836,7 @@ int _tmain(int argc, const TCHAR *argv[])
         if (!GetConsoleScreenBufferInfo(hConsole, &Info))
         {
             ConErrFormatMessage(GetLastError());
+            CloseHandle(hConsole);
             return(1);
         }
         wDefColor = Info.wAttributes;

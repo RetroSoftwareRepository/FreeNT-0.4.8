@@ -22,19 +22,11 @@
  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-
 /*
  * Implement the effect of glColorMask and glIndexMask in software.
  */
 
-
-#include "main/glheader.h"
-#include "main/macros.h"
-
-#include "s_context.h"
-#include "s_masking.h"
-#include "s_span.h"
-
+#include <precomp.h>
 
 /**
  * Apply the color mask to a span of rgba values.
@@ -90,7 +82,7 @@ _swrast_mask_rgba_span(struct gl_context *ctx, struct gl_renderbuffer *rb,
       const GLuint bMask = ctx->Color.ColorMask[BCOMP] ? ~0x0 : 0x0;
       const GLuint aMask = ctx->Color.ColorMask[ACOMP] ? ~0x0 : 0x0;
       const GLuint (*dst)[4] = (const GLuint (*)[4]) rbPixels;
-      GLuint (*src)[4] = (GLuint (*)[4]) span->array->attribs[FRAG_ATTRIB_COL0];
+      GLuint (*src)[4] = (GLuint (*)[4]) span->array->attribs[FRAG_ATTRIB_COL];
       GLuint i;
       for (i = 0; i < n; i++) {
          src[i][RCOMP] = (src[i][RCOMP] & rMask) | (dst[i][RCOMP] & ~rMask);

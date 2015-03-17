@@ -11,7 +11,15 @@
 
 #include "usbhub.h"
 
+#include <wdmguid.h>
+
+#define NDEBUG
+#include <debug.h>
+
 #define IO_METHOD_FROM_CTL_CODE(ctlCode) (ctlCode&0x00000003)
+
+DEFINE_GUID(GUID_DEVINTERFACE_USB_DEVICE,
+			0xA5DCBF10L, 0x6530, 0x11D2, 0x90, 0x1F, 0x00, 0xC0, 0x4F, 0xB9, 0x51, 0xED);
 
 NTSTATUS
 NTAPI
@@ -289,7 +297,6 @@ USBHUB_PdoHandleInternalDeviceControl(
             //
             Status = FowardUrbToRootHub(RootHubDeviceObject, IOCTL_INTERNAL_USB_SUBMIT_URB, Irp, Urb, NULL);
             return Status;
-            break;
         }
         //
         // FIXME: Can these be sent to RootHub?
@@ -300,7 +307,7 @@ USBHUB_PdoHandleInternalDeviceControl(
         case IOCTL_INTERNAL_USB_GET_PORT_STATUS:
         {
             PORT_STATUS_CHANGE PortStatus;
-            LONG PortId;
+            ULONG PortId;
             PUCHAR PortStatusBits;
 
             PortStatusBits = (PUCHAR)Stack->Parameters.Others.Argument1;
@@ -404,8 +411,10 @@ USBHUB_PdoStartDevice(
     ASSERT(ChildDeviceExtension->Common.IsFDO == FALSE);
 
     //
-    // FIXME: Fow now assume success
+    // register device interface
     //
+    IoRegisterDeviceInterface(DeviceObject, &GUID_DEVINTERFACE_USB_DEVICE, NULL, &ChildDeviceExtension->SymbolicLinkName);
+    IoSetDeviceInterfaceState(&ChildDeviceExtension->SymbolicLinkName, TRUE);
 
     UNIMPLEMENTED
     return STATUS_SUCCESS;

@@ -8,12 +8,27 @@
 
 #include "rapps.h"
 
+#include <shellapi.h>
+
+#define SEARCH_TIMER_ID 'SR'
+
 HWND hMainWnd;
 HINSTANCE hInst;
 HIMAGELIST hImageTreeView = NULL;
 INT SelectedEnumType = ENUM_ALL_COMPONENTS;
 SETTINGS_INFO SettingsInfo;
 
+WCHAR szSearchPattern[MAX_STR_LEN] = L"";
+BOOL SearchEnabled = TRUE;
+
+BOOL
+SearchPatternMatch(PCWSTR szHaystack, PCWSTR szNeedle)
+{
+    if (!*szNeedle)
+        return TRUE;
+    /* TODO: Improve pattern search beyond a simple case-insensitive substring search. */
+    return StrStrIW(szHaystack, szNeedle) != NULL;
+}
 
 VOID
 FillDefaultSettings(PSETTINGS_INFO pSettingsInfo)
@@ -21,14 +36,20 @@ FillDefaultSettings(PSETTINGS_INFO pSettingsInfo)
     pSettingsInfo->bSaveWndPos = TRUE;
     pSettingsInfo->bUpdateAtStart = FALSE;
     pSettingsInfo->bLogEnabled = TRUE;
-    wcscpy(pSettingsInfo->szDownloadDir, L"C:\\Downloads");
+    StringCbCopyW(pSettingsInfo->szDownloadDir,
+                  sizeof(pSettingsInfo->szDownloadDir),
+                  L"C:\\Downloads");
     pSettingsInfo->bDelInstaller = FALSE;
 
     pSettingsInfo->Maximized = FALSE;
-    pSettingsInfo->Left = 0;
-    pSettingsInfo->Top = 0;
-    pSettingsInfo->Right = 680;
-    pSettingsInfo->Bottom = 450;
+    pSettingsInfo->Left = CW_USEDEFAULT;
+    pSettingsInfo->Top = CW_USEDEFAULT;
+    pSettingsInfo->Width = 680;
+    pSettingsInfo->Height = 450;
+
+    pSettingsInfo->Proxy = 0;
+    StringCbCopyW(pSettingsInfo->szProxyServer, sizeof(pSettingsInfo->szProxyServer), L"");
+    StringCbCopyW(pSettingsInfo->szNoProxyFor, sizeof(pSettingsInfo->szNoProxyFor), L"");
 }
 
 static BOOL
@@ -37,7 +58,7 @@ LoadSettings(VOID)
     HKEY hKey;
     DWORD dwSize;
 
-    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"Software\\ReactOS\\rapps", 0, KEY_READ, &hKey) == ERROR_SUCCESS)
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\ReactOS\\rapps", 0, KEY_READ, &hKey) == ERROR_SUCCESS)
     {
         dwSize = sizeof(SETTINGS_INFO);
         if (RegQueryValueExW(hKey, L"Settings", NULL, NULL, (LPBYTE)&SettingsInfo, &dwSize) == ERROR_SUCCESS)
@@ -65,15 +86,15 @@ SaveSettings(HWND hwnd)
 
         SettingsInfo.Left = wp.rcNormalPosition.left;
         SettingsInfo.Top  = wp.rcNormalPosition.top;
-        SettingsInfo.Right  = wp.rcNormalPosition.right;
-        SettingsInfo.Bottom = wp.rcNormalPosition.bottom;
-        SettingsInfo.Maximized = (IsZoomed(hwnd) || (wp.flags & WPF_RESTORETOMAXIMIZED));
+        SettingsInfo.Width  = wp.rcNormalPosition.right - wp.rcNormalPosition.left;
+        SettingsInfo.Height = wp.rcNormalPosition.bottom - wp.rcNormalPosition.top;
+        SettingsInfo.Maximized = (wp.showCmd == SW_MAXIMIZE || (wp.showCmd == SW_SHOWMINIMIZED && (wp.flags & WPF_RESTORETOMAXIMIZED)));
     }
 
-    if (RegCreateKeyExW(HKEY_LOCAL_MACHINE, L"Software\\ReactOS\\rapps", 0, NULL,
+    if (RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\ReactOS\\rapps", 0, NULL,
         REG_OPTION_NON_VOLATILE, KEY_WRITE, NULL, &hKey, NULL) == ERROR_SUCCESS)
     {
-        RegSetValueEx(hKey, L"Settings", 0, REG_BINARY, (LPBYTE)&SettingsInfo, sizeof(SETTINGS_INFO));
+        RegSetValueExW(hKey, L"Settings", 0, REG_BINARY, (LPBYTE)&SettingsInfo, sizeof(SETTINGS_INFO));
         RegCloseKey(hKey);
     }
 }
@@ -98,24 +119,27 @@ FreeInstalledAppList(VOID)
 
 BOOL
 CALLBACK
-EnumInstalledAppProc(INT ItemIndex, LPWSTR lpName, INSTALLED_INFO Info)
+EnumInstalledAppProc(INT ItemIndex, LPWSTR lpName, PINSTALLED_INFO Info)
 {
     PINSTALLED_INFO ItemInfo;
     WCHAR szText[MAX_PATH];
     INT Index;
 
+    if (!SearchPatternMatch(lpName, szSearchPattern))
+        return TRUE;
+
     ItemInfo = HeapAlloc(GetProcessHeap(), 0, sizeof(INSTALLED_INFO));
     if (!ItemInfo) return FALSE;
 
-    *ItemInfo = Info;
+    RtlCopyMemory(ItemInfo, Info, sizeof(INSTALLED_INFO));
 
     Index = ListViewAddItem(ItemIndex, 0, lpName, (LPARAM)ItemInfo);
 
     /* Get version info */
-    GetApplicationString((HKEY)ItemInfo->hSubKey, L"DisplayVersion", szText);
+    GetApplicationString(ItemInfo->hSubKey, L"DisplayVersion", szText);
     ListView_SetItemText(hListView, Index, 1, szText);
     /* Get comments */
-    GetApplicationString((HKEY)ItemInfo->hSubKey, L"Comments", szText);
+    GetApplicationString(ItemInfo->hSubKey, L"Comments", szText);
     ListView_SetItemText(hListView, Index, 2, szText);
 
     return TRUE;
@@ -138,25 +162,31 @@ FreeAvailableAppList(VOID)
 
 BOOL
 CALLBACK
-EnumAvailableAppProc(APPLICATION_INFO Info)
+EnumAvailableAppProc(PAPPLICATION_INFO Info)
 {
     PAPPLICATION_INFO ItemInfo;
     INT Index;
+
+    if (!SearchPatternMatch(Info->szName, szSearchPattern) &&
+        !SearchPatternMatch(Info->szDesc, szSearchPattern))
+    {
+        return TRUE;
+    }
 
     /* Only add a ListView entry if...
          - no RegName was supplied (so we cannot determine whether the application is installed or not) or
          - a RegName was supplied and the application is not installed
     */
-    if (!*Info.szRegName || (!IsInstalledApplication(Info.szRegName, FALSE) && !IsInstalledApplication(Info.szRegName, TRUE)))
+    if (!*Info->szRegName || (!IsInstalledApplication(Info->szRegName, FALSE) && !IsInstalledApplication(Info->szRegName, TRUE)))
     {
         ItemInfo = HeapAlloc(GetProcessHeap(), 0, sizeof(APPLICATION_INFO));
         if (!ItemInfo) return FALSE;
 
-        *ItemInfo = Info;
+        RtlCopyMemory(ItemInfo, Info, sizeof(APPLICATION_INFO));
 
-        Index = ListViewAddItem(Info.Category, 0, Info.szName, (LPARAM)ItemInfo);
-        ListView_SetItemText(hListView, Index, 1, Info.szVersion);
-        ListView_SetItemText(hListView, Index, 2, Info.szDesc);
+        Index = ListViewAddItem(Info->Category, 0, Info->szName, (LPARAM)ItemInfo);
+        ListView_SetItemText(hListView, Index, 1, Info->szVersion);
+        ListView_SetItemText(hListView, Index, 2, Info->szDesc);
     }
 
     return TRUE;
@@ -211,12 +241,14 @@ UpdateApplicationsList(INT EnumType)
 
     /* Destroy old image list */
     if (hImageListView)
-		ImageList_Destroy(hImageListView);
+        ImageList_Destroy(hImageListView);
 
     SelectedEnumType = EnumType;
 
     LoadStringW(hInst, IDS_APPS_COUNT, szBuffer2, sizeof(szBuffer2) / sizeof(WCHAR));
-    swprintf(szBuffer1, szBuffer2, ListView_GetItemCount(hListView));
+    StringCbPrintfW(szBuffer1, sizeof(szBuffer1),
+                    szBuffer2,
+                    ListView_GetItemCount(hListView));
     SetStatusBarText(szBuffer1);
 
     SetWelcomeText();
@@ -305,20 +337,12 @@ InitCategoriesList(VOID)
 BOOL
 InitControls(HWND hwnd)
 {
-    if (SettingsInfo.bSaveWndPos)
-    {
-        MoveWindow(hwnd, SettingsInfo.Left, SettingsInfo.Top,
-                   SettingsInfo.Right - SettingsInfo.Left,
-                   SettingsInfo.Bottom - SettingsInfo.Top, TRUE);
-
-        if (SettingsInfo.Maximized) ShowWindow(hwnd, SW_MAXIMIZE);
-    }
 
     if (CreateStatusBar(hwnd) &&
-        CreateToolBar(hwnd) &&
-        CreateListView(hwnd) &&
-        CreateTreeView(hwnd) &&
-        CreateRichEdit(hwnd) &&
+        CreateToolBar(hwnd)   &&
+        CreateListView(hwnd)  &&
+        CreateTreeView(hwnd)  &&
+        CreateRichEdit(hwnd)  &&
         CreateVSplitBar(hwnd) &&
         CreateHSplitBar(hwnd))
     {
@@ -329,12 +353,21 @@ InitControls(HWND hwnd)
         InitCategoriesList();
 
         LoadStringW(hInst, IDS_APPS_COUNT, szBuffer2, sizeof(szBuffer2) / sizeof(WCHAR));
-        swprintf(szBuffer1, szBuffer2, ListView_GetItemCount(hListView));
+        StringCbPrintfW(szBuffer1, sizeof(szBuffer1),
+                        szBuffer2,
+                        ListView_GetItemCount(hListView));
         SetStatusBarText(szBuffer1);
         return TRUE;
     }
 
     return FALSE;
+}
+
+VOID CALLBACK
+SearchTimerProc(HWND hwnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime)
+{
+    KillTimer(hwnd, SEARCH_TIMER_ID);
+    UpdateApplicationsList(-1);
 }
 
 VOID
@@ -354,7 +387,11 @@ MainWndOnCommand(HWND hwnd, WPARAM wParam, LPARAM lParam)
 
                 LoadStringW(hInst, IDS_SEARCH_TEXT, szBuf, sizeof(szBuf) / sizeof(WCHAR));
                 GetWindowTextW(hSearchBar, szWndText, MAX_STR_LEN);
-                if (wcscmp(szBuf, szWndText) == 0) SetWindowTextW(hSearchBar, L"");
+                if (wcscmp(szBuf, szWndText) == 0)
+                {
+                    SearchEnabled = FALSE;
+                    SetWindowTextW(hSearchBar, L"");
+                }
             }
             break;
 
@@ -364,14 +401,37 @@ MainWndOnCommand(HWND hwnd, WPARAM wParam, LPARAM lParam)
                 if (wcslen(szBuf) < 1)
                 {
                     LoadStringW(hInst, IDS_SEARCH_TEXT, szBuf, sizeof(szBuf) / sizeof(WCHAR));
+                    SearchEnabled = FALSE;
                     SetWindowTextW(hSearchBar, szBuf);
                 }
             }
             break;
 
             case EN_CHANGE:
-                /* TODO: Implement search */
-                break;
+            {
+                WCHAR szWndText[MAX_STR_LEN];
+
+                if (!SearchEnabled)
+                {
+                    SearchEnabled = TRUE;
+                    break;
+                }
+
+                LoadStringW(hInst, IDS_SEARCH_TEXT, szBuf, sizeof(szBuf) / sizeof(WCHAR));
+                GetWindowTextW(hSearchBar, szWndText, MAX_STR_LEN);
+                if (wcscmp(szBuf, szWndText) != 0)
+                {
+                    StringCbCopy(szSearchPattern, sizeof(szSearchPattern),
+                                 szWndText);
+                }
+                else
+                {
+                    szSearchPattern[0] = UNICODE_NULL;
+                }
+
+                SetTimer(hwnd, SEARCH_TIMER_ID, 250, SearchTimerProc);
+            }
+            break;
         }
 
         return;
@@ -481,11 +541,14 @@ MainWndOnSize(HWND hwnd, WPARAM wParam, LPARAM lParam)
                    HIWORD(lParam) - GetWindowHeight(hToolBar) - GetWindowHeight(hStatusBar),
                    SWP_NOZORDER|SWP_NOACTIVATE);
 
-    while (NewPos < SPLIT_WIDTH + GetWindowHeight(hToolBar))
+    if(wParam != SIZE_MINIMIZED)
     {
-        RichPos--;
-        NewPos = HIWORD(lParam) - (RichPos +
-                 SPLIT_WIDTH + GetWindowHeight(hStatusBar));
+        while (NewPos < SPLIT_WIDTH + GetWindowHeight(hToolBar))
+        {
+            RichPos--;
+            NewPos = HIWORD(lParam) - (RichPos +
+                     SPLIT_WIDTH + GetWindowHeight(hStatusBar));
+        }
     }
     SetHSplitterPos(NewPos);
 
@@ -522,6 +585,25 @@ MainWndOnSize(HWND hwnd, WPARAM wParam, LPARAM lParam)
     EndDeferWindowPos(hdwp);
 }
 
+BOOL IsSelectedNodeInstalled(void)
+{
+    HTREEITEM hSelectedItem = TreeView_GetSelection(hTreeView);
+    TV_ITEM tItem;
+
+    tItem.mask = TVIF_PARAM | TVIF_HANDLE;
+    tItem.hItem = hSelectedItem;
+    TreeView_GetItem(hTreeView, &tItem);
+    switch (tItem.lParam)
+    {
+        case IDS_INSTALLED:
+        case IDS_APPLICATIONS:
+        case IDS_UPDATES:
+            return TRUE;
+        default:
+            return FALSE;
+    }
+}
+
 LRESULT CALLBACK
 MainWindowProc(HWND hwnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 {
@@ -531,8 +613,6 @@ MainWindowProc(HWND hwnd, UINT Msg, WPARAM wParam, LPARAM lParam)
             if (!InitControls(hwnd))
                 PostMessage(hwnd, WM_CLOSE, 0, 0);
 
-            if (SettingsInfo.bUpdateAtStart)
-                UpdateAppsDB();
             break;
 
         case WM_COMMAND:
@@ -628,24 +708,70 @@ MainWindowProc(HWND hwnd, UINT Msg, WPARAM wParam, LPARAM lParam)
                                 break;
                         }
                     }
+
+                    /* Disable/enable items based on treeview selection */
+                    if (IsSelectedNodeInstalled())
+                    {
+                        EnableMenuItem(GetMenu(hwnd), ID_REGREMOVE, MF_ENABLED);
+                        EnableMenuItem(GetMenu(hwnd), ID_INSTALL, MF_GRAYED);
+                        EnableMenuItem(GetMenu(hwnd), ID_UNINSTALL, MF_ENABLED);
+                        EnableMenuItem(GetMenu(hwnd), ID_MODIFY, MF_ENABLED);
+
+                        EnableMenuItem(GetMenu(hListView), ID_REGREMOVE, MF_ENABLED);
+                        EnableMenuItem(GetMenu(hListView), ID_INSTALL, MF_GRAYED);
+                        EnableMenuItem(GetMenu(hListView), ID_UNINSTALL, MF_ENABLED);
+                        EnableMenuItem(GetMenu(hListView), ID_MODIFY, MF_ENABLED);
+
+                        SendMessage(hToolBar, TB_ENABLEBUTTON, ID_REGREMOVE, TRUE);
+                        SendMessage(hToolBar, TB_ENABLEBUTTON, ID_INSTALL, FALSE);
+                        SendMessage(hToolBar, TB_ENABLEBUTTON, ID_UNINSTALL, TRUE);
+                        SendMessage(hToolBar, TB_ENABLEBUTTON, ID_MODIFY, TRUE);
+                    }
+                    else
+                    {
+                        EnableMenuItem(GetMenu(hwnd), ID_REGREMOVE, MF_GRAYED);
+                        EnableMenuItem(GetMenu(hwnd), ID_INSTALL, MF_ENABLED);
+                        EnableMenuItem(GetMenu(hwnd), ID_UNINSTALL, MF_GRAYED);
+                        EnableMenuItem(GetMenu(hwnd), ID_MODIFY, MF_GRAYED);
+
+                        EnableMenuItem(GetMenu(hListView), ID_REGREMOVE, MF_GRAYED);
+                        EnableMenuItem(GetMenu(hListView), ID_INSTALL, MF_ENABLED);
+                        EnableMenuItem(GetMenu(hListView), ID_UNINSTALL, MF_GRAYED);
+                        EnableMenuItem(GetMenu(hListView), ID_MODIFY, MF_GRAYED);
+
+                        SendMessage(hToolBar, TB_ENABLEBUTTON, ID_REGREMOVE, FALSE);
+                        SendMessage(hToolBar, TB_ENABLEBUTTON, ID_INSTALL, TRUE);
+                        SendMessage(hToolBar, TB_ENABLEBUTTON, ID_UNINSTALL, FALSE);
+                        SendMessage(hToolBar, TB_ENABLEBUTTON, ID_MODIFY, FALSE);
+                    }
                 }
                 break;
 
-                case LVN_KEYDOWN:
+                case LVN_ITEMCHANGED:
                 {
-                    LPNMLVKEYDOWN pnkd = (LPNMLVKEYDOWN) lParam;
+                    LPNMLISTVIEW pnic = (LPNMLISTVIEW) lParam;
 
-                    if (pnkd->hdr.hwndFrom == hListView)
+                    if (pnic->hdr.hwndFrom == hListView)
                     {
-                        INT ItemIndex = (INT) SendMessage(hListView, LVM_GETNEXTITEM, -1, LVNI_FOCUSED);
+                        /* Check if this is a valid item
+                         * (technically, it can be also an unselect) */
+                        INT ItemIndex = pnic->iItem;
+                        if (ItemIndex == -1 ||
+                            ItemIndex >= ListView_GetItemCount(pnic->hdr.hwndFrom))
+                        {
+                            break;
+                        }
 
-                        if (pnkd->wVKey == VK_UP) ItemIndex -= 1;
-                        if (pnkd->wVKey == VK_DOWN) ItemIndex += 1;
-
-                        if (IS_INSTALLED_ENUM(SelectedEnumType))
-                            ShowInstalledAppInfo(ItemIndex);
-                        if (IS_AVAILABLE_ENUM(SelectedEnumType))
-                            ShowAvailableAppInfo(ItemIndex);
+                        /* Check if the focus has been moved to another item */
+                        if ((pnic->uChanged & LVIF_STATE) &&
+                            (pnic->uNewState & LVIS_FOCUSED) &&
+                            !(pnic->uOldState & LVIS_FOCUSED))
+                        {
+                            if (IS_INSTALLED_ENUM(SelectedEnumType))
+                                ShowInstalledAppInfo(ItemIndex);
+                            if (IS_AVAILABLE_ENUM(SelectedEnumType))
+                                ShowAvailableAppInfo(ItemIndex);
+                        }
                     }
                 }
                 break;
@@ -660,19 +786,34 @@ MainWindowProc(HWND hwnd, UINT Msg, WPARAM wParam, LPARAM lParam)
                 break;
 
                 case NM_CLICK:
-                    if (data->hwndFrom == hListView)
+                {
+                    if (data->hwndFrom == hListView && ((LPNMLISTVIEW)lParam)->iItem != -1)
                     {
                         if (IS_INSTALLED_ENUM(SelectedEnumType))
                             ShowInstalledAppInfo(-1);
                         if (IS_AVAILABLE_ENUM(SelectedEnumType))
                             ShowAvailableAppInfo(-1);
                     }
-                    break;
+                }
+                break;
+
+                case NM_DBLCLK:
+                {
+                    if (data->hwndFrom == hListView && ((LPNMLISTVIEW)lParam)->iItem != -1)
+                    {
+                        SendMessage(hwnd, WM_COMMAND, ID_INSTALL, 0);   //Won't do anything if the program is already installed
+                    }
+                }
+                break;
 
                 case NM_RCLICK:
-                    if (data->hwndFrom == hListView)
-                        ShowPopupMenu(hListView, IDR_APPLICATIONMENU);
-                    break;
+                {
+                    if (data->hwndFrom == hListView && ((LPNMLISTVIEW)lParam)->iItem != -1)
+                    {
+                        ShowPopupMenu(hListView, 0, ID_INSTALL);
+                    }
+                }
+                break;
 
                 case EN_LINK:
                     RichEditOnLink(hwnd, (ENLINK*)lParam);
@@ -760,28 +901,20 @@ wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLine, int nSh
     WNDCLASSEXW WndClass = {0};
     WCHAR szWindowClass[] = L"ROSAPPMGR";
     WCHAR szWindowName[MAX_STR_LEN];
-    WCHAR szErrorText[MAX_STR_LEN];
     HANDLE hMutex = NULL;
     MSG Msg;
-   
+
     switch (GetUserDefaultUILanguage())
-  {
-    case MAKELANGID(LANG_HEBREW, SUBLANG_DEFAULT):
-      SetProcessDefaultLayout(LAYOUT_RTL);
-      break;
-
-    default:
-      break;
-  }
-    
-    hInst = hInstance;
-
-    if (!IsUserAnAdmin())
     {
-        LoadStringW(hInst, IDS_USER_NOT_ADMIN, szErrorText, sizeof(szErrorText) / sizeof(WCHAR));
-        MessageBox(0, szErrorText, NULL, MB_OK | MB_ICONWARNING);
-        return 1;
+        case MAKELANGID(LANG_HEBREW, SUBLANG_DEFAULT):
+            SetProcessDefaultLayout(LAYOUT_RTL);
+            break;
+
+        default:
+            break;
     }
+
+    hInst = hInstance;
 
     hMutex = CreateMutexW(NULL, FALSE, szWindowClass);
     if ((!hMutex) || (GetLastError() == ERROR_ALREADY_EXISTS))
@@ -822,10 +955,10 @@ wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLine, int nSh
                                szWindowClass,
                                szWindowName,
                                WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
-                               CW_USEDEFAULT,
-                               CW_USEDEFAULT,
-                               680,
-                               450,
+                               (SettingsInfo.bSaveWndPos ? SettingsInfo.Left   : CW_USEDEFAULT),
+                               (SettingsInfo.bSaveWndPos ? SettingsInfo.Top    : CW_USEDEFAULT),
+                               (SettingsInfo.bSaveWndPos ? SettingsInfo.Width  : 680),
+                               (SettingsInfo.bSaveWndPos ? SettingsInfo.Height : 450),
                                NULL,
                                NULL,
                                hInstance,
@@ -833,9 +966,12 @@ wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLine, int nSh
 
     if (!hMainWnd) goto Exit;
 
-    /* Show it */
-    ShowWindow(hMainWnd, SW_SHOW);
+    /* Maximize it if we must */
+    ShowWindow(hMainWnd, (SettingsInfo.bSaveWndPos && SettingsInfo.Maximized ? SW_MAXIMIZE : nShowCmd));
     UpdateWindow(hMainWnd);
+
+    if (SettingsInfo.bUpdateAtStart)
+        UpdateAppsDB();
 
     /* Message Loop */
     while (GetMessage(&Msg, NULL, 0, 0))

@@ -178,6 +178,24 @@ RtlEnterHeapLock(IN OUT PHEAP_LOCK Lock, IN BOOLEAN Exclusive)
     return STATUS_SUCCESS;
 }
 
+BOOLEAN
+NTAPI
+RtlTryEnterHeapLock(IN OUT PHEAP_LOCK Lock, IN BOOLEAN Exclusive)
+{
+    BOOLEAN Success;
+    KeEnterCriticalRegion();
+
+    if (Exclusive)
+        Success = ExAcquireResourceExclusiveLite(&Lock->Resource, FALSE);
+    else
+        Success = ExAcquireResourceSharedLite(&Lock->Resource, FALSE);
+
+    if (!Success)
+        KeLeaveCriticalRegion();
+
+    return Success;
+}
+
 NTSTATUS
 NTAPI
 RtlInitializeHeapLock(IN OUT PHEAP_LOCK *Lock)
@@ -535,14 +553,25 @@ RtlpCreateAtomHandleTable(PRTL_ATOM_TABLE AtomTable)
    return (AtomTable->ExHandleTable != NULL);
 }
 
+BOOLEAN
+NTAPI
+RtlpCloseHandleCallback(
+    IN PHANDLE_TABLE_ENTRY HandleTableEntry,
+    IN HANDLE Handle,
+    IN PVOID HandleTable)
+{
+    /* Destroy and unlock the handle entry */
+    return ExDestroyHandle(HandleTable, Handle, HandleTableEntry);
+}
+
 VOID
 RtlpDestroyAtomHandleTable(PRTL_ATOM_TABLE AtomTable)
 {
    if (AtomTable->ExHandleTable)
    {
       ExSweepHandleTable(AtomTable->ExHandleTable,
-                         NULL,
-                         NULL);
+                         RtlpCloseHandleCallback,
+                         AtomTable->ExHandleTable);
       ExDestroyHandleTable(AtomTable->ExHandleTable, NULL);
       AtomTable->ExHandleTable = NULL;
    }
@@ -684,6 +713,7 @@ NTSTATUS find_entry( PVOID BaseAddress, LDR_RESOURCE_INFO *info,
 
     root = RtlImageDirectoryEntryToData( BaseAddress, TRUE, IMAGE_DIRECTORY_ENTRY_RESOURCE, &size );
     if (!root) return STATUS_RESOURCE_DATA_NOT_FOUND;
+    if (size < sizeof(*resdirptr)) return STATUS_RESOURCE_DATA_NOT_FOUND;
     resdirptr = root;
 
     if (!level--) goto done;

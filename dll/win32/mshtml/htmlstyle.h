@@ -16,6 +16,8 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#pragma once
+
 struct HTMLStyle {
     DispatchEx dispex;
     IHTMLStyle  IHTMLStyle_iface;
@@ -34,6 +36,7 @@ struct HTMLStyle {
 /* NOTE: Make sure to keep in sync with style_tbl in htmlstyle.c */
 typedef enum {
     STYLEID_BACKGROUND,
+    STYLEID_BACKGROUND_ATTACHMENT,
     STYLEID_BACKGROUND_COLOR,
     STYLEID_BACKGROUND_IMAGE,
     STYLEID_BACKGROUND_POSITION,
@@ -61,6 +64,7 @@ typedef enum {
     STYLEID_BORDER_TOP_WIDTH,
     STYLEID_BORDER_WIDTH,
     STYLEID_BOTTOM,
+    STYLEID_BOX_SIZING,
     STYLEID_CLEAR,
     STYLEID_CLIP,
     STYLEID_COLOR,
@@ -77,12 +81,17 @@ typedef enum {
     STYLEID_LEFT,
     STYLEID_LETTER_SPACING,
     STYLEID_LINE_HEIGHT,
+    STYLEID_LIST_STYLE,
+    STYLEID_LISTSTYLEPOSITION,
+    STYLEID_LISTSTYLETYPE,
     STYLEID_MARGIN,
     STYLEID_MARGIN_BOTTOM,
     STYLEID_MARGIN_LEFT,
     STYLEID_MARGIN_RIGHT,
     STYLEID_MARGIN_TOP,
     STYLEID_MIN_HEIGHT,
+    STYLEID_MIN_WIDTH,
+    STYLEID_OUTLINE,
     STYLEID_OVERFLOW,
     STYLEID_OVERFLOW_X,
     STYLEID_OVERFLOW_Y,
@@ -95,9 +104,11 @@ typedef enum {
     STYLEID_PAGE_BREAK_BEFORE,
     STYLEID_POSITION,
     STYLEID_RIGHT,
+    STYLEID_TABLE_LAYOUT,
     STYLEID_TEXT_ALIGN,
     STYLEID_TEXT_DECORATION,
     STYLEID_TEXT_INDENT,
+    STYLEID_TEXT_TRANSFORM,
     STYLEID_TOP,
     STYLEID_VERTICAL_ALIGN,
     STYLEID_VISIBILITY,
@@ -118,8 +129,12 @@ HRESULT set_nsstyle_attr(nsIDOMCSSStyleDeclaration*,styleid_t,LPCWSTR,DWORD) DEC
 HRESULT set_nsstyle_attr_var(nsIDOMCSSStyleDeclaration *nsstyle, styleid_t sid, VARIANT *value, DWORD flags) DECLSPEC_HIDDEN;
 HRESULT get_nsstyle_attr_var(nsIDOMCSSStyleDeclaration *nsstyle, styleid_t sid, VARIANT *p, DWORD flags) DECLSPEC_HIDDEN;
 
+HRESULT get_elem_style(HTMLElement*,styleid_t,BSTR*) DECLSPEC_HIDDEN;
+HRESULT set_elem_style(HTMLElement*,styleid_t,const WCHAR*) DECLSPEC_HIDDEN;
+
 #define ATTR_FIX_PX         0x0001
 #define ATTR_FIX_URL        0x0002
 #define ATTR_STR_TO_INT     0x0004
 #define ATTR_HEX_INT        0x0008
 #define ATTR_REMOVE_COMMA   0x0010
+#define ATTR_NO_NULL        0x0020

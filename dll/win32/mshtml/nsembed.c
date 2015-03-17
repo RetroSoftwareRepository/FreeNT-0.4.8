@@ -16,31 +16,11 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-
-#include <config.h>
-
-#include <stdarg.h>
-#include <assert.h>
-
-#define COBJMACROS
-
-#include <windef.h>
-#include <winbase.h>
-//#include "winuser.h"
-#include <winreg.h>
-#include <ole2.h>
-#include "shlobj.h"
-#include "shlwapi.h"
-
-#include <wine/debug.h>
-
 #include "mshtml_private.h"
-#include "htmlevent.h"
-#include "binding.h"
 
-WINE_DEFAULT_DEBUG_CHANNEL(mshtml);
+#include <wincon.h>
+#include <shlobj.h>
+
 WINE_DECLARE_DEBUG_CHANNEL(gecko);
 
 #define NS_APPSTARTUPNOTIFIER_CONTRACTID "@mozilla.org/embedcomp/appstartup-notifier;1"
@@ -51,6 +31,7 @@ WINE_DECLARE_DEBUG_CHANNEL(gecko);
 #define NS_EDITORCONTROLLER_CONTRACTID "@mozilla.org/editor/editorcontroller;1"
 #define NS_PREFERENCES_CONTRACTID "@mozilla.org/preferences;1"
 #define NS_VARIANT_CONTRACTID "@mozilla.org/variant;1"
+#define NS_CATEGORYMANAGER_CONTRACTID "@mozilla.org/categorymanager;1"
 
 #define PR_UINT32_MAX 0xffffffff
 
@@ -76,6 +57,7 @@ static HINSTANCE xul_handle = NULL;
 
 static nsIServiceManager *pServMgr = NULL;
 static nsIComponentManager *pCompMgr = NULL;
+static nsICategoryManager *cat_mgr;
 static nsIMemory *nsmem = NULL;
 static nsIFile *profile_directory, *plugin_directory;
 
@@ -441,8 +423,10 @@ static BOOL install_wine_gecko(void)
 
 static void set_environment(LPCWSTR gre_path)
 {
-    WCHAR path_env[MAX_PATH], buf[20];
-    int len, debug_level = 0;
+    size_t len, gre_path_len;
+    int debug_level = 0;
+    WCHAR *path, buf[20];
+    const WCHAR *ptr;
 
     static const WCHAR pathW[] = {'P','A','T','H',0};
     static const WCHAR warnW[] = {'w','a','r','n',0};
@@ -451,13 +435,6 @@ static void set_environment(LPCWSTR gre_path)
     static const WCHAR nspr_log_modulesW[] =
         {'N','S','P','R','_','L','O','G','_','M','O','D','U','L','E','S',0};
     static const WCHAR debug_formatW[] = {'a','l','l',':','%','d',0};
-
-    /* We have to modify PATH as XPCOM loads other DLLs from this directory. */
-    GetEnvironmentVariableW(pathW, path_env, sizeof(path_env)/sizeof(WCHAR));
-    len = strlenW(path_env);
-    path_env[len++] = ';';
-    strcpyW(path_env+len, gre_path);
-    SetEnvironmentVariableW(pathW, path_env);
 
     SetEnvironmentVariableW(xpcom_debug_breakW, warnW);
 
@@ -470,6 +447,23 @@ static void set_environment(LPCWSTR gre_path)
 
     sprintfW(buf, debug_formatW, debug_level);
     SetEnvironmentVariableW(nspr_log_modulesW, buf);
+
+    len = GetEnvironmentVariableW(pathW, NULL, 0);
+    gre_path_len = strlenW(gre_path);
+    path = heap_alloc((len+gre_path_len+1)*sizeof(WCHAR));
+    if(!path)
+        return;
+    GetEnvironmentVariableW(pathW, path, len);
+
+    /* We have to modify PATH as xul.dll loads other DLLs from this directory. */
+    if(!(ptr = strstrW(path, gre_path))
+       || (ptr > path && *(ptr-1) != ';')
+       || (ptr[gre_path_len] && ptr[gre_path_len] != ';')) {
+        if(len)
+            path[len-1] = ';';
+        strcpyW(path+len, gre_path);
+        SetEnvironmentVariableW(pathW, path);
+    }
 }
 
 static BOOL load_xul(const PRUnichar *gre_path)
@@ -491,7 +485,7 @@ static BOOL load_xul(const PRUnichar *gre_path)
     }
 
 #define NS_DLSYM(func) \
-    func = (void *)GetProcAddress(xul_handle, #func "_P"); \
+    func = (void *)GetProcAddress(xul_handle, #func); \
     if(!func) \
         ERR("Could not GetProcAddress(" #func ") failed\n")
 
@@ -730,6 +724,11 @@ static BOOL init_xpcom(const PRUnichar *gre_path)
     if(NS_FAILED(nsres))
         ERR("Could not get nsIMemory: %08x\n", nsres);
 
+    nsres = nsIServiceManager_GetServiceByContractID(pServMgr, NS_CATEGORYMANAGER_CONTRACTID,
+            &IID_nsICategoryManager, (void**)&cat_mgr);
+    if(NS_FAILED(nsres))
+        ERR("Could not get category manager service: %08x\n", nsres);
+
     if(registrar) {
         register_nsservice(registrar, pServMgr);
         nsIComponentRegistrar_Release(registrar);
@@ -838,11 +837,6 @@ void nsAString_InitDepend(nsAString *str, const PRUnichar *data)
     NS_StringContainerInit2(str, data, PR_UINT32_MAX, NS_STRING_CONTAINER_INIT_DEPEND);
 }
 
-void nsAString_SetData(nsAString *str, const PRUnichar *data)
-{
-    NS_StringSetData(str, data, PR_UINT32_MAX);
-}
-
 UINT32 nsAString_GetData(const nsAString *str, const PRUnichar **data)
 {
     return NS_StringGetData(str, data, NULL);
@@ -908,6 +902,15 @@ nsIWritableVariant *create_nsvariant(void)
         ERR("Could not get nsIVariant\n");
 
     return ret;
+}
+
+char *get_nscategory_entry(const char *category, const char *entry)
+{
+    char *ret = NULL;
+    nsresult nsres;
+
+    nsres = nsICategoryManager_GetCategoryEntry(cat_mgr, category, entry, &ret);
+    return NS_SUCCEEDED(nsres) ? ret : NULL;
 }
 
 nsresult get_nsinterface(nsISupports *iface, REFIID riid, void **ppv)
@@ -1101,6 +1104,9 @@ void close_gecko(void)
 
     if(pServMgr)
         nsIServiceManager_Release(pServMgr);
+
+    if(cat_mgr)
+        nsICategoryManager_Release(cat_mgr);
 
     if(nsmem)
         nsIMemory_Release(nsmem);

@@ -16,29 +16,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-
-#include <stdarg.h>
-
-#define COBJMACROS
-
-#include <windef.h>
-#include <winbase.h>
-//#include "winuser.h"
-#include <ole2.h>
-#include <shlguid.h>
-//#include "mshtmdid.h"
-//#include "idispids.h"
-#include <mshtmcid.h>
-
-#include <wine/debug.h>
-
 #include "mshtml_private.h"
-#include "binding.h"
-#include "resource.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(mshtml);
 
 #define NSCMD_COPY "cmd_copy"
 
@@ -410,7 +388,7 @@ static void refresh_proc(task_t *_task)
         IOleCommandTarget_Exec(window->doc_obj->client_cmdtrg, &CGID_ShellDocView, 37, 0, &var, NULL);
     }
 
-    load_uri(task->window, task->window->uri, BINDING_REFRESH);
+    load_uri(task->window, task->window->uri, BINDING_REFRESH|BINDING_NOFRAG);
 }
 
 static void refresh_destr(task_t *_task)

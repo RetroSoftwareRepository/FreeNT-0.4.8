@@ -16,25 +16,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <config.h>
-
-#include <stdarg.h>
-
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-
-#define COBJMACROS
-
-#include <windef.h>
-#include <winbase.h>
-//#include "winuser.h"
-#include <ole2.h>
-
-#include <wine/debug.h>
-
 #include "mshtml_private.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(mshtml);
 
 /*
  * This object wraps any unrecognized interface overriding its IUnknown methods, allowing
@@ -57,7 +39,7 @@ static HRESULT WINAPI wrapper_QueryInterface(IUnknown *iface, REFIID riid, void 
 {
     iface_wrapper_t *This = impl_from_IUnknown(iface);
 
-    TRACE("(%p)->(%s %p)\n", This, debugstr_guid(riid), ppv);
+    TRACE("(%p)->(%s %p)\n", This, debugstr_mshtml_guid(riid), ppv);
 
     return IUnknown_QueryInterface(This->ref_unk, riid, ppv);
 }

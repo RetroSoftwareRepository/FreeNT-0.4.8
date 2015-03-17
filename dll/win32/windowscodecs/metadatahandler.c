@@ -17,30 +17,10 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-#define COM_NO_WINDOWS_H
-
-#include <config.h>
-
-//#include <stdarg.h>
-#include <stdio.h>
-
-#define COBJMACROS
-#define NONAMELESSUNION
-
-#include <windef.h>
-#include <winbase.h>
-#include <winternl.h>
-#include <objbase.h>
-//#include "wincodec.h"
-#include <wincodecsdk.h>
-
 #include "wincodecs_private.h"
 
-#include <wine/debug.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(wincodecs);
+#include <stdio.h>
+#include <winternl.h>
 
 typedef struct MetadataHandler {
     IWICMetadataWriter IWICMetadataWriter_iface;
@@ -460,7 +440,7 @@ static const IWICPersistStreamVtbl MetadataHandler_PersistStream_Vtbl = {
     MetadataHandler_SaveEx
 };
 
-HRESULT MetadataReader_Create(const MetadataHandlerVtbl *vtable, IUnknown *pUnkOuter, REFIID iid, void** ppv)
+HRESULT MetadataReader_Create(const MetadataHandlerVtbl *vtable, REFIID iid, void** ppv)
 {
     MetadataHandler *This;
     HRESULT hr;
@@ -468,8 +448,6 @@ HRESULT MetadataReader_Create(const MetadataHandlerVtbl *vtable, IUnknown *pUnkO
     TRACE("%s\n", debugstr_guid(vtable->clsid));
 
     *ppv = NULL;
-
-    if (pUnkOuter) return CLASS_E_NOAGGREGATION;
 
     This = HeapAlloc(GetProcessHeap(), 0, sizeof(MetadataHandler));
     if (!This) return E_OUTOFMEMORY;
@@ -729,9 +707,9 @@ static const MetadataHandlerVtbl UnknownMetadataReader_Vtbl = {
     LoadUnknownMetadata
 };
 
-HRESULT UnknownMetadataReader_CreateInstance(IUnknown *pUnkOuter, REFIID iid, void** ppv)
+HRESULT UnknownMetadataReader_CreateInstance(REFIID iid, void** ppv)
 {
-    return MetadataReader_Create(&UnknownMetadataReader_Vtbl, pUnkOuter, iid, ppv);
+    return MetadataReader_Create(&UnknownMetadataReader_Vtbl, iid, ppv);
 }
 
 #define SWAP_USHORT(x) do { if (!native_byte_order) (x) = RtlUshortByteSwap(x); } while(0)
@@ -1164,7 +1142,7 @@ static const MetadataHandlerVtbl IfdMetadataReader_Vtbl = {
     LoadIfdMetadata
 };
 
-HRESULT IfdMetadataReader_CreateInstance(IUnknown *pUnkOuter, REFIID iid, void **ppv)
+HRESULT IfdMetadataReader_CreateInstance(REFIID iid, void **ppv)
 {
-    return MetadataReader_Create(&IfdMetadataReader_Vtbl, pUnkOuter, iid, ppv);
+    return MetadataReader_Create(&IfdMetadataReader_Vtbl, iid, ppv);
 }

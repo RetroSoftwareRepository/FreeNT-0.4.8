@@ -827,12 +827,19 @@ static MUI_ENTRY skSKSelectPartitionEntries[] =
     {
         8,
         15,
-        "\x07  StlaŸte C pre vytvorenie novej oblasti.",
+        "\x07  Press P to create a primary partition.",
+//        "\x07  StlaŸte C pre vytvorenie novej oblasti.",
         TEXT_STYLE_NORMAL
     },
     {
         8,
         17,
+        "\x07  Press E to create an extended partition.",
+        TEXT_STYLE_NORMAL
+    },
+    {
+        8,
+        19,
         "\x07  StlaŸte D pre vymazanie existuj£cej oblasti.",
         TEXT_STYLE_NORMAL
     },
@@ -1287,6 +1294,10 @@ static MUI_ENTRY skSKRegistryEntries[] =
 MUI_ERROR skSKErrorEntries[] =
 {
     {
+        // NOT_AN_ERROR
+        "Success\n"
+    },
+    {
         //ERROR_NOT_INSTALLED
         "Syst‚m ReactOS nie je kompletne nainçtalovanì na Vaçom\n"
         "poŸ¡taŸi. Ak teraz preruç¡te inçtal ciu, budete musieœ\n"
@@ -1494,10 +1505,25 @@ MUI_ERROR skSKErrorEntries[] =
         "ENTER = Reçtart poŸ¡taŸa"
     },
     {
-        //ERROR_INSUFFICIENT_DISKSPACE,
-        "Na zvolenej part¡cii nie je dostatok vo–n‚ho miesta.\n"
+        //ERROR_INSUFFICIENT_PARTITION_SIZE,
+        "The selected partition is not large enough to install ReactOS.\n"
+        "The install partition must have a size of at least %lu MB.\n"
+        "\n"
         "  * PokraŸujte stlaŸen¡m –ubovo–n‚ho kl vesu.",
         NULL
+    },
+    {
+        //ERROR_PARTITION_TABLE_FULL,
+        "You can not create a new primary or extended partition in the\n"
+        "partition table of this disk because the partition table is full.\n"
+        "\n"
+        "  * Press any key to continue."
+    },
+    {
+        //ERROR_ONLY_ONE_EXTENDED,
+        "You can not create more than one extended partition per disk.\n"
+        "\n"
+        "  * Press any key to continue."
     },
     {
         NULL,
@@ -1611,13 +1637,23 @@ MUI_STRING skSKStrings[] =
     {STRING_PLEASEWAIT,
      "   PoŸkajte, pros¡m ..."},
     {STRING_INSTALLCREATEPARTITION,
-     "   ENTER = Inçtalovaœ   C = Vytvoriœ oblasœ   F3 = SkonŸiœ"},
+     "   ENTER = Install   P = Create Primary   E = Create Extended   F3 = Quit"},
+//     "   ENTER = Inçtalovaœ   C = Vytvoriœ oblasœ   F3 = SkonŸiœ"},
+    {STRING_INSTALLCREATELOGICAL,
+     "   ENTER = Install   L = Create Logical Partition   F3 = Quit"},
     {STRING_INSTALLDELETEPARTITION,
      "   ENTER = Inçtalovaœ   D = Odstr niœ oblasœ   F3 = SkonŸiœ"},
+    {STRING_DELETEPARTITION,
+     "   D = Delete Partition   F3 = Quit"},
     {STRING_PARTITIONSIZE,
      "Ve–kosœ novej oblasti:"},
     {STRING_CHOOSENEWPARTITION,
-     "Zvolili ste vytvorenie novej oblasti na"},
+     "You have chosen to create a primary partition on"},
+//     "Zvolili ste vytvorenie novej oblasti na"},
+    {STRING_CHOOSE_NEW_EXTENDED_PARTITION,
+     "You have chosen to create an extended partition on"},
+    {STRING_CHOOSE_NEW_LOGICAL_PARTITION,
+     "You have chosen to create a logical partition on"},
     {STRING_HDDSIZE,
     "Zadajte, pros¡m, ve–kosœ novej oblasti v megabajtoch."},
     {STRING_CREATEPARTITION,
@@ -1689,7 +1725,7 @@ MUI_STRING skSKStrings[] =
     {STRING_HDINFOPARTEXISTS,
     "na pevnom disku %lu (%I64u %s), Port=%hu, Bus=%hu, Id=%hu (%wZ)."},
     {STRING_HDDINFOUNK5,
-    "%c%c  typ %-3u                         %6lu %s"},
+    "%c%c %c %styp %-3u%s                      %6lu %s"},
     {STRING_HDINFOPARTSELECT,
     "%6lu %s  pevnì disk %lu  (Port=%hu, Bus=%hu, Id=%hu) na %S"},
     {STRING_HDDINFOUNK6,
@@ -1697,9 +1733,11 @@ MUI_STRING skSKStrings[] =
     {STRING_NEWPARTITION,
     "Inçtal tor vytvoril nov£ oblasœ na"},
     {STRING_UNPSPACE,
-    "    Miesto bez oblast¡               %6lu %s"},
+    "    %sMiesto bez oblast¡%s             %6lu %s"},
     {STRING_MAXSIZE,
     "MB (max. %lu MB)"},
+    {STRING_EXTENDED_PARTITION,
+    "Extended Partition"},
     {STRING_UNFORMATTED,
     "Nov  (Nenaform tovan )"},
     {STRING_FORMATUNUSED,

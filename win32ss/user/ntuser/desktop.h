@@ -2,11 +2,19 @@
 
 typedef struct _DESKTOP
 {
+    /* Must be the first member */
+    DWORD dwSessionId;
+
     PDESKTOPINFO pDeskInfo;
     LIST_ENTRY ListEntry;
     /* Pointer to the associated window station. */
     struct _WINSTATION_OBJECT *rpwinstaParent;
     DWORD dwDTFlags;
+    DWORD_PTR dwDesktopId;
+    PMENU spmenuSys;
+    PMENU spmenuDialogSys;
+    PMENU spmenuHScroll;
+    PMENU spmenuVScroll;
     PWND spwndForeground;
     PWND spwndTray;
     PWND spwndMessage;
@@ -15,6 +23,10 @@ typedef struct _DESKTOP
     PWIN32HEAP pheapDesktop;
     ULONG_PTR ulHeapSize;
     LIST_ENTRY PtiList;
+
+    /* One console input thread per desktop, maintained by CONSRV */
+    DWORD dwConsoleThreadId;
+
     /* Use for tracking mouse moves. */
     PWND spwndTrack;
     DWORD htEx;
@@ -29,7 +41,7 @@ typedef struct _DESKTOP
     /* Thread blocking input */
     PVOID BlockInputThread;
     LIST_ENTRY ShellHookWindows;
-} DESKTOP;
+} DESKTOP, *PDESKTOP;
 
 // Desktop flags
 #define DF_TME_HOVER        0x00000400
@@ -99,17 +111,25 @@ IntDesktopObjectParse(IN PVOID ParseObject,
                       IN PSECURITY_QUALITY_OF_SERVICE SecurityQos OPTIONAL,
                       OUT PVOID *Object);
 
-VOID APIENTRY
-IntDesktopObjectDelete(PWIN32_DELETEMETHOD_PARAMETERS Parameters);
+NTSTATUS
+NTAPI
+IntDesktopObjectDelete(
+    _In_ PVOID Parameters);
 
-NTSTATUS NTAPI 
-IntDesktopOkToClose(PWIN32_OKAYTOCLOSEMETHOD_PARAMETERS Parameters);
+NTSTATUS
+NTAPI
+IntDesktopOkToClose(
+    _In_ PVOID Parameters);
 
-NTSTATUS NTAPI 
-IntDesktopObjectOpen(PWIN32_OPENMETHOD_PARAMETERS Parameters);
+NTSTATUS
+NTAPI
+IntDesktopObjectOpen(
+    _In_ PVOID Parameters);
 
-NTSTATUS NTAPI 
-IntDesktopObjectClose(PWIN32_CLOSEMETHOD_PARAMETERS Parameters);
+NTSTATUS
+NTAPI
+IntDesktopObjectClose(
+    _In_ PVOID Parameters);
 
 HDC FASTCALL
 IntGetScreenDC(VOID);
@@ -162,11 +182,6 @@ HDC FASTCALL UserGetDesktopDC(ULONG,BOOL,BOOL);
 
 #define IntIsActiveDesktop(Desktop) \
   ((Desktop)->rpwinstaParent->ActiveDesktop == (Desktop))
-
-#define GET_DESKTOP_NAME(d)                                             \
-    OBJECT_HEADER_TO_NAME_INFO(OBJECT_TO_OBJECT_HEADER(d)) ?            \
-    &(OBJECT_HEADER_TO_NAME_INFO(OBJECT_TO_OBJECT_HEADER(d))->Name) :   \
-    NULL
 
 HWND FASTCALL IntGetMessageWindow(VOID);
 PWND FASTCALL UserGetMessageWindow(VOID);
@@ -248,6 +263,11 @@ DesktopHeapGetUserDelta(VOID)
     pheapDesktop = pti->rpdesk->pheapDesktop;
 
     W32Process = PsGetCurrentProcessWin32Process();
+
+    /*
+     * Start the search at the next mapping: skip the first entry
+     * as it must be the global user heap mapping.
+     */
     Mapping = W32Process->HeapMappings.Next;
     while (Mapping != NULL)
     {
@@ -270,6 +290,11 @@ DesktopHeapAddressToUser(PVOID lpMem)
     PPROCESSINFO W32Process;
 
     W32Process = PsGetCurrentProcessWin32Process();
+
+    /*
+     * Start the search at the next mapping: skip the first entry
+     * as it must be the global user heap mapping.
+     */
     Mapping = W32Process->HeapMappings.Next;
     while (Mapping != NULL)
     {
@@ -292,4 +317,5 @@ BOOL FASTCALL IntPaintDesktop(HDC);
 BOOL FASTCALL DesktopWindowProc(PWND, UINT, WPARAM, LPARAM, LRESULT *);
 BOOL FASTCALL UserMessageWindowProc(PWND pwnd, UINT Msg, WPARAM wParam, LPARAM lParam, LRESULT *lResult);
 VOID NTAPI DesktopThreadMain();
+
 /* EOF */

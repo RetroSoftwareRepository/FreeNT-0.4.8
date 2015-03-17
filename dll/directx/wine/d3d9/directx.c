@@ -19,10 +19,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <config.h>
 #include "d3d9_private.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(d3d9);
 
 static inline struct d3d9 *impl_from_IDirect3D9Ex(IDirect3D9Ex *iface)
 {
@@ -231,6 +228,10 @@ static HRESULT WINAPI d3d9_CheckDeviceType(IDirect3D9Ex *iface, UINT adapter, D3
 
     TRACE("iface %p, adapter %u, device_type %#x, display_format %#x, backbuffer_format %#x, windowed %#x.\n",
             iface, adapter, device_type, display_format, backbuffer_format, windowed);
+
+    /* Others than that not supported by d3d9, but reported by wined3d for ddraw. Filter them out. */
+    if (!windowed && display_format != D3DFMT_X8R8G8B8 && display_format != D3DFMT_R5G6B5)
+        return WINED3DERR_NOTAVAILABLE;
 
     wined3d_mutex_lock();
     hr = wined3d_check_device_type(d3d9->wined3d, adapter, device_type, wined3dformat_from_d3dformat(display_format),
@@ -632,12 +633,18 @@ static const struct IDirect3D9ExVtbl d3d9_vtbl =
 
 BOOL d3d9_init(struct d3d9 *d3d9, BOOL extended)
 {
-    DWORD flags = extended ? 0 : WINED3D_VIDMEM_ACCOUNTING;
+    DWORD flags = WINED3D_PRESENT_CONVERSION | WINED3D_HANDLE_RESTORE;
+
+    if (!extended)
+        flags |= WINED3D_VIDMEM_ACCOUNTING;
+    else
+        flags |= WINED3D_RESTORE_MODE_ON_ACTIVATE;
+
     d3d9->IDirect3D9Ex_iface.lpVtbl = &d3d9_vtbl;
     d3d9->refcount = 1;
 
     wined3d_mutex_lock();
-    d3d9->wined3d = wined3d_create(9, flags);
+    d3d9->wined3d = wined3d_create(flags);
     wined3d_mutex_unlock();
     if (!d3d9->wined3d)
         return FALSE;

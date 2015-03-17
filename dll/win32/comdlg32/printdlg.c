@@ -21,35 +21,11 @@
  * License along with this library; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
-#define WIN32_NO_STATUS
 
-//#include <ctype.h>
-//#include <stdlib.h>
-//#include <stdarg.h>
-#include <stdio.h>
-//#include <string.h>
-#include <assert.h>
-
-#define COBJMACROS
-#define NONAMELESSUNION
-#define NONAMELESSSTRUCT
-#include <windef.h>
-#include <winbase.h>
-#include <winuser.h>
-#include <wingdi.h>
-#include <winspool.h>
-//#include "winerror.h"
-#include <objbase.h>
-#include <commdlg.h>
-
-#include <wine/unicode.h>
-#include <wine/debug.h>
-
-//#include "dlgs.h"
-#include <cderr.h>
 #include "cdlg.h"
 
-WINE_DEFAULT_DEBUG_CHANNEL(commdlg);
+#include <assert.h>
+#include <winspool.h>
 
 /* Yes these constants are the same, but we're just copying win98 */
 #define UPDOWN_ID 0x270f
@@ -1497,7 +1473,7 @@ static LRESULT PRINTDLG_WMInitDialog(HWND hDlg,
        PrintStructures->hNoCollateIcon == 0 ||
        PrintStructures->hPortraitIcon == 0 ||
        PrintStructures->hLandscapeIcon == 0) {
-        ERR("no icon in resourcefile\n");
+        ERR("no icon in resource file\n");
 	COMDLG32_SetCommDlgExtendedError(CDERR_LOADRESFAILURE);
 	EndDialog(hDlg, FALSE);
     }
@@ -1605,7 +1581,7 @@ static LRESULT PRINTDLG_WMInitDialogW(HWND hDlg,
        PrintStructures->hNoCollateIcon == 0 ||
        PrintStructures->hPortraitIcon == 0 ||
        PrintStructures->hLandscapeIcon == 0) {
-        ERR("no icon in resourcefile\n");
+        ERR("no icon in resource file\n");
 	COMDLG32_SetCommDlgExtendedError(CDERR_LOADRESFAILURE);
 	EndDialog(hDlg, FALSE);
     }
@@ -2265,7 +2241,7 @@ BOOL WINAPI PrintDlgA(LPPRINTDLGA lppd)
     }
 
     if(lppd->lStructSize != sizeof(PRINTDLGA)) {
-        WARN("structure size failure !!!\n");
+        WARN("structure size failure!!!\n");
 	COMDLG32_SetCommDlgExtendedError(CDERR_STRUCTSIZE);
 	return FALSE;
     }
@@ -2416,7 +2392,7 @@ BOOL WINAPI PrintDlgW(LPPRINTDLGW lppd)
     }
 
     if(lppd->lStructSize != sizeof(PRINTDLGW)) {
-        WARN("structure size failure !!!\n");
+        WARN("structure size failure!!!\n");
 	COMDLG32_SetCommDlgExtendedError(CDERR_STRUCTSIZE);
 	return FALSE;
     }

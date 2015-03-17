@@ -7,8 +7,12 @@
  * PROGRAMMERS:     Hervé Poussineau (hpoussin@reactos.org)
  */
 
-#define INITGUID
 #include "mouclass.h"
+
+#include <stdio.h>
+#include <kbdmou.h>
+#include <pseh/pseh2.h>
+#include <debug.h>
 
 static DRIVER_UNLOAD DriverUnload;
 static DRIVER_DISPATCH ClassCreate;
@@ -578,7 +582,7 @@ DestroyPortDriver(
 
 	/* Remove from ClassDeviceExtension->ListHead list */
 	KeAcquireSpinLock(&ClassDeviceExtension->ListSpinLock, &OldIrql);
-	RemoveHeadList(DeviceExtension->ListEntry.Blink);
+	RemoveEntryList(&DeviceExtension->ListEntry);
 	KeReleaseSpinLock(&ClassDeviceExtension->ListSpinLock, OldIrql);
 
 	/* Remove entry from HKEY_LOCAL_MACHINE\HARDWARE\DEVICEMAP\[DeviceBaseName] */
@@ -837,7 +841,6 @@ ClassPnp(
 			IoCompleteRequest(Irp, IO_NO_INCREMENT);
 			return Status;
 			
-		case IRP_MN_REMOVE_DEVICE:
 		case IRP_MN_STOP_DEVICE:
 			if (DeviceExtension->FileHandle)
 			{
@@ -846,6 +849,17 @@ ClassPnp(
 			}
 			Status = STATUS_SUCCESS;
 			break;
+            
+        case IRP_MN_REMOVE_DEVICE:
+            if (DeviceExtension->FileHandle)
+			{
+				ZwClose(DeviceExtension->FileHandle);
+				DeviceExtension->FileHandle = NULL;
+			}
+            IoSkipCurrentIrpStackLocation(Irp);
+		    Status = IoCallDriver(DeviceExtension->LowerDevice, Irp);
+            DestroyPortDriver(DeviceObject);
+			return Status;
 
 		default:
 			Status = Irp->IoStatus.Status;

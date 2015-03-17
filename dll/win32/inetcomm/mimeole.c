@@ -19,29 +19,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-#define COM_NO_WINDOWS_H
-
-#define COBJMACROS
-#define NONAMELESSUNION
-
-#include <stdarg.h>
-//#include <stdio.h>
-
-#include <windef.h>
-#include <winbase.h>
-//#include "winuser.h"
-//#include "objbase.h"
-#include <ole2.h>
-#include <mimeole.h>
-
-#include <wine/list.h>
-#include <wine/debug.h>
-
 #include "inetcomm_private.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(inetcomm);
 
 typedef struct
 {
@@ -141,7 +119,7 @@ static HRESULT copy_headers_to_buf(IStream *stm, char **ptr)
     char *buf = NULL;
     DWORD size = PARSER_BUF_SIZE, offset = 0, last_end = 0;
     HRESULT hr;
-    int done = 0;
+    BOOL done = FALSE;
 
     *ptr = NULL;
 
@@ -169,7 +147,7 @@ static HRESULT copy_headers_to_buf(IStream *stm, char **ptr)
         offset += read;
         buf[offset] = '\0';
 
-        if(read == 0) done = 1;
+        if(read == 0) done = TRUE;
 
         while(!done && (end = strstr(buf + last_end, "\r\n")))
         {
@@ -180,7 +158,7 @@ static HRESULT copy_headers_to_buf(IStream *stm, char **ptr)
                 off.QuadPart = new_end;
                 IStream_Seek(stm, off, STREAM_SEEK_SET, NULL);
                 buf[new_end] = '\0';
-                done = 1;
+                done = TRUE;
             }
             else
                 last_end = new_end;
@@ -275,14 +253,14 @@ static void unfold_header(char *header, int len)
 
 static char *unquote_string(const char *str)
 {
-    int quoted = 0;
+    BOOL quoted = FALSE;
     char *ret, *cp;
 
     while(*str == ' ' || *str == '\t') str++;
 
     if(*str == '"')
     {
-        quoted = 1;
+        quoted = TRUE;
         str++;
     }
     ret = strdupA(str);
@@ -338,20 +316,19 @@ static void add_param(header_t *header, const char *p)
 static void split_params(header_t *header, char *value)
 {
     char *cp = value, *start = value;
-    int in_quote = 0;
-    int done_value = 0;
+    BOOL in_quotes = FALSE, done_value = FALSE;
 
     while(*cp)
     {
-        if(!in_quote && *cp == ';')
+        if(!in_quotes && *cp == ';')
         {
             *cp = '\0';
             if(done_value) add_param(header, start);
-            done_value = 1;
+            done_value = TRUE;
             start = cp + 1;
         }
         else if(*cp == '"')
-            in_quote = !in_quote;
+            in_quotes = !in_quotes;
         cp++;
     }
     if(done_value) add_param(header, start);

@@ -21,35 +21,10 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
+#include "precomp.h"
 
-#include <config.h>
-//#include "wine/port.h"
-
-#include <assert.h>
-//#include <stdlib.h>
-//#include <string.h>
-//#include <stdarg.h>
-#include <stdio.h>
-//#include <ctype.h>
-
-#define COBJMACROS
-#define NONAMELESSUNION
-#define NONAMELESSSTRUCT
-
-//#include "winerror.h"
-#include <windef.h>
-#include <winbase.h>
-#include <winnls.h>
-#include <winreg.h>
-//#include "winuser.h"
-
-#include <ole2.h>
-//#include "propidl.h" /* for LPSAFEARRAY_User* functions */
 #include "typelib.h"
-#include "variant.h"
-#include <wine/debug.h>
+
 #include <wine/exception.h>
 
 static const WCHAR IDispatchW[] = { 'I','D','i','s','p','a','t','c','h',0};
@@ -273,11 +248,13 @@ static HRESULT
 _get_typeinfo_for_iid(REFIID riid, ITypeInfo**ti) {
     HRESULT	hres;
     HKEY	ikey;
+    REGSAM	opposite = (sizeof(void*) == 8) ? KEY_WOW64_32KEY : KEY_WOW64_64KEY;
+    BOOL	is_wow64;
     char	tlguid[200],typelibkey[300],interfacekey[300],ver[100];
     char	tlfn[260];
     OLECHAR	tlfnW[260];
     DWORD	tlguidlen, verlen, type;
-    LONG	tlfnlen;
+    LONG	tlfnlen, err;
     ITypeLib	*tl;
 
     sprintf( interfacekey, "Interface\\{%08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x}\\Typelib",
@@ -286,9 +263,14 @@ _get_typeinfo_for_iid(REFIID riid, ITypeInfo**ti) {
 	riid->Data4[4], riid->Data4[5], riid->Data4[6], riid->Data4[7]
     );
 
-    if (RegOpenKeyA(HKEY_CLASSES_ROOT,interfacekey,&ikey)) {
-	ERR("No %s key found.\n",interfacekey);
-       	return E_FAIL;
+    err = RegOpenKeyExA(HKEY_CLASSES_ROOT,interfacekey,0,KEY_READ,&ikey);
+    if (err && (opposite == KEY_WOW64_32KEY || (IsWow64Process(GetCurrentProcess(), &is_wow64)
+                                                && is_wow64))) {
+        err = RegOpenKeyExA(HKEY_CLASSES_ROOT,interfacekey,0,KEY_READ|opposite,&ikey);
+    }
+    if (err) {
+        ERR("No %s key found.\n",interfacekey);
+        return E_FAIL;
     }
     tlguidlen = sizeof(tlguid);
     if (RegQueryValueExA(ikey,NULL,NULL,&type,(LPBYTE)tlguid,&tlguidlen)) {
@@ -306,8 +288,16 @@ _get_typeinfo_for_iid(REFIID riid, ITypeInfo**ti) {
     sprintf(typelibkey,"Typelib\\%s\\%s\\0\\win%u",tlguid,ver,(sizeof(void*) == 8) ? 64 : 32);
     tlfnlen = sizeof(tlfn);
     if (RegQueryValueA(HKEY_CLASSES_ROOT,typelibkey,tlfn,&tlfnlen)) {
-	ERR("Could not get typelib fn?\n");
-	return E_FAIL;
+#ifdef _WIN64
+        sprintf(typelibkey,"Typelib\\%s\\%s\\0\\win32",tlguid,ver);
+        tlfnlen = sizeof(tlfn);
+        if (RegQueryValueA(HKEY_CLASSES_ROOT,typelibkey,tlfn,&tlfnlen)) {
+#endif
+            ERR("Could not get typelib fn?\n");
+            return E_FAIL;
+#ifdef _WIN64
+        }
+#endif
     }
     MultiByteToWideChar(CP_ACP, 0, tlfn, -1, tlfnW, sizeof(tlfnW) / sizeof(tlfnW[0]));
     hres = LoadTypeLib(tlfnW,&tl);
@@ -647,14 +637,11 @@ _xsize(const TYPEDESC *td, ITypeInfo *tinfo) {
 }
 
 /* Whether we pass this type by reference or by value */
-static int
+static BOOL
 _passbyref(const TYPEDESC *td, ITypeInfo *tinfo) {
-    if (td->vt == VT_USERDEFINED ||
-        td->vt == VT_VARIANT     ||
-        td->vt == VT_PTR)
-        return 1;
-
-    return 0;
+    return (td->vt == VT_USERDEFINED ||
+            td->vt == VT_VARIANT     ||
+            td->vt == VT_PTR);
 }
 
 static HRESULT
@@ -714,7 +701,7 @@ serialize_param(
 	    hres = xbuf_add(buf,(LPBYTE)arg,sizeof(DWORD));
 	return hres;
     case VT_VARIANT: {
-        if (debugout) TRACE_(olerelay)("Vt(%s%s)(",debugstr_vt(V_VT((VARIANT *)arg)),debugstr_vf(V_VT((VARIANT *)arg)));
+        if (debugout) TRACE_(olerelay)("%s", debugstr_variant((VARIANT *)arg));
         if (writeit)
         {
             ULONG flags = MAKELONG(MSHCTX_DIFFERENTMACHINE, NDR_LOCAL_DATA_REPRESENTATION);

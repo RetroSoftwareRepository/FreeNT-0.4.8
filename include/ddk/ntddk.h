@@ -1666,14 +1666,12 @@ typedef struct {
 #endif
 } HAL_DISPATCH, *PHAL_DISPATCH;
 
-/* GCC/MSVC and WDK compatible declaration */
-extern NTKERNELAPI HAL_DISPATCH HalDispatchTable;
-
-#if defined(_NTOSKRNL_) || defined(_BLDR_)
+#ifdef _NTSYSTEM_
+extern HAL_DISPATCH HalDispatchTable;
 #define HALDISPATCH (&HalDispatchTable)
 #else
-/* This is a WDK compatibility definition */
-#define HalDispatchTable (&HalDispatchTable)
+__CREATE_NTOS_DATA_IMPORT_ALIAS(HalDispatchTable)
+extern PHAL_DISPATCH HalDispatchTable;
 #define HALDISPATCH HalDispatchTable
 #endif
 
@@ -1940,6 +1938,12 @@ typedef struct _HAL_PLATFORM_INFORMATION {
 /******************************************************************************
  *                              Kernel Types                                  *
  ******************************************************************************/
+
+typedef struct _EXCEPTION_REGISTRATION_RECORD
+{
+  struct _EXCEPTION_REGISTRATION_RECORD *Next;
+  PEXCEPTION_ROUTINE Handler;
+} EXCEPTION_REGISTRATION_RECORD, *PEXCEPTION_REGISTRATION_RECORD;
 
 typedef struct _NT_TIB {
   struct _EXCEPTION_REGISTRATION_RECORD *ExceptionList;
@@ -4702,15 +4706,16 @@ NtOpenProcess(
   _In_ POBJECT_ATTRIBUTES ObjectAttributes,
   _In_opt_ PCLIENT_ID ClientId);
 
+__kernel_entry
 NTSYSCALLAPI
 NTSTATUS
 NTAPI
 NtQueryInformationProcess(
-  IN HANDLE ProcessHandle,
-  IN PROCESSINFOCLASS ProcessInformationClass,
-  OUT PVOID ProcessInformation OPTIONAL,
-  IN ULONG ProcessInformationLength,
-  OUT PULONG ReturnLength OPTIONAL);
+  _In_ HANDLE ProcessHandle,
+  _In_ PROCESSINFOCLASS ProcessInformationClass,
+  _Out_ PVOID ProcessInformation,
+  _In_ ULONG ProcessInformationLength,
+  _Out_opt_ PULONG ReturnLength);
 
 #if (NTDDI_VERSION >= NTDDI_WIN2K)
 
@@ -4993,7 +4998,7 @@ VOID
 NTAPI
 RtlUpperString(
   _Inout_ PSTRING DestinationString,
-  _In_ const PSTRING SourceString);
+  _In_ const STRING *SourceString);
 
 _IRQL_requires_max_(PASSIVE_LEVEL)
 _When_(AllocateDestinationString, _Must_inspect_result_)
@@ -5029,8 +5034,8 @@ NTSYSAPI
 LONG
 NTAPI
 RtlCompareString(
-  _In_ const PSTRING String1,
-  _In_ const PSTRING String2,
+  _In_ const STRING *String1,
+  _In_ const STRING *String2,
   _In_ BOOLEAN CaseInSensitive);
 
 NTSYSAPI
@@ -5038,7 +5043,7 @@ VOID
 NTAPI
 RtlCopyString(
   _Out_ PSTRING DestinationString,
-  _In_opt_ const PSTRING SourceString);
+  _In_opt_ const STRING *SourceString);
 
 _IRQL_requires_max_(PASSIVE_LEVEL)
 _Must_inspect_result_
@@ -5046,8 +5051,8 @@ NTSYSAPI
 BOOLEAN
 NTAPI
 RtlEqualString(
-  _In_ const PSTRING String1,
-  _In_ const PSTRING String2,
+  _In_ const STRING *String1,
+  _In_ const STRING *String2,
   _In_ BOOLEAN CaseInSensitive);
 
 _IRQL_requires_max_(PASSIVE_LEVEL)

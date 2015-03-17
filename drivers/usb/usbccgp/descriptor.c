@@ -11,6 +11,9 @@
 
 #include "usbccgp.h"
 
+#define NDEBUG
+#include <debug.h>
+
 NTSTATUS
 NTAPI
 USBCCGP_GetDescriptor(
@@ -323,6 +326,11 @@ USBCCGP_ScanConfigurationDescriptor(
     // count all interface descriptors
     //
     DescriptorCount = ConfigurationDescriptor->bNumInterfaces;
+    if (DescriptorCount == 0)
+    {
+        DPRINT1("[USBCCGP] DescriptorCount is zero\n");
+        return STATUS_INVALID_PARAMETER;
+    }
 
     //
     // allocate array holding the interface descriptors
@@ -336,6 +344,11 @@ USBCCGP_ScanConfigurationDescriptor(
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
+    //
+    // reset interface list count
+    //
+    FDODeviceExtension->InterfaceListCount = 0;
+
     do
     {
         //
@@ -347,6 +360,7 @@ USBCCGP_ScanConfigurationDescriptor(
             //
             // store in interface list
             //
+            ASSERT(FDODeviceExtension->InterfaceListCount < DescriptorCount);
             FDODeviceExtension->InterfaceList[FDODeviceExtension->InterfaceListCount].InterfaceDescriptor = InterfaceDescriptor;
             FDODeviceExtension->InterfaceListCount++;
         }
@@ -542,4 +556,3 @@ USBCCGP_SelectConfiguration(
     //
     return Status;
 }
-

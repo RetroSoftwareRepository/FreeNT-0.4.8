@@ -18,31 +18,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-
-#define COBJMACROS
-
-#include <config.h>
-
-//#include <stdarg.h>
-#ifdef HAVE_LIBXML2
-# include <libxml/parser.h>
-//# include <libxml/xmlerror.h>
-#endif
-
-#include <windef.h>
-#include <winbase.h>
-//#include "winuser.h"
-//#include "winnls.h"
-#include <ole2.h>
-#include <msxml6.h>
-
-#include "msxml_private.h"
-
-#include <wine/debug.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(msxml);
+#include "precomp.h"
 
 #ifdef HAVE_LIBXML2
 
@@ -1287,7 +1263,12 @@ static HRESULT WINAPI domelem_setAttribute(
         xmlFree(local);
 
         if (ns)
-            return xmlStrEqual(ns->href, xml_value) ? S_OK : E_INVALIDARG;
+        {
+            int cmp = xmlStrEqual(ns->href, xml_value);
+            heap_free(xml_value);
+            heap_free(xml_name);
+            return cmp ? S_OK : E_INVALIDARG;
+        }
     }
 
     if (!xmlSetNsProp(element, NULL, xml_name, xml_value))

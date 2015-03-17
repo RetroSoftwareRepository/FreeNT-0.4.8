@@ -18,28 +18,13 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define _INC_WINDOWS
-#define COM_NO_WINDOWS_H
-
-#include <config.h>
-//#include "wine/port.h"
-
-#define COBJMACROS
-
-#include <stdarg.h>
-#include <windef.h>
-#include <winbase.h>
-//#include "winerror.h"
-//#include "msidefs.h"
-#include <winuser.h>
-#include <objbase.h>
-#include <oleauto.h>
-
 #include "msipriv.h"
-#include <msiserver.h>
-#include <wine/debug.h>
-#include <wine/unicode.h>
+
 #include <wine/exception.h>
+
+#ifdef _MSC_VER
+#include "msvchelper.h"
+#endif
 
 WINE_DEFAULT_DEBUG_CHANNEL(msi);
 
@@ -218,8 +203,8 @@ static MSIBINARY *create_temp_binary( MSIPACKAGE *package, LPCWSTR source, BOOL 
     DWORD sz = MAX_PATH, write;
     UINT r;
 
-    if (msi_get_property(package->db, szTempFolder, fmt, &sz) != ERROR_SUCCESS)
-        GetTempPathW(MAX_PATH, fmt);
+    if (msi_get_property(package->db, szTempFolder, fmt, &sz) != ERROR_SUCCESS ||
+        GetFileAttributesW(fmt) == INVALID_FILE_ATTRIBUTES) GetTempPathW(MAX_PATH, fmt);
 
     if (!GetTempFileNameW( fmt, szMsi, 0, tmpfile ))
     {
@@ -1006,7 +991,7 @@ static UINT HANDLE_CustomType5_6( MSIPACKAGE *package, const WCHAR *source, cons
         'S','E','L','E','C','T',' ','*',' ','F','R','O','M',' ',
         '`','B','i' ,'n','a','r','y','`',' ','W','H','E','R','E',' ',
         '`','N','a','m','e','`',' ','=',' ','\'','%','s','\'',0};
-    MSIRECORD *row = 0;
+    MSIRECORD *row = NULL;
     msi_custom_action_info *info;
     CHAR *buffer = NULL;
     WCHAR *bufferw = NULL;
@@ -1020,10 +1005,14 @@ static UINT HANDLE_CustomType5_6( MSIPACKAGE *package, const WCHAR *source, cons
         return ERROR_FUNCTION_FAILED;
 
     r = MSI_RecordReadStream(row, 2, NULL, &sz);
-    if (r != ERROR_SUCCESS) return r;
+    if (r != ERROR_SUCCESS) goto done;
 
     buffer = msi_alloc( sz + 1 );
-    if (!buffer) return ERROR_FUNCTION_FAILED;
+    if (!buffer)
+    {
+       r = ERROR_FUNCTION_FAILED;
+       goto done;
+    }
 
     r = MSI_RecordReadStream(row, 2, buffer, &sz);
     if (r != ERROR_SUCCESS)
@@ -1043,6 +1032,7 @@ static UINT HANDLE_CustomType5_6( MSIPACKAGE *package, const WCHAR *source, cons
 done:
     msi_free(bufferw);
     msi_free(buffer);
+    msiobj_release(&row->hdr);
     return r;
 }
 

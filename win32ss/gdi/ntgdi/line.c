@@ -100,6 +100,7 @@ IntGdiLineTo(DC  *dc,
     RECTL     Bounds;
     POINT     Points[2];
     PDC_ATTR pdcattr = dc->pdcattr;
+    ASSERT_DC_PREPARED(dc);
 
     if (PATH_IsPathOpen(dc->dclevel))
     {
@@ -149,7 +150,7 @@ IntGdiLineTo(DC  *dc,
         if (!(pbrLine->flAttrs & BR_IS_NULL))
         {
             Ret = IntEngLineTo(&psurf->SurfObj,
-                               dc->rosdc.CombinedClip,
+                               &dc->co.ClipObj,
                                &dc->eboLine.BrushObject,
                                Points[0].x, Points[0].y,
                                Points[1].x, Points[1].y,
@@ -248,8 +249,7 @@ IntGdiPolyline(DC      *dc,
     LONG i;
     PDC_ATTR pdcattr = dc->pdcattr;
 
-    psurf = dc->dclevel.pSurface;
-    if (!psurf)
+    if (!dc->dclevel.pSurface)
     {
         return FALSE;
     }
@@ -257,14 +257,8 @@ IntGdiPolyline(DC      *dc,
     if (PATH_IsPathOpen(dc->dclevel))
         return PATH_Polyline(dc, pt, Count);
 
-    DC_vPrepareDCsForBlit(dc, dc->rosdc.CombinedClip->rclBounds,
-                            NULL, dc->rosdc.CombinedClip->rclBounds);
-
-    if (pdcattr->ulDirty_ & (DIRTY_FILL | DC_BRUSH_DIRTY))
-        DC_vUpdateFillBrush(dc);
-
-    if (pdcattr->ulDirty_ & (DIRTY_LINE | DC_PEN_DIRTY))
-        DC_vUpdateLineBrush(dc);
+    DC_vPrepareDCsForBlit(dc, NULL, NULL, NULL);
+    psurf = dc->dclevel.pSurface;
 
     /* Get BRUSHOBJ from current pen. */
     pbrLine = dc->dclevel.pbrLine;
@@ -286,7 +280,7 @@ IntGdiPolyline(DC      *dc,
             }
 
             Ret = IntEngPolyline(&psurf->SurfObj,
-                                 dc->rosdc.CombinedClip,
+                                 &dc->co.ClipObj,
                                  &dc->eboLine.BrushObject,
                                  Points,
                                  Count,
@@ -411,10 +405,7 @@ NtGdiLineTo(HDC  hDC,
     rcLockRect.right += dc->ptlDCOrig.x;
     rcLockRect.bottom += dc->ptlDCOrig.y;
 
-    DC_vPrepareDCsForBlit(dc, rcLockRect, NULL, rcLockRect);
-
-    if (dc->pdcattr->ulDirty_ & (DIRTY_LINE | DC_PEN_DIRTY))
-        DC_vUpdateLineBrush(dc);
+    DC_vPrepareDCsForBlit(dc, &rcLockRect, NULL, NULL);
 
     Ret = IntGdiLineTo(dc, XEnd, YEnd);
 

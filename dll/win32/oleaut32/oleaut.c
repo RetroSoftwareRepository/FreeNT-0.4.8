@@ -18,30 +18,12 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
+#include "precomp.h"
 
-#include <stdarg.h>
-//#include <string.h>
-//#include <limits.h>
-
-#define COBJMACROS
-
-#include <windef.h>
-#include <winbase.h>
-#include <wingdi.h>
-//#include "winuser.h"
-//#include "winerror.h"
-
-#include <ole2.h>
-#include <olectl.h>
-//#include "oleauto.h"
 #include <initguid.h>
-#include "typelib.h"
 #include <oleaut32_oaidl.h>
 
-#include <wine/debug.h>
-//#include "wine/unicode.h"
+#include "typelib.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(ole);
 WINE_DECLARE_DEBUG_CHANNEL(heap);
@@ -878,7 +860,8 @@ BOOL WINAPI DllMain(HINSTANCE hInstDll, DWORD fdwReason, LPVOID lpvReserved)
 {
     static const WCHAR oanocacheW[] = {'o','a','n','o','c','a','c','h','e',0};
 
-    bstr_cache_enabled = !GetEnvironmentVariableW(oanocacheW, NULL, 0);
+    if(fdwReason == DLL_PROCESS_ATTACH)
+        bstr_cache_enabled = !GetEnvironmentVariableW(oanocacheW, NULL, 0);
 
     return OLEAUTPS_DllMain( hInstDll, fdwReason, lpvReserved );
 }
@@ -905,6 +888,6 @@ HRESULT WINAPI DllUnregisterServer(void)
 HCURSOR WINAPI OleIconToCursor( HINSTANCE hinstExe, HICON hIcon)
 {
     FIXME("(%p,%p), partially implemented.\n",hinstExe,hIcon);
-    /* FIXME: make a extended conversation from HICON to HCURSOR */
+    /* FIXME: make an extended conversation from HICON to HCURSOR */
     return CopyCursor(hIcon);
 }

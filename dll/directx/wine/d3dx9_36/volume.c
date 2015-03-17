@@ -16,10 +16,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "wine/debug.h"
 #include "d3dx9_36_private.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(d3dx);
 
 HRESULT WINAPI D3DXLoadVolumeFromFileA(IDirect3DVolume9 *dst_volume,
                                        const PALETTEENTRY *dst_palette,
@@ -237,6 +234,10 @@ HRESULT WINAPI D3DXLoadVolumeFromFileInMemory(IDirect3DVolume9 *dst_volume,
     HRESULT hr;
     D3DBOX box;
     D3DXIMAGE_INFO image_info;
+
+    TRACE("dst_volume %p, dst_palette %p, dst_box %p, src_data %p, src_data_size %u, src_box %p,\n",
+            dst_volume, dst_palette, dst_box, src_data, src_data_size, src_box);
+    TRACE("filter %#x, color_key %#x, src_info %p.\n", filter, color_key, src_info);
 
     if (!dst_volume || !src_data) return D3DERR_INVALIDCALL;
 

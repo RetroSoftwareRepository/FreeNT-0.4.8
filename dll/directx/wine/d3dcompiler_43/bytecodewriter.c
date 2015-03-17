@@ -20,12 +20,8 @@
  *
  */
 
-#include "config.h"
-#include "wine/port.h"
-#include "wine/debug.h"
-
-#include "d3d9types.h"
 #include "d3dcompiler_private.h"
+#include "d3d9types.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(bytecodewriter);
 
@@ -2622,6 +2618,7 @@ void SlDeleteShader(struct bwriter_shader *shader) {
             d3dcompiler_free(shader->instr[i]->src[j].rel_reg);
         }
         d3dcompiler_free(shader->instr[i]->src);
+        d3dcompiler_free(shader->instr[i]->dst.rel_reg);
         d3dcompiler_free(shader->instr[i]);
     }
     d3dcompiler_free(shader->instr);

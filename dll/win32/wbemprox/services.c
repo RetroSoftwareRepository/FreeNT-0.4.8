@@ -16,26 +16,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
-#define _INC_WINDOWS
-#define COM_NO_WINDOWS_H
-
-#define COBJMACROS
-
-#include "config.h"
-#include <stdarg.h>
-
-#include "windef.h"
-#include "winbase.h"
-#include "objbase.h"
-#include "oleauto.h"
-#include "wbemcli.h"
-
-#include "wine/debug.h"
-#include "wine/unicode.h"
 #include "wbemprox_private.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(wbemprox);
 
 struct client_security
 {
@@ -287,7 +268,7 @@ static HRESULT WINAPI wbem_services_OpenNamespace(
     if ((strcmpiW( strNamespace, cimv2W ) && strcmpiW( strNamespace, defaultW )) || ws->namespace)
         return WBEM_E_INVALID_NAMESPACE;
 
-    return WbemServices_create( NULL, cimv2W, (void **)ppWorkingNamespace );
+    return WbemServices_create( cimv2W, (void **)ppWorkingNamespace );
 }
 
 static HRESULT WINAPI wbem_services_CancelAsyncCall(
@@ -821,7 +802,7 @@ static HRESULT WINAPI wbem_services_ExecMethod(
     hr = execute_view( query->view );
     if (hr != S_OK) goto done;
 
-    hr = EnumWbemClassObject_create( NULL, query, (void **)&result );
+    hr = EnumWbemClassObject_create( query, (void **)&result );
     if (hr != S_OK) goto done;
 
     hr = create_class_object( query->view->table->name, result, 0, NULL, &obj );
@@ -884,11 +865,11 @@ static const IWbemServicesVtbl wbem_services_vtbl =
     wbem_services_ExecMethodAsync
 };
 
-HRESULT WbemServices_create( IUnknown *pUnkOuter, const WCHAR *namespace, LPVOID *ppObj )
+HRESULT WbemServices_create( const WCHAR *namespace, LPVOID *ppObj )
 {
     struct wbem_services *ws;
 
-    TRACE("(%p,%p)\n", pUnkOuter, ppObj);
+    TRACE("(%p)\n", ppObj);
 
     ws = heap_alloc( sizeof(*ws) );
     if (!ws) return E_OUTOFMEMORY;

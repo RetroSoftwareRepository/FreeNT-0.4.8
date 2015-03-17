@@ -18,19 +18,9 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define WIN32_NO_STATUS
+#include "precomp.h"
 
-#include <stdarg.h>
-//#include <string.h>
-#include <windef.h>
-#include <winbase.h>
-//#include "winnt.h"
 #include <winternl.h>
-//#include "winerror.h"
-#include <wine/debug.h>
-#include <imagehlp.h>
-
-WINE_DEFAULT_DEBUG_CHANNEL(imagehlp);
 
 /***********************************************************************
  *           Data

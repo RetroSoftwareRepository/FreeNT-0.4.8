@@ -2,6 +2,7 @@
 #include <psdk/ntverp.h>
 
 /* DDK/IFS/NDK Headers */
+#define _NTSYSTEM_
 #include <excpt.h>
 #include <setjmp.h>
 #include <ntdef.h>
@@ -74,15 +75,18 @@ __attribute__ ((section(".asmdef")))
 
 ASMGENDATA Table[] =
 {
-
+#if defined (_M_IX86) || defined (_M_AMD64)
 /* PORTABLE CONSTANTS ********************************************************/
 #include "ksx.template.h"
+#endif
 
 /* ARCHITECTURE SPECIFIC CONTSTANTS ******************************************/
 #ifdef _M_IX86
 #include "ks386.template.h"
 #elif defined(_M_AMD64)
 #include "ksamd64.template.h"
+#elif defined(_M_ARM)
+#include "ksarm.template.h"
 #endif
 
     /* End of list */

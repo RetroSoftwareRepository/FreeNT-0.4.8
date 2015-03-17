@@ -7,6 +7,7 @@
  *                  Timo Kreuzer
  */
 
+#define DISKREADBUFFER HEX(8E000)
 
 /*
  * Layout of a FAT volume:
@@ -30,7 +31,7 @@
 /* INCLUDES ******************************************************************/
 
 #include <asm.inc>
-#include "../freeldr/include/arch/pc/x86common.h"
+#include <freeldr/include/arch/pc/x86common.h>
 
 #define ADDRESS_FOR_DIRENTRIES HEX(10000)
 

@@ -371,6 +371,8 @@ extern "C" {
 #define MOVEFILE_COPY_ALLOWED 2
 #define MOVEFILE_DELAY_UNTIL_REBOOT 4
 #define MOVEFILE_WRITE_THROUGH 8
+#define MOVEFILE_CREATE_HARDLINK 16
+#define MOVEFILE_FAIL_IF_NOT_TRACKABLE 32
 #define MAXIMUM_WAIT_OBJECTS 64
 #define MAXIMUM_SUSPEND_COUNT 0x7F
 #define WAIT_OBJECT_0 0
@@ -581,6 +583,13 @@ extern "C" {
 #define SRWLOCK_INIT    RTL_SRWLOCK_INIT
 #define CONDITION_VARIABLE_INIT RTL_CONDITION_VARIABLE_INIT
 #define CONDITION_VARIABLE_LOCKMODE_SHARED  RTL_CONDITION_VARIABLE_LOCKMODE_SHARED
+#endif
+
+#define INIT_ONCE_STATIC_INIT RTL_RUN_ONCE_INIT
+
+#if (_WIN32_WINNT >= 0x0600)
+#define PROCESS_DEP_ENABLE 0x00000001
+#define PROCESS_DEP_DISABLE_ATL_THUNK_EMULATION 0x00000002
 #endif
 
 #ifndef RC_INVOKED
@@ -1274,6 +1283,12 @@ typedef DWORD (WINAPI *APPLICATION_RECOVERY_CALLBACK)(PVOID);
 #else
 #define MAKEINTATOM(i) (LPTSTR)((ULONG_PTR)((WORD)(i)))
 #endif
+
+typedef DWORD
+(WINAPI *PFE_IMPORT_FUNC)(
+  _Out_writes_bytes_to_(*ulLength, *ulLength) PBYTE pbData,
+  _In_opt_ PVOID pvCallbackContext,
+  _Inout_ PULONG ulLength);
 
 /* Functions */
 #ifndef UNDER_CE
@@ -2716,6 +2731,8 @@ BOOL WINAPI MoveFileA(_In_ LPCSTR, _In_ LPCSTR);
 BOOL WINAPI MoveFileW(_In_ LPCWSTR, _In_ LPCWSTR);
 BOOL WINAPI MoveFileExA(_In_ LPCSTR, _In_opt_ LPCSTR, _In_ DWORD);
 BOOL WINAPI MoveFileExW(_In_ LPCWSTR, _In_opt_ LPCWSTR, _In_ DWORD);
+BOOL WINAPI MoveFileWithProgressA(_In_ LPCSTR, _In_opt_ LPCSTR, _In_opt_ LPPROGRESS_ROUTINE, _In_opt_ LPVOID, _In_ DWORD);
+BOOL WINAPI MoveFileWithProgressW(_In_ LPCWSTR, _In_opt_ LPCWSTR, _In_opt_ LPPROGRESS_ROUTINE, _In_opt_ LPVOID, _In_ DWORD);
 int WINAPI MulDiv(_In_ int, _In_ int, _In_ int);
 BOOL WINAPI NotifyChangeEventLog(_In_ HANDLE, _In_ HANDLE);
 BOOL WINAPI ObjectCloseAuditAlarmA(_In_ LPCSTR, _In_ PVOID, _In_ BOOL);
@@ -3140,6 +3157,7 @@ BOOL WINAPI WinLoadTrustProvider(GUID*);
 BOOL WINAPI Wow64DisableWow64FsRedirection(PVOID*);
 BOOLEAN WINAPI Wow64EnableWow64FsRedirection(_In_ BOOLEAN);
 BOOL WINAPI Wow64RevertWow64FsRedirection(PVOID);
+DWORD WINAPI WriteEncryptedFileRaw(_In_ PFE_IMPORT_FUNC, _In_opt_ PVOID, _In_ PVOID);
 BOOL WINAPI WriteFile(HANDLE,LPCVOID,DWORD,LPDWORD,LPOVERLAPPED);
 BOOL WINAPI WriteFileEx(HANDLE,LPCVOID,DWORD,LPOVERLAPPED,LPOVERLAPPED_COMPLETION_ROUTINE);
 BOOL WINAPI WriteFileGather(HANDLE,FILE_SEGMENT_ELEMENT*,DWORD,LPDWORD,LPOVERLAPPED);
@@ -3369,6 +3387,7 @@ typedef PCACTCTXW PCACTCTX;
 #define lstrlen lstrlenW
 #define MoveFile MoveFileW
 #define MoveFileEx MoveFileExW
+#define MoveFileWithProgress MoveFileWithProgressW
 #define ObjectCloseAuditAlarm ObjectCloseAuditAlarmW
 #define ObjectDeleteAuditAlarm ObjectDeleteAuditAlarmW
 #define ObjectOpenAuditAlarm ObjectOpenAuditAlarmW
@@ -3576,6 +3595,7 @@ typedef ENUMRESTYPEPROCA ENUMRESTYPEPROC;
 #define lstrlen lstrlenA
 #define MoveFile MoveFileA
 #define MoveFileEx MoveFileExA
+#define MoveFileWithProgress MoveFileWithProgressA
 #define ObjectCloseAuditAlarm ObjectCloseAuditAlarmA
 #define ObjectDeleteAuditAlarm ObjectDeleteAuditAlarmA
 #define ObjectOpenAuditAlarm ObjectOpenAuditAlarmA
@@ -3640,6 +3660,133 @@ typedef BOOL
   _Inout_ PINIT_ONCE InitOnce,
   _Inout_opt_ PVOID Parameter,
   _Outptr_opt_result_maybenull_ PVOID *Context);
+
+#if _WIN32_WINNT >= 0x0601
+
+#define COPYFILE2_MESSAGE_COPY_OFFLOAD 0x00000001L
+
+typedef enum _COPYFILE2_MESSAGE_TYPE {
+  COPYFILE2_CALLBACK_NONE = 0,
+  COPYFILE2_CALLBACK_CHUNK_STARTED,
+  COPYFILE2_CALLBACK_CHUNK_FINISHED,
+  COPYFILE2_CALLBACK_STREAM_STARTED,
+  COPYFILE2_CALLBACK_STREAM_FINISHED,
+  COPYFILE2_CALLBACK_POLL_CONTINUE,
+  COPYFILE2_CALLBACK_ERROR,
+  COPYFILE2_CALLBACK_MAX,
+} COPYFILE2_MESSAGE_TYPE;
+
+typedef enum _COPYFILE2_MESSAGE_ACTION {
+  COPYFILE2_PROGRESS_CONTINUE = 0,
+  COPYFILE2_PROGRESS_CANCEL,
+  COPYFILE2_PROGRESS_STOP,
+  COPYFILE2_PROGRESS_QUIET,
+  COPYFILE2_PROGRESS_PAUSE,
+} COPYFILE2_MESSAGE_ACTION;
+
+typedef enum _COPYFILE2_COPY_PHASE {
+  COPYFILE2_PHASE_NONE = 0,
+  COPYFILE2_PHASE_PREPARE_SOURCE,
+  COPYFILE2_PHASE_PREPARE_DEST,
+  COPYFILE2_PHASE_READ_SOURCE,
+  COPYFILE2_PHASE_WRITE_DESTINATION,
+  COPYFILE2_PHASE_SERVER_COPY,
+  COPYFILE2_PHASE_NAMEGRAFT_COPY,
+  COPYFILE2_PHASE_MAX,
+} COPYFILE2_COPY_PHASE;
+
+typedef struct COPYFILE2_MESSAGE {
+  COPYFILE2_MESSAGE_TYPE Type;
+  DWORD dwPadding;
+  union {
+    struct {
+      DWORD dwStreamNumber;
+      DWORD dwReserved;
+      HANDLE hSourceFile;
+      HANDLE hDestinationFile;
+      ULARGE_INTEGER uliChunkNumber;
+      ULARGE_INTEGER uliChunkSize;
+      ULARGE_INTEGER uliStreamSize;
+      ULARGE_INTEGER uliTotalFileSize;
+    } ChunkStarted;
+    struct {
+      DWORD dwStreamNumber;
+      DWORD dwFlags;
+      HANDLE hSourceFile;
+      HANDLE hDestinationFile;
+      ULARGE_INTEGER uliChunkNumber;
+      ULARGE_INTEGER uliChunkSize;
+      ULARGE_INTEGER uliStreamSize;
+      ULARGE_INTEGER uliStreamBytesTransferred;
+      ULARGE_INTEGER uliTotalFileSize;
+      ULARGE_INTEGER uliTotalBytesTransferred;
+    } ChunkFinished;
+    struct {
+      DWORD dwStreamNumber;
+      DWORD dwReserved;
+      HANDLE hSourceFile;
+      HANDLE hDestinationFile;
+      ULARGE_INTEGER uliStreamSize;
+      ULARGE_INTEGER uliTotalFileSize;
+    } StreamStarted;
+    struct {
+      DWORD dwStreamNumber;
+      DWORD dwReserved;
+      HANDLE hSourceFile;
+      HANDLE hDestinationFile;
+      ULARGE_INTEGER uliStreamSize;
+      ULARGE_INTEGER uliStreamBytesTransferred;
+      ULARGE_INTEGER uliTotalFileSize;
+      ULARGE_INTEGER uliTotalBytesTransferred;
+    } StreamFinished;
+    struct {
+      DWORD dwReserved;
+    } PollContinue;
+    struct {
+      COPYFILE2_COPY_PHASE CopyPhase;
+      DWORD dwStreamNumber;
+      HRESULT hrFailure;
+      DWORD dwReserved;
+      ULARGE_INTEGER uliChunkNumber;
+      ULARGE_INTEGER uliStreamSize;
+      ULARGE_INTEGER uliStreamBytesTransferred;
+      ULARGE_INTEGER uliTotalFileSize;
+      ULARGE_INTEGER uliTotalBytesTransferred;
+    } Error;
+  } Info;
+} COPYFILE2_MESSAGE;
+
+typedef COPYFILE2_MESSAGE_ACTION
+(CALLBACK *PCOPYFILE2_PROGRESS_ROUTINE)(
+  _In_ const COPYFILE2_MESSAGE *pMessage,
+  _In_opt_ PVOID pvCallbackContext);
+
+typedef struct COPYFILE2_EXTENDED_PARAMETERS {
+  DWORD dwSize;
+  DWORD dwCopyFlags;
+  BOOL *pfCancel;
+  PCOPYFILE2_PROGRESS_ROUTINE pProgressRoutine;
+  PVOID pvCallbackContext;
+} COPYFILE2_EXTENDED_PARAMETERS;
+
+WINBASEAPI
+HRESULT
+WINAPI
+CopyFile2(
+  _In_ PCWSTR pwszExistingFileName,
+  _In_ PCWSTR pwszNewFileName,
+  _In_opt_ COPYFILE2_EXTENDED_PARAMETERS *pExtendedParameters);
+
+#endif /* _WIN32_WINNT >= 0x0601 */
+
+WINBASEAPI
+BOOL
+WINAPI
+InitOnceExecuteOnce(
+  _Inout_ PINIT_ONCE InitOnce,
+  _In_ __callback PINIT_ONCE_FN InitFn,
+  _Inout_opt_ PVOID Parameter,
+  _Outptr_opt_result_maybenull_ LPVOID *Context);
 
 #ifdef _MSC_VER
 #pragma warning(pop)
