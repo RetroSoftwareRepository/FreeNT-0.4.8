@@ -1,7 +1,7 @@
 /*
  * PROJECT:          ReactOS kernel
  * LICENSE:          GPL - See COPYING in the top level directory
- * FILE:             services/eventlog/eventlog.h
+ * FILE:             base/services/eventlog/eventlog.h
  * PURPOSE:          Event logging service
  * COPYRIGHT:        Copyright 2005 Saveliy Tretiakov
  */
@@ -156,6 +156,8 @@ NTSTATUS
 LogfCreate(PLOGFILE *Logfile,
            WCHAR * LogName,
            PUNICODE_STRING FileName,
+           ULONG ulMaxSize,
+           ULONG ulRetention,
            BOOL Permanent,
            BOOL Backup);
 

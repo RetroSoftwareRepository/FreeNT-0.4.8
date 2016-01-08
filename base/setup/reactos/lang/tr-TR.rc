@@ -1,4 +1,4 @@
-/* TRANSLATORS: 2012 Arda Tanrıkulu (ardatan) (ardatanrikulu@gmail.com), 2013 Erdem Ersoy (eersoy93) (erdemersoy@live.com) */
+/* TRANSLATORS: 2012 Arda Tanrıkulu (ardatan) (ardatanrikulu@gmail.com), 2013-2015 Erdem Ersoy (eersoy93) (erdemersoy@live.com) */
 
 LANGUAGE LANG_TURKISH, SUBLANG_DEFAULT
 
@@ -66,7 +66,7 @@ BEGIN
 END
 
 IDD_PARTITION DIALOGEX 0, 0, 145, 90
-STYLE WS_VISIBLE | WS_CAPTION
+STYLE DS_SHELLFONT | WS_VISIBLE | WS_CAPTION
 CAPTION "Bölüm Oluştur"
 FONT 8, "MS Shell Dlg"
 BEGIN
@@ -82,7 +82,7 @@ BEGIN
 END
 
 IDD_BOOTOPTIONS DIALOGEX 0, 0, 305, 116
-STYLE WS_VISIBLE | WS_CAPTION
+STYLE DS_SHELLFONT | WS_VISIBLE | WS_CAPTION
 CAPTION "Gelişmiş Bölümlendirme Seçenekleri"
 FONT 8, "MS Shell Dlg"
 BEGIN
@@ -146,4 +146,6 @@ BEGIN
     IDS_SUMMARYSUBTITLE "Kurulumdan aygıtına uygulanmadan önce gözden geçirmek için dizelgelenen kurulum seçenekleri."
     IDS_ABORTSETUP "ReactOS bilgisayarınıza tümüyle kurulmadı. Eğer şimdi Kur'dan çıkarsanız, ReactOS'u kurmak için Kur'u yeniden çalıştırmayı isteybilirsiniz. Gerçekten çıkılsın mı?"
     IDS_ABORTSETUP2 "Kurulum iptal edilsin mi?"
+    IDS_NO_TXTSETUP_SIF """txtsetup.sif"" bulunamıyor.\nKur sürdüremiyor."
+    IDS_CAPTION "ReactOS Kur"
 END

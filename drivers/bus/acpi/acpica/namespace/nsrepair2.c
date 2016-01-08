@@ -9,7 +9,7 @@
  *
  * 1. Copyright Notice
  *
- * Some or all of this work - Copyright (c) 1999 - 2014, Intel Corp.
+ * Some or all of this work - Copyright (c) 1999 - 2015, Intel Corp.
  * All rights reserved.
  *
  * 2. License
@@ -113,8 +113,6 @@
  * such license, approval or letter.
  *
  *****************************************************************************/
-
-#define __NSREPAIR2_C__
 
 #include "acpi.h"
 #include "accommon.h"
@@ -328,6 +326,7 @@ AcpiNsMatchComplexRepair (
         {
             return (ThisName);
         }
+
         ThisName++;
     }
 
@@ -360,7 +359,7 @@ AcpiNsRepair_ALR (
 
 
     Status = AcpiNsCheckSortedList (Info, ReturnObject, 0, 2, 1,
-                ACPI_SORT_ASCENDING, "AmbientIlluminance");
+        ACPI_SORT_ASCENDING, "AmbientIlluminance");
 
     return (Status);
 }
@@ -413,7 +412,8 @@ AcpiNsRepair_FDE (
 
         if (ReturnObject->Buffer.Length != ACPI_FDE_BYTE_BUFFER_SIZE)
         {
-            ACPI_WARN_PREDEFINED ((AE_INFO, Info->FullPathname, Info->NodeFlags,
+            ACPI_WARN_PREDEFINED ((AE_INFO,
+                Info->FullPathname, Info->NodeFlags,
                 "Incorrect return buffer length %u, expected %u",
                 ReturnObject->Buffer.Length, ACPI_FDE_DWORD_BUFFER_SIZE));
 
@@ -422,7 +422,8 @@ AcpiNsRepair_FDE (
 
         /* Create the new (larger) buffer object */
 
-        BufferObject = AcpiUtCreateBufferObject (ACPI_FDE_DWORD_BUFFER_SIZE);
+        BufferObject = AcpiUtCreateBufferObject (
+            ACPI_FDE_DWORD_BUFFER_SIZE);
         if (!BufferObject)
         {
             return (AE_NO_MEMORY);
@@ -431,7 +432,8 @@ AcpiNsRepair_FDE (
         /* Expand each byte to a DWORD */
 
         ByteBuffer = ReturnObject->Buffer.Pointer;
-        DwordBuffer = ACPI_CAST_PTR (UINT32, BufferObject->Buffer.Pointer);
+        DwordBuffer = ACPI_CAST_PTR (UINT32,
+            BufferObject->Buffer.Pointer);
 
         for (i = 0; i < ACPI_FDE_FIELD_COUNT; i++)
         {
@@ -584,7 +586,8 @@ AcpiNsRepair_CST (
 
         if ((*OuterElements)->Package.Count == 0)
         {
-            ACPI_WARN_PREDEFINED ((AE_INFO, Info->FullPathname, Info->NodeFlags,
+            ACPI_WARN_PREDEFINED ((AE_INFO,
+                Info->FullPathname, Info->NodeFlags,
                 "SubPackage[%u] - removing entry due to zero count", i));
             Removing = TRUE;
             goto RemoveElement;
@@ -593,7 +596,8 @@ AcpiNsRepair_CST (
         ObjDesc = (*OuterElements)->Package.Elements[1]; /* Index1 = Type */
         if ((UINT32) ObjDesc->Integer.Value == 0)
         {
-            ACPI_WARN_PREDEFINED ((AE_INFO, Info->FullPathname, Info->NodeFlags,
+            ACPI_WARN_PREDEFINED ((AE_INFO,
+                Info->FullPathname, Info->NodeFlags,
                 "SubPackage[%u] - removing entry due to invalid Type(0)", i));
             Removing = TRUE;
         }
@@ -620,7 +624,7 @@ RemoveElement:
      * C-state type, in ascending order.
      */
     Status = AcpiNsCheckSortedList (Info, ReturnObject, 1, 4, 1,
-                ACPI_SORT_ASCENDING, "C-State Type");
+        ACPI_SORT_ASCENDING, "C-State Type");
     if (ACPI_FAILURE (Status))
     {
         return (Status);
@@ -668,7 +672,8 @@ AcpiNsRepair_HID (
 
     if (ReturnObject->String.Length == 0)
     {
-        ACPI_WARN_PREDEFINED ((AE_INFO, Info->FullPathname, Info->NodeFlags,
+        ACPI_WARN_PREDEFINED ((AE_INFO,
+            Info->FullPathname, Info->NodeFlags,
             "Invalid zero-length _HID or _CID string"));
 
         /* Return AE_OK anyway, let driver handle it */
@@ -711,7 +716,7 @@ AcpiNsRepair_HID (
      */
     for (Dest = NewString->String.Pointer; *Source; Dest++, Source++)
     {
-        *Dest = (char) ACPI_TOUPPER (*Source);
+        *Dest = (char) toupper ((int) *Source);
     }
 
     AcpiUtRemoveReference (ReturnObject);
@@ -830,8 +835,8 @@ AcpiNsRepair_PSS (
      * incorrectly sorted, sort it. We sort by CpuFrequency, since this
      * should be proportional to the power.
      */
-    Status =AcpiNsCheckSortedList (Info, ReturnObject, 0, 6, 0,
-                ACPI_SORT_DESCENDING, "CpuFrequency");
+    Status = AcpiNsCheckSortedList (Info, ReturnObject, 0, 6, 0,
+        ACPI_SORT_DESCENDING, "CpuFrequency");
     if (ACPI_FAILURE (Status))
     {
         return (Status);
@@ -852,7 +857,8 @@ AcpiNsRepair_PSS (
 
         if ((UINT32) ObjDesc->Integer.Value > PreviousValue)
         {
-            ACPI_WARN_PREDEFINED ((AE_INFO, Info->FullPathname, Info->NodeFlags,
+            ACPI_WARN_PREDEFINED ((AE_INFO,
+                Info->FullPathname, Info->NodeFlags,
                 "SubPackage[%u,%u] - suspicious power dissipation values",
                 i-1, i));
         }
@@ -906,7 +912,7 @@ AcpiNsRepair_TSS (
     }
 
     Status = AcpiNsCheckSortedList (Info, ReturnObject, 0, 5, 1,
-                ACPI_SORT_DESCENDING, "PowerDissipation");
+        ACPI_SORT_DESCENDING, "PowerDissipation");
 
     return (Status);
 }
@@ -1138,6 +1144,7 @@ AcpiNsRemoveElement (
             *Dest = *Source;
             Dest++;
         }
+
         Source++;
     }
 

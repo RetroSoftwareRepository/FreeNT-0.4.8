@@ -55,6 +55,8 @@
     #define OBJ_CASE_INSENSITIVE             0x00000040L
     #define USHORT_MAX                       USHRT_MAX
 
+    #define OBJ_NAME_PATH_SEPARATOR          ((WCHAR)L'\\')
+
     VOID NTAPI
     KeQuerySystemTime(
         OUT PLARGE_INTEGER CurrentTime);
@@ -97,6 +99,9 @@
     #define EX_PUSH_LOCK PULONG_PTR
 
     #define CMLTRACE(x, ...)
+    #undef PAGED_CODE
+    #define PAGED_CODE()
+    #define REGISTRY_ERROR                   ((ULONG)0x00000051L)
 #else
     //
     // Debug/Tracing support
@@ -114,6 +119,9 @@
 
     #include <ntdef.h>
     #include <ntddk.h>
+    #include <bugcodes.h>
+    #undef PAGED_CODE
+    #define PAGED_CODE()
 
     /* Prevent inclusion of Windows headers through <wine/unicode.h> */
     #define _WINDEF_
@@ -143,7 +151,10 @@
 #endif
 #endif
 
-#define TAG_CM 'CM25'
+#define TAG_CM     '  MC'
+#define TAG_KCB    'bkMC'
+#define TAG_CMHIVE 'vHMC'
+#define TAG_CMSD   'DSMC'
 
 #define CMAPI NTAPI
 
@@ -244,8 +255,58 @@ typedef struct _HV_TRACK_CELL_REF
 
 extern ULONG CmlibTraceLevel;
 
+//
+// Hack since bigkeys are not yet supported
+//
+#define ASSERT_VALUE_BIG(h, s)                          \
+    ASSERTMSG("Big keys not supported!", !CmpIsKeyValueBig(h, s));
+
+//
+// Returns whether or not this is a small valued key
+//
+static inline
+BOOLEAN
+CmpIsKeyValueSmall(OUT PULONG RealLength,
+                   IN ULONG Length)
+{
+    /* Check if the length has the special size value */
+    if (Length >= CM_KEY_VALUE_SPECIAL_SIZE)
+    {
+        /* It does, so this is a small key: return the real length */
+        *RealLength = Length - CM_KEY_VALUE_SPECIAL_SIZE;
+        return TRUE;
+    }
+
+    /* This is not a small key, return the length we read */
+    *RealLength = Length;
+    return FALSE;
+}
+
+//
+// Returns whether or not this is a big valued key
+//
+static inline
+BOOLEAN
+CmpIsKeyValueBig(IN PHHIVE Hive,
+                 IN ULONG Length)
+{
+    /* Check if the hive is XP Beta 1 or newer */
+    if (Hive->Version >= HSYS_WHISTLER_BETA1)
+    {
+        /* Check if the key length is valid for a big value key */
+        if ((Length < CM_KEY_VALUE_SPECIAL_SIZE) && (Length > CM_KEY_VALUE_BIG))
+        {
+            /* Yes, this value is big */
+            return TRUE;
+        }
+    }
+
+    /* Not a big value key */
+    return FALSE;
+}
+
 /*
- * Public functions.
+ * Public Hive functions.
  */
 NTSTATUS CMAPI
 HvInitialize(
@@ -333,59 +394,6 @@ BOOLEAN CMAPI
 HvWriteHive(
    PHHIVE RegistryHive);
 
-BOOLEAN CMAPI
-CmCreateRootNode(
-   PHHIVE Hive,
-   PCWSTR Name);
-
-VOID CMAPI
-CmPrepareHive(
-   PHHIVE RegistryHive);
-
-BOOLEAN
-NTAPI
-CmCompareHash(
-	IN PCUNICODE_STRING KeyName,
-	IN PCHAR HashString,
-	IN BOOLEAN CaseInsensitive);
-
-BOOLEAN
-NTAPI
-CmComparePackedNames(
-	IN PCUNICODE_STRING Name,
-	IN PVOID NameBuffer,
-	IN USHORT NameBufferSize,
-	IN BOOLEAN NamePacked,
-	IN BOOLEAN CaseInsensitive);
-
-BOOLEAN
-NTAPI
-CmCompareKeyName(
-	IN PCM_KEY_NODE KeyCell,
-	IN PCUNICODE_STRING KeyName,
-	IN BOOLEAN CaseInsensitive);
-
-BOOLEAN
-NTAPI
-CmCompareKeyValueName(
-    IN PCM_KEY_VALUE ValueCell,
-    IN PCUNICODE_STRING KeyName,
-    IN BOOLEAN CaseInsensitive);
-
-ULONG
-NTAPI
-CmCopyKeyName(
-    _In_ PCM_KEY_NODE KeyNode,
-    _Out_ PWCHAR KeyNameBuffer,
-    _Inout_ ULONG BufferLength);
-
-ULONG
-NTAPI
-CmCopyKeyValueName(
-    _In_ PCM_KEY_VALUE ValueCell,
-    _Out_ PWCHAR ValueNameBuffer,
-    _Inout_ ULONG BufferLength);
-
 BOOLEAN
 CMAPI
 HvTrackCellRef(
@@ -417,5 +425,137 @@ HvpCreateHiveFreeCellList(
 ULONG CMAPI
 HvpHiveHeaderChecksum(
    PHBASE_BLOCK HiveHeader);
+
+
+/* Old-style Public "Cmlib" functions */
+
+BOOLEAN CMAPI
+CmCreateRootNode(
+   PHHIVE Hive,
+   PCWSTR Name);
+
+VOID CMAPI
+CmPrepareHive(
+   PHHIVE RegistryHive);
+
+BOOLEAN
+NTAPI
+CmCompareHash(
+    IN PCUNICODE_STRING KeyName,
+    IN PCHAR HashString,
+    IN BOOLEAN CaseInsensitive);
+
+BOOLEAN
+NTAPI
+CmComparePackedNames(
+    IN PCUNICODE_STRING Name,
+    IN PVOID NameBuffer,
+    IN USHORT NameBufferSize,
+    IN BOOLEAN NamePacked,
+    IN BOOLEAN CaseInsensitive);
+
+BOOLEAN
+NTAPI
+CmCompareKeyName(
+    IN PCM_KEY_NODE KeyCell,
+    IN PCUNICODE_STRING KeyName,
+    IN BOOLEAN CaseInsensitive);
+
+BOOLEAN
+NTAPI
+CmCompareKeyValueName(
+    IN PCM_KEY_VALUE ValueCell,
+    IN PCUNICODE_STRING KeyName,
+    IN BOOLEAN CaseInsensitive);
+
+ULONG
+NTAPI
+CmCopyKeyName(
+    _In_ PCM_KEY_NODE KeyNode,
+    _Out_ PWCHAR KeyNameBuffer,
+    _Inout_ ULONG BufferLength);
+
+ULONG
+NTAPI
+CmCopyKeyValueName(
+    _In_ PCM_KEY_VALUE ValueCell,
+    _Out_ PWCHAR ValueNameBuffer,
+    _Inout_ ULONG BufferLength);
+
+/* NT-style Public Cm functions */
+
+LONG
+NTAPI
+CmpCompareCompressedName(
+    IN PCUNICODE_STRING SearchName,
+    IN PWCHAR CompressedName,
+    IN ULONG NameLength
+    );
+
+USHORT
+NTAPI
+CmpCompressedNameSize(
+    IN PWCHAR Name,
+    IN ULONG Length
+    );
+
+HCELL_INDEX
+NTAPI
+CmpFindSubKeyByName(
+    IN PHHIVE Hive,
+    IN PCM_KEY_NODE Parent,
+    IN PCUNICODE_STRING SearchName
+    );
+
+HCELL_INDEX
+NTAPI
+CmpFindSubKeyByNumber(
+    IN PHHIVE Hive,
+    IN PCM_KEY_NODE Node,
+    IN ULONG Number
+    );
+
+PCELL_DATA
+NTAPI
+CmpValueToData(
+    IN PHHIVE Hive,
+    IN PCM_KEY_VALUE Value,
+    OUT PULONG Length
+    );
+
+BOOLEAN
+NTAPI
+CmpFindNameInList(
+    IN PHHIVE Hive,
+    IN PCHILD_LIST ChildList,
+    IN PUNICODE_STRING Name,
+    IN PULONG ChildIndex,
+    IN PHCELL_INDEX CellIndex
+    );
+
+/* To be implemented by the user of this library */
+PVOID
+NTAPI
+CmpAllocate(
+    IN SIZE_T Size,
+    IN BOOLEAN Paged,
+    IN ULONG Tag
+    );
+
+VOID
+NTAPI
+CmpFree(
+    IN PVOID Ptr,
+    IN ULONG Quota
+    );
+
+VOID
+NTAPI
+CmpCopyCompressedName(
+    IN PWCHAR Destination,
+    IN ULONG DestinationLength,
+    IN PWCHAR Source,
+    IN ULONG SourceLength
+    );
 
 #endif /* _CMLIB_H_ */

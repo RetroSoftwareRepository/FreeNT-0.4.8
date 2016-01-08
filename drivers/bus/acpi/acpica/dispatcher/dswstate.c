@@ -8,7 +8,7 @@
  *
  * 1. Copyright Notice
  *
- * Some or all of this work - Copyright (c) 1999 - 2014, Intel Corp.
+ * Some or all of this work - Copyright (c) 1999 - 2015, Intel Corp.
  * All rights reserved.
  *
  * 2. License
@@ -112,9 +112,6 @@
  * such license, approval or letter.
  *
  *****************************************************************************/
-
-
-#define __DSWSTATE_C__
 
 #include "acpi.h"
 #include "accommon.h"
@@ -374,8 +371,8 @@ AcpiDsResultStackPop (
 
     if (WalkState->Results == NULL)
     {
-        ACPI_DEBUG_PRINT ((ACPI_DB_EXEC, "Result stack underflow - State=%p\n",
-            WalkState));
+        ACPI_DEBUG_PRINT ((ACPI_DB_EXEC,
+            "Result stack underflow - State=%p\n", WalkState));
         return (AE_AML_NO_OPERAND);
     }
 
@@ -782,7 +779,8 @@ AcpiDsInitAmlWalk (
 
         /* Push start scope on scope stack and make it current  */
 
-        Status = AcpiDsScopeStackPush (MethodNode, ACPI_TYPE_METHOD, WalkState);
+        Status = AcpiDsScopeStackPush (
+            MethodNode, ACPI_TYPE_METHOD, WalkState);
         if (ACPI_FAILURE (Status))
         {
             return_ACPI_STATUS (Status);
@@ -825,7 +823,7 @@ AcpiDsInitAmlWalk (
             /* Push start scope on scope stack and make it current  */
 
             Status = AcpiDsScopeStackPush (ParserState->StartNode,
-                            ParserState->StartNode->Type, WalkState);
+                ParserState->StartNode->Type, WalkState);
             if (ACPI_FAILURE (Status))
             {
                 return_ACPI_STATUS (Status);

@@ -953,7 +953,7 @@ UINT ACTION_UnregisterClassInfo( MSIPACKAGE *package )
 
         cls->action = INSTALLSTATE_ABSENT;
 
-        res = SHDeleteKeyW( hkey, cls->clsid );
+        res = RegDeleteTreeW( hkey, cls->clsid );
         if (res != ERROR_SUCCESS)
             WARN("Failed to delete class key %d\n", res);
 
@@ -975,7 +975,7 @@ UINT ACTION_UnregisterClassInfo( MSIPACKAGE *package )
             {
                 strcpyW( filetype, szFileType );
                 strcatW( filetype, cls->clsid );
-                res = SHDeleteKeyW( HKEY_CLASSES_ROOT, filetype );
+                res = RegDeleteTreeW( HKEY_CLASSES_ROOT, filetype );
                 msi_free( filetype );
 
                 if (res != ERROR_SUCCESS)
@@ -1148,7 +1148,7 @@ UINT ACTION_UnregisterProgIdInfo( MSIPACKAGE *package )
         }
         TRACE("Unregistering progid %s\n", debugstr_w(progid->ProgID));
 
-        res = SHDeleteKeyW( HKEY_CLASSES_ROOT, progid->ProgID );
+        res = RegDeleteTreeW( HKEY_CLASSES_ROOT, progid->ProgID );
         if (res != ERROR_SUCCESS)
             TRACE("Failed to delete progid key %d\n", res);
 
@@ -1392,7 +1392,7 @@ UINT ACTION_UnregisterExtensionInfo( MSIPACKAGE *package )
         {
             extension[0] = '.';
             strcpyW( extension + 1, ext->Extension );
-            res = SHDeleteKeyW( HKEY_CLASSES_ROOT, extension );
+            res = RegDeleteTreeW( HKEY_CLASSES_ROOT, extension );
             msi_free( extension );
             if (res != ERROR_SUCCESS)
                 WARN("Failed to delete extension key %d\n", res);
@@ -1414,7 +1414,7 @@ UINT ACTION_UnregisterExtensionInfo( MSIPACKAGE *package )
             {
                 strcpyW( progid_shell, progid );
                 strcatW( progid_shell, shellW );
-                res = SHDeleteKeyW( HKEY_CLASSES_ROOT, progid_shell );
+                res = RegDeleteTreeW( HKEY_CLASSES_ROOT, progid_shell );
                 msi_free( progid_shell );
                 if (res != ERROR_SUCCESS)
                     WARN("Failed to delete shell key %d\n", res);
@@ -1443,14 +1443,14 @@ UINT ACTION_RegisterMIMEInfo(MSIPACKAGE *package)
 
     LIST_FOR_EACH_ENTRY( mt, &package->mimes, MSIMIME, entry )
     {
-        LPWSTR extension, key;
+        LPWSTR extension = NULL, key;
 
         /* 
          * check if the MIME is to be installed. Either as requested by an
          * extension or Class
          */
         if ((!mt->Class || mt->Class->action != INSTALLSTATE_LOCAL) &&
-            mt->Extension->action != INSTALLSTATE_LOCAL)
+            (!mt->Extension || mt->Extension->action != INSTALLSTATE_LOCAL))
         {
             TRACE("MIME %s not scheduled to be installed\n", debugstr_w(mt->ContentType));
             continue;
@@ -1458,7 +1458,7 @@ UINT ACTION_RegisterMIMEInfo(MSIPACKAGE *package)
 
         TRACE("Registering MIME type %s\n", debugstr_w(mt->ContentType));
 
-        extension = msi_alloc( (strlenW( mt->Extension->Extension ) + 2) * sizeof(WCHAR) );
+        if (mt->Extension) extension = msi_alloc( (strlenW( mt->Extension->Extension ) + 2) * sizeof(WCHAR) );
         key = msi_alloc( (strlenW( mt->ContentType ) + strlenW( szMIMEDatabase ) + 1) * sizeof(WCHAR) );
 
         if (extension && key)
@@ -1501,7 +1501,7 @@ UINT ACTION_UnregisterMIMEInfo( MSIPACKAGE *package )
         LPWSTR mime_key;
 
         if ((!mime->Class || mime->Class->action != INSTALLSTATE_ABSENT) &&
-            mime->Extension->action != INSTALLSTATE_ABSENT)
+            (!mime->Extension || mime->Extension->action != INSTALLSTATE_ABSENT))
         {
             TRACE("MIME %s not scheduled to be removed\n", debugstr_w(mime->ContentType));
             continue;

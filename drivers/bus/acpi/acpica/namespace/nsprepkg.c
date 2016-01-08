@@ -8,7 +8,7 @@
  *
  * 1. Copyright Notice
  *
- * Some or all of this work - Copyright (c) 1999 - 2014, Intel Corp.
+ * Some or all of this work - Copyright (c) 1999 - 2015, Intel Corp.
  * All rights reserved.
  *
  * 2. License
@@ -243,8 +243,8 @@ AcpiNsCheckPackage (
         /* Validate all elements of the returned package */
 
         Status = AcpiNsCheckPackageElements (Info, Elements,
-                    Package->RetInfo.ObjectType1, Package->RetInfo.Count1,
-                    Package->RetInfo.ObjectType2, Package->RetInfo.Count2, 0);
+            Package->RetInfo.ObjectType1, Package->RetInfo.Count1,
+            Package->RetInfo.ObjectType2, Package->RetInfo.Count2, 0);
         break;
 
     case ACPI_PTYPE1_VAR:
@@ -255,7 +255,7 @@ AcpiNsCheckPackage (
         for (i = 0; i < Count; i++)
         {
             Status = AcpiNsCheckObjectType (Info, Elements,
-                        Package->RetInfo.ObjectType1, i);
+                Package->RetInfo.ObjectType1, i);
             if (ACPI_FAILURE (Status))
             {
                 return (Status);
@@ -287,7 +287,7 @@ AcpiNsCheckPackage (
                 /* These are the required package elements (0, 1, or 2) */
 
                 Status = AcpiNsCheckObjectType (Info, Elements,
-                            Package->RetInfo3.ObjectType[i], i);
+                    Package->RetInfo3.ObjectType[i], i);
                 if (ACPI_FAILURE (Status))
                 {
                     return (Status);
@@ -298,7 +298,7 @@ AcpiNsCheckPackage (
                 /* These are the optional package elements */
 
                 Status = AcpiNsCheckObjectType (Info, Elements,
-                            Package->RetInfo3.TailObjectType, i);
+                    Package->RetInfo3.TailObjectType, i);
                 if (ACPI_FAILURE (Status))
                 {
                     return (Status);
@@ -312,8 +312,8 @@ AcpiNsCheckPackage (
 
         /* First element is the (Integer) revision */
 
-        Status = AcpiNsCheckObjectType (Info, Elements,
-                    ACPI_RTYPE_INTEGER, 0);
+        Status = AcpiNsCheckObjectType (
+            Info, Elements, ACPI_RTYPE_INTEGER, 0);
         if (ACPI_FAILURE (Status))
         {
             return (Status);
@@ -331,8 +331,8 @@ AcpiNsCheckPackage (
 
         /* First element is the (Integer) count of subpackages to follow */
 
-        Status = AcpiNsCheckObjectType (Info, Elements,
-                    ACPI_RTYPE_INTEGER, 0);
+        Status = AcpiNsCheckObjectType (
+            Info, Elements, ACPI_RTYPE_INTEGER, 0);
         if (ACPI_FAILURE (Status))
         {
             return (Status);
@@ -375,7 +375,8 @@ AcpiNsCheckPackage (
         {
             /* Create the new outer package and populate it */
 
-            Status = AcpiNsWrapWithPackage (Info, ReturnObject, ReturnObjectPtr);
+            Status = AcpiNsWrapWithPackage (
+                Info, ReturnObject, ReturnObjectPtr);
             if (ACPI_FAILURE (Status))
             {
                 return (Status);
@@ -392,6 +393,53 @@ AcpiNsCheckPackage (
 
         Status = AcpiNsCheckPackageList (Info, Package, Elements, Count);
         break;
+
+    case ACPI_PTYPE2_VAR_VAR:
+        /*
+         * Returns a variable list of packages, each with a variable list
+         * of objects.
+         */
+        break;
+
+    case ACPI_PTYPE2_UUID_PAIR:
+
+        /* The package must contain pairs of (UUID + type) */
+
+        if (Count & 1)
+        {
+            ExpectedCount = Count + 1;
+            goto PackageTooSmall;
+        }
+
+        while (Count > 0)
+        {
+            Status = AcpiNsCheckObjectType(Info, Elements,
+                        Package->RetInfo.ObjectType1, 0);
+            if (ACPI_FAILURE(Status))
+            {
+                return (Status);
+            }
+
+            /* Validate length of the UUID buffer */
+
+            if ((*Elements)->Buffer.Length != 16)
+            {
+                ACPI_WARN_PREDEFINED ((AE_INFO, Info->FullPathname,
+                    Info->NodeFlags, "Invalid length for UUID Buffer"));
+                return (AE_AML_OPERAND_VALUE);
+            }
+
+            Status = AcpiNsCheckObjectType(Info, Elements + 1,
+                        Package->RetInfo.ObjectType2, 0);
+            if (ACPI_FAILURE(Status))
+            {
+                return (Status);
+            }
+
+            Elements += 2;
+            Count -= 2;
+         }
+         break;
 
     default:
 
@@ -520,6 +568,12 @@ AcpiNsCheckPackageList (
             {
                 return (Status);
             }
+            break;
+
+        case ACPI_PTYPE2_VAR_VAR:
+            /*
+             * Each subpackage has a fixed or variable number of elements
+             */
             break;
 
         case ACPI_PTYPE2_FIXED:

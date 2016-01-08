@@ -8,7 +8,6 @@
 
 #include "lsasrv.h"
 
-#include <ndk/mmfuncs.h>
 #include <ndk/sefuncs.h>
 #include <ndk/umfuncs.h>
 
@@ -1030,6 +1029,9 @@ LsapAddSamGroups(
     for (i = 0; i < TokenInfo1->Groups->GroupCount; i++)
         SidArray.Sids[i + 1].SidPointer = TokenInfo1->Groups->Groups[i].Sid;
 
+    BuiltinMembership.Element = NULL;
+    AccountMembership.Element = NULL;
+
     Status = SamIConnect(NULL,
                          &ServerHandle,
                          SAM_SERVER_CONNECT | SAM_SERVER_LOOKUP_DOMAIN,
@@ -1060,7 +1062,6 @@ LsapAddSamGroups(
         goto done;
     }
 
-    BuiltinMembership.Element = NULL;
     Status = SamrGetAliasMembership(BuiltinDomainHandle,
                                     &SidArray,
                                     &BuiltinMembership);
@@ -1070,7 +1071,6 @@ LsapAddSamGroups(
         goto done;
     }
 
-    AccountMembership.Element = NULL;
     Status = SamrGetAliasMembership(AccountDomainHandle,
                                     &SidArray,
                                     &AccountMembership);

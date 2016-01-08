@@ -8,7 +8,7 @@
  *
  * 1. Copyright Notice
  *
- * Some or all of this work - Copyright (c) 1999 - 2014, Intel Corp.
+ * Some or all of this work - Copyright (c) 1999 - 2015, Intel Corp.
  * All rights reserved.
  *
  * 2. License
@@ -265,6 +265,7 @@ AcpiEvDeleteGpeBlock (
         {
             GpeBlock->Next->Previous = GpeBlock->Previous;
         }
+
         AcpiOsReleaseLock (AcpiGbl_GpeLock, Flags);
     }
 
@@ -313,8 +314,8 @@ AcpiEvCreateGpeInfoBlocks (
     /* Allocate the GPE register information block */
 
     GpeRegisterInfo = ACPI_ALLOCATE_ZEROED (
-                        (ACPI_SIZE) GpeBlock->RegisterCount *
-                        sizeof (ACPI_GPE_REGISTER_INFO));
+        (ACPI_SIZE) GpeBlock->RegisterCount *
+        sizeof (ACPI_GPE_REGISTER_INFO));
     if (!GpeRegisterInfo)
     {
         ACPI_ERROR ((AE_INFO,
@@ -327,7 +328,7 @@ AcpiEvCreateGpeInfoBlocks (
      * per register. Initialization to zeros is sufficient.
      */
     GpeEventInfo = ACPI_ALLOCATE_ZEROED ((ACPI_SIZE) GpeBlock->GpeCount *
-                    sizeof (ACPI_GPE_EVENT_INFO));
+        sizeof (ACPI_GPE_EVENT_INFO));
     if (!GpeEventInfo)
     {
         ACPI_ERROR ((AE_INFO,
@@ -339,7 +340,7 @@ AcpiEvCreateGpeInfoBlocks (
     /* Save the new Info arrays in the GPE block */
 
     GpeBlock->RegisterInfo = GpeRegisterInfo;
-    GpeBlock->EventInfo    = GpeEventInfo;
+    GpeBlock->EventInfo = GpeEventInfo;
 
     /*
      * Initialize the GPE Register and Event structures. A goal of these
@@ -348,23 +349,23 @@ AcpiEvCreateGpeInfoBlocks (
      * first half, and the enable registers occupy the second half.
      */
     ThisRegister = GpeRegisterInfo;
-    ThisEvent    = GpeEventInfo;
+    ThisEvent = GpeEventInfo;
 
     for (i = 0; i < GpeBlock->RegisterCount; i++)
     {
         /* Init the RegisterInfo for this GPE register (8 GPEs) */
 
-        ThisRegister->BaseGpeNumber = (UINT8) (GpeBlock->BlockBaseNumber +
-                                             (i * ACPI_GPE_REGISTER_WIDTH));
+        ThisRegister->BaseGpeNumber = (UINT16)
+            (GpeBlock->BlockBaseNumber + (i * ACPI_GPE_REGISTER_WIDTH));
 
         ThisRegister->StatusAddress.Address =
-            GpeBlock->BlockAddress.Address + i;
+            GpeBlock->Address + i;
 
         ThisRegister->EnableAddress.Address =
-            GpeBlock->BlockAddress.Address + i + GpeBlock->RegisterCount;
+            GpeBlock->Address + i + GpeBlock->RegisterCount;
 
-        ThisRegister->StatusAddress.SpaceId   = GpeBlock->BlockAddress.SpaceId;
-        ThisRegister->EnableAddress.SpaceId   = GpeBlock->BlockAddress.SpaceId;
+        ThisRegister->StatusAddress.SpaceId   = GpeBlock->SpaceId;
+        ThisRegister->EnableAddress.SpaceId   = GpeBlock->SpaceId;
         ThisRegister->StatusAddress.BitWidth  = ACPI_GPE_REGISTER_WIDTH;
         ThisRegister->EnableAddress.BitWidth  = ACPI_GPE_REGISTER_WIDTH;
         ThisRegister->StatusAddress.BitOffset = 0;
@@ -437,9 +438,10 @@ ErrorExit:
 ACPI_STATUS
 AcpiEvCreateGpeBlock (
     ACPI_NAMESPACE_NODE     *GpeDevice,
-    ACPI_GENERIC_ADDRESS    *GpeBlockAddress,
+    UINT64                  Address,
+    UINT8                   SpaceId,
     UINT32                  RegisterCount,
-    UINT8                   GpeBlockBaseNumber,
+    UINT16                  GpeBlockBaseNumber,
     UINT32                  InterruptNumber,
     ACPI_GPE_BLOCK_INFO     **ReturnGpeBlock)
 {
@@ -466,14 +468,13 @@ AcpiEvCreateGpeBlock (
 
     /* Initialize the new GPE block */
 
+    GpeBlock->Address = Address;
+    GpeBlock->SpaceId = SpaceId;
     GpeBlock->Node = GpeDevice;
     GpeBlock->GpeCount = (UINT16) (RegisterCount * ACPI_GPE_REGISTER_WIDTH);
     GpeBlock->Initialized = FALSE;
     GpeBlock->RegisterCount = RegisterCount;
     GpeBlock->BlockBaseNumber = GpeBlockBaseNumber;
-
-    ACPI_MEMCPY (&GpeBlock->BlockAddress, GpeBlockAddress,
-        sizeof (ACPI_GENERIC_ADDRESS));
 
     /*
      * Create the RegisterInfo and EventInfo sub-structures
@@ -506,8 +507,8 @@ AcpiEvCreateGpeBlock (
     WalkInfo.ExecuteByOwnerId = FALSE;
 
     Status = AcpiNsWalkNamespace (ACPI_TYPE_METHOD, GpeDevice,
-                ACPI_UINT32_MAX, ACPI_NS_WALK_NO_UNLOCK,
-                AcpiEvMatchGpeMethod, NULL, &WalkInfo, NULL);
+        ACPI_UINT32_MAX, ACPI_NS_WALK_NO_UNLOCK,
+        AcpiEvMatchGpeMethod, NULL, &WalkInfo, NULL);
 
     /* Return the new block */
 
@@ -517,11 +518,11 @@ AcpiEvCreateGpeBlock (
     }
 
     ACPI_DEBUG_PRINT_RAW ((ACPI_DB_INIT,
-        "    Initialized GPE %02X to %02X [%4.4s] %u regs on interrupt 0x%X\n",
+        "    Initialized GPE %02X to %02X [%4.4s] %u regs on interrupt 0x%X%s\n",
         (UINT32) GpeBlock->BlockBaseNumber,
         (UINT32) (GpeBlock->BlockBaseNumber + (GpeBlock->GpeCount - 1)),
-        GpeDevice->Name.Ascii, GpeBlock->RegisterCount,
-        InterruptNumber));
+        GpeDevice->Name.Ascii, GpeBlock->RegisterCount, InterruptNumber,
+        InterruptNumber == AcpiGbl_FADT.SciInterrupt ? " (SCI)" : ""));
 
     /* Update global count of currently available GPEs */
 
@@ -590,8 +591,9 @@ AcpiEvInitializeGpeBlock (
              * Ignore GPEs that have no corresponding _Lxx/_Exx method
              * and GPEs that are used to wake the system
              */
-            if (((GpeEventInfo->Flags & ACPI_GPE_DISPATCH_MASK) == ACPI_GPE_DISPATCH_NONE) ||
-                ((GpeEventInfo->Flags & ACPI_GPE_DISPATCH_MASK) == ACPI_GPE_DISPATCH_HANDLER) ||
+            if ((ACPI_GPE_DISPATCH_TYPE (GpeEventInfo->Flags) == ACPI_GPE_DISPATCH_NONE) ||
+                (ACPI_GPE_DISPATCH_TYPE (GpeEventInfo->Flags) == ACPI_GPE_DISPATCH_HANDLER) ||
+                (ACPI_GPE_DISPATCH_TYPE (GpeEventInfo->Flags) == ACPI_GPE_DISPATCH_RAW_HANDLER) ||
                 (GpeEventInfo->Flags & ACPI_GPE_CAN_WAKE))
             {
                 continue;

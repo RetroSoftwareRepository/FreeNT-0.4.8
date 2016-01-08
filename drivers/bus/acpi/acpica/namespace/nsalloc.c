@@ -8,7 +8,7 @@
  *
  * 1. Copyright Notice
  *
- * Some or all of this work - Copyright (c) 1999 - 2014, Intel Corp.
+ * Some or all of this work - Copyright (c) 1999 - 2015, Intel Corp.
  * All rights reserved.
  *
  * 2. License
@@ -113,9 +113,6 @@
  *
  *****************************************************************************/
 
-
-#define __NSALLOC_C__
-
 #include "acpi.h"
 #include "accommon.h"
 #include "acnamesp.h"
@@ -160,7 +157,7 @@ AcpiNsCreateNode (
 
 #ifdef ACPI_DBG_TRACK_ALLOCATIONS
         Temp = AcpiGbl_NsNodeList->TotalAllocated -
-                AcpiGbl_NsNodeList->TotalFreed;
+            AcpiGbl_NsNodeList->TotalFreed;
         if (Temp > AcpiGbl_NsNodeList->MaxOccupied)
         {
             AcpiGbl_NsNodeList->MaxOccupied = Temp;
@@ -352,7 +349,8 @@ AcpiNsInstallNode (
              * modified the namespace. This is used for cleanup when the
              * method exits.
              */
-            WalkState->MethodDesc->Method.InfoFlags |= ACPI_METHOD_MODIFIED_NAMESPACE;
+            WalkState->MethodDesc->Method.InfoFlags |=
+                ACPI_METHOD_MODIFIED_NAMESPACE;
         }
     }
 

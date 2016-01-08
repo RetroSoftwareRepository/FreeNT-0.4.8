@@ -27,7 +27,7 @@ static inline struct d3d8_surface *impl_from_IDirect3DSurface8(IDirect3DSurface8
 
 static HRESULT WINAPI d3d8_surface_QueryInterface(IDirect3DSurface8 *iface, REFIID riid, void **out)
 {
-    TRACE("iface %p, riid %s, object %p.\n", iface, debugstr_guid(riid), out);
+    TRACE("iface %p, riid %s, out %p.\n", iface, debugstr_guid(riid), out);
 
     if (IsEqualGUID(riid, &IID_IDirect3DSurface8)
             || IsEqualGUID(riid, &IID_IDirect3DResource8)
@@ -47,69 +47,64 @@ static HRESULT WINAPI d3d8_surface_QueryInterface(IDirect3DSurface8 *iface, REFI
 static ULONG WINAPI d3d8_surface_AddRef(IDirect3DSurface8 *iface)
 {
     struct d3d8_surface *surface = impl_from_IDirect3DSurface8(iface);
+    ULONG refcount;
 
     TRACE("iface %p.\n", iface);
 
-    if (surface->forwardReference)
+    if (surface->texture)
     {
-        /* Forward refcounting */
-        TRACE("Forwarding to %p.\n", surface->forwardReference);
-        return IUnknown_AddRef(surface->forwardReference);
+        TRACE("Forwarding to %p.\n", surface->texture);
+        return IDirect3DBaseTexture8_AddRef(&surface->texture->IDirect3DBaseTexture8_iface);
     }
-    else
+
+    refcount = InterlockedIncrement(&surface->resource.refcount);
+    TRACE("%p increasing refcount to %u.\n", iface, refcount);
+
+    if (refcount == 1)
     {
-        /* No container, handle our own refcounting */
-        ULONG ref = InterlockedIncrement(&surface->resource.refcount);
-
-        TRACE("%p increasing refcount to %u.\n", iface, ref);
-
-        if (ref == 1)
-        {
-            if (surface->parent_device)
-                IDirect3DDevice8_AddRef(surface->parent_device);
-            wined3d_mutex_lock();
-            wined3d_surface_incref(surface->wined3d_surface);
-            wined3d_mutex_unlock();
-        }
-
-        return ref;
+        if (surface->parent_device)
+            IDirect3DDevice8_AddRef(surface->parent_device);
+        wined3d_mutex_lock();
+        if (surface->wined3d_rtv)
+            wined3d_rendertarget_view_incref(surface->wined3d_rtv);
+        wined3d_texture_incref(surface->wined3d_texture);
+        wined3d_mutex_unlock();
     }
+
+    return refcount;
 }
 
 static ULONG WINAPI d3d8_surface_Release(IDirect3DSurface8 *iface)
 {
     struct d3d8_surface *surface = impl_from_IDirect3DSurface8(iface);
+    ULONG refcount;
 
     TRACE("iface %p.\n", iface);
 
-    if (surface->forwardReference)
+    if (surface->texture)
     {
-        /* Forward refcounting */
-        TRACE("Forwarding to %p.\n", surface->forwardReference);
-        return IUnknown_Release(surface->forwardReference);
+        TRACE("Forwarding to %p.\n", surface->texture);
+        return IDirect3DBaseTexture8_Release(&surface->texture->IDirect3DBaseTexture8_iface);
     }
-    else
+
+    refcount = InterlockedDecrement(&surface->resource.refcount);
+    TRACE("%p decreasing refcount to %u.\n", iface, refcount);
+
+    if (!refcount)
     {
-        /* No container, handle our own refcounting */
-        ULONG ref = InterlockedDecrement(&surface->resource.refcount);
+        IDirect3DDevice8 *parent_device = surface->parent_device;
 
-        TRACE("%p decreasing refcount to %u.\n", iface, ref);
+        wined3d_mutex_lock();
+        if (surface->wined3d_rtv)
+            wined3d_rendertarget_view_decref(surface->wined3d_rtv);
+        wined3d_texture_decref(surface->wined3d_texture);
+        wined3d_mutex_unlock();
 
-        if (!ref)
-        {
-            IDirect3DDevice8 *parent_device = surface->parent_device;
-
-            /* Implicit surfaces are destroyed with the device, not if refcount reaches 0. */
-            wined3d_mutex_lock();
-            wined3d_surface_decref(surface->wined3d_surface);
-            wined3d_mutex_unlock();
-
-            if (parent_device)
-                IDirect3DDevice8_Release(parent_device);
-        }
-
-        return ref;
+        if (parent_device)
+            IDirect3DDevice8_Release(parent_device);
     }
+
+    return refcount;
 }
 
 static HRESULT WINAPI d3d8_surface_GetDevice(IDirect3DSurface8 *iface, IDirect3DDevice8 **device)
@@ -118,22 +113,8 @@ static HRESULT WINAPI d3d8_surface_GetDevice(IDirect3DSurface8 *iface, IDirect3D
 
     TRACE("iface %p, device %p.\n", iface, device);
 
-    if (surface->forwardReference)
-    {
-        IDirect3DResource8 *resource;
-        HRESULT hr;
-
-        hr = IUnknown_QueryInterface(surface->forwardReference, &IID_IDirect3DResource8, (void **)&resource);
-        if (SUCCEEDED(hr))
-        {
-            hr = IDirect3DResource8_GetDevice(resource, device);
-            IDirect3DResource8_Release(resource);
-
-            TRACE("Returning device %p.\n", *device);
-        }
-
-        return hr;
-    }
+    if (surface->texture)
+        return IDirect3DBaseTexture8_GetDevice(&surface->texture->IDirect3DBaseTexture8_iface, device);
 
     *device = surface->parent_device;
     IDirect3DDevice8_AddRef(*device);
@@ -192,13 +173,13 @@ static HRESULT WINAPI d3d8_surface_GetDesc(IDirect3DSurface8 *iface, D3DSURFACE_
 {
     struct d3d8_surface *surface = impl_from_IDirect3DSurface8(iface);
     struct wined3d_resource_desc wined3d_desc;
-    struct wined3d_resource *wined3d_resource;
+    struct wined3d_resource *sub_resource;
 
     TRACE("iface %p, desc %p.\n", iface, desc);
 
     wined3d_mutex_lock();
-    wined3d_resource = wined3d_surface_get_resource(surface->wined3d_surface);
-    wined3d_resource_get_desc(wined3d_resource, &wined3d_desc);
+    sub_resource = wined3d_texture_get_sub_resource(surface->wined3d_texture, surface->sub_resource_idx);
+    wined3d_resource_get_desc(sub_resource, &wined3d_desc);
     wined3d_mutex_unlock();
 
     desc->Format = d3dformat_from_wined3dformat(wined3d_desc.format);
@@ -217,6 +198,7 @@ static HRESULT WINAPI d3d8_surface_LockRect(IDirect3DSurface8 *iface,
         D3DLOCKED_RECT *locked_rect, const RECT *rect, DWORD flags)
 {
     struct d3d8_surface *surface = impl_from_IDirect3DSurface8(iface);
+    struct wined3d_box box;
     struct wined3d_map_desc map_desc;
     HRESULT hr;
 
@@ -241,9 +223,16 @@ static HRESULT WINAPI d3d8_surface_LockRect(IDirect3DSurface8 *iface,
 
             return D3DERR_INVALIDCALL;
         }
+        box.left = rect->left;
+        box.top = rect->top;
+        box.right = rect->right;
+        box.bottom = rect->bottom;
+        box.front = 0;
+        box.back = 1;
     }
 
-    hr = wined3d_surface_map(surface->wined3d_surface, &map_desc, rect, flags);
+    hr = wined3d_resource_sub_resource_map(wined3d_texture_get_resource(surface->wined3d_texture), surface->sub_resource_idx,
+            &map_desc, rect ? &box : NULL, flags);
     wined3d_mutex_unlock();
 
     if (SUCCEEDED(hr))
@@ -268,7 +257,7 @@ static HRESULT WINAPI d3d8_surface_UnlockRect(IDirect3DSurface8 *iface)
     TRACE("iface %p.\n", iface);
 
     wined3d_mutex_lock();
-    hr = wined3d_surface_unmap(surface->wined3d_surface);
+    hr = wined3d_resource_sub_resource_unmap(wined3d_texture_get_resource(surface->wined3d_texture), surface->sub_resource_idx);
     wined3d_mutex_unlock();
 
     switch(hr)
@@ -308,17 +297,69 @@ static const struct wined3d_parent_ops d3d8_surface_wined3d_parent_ops =
     surface_wined3d_object_destroyed,
 };
 
-void surface_init(struct d3d8_surface *surface, struct wined3d_surface *wined3d_surface,
-        struct d3d8_device *device, const struct wined3d_parent_ops **parent_ops)
+void surface_init(struct d3d8_surface *surface, struct wined3d_texture *wined3d_texture, unsigned int sub_resource_idx,
+        const struct wined3d_parent_ops **parent_ops)
 {
+    IDirect3DBaseTexture8 *texture;
+
     surface->IDirect3DSurface8_iface.lpVtbl = &d3d8_surface_vtbl;
     d3d8_resource_init(&surface->resource);
-    wined3d_surface_incref(wined3d_surface);
-    surface->wined3d_surface = wined3d_surface;
-    surface->parent_device = &device->IDirect3DDevice8_iface;
-    IDirect3DDevice8_AddRef(surface->parent_device);
+    surface->resource.refcount = 0;
+    list_init(&surface->rtv_entry);
+    surface->container = wined3d_texture_get_parent(wined3d_texture);
+    surface->wined3d_texture = wined3d_texture;
+    surface->sub_resource_idx = sub_resource_idx;
+
+    if (surface->container && SUCCEEDED(IUnknown_QueryInterface(surface->container,
+            &IID_IDirect3DBaseTexture8, (void **)&texture)))
+    {
+        surface->texture = unsafe_impl_from_IDirect3DBaseTexture8(texture);
+        IDirect3DBaseTexture8_Release(texture);
+    }
 
     *parent_ops = &d3d8_surface_wined3d_parent_ops;
+}
+
+static void STDMETHODCALLTYPE view_wined3d_object_destroyed(void *parent)
+{
+    struct d3d8_surface *surface = parent;
+
+    /* If the surface reference count drops to zero, we release our reference
+     * to the view, but don't clear the pointer yet, in case e.g. a
+     * GetRenderTarget() call brings the surface back before the view is
+     * actually destroyed. When the view is destroyed, we need to clear the
+     * pointer, or a subsequent surface AddRef() would reference it again.
+     *
+     * This is safe because as long as the view still has a reference to the
+     * texture, the surface is also still alive, and we're called before the
+     * view releases that reference. */
+    surface->wined3d_rtv = NULL;
+    list_remove(&surface->rtv_entry);
+}
+
+static const struct wined3d_parent_ops d3d8_view_wined3d_parent_ops =
+{
+    view_wined3d_object_destroyed,
+};
+
+struct wined3d_rendertarget_view *d3d8_surface_get_rendertarget_view(struct d3d8_surface *surface)
+{
+    HRESULT hr;
+
+    if (surface->wined3d_rtv)
+        return surface->wined3d_rtv;
+
+    if (FAILED(hr = wined3d_rendertarget_view_create_from_sub_resource(surface->wined3d_texture,
+            surface->sub_resource_idx, surface, &d3d8_view_wined3d_parent_ops, &surface->wined3d_rtv)))
+    {
+        ERR("Failed to create rendertarget view, hr %#x.\n", hr);
+        return NULL;
+    }
+
+    if (surface->texture)
+        list_add_head(&surface->texture->rtv_list, &surface->rtv_entry);
+
+    return surface->wined3d_rtv;
 }
 
 struct d3d8_surface *unsafe_impl_from_IDirect3DSurface8(IDirect3DSurface8 *iface)

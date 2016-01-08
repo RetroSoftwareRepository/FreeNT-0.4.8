@@ -23,9 +23,7 @@
 
 #include "ddraw_private.h"
 
-static struct wined3d_display_mode original_mode;
 static const struct ddraw *exclusive_ddraw;
-static BOOL restore_mode;
 
 /* Device identifier. Don't relay it to WineD3D */
 static const DDDEVICEIDENTIFIER2 deviceidentifier =
@@ -432,6 +430,9 @@ static void ddraw_destroy(struct ddraw *This)
     wined3d_device_decref(This->wined3d_device);
     wined3d_decref(This->wined3d);
 
+    if (This->d3ddevice)
+        This->d3ddevice->ddraw = NULL;
+
     /* Now free the object */
     HeapFree(GetProcessHeap(), 0, This);
 }
@@ -679,11 +680,8 @@ static HRESULT WINAPI ddraw7_RestoreDisplayMode(IDirectDraw7 *iface)
         return DDERR_NOEXCLUSIVEMODE;
     }
 
-    if (SUCCEEDED(hr = wined3d_set_adapter_display_mode(ddraw->wined3d, WINED3DADAPTER_DEFAULT, &original_mode)))
-    {
+    if (SUCCEEDED(hr = wined3d_set_adapter_display_mode(ddraw->wined3d, WINED3DADAPTER_DEFAULT, NULL)))
         ddraw->flags &= ~DDRAW_RESTORE_MODE;
-        restore_mode = FALSE;
-    }
 
     wined3d_mutex_unlock();
 
@@ -762,7 +760,7 @@ static HRESULT WINAPI ddraw1_RestoreDisplayMode(IDirectDraw *iface)
 static HRESULT ddraw_set_cooperative_level(struct ddraw *ddraw, HWND window,
         DWORD cooplevel, BOOL restore_mode_on_normal)
 {
-    struct wined3d_surface *rt = NULL, *ds = NULL;
+    struct wined3d_rendertarget_view *rtv = NULL, *dsv = NULL;
     struct wined3d_stateblock *stateblock;
     BOOL restore_state = FALSE;
     HRESULT hr;
@@ -913,14 +911,15 @@ static HRESULT ddraw_set_cooperative_level(struct ddraw *ddraw, HWND window,
             }
 
             wined3d_stateblock_capture(stateblock);
-            rt = wined3d_device_get_render_target(ddraw->wined3d_device, 0);
-            if (rt == ddraw->wined3d_frontbuffer)
-                rt = NULL;
-            else if (rt)
-                wined3d_surface_incref(rt);
+            rtv = wined3d_device_get_rendertarget_view(ddraw->wined3d_device, 0);
+            /* Rendering to ddraw->wined3d_frontbuffer. */
+            if (rtv && !wined3d_rendertarget_view_get_sub_resource_parent(rtv))
+                rtv = NULL;
+            else if (rtv)
+                wined3d_rendertarget_view_incref(rtv);
 
-            if ((ds = wined3d_device_get_depth_stencil(ddraw->wined3d_device)))
-                wined3d_surface_incref(ds);
+            if ((dsv = wined3d_device_get_depth_stencil_view(ddraw->wined3d_device)))
+                wined3d_rendertarget_view_incref(dsv);
         }
 
         ddraw_destroy_swapchain(ddraw);
@@ -931,16 +930,16 @@ static HRESULT ddraw_set_cooperative_level(struct ddraw *ddraw, HWND window,
 
     if (restore_state)
     {
-        if (ds)
+        if (dsv)
         {
-            wined3d_device_set_depth_stencil(ddraw->wined3d_device, ds);
-            wined3d_surface_decref(ds);
+            wined3d_device_set_depth_stencil_view(ddraw->wined3d_device, dsv);
+            wined3d_rendertarget_view_decref(dsv);
         }
 
-        if (rt)
+        if (rtv)
         {
-            wined3d_device_set_render_target(ddraw->wined3d_device, 0, rt, FALSE);
-            wined3d_surface_decref(rt);
+            wined3d_device_set_rendertarget_view(ddraw->wined3d_device, 0, rtv, FALSE);
+            wined3d_rendertarget_view_decref(rtv);
         }
 
         wined3d_stateblock_apply(stateblock);
@@ -1091,10 +1090,6 @@ static HRESULT WINAPI ddraw7_SetDisplayMode(IDirectDraw7 *iface, DWORD width, DW
         return DD_OK;
     }
 
-    if (!restore_mode && FAILED(hr = wined3d_get_adapter_display_mode(ddraw->wined3d,
-            WINED3DADAPTER_DEFAULT, &original_mode, NULL)))
-        ERR("Failed to get current display mode, hr %#x.\n", hr);
-
     switch (bpp)
     {
         case 8:  format = WINED3DFMT_P8_UINT;        break;
@@ -1115,10 +1110,7 @@ static HRESULT WINAPI ddraw7_SetDisplayMode(IDirectDraw7 *iface, DWORD width, DW
      * can't be changed if a surface is locked or some drawing is in progress. */
     /* TODO: Lose the primary surface. */
     if (SUCCEEDED(hr = wined3d_set_adapter_display_mode(ddraw->wined3d, WINED3DADAPTER_DEFAULT, &mode)))
-    {
         ddraw->flags |= DDRAW_RESTORE_MODE;
-        restore_mode = TRUE;
-    }
 
     wined3d_mutex_unlock();
 
@@ -1423,6 +1415,28 @@ HRESULT ddraw_get_d3dcaps(const struct ddraw *ddraw, D3DDEVICEDESC7 *caps)
     return DD_OK;
 }
 
+HRESULT CALLBACK enum_zbuffer(DDPIXELFORMAT *format, void *ctx)
+{
+    DDCAPS *caps = ctx;
+
+    switch (format->u1.dwZBufferBitDepth)
+    {
+        case 8:
+            caps->dwZBufferBitDepths |= DDBD_8;
+            break;
+        case 16:
+            caps->dwZBufferBitDepths |= DDBD_16;
+            break;
+        case 24:
+            caps->dwZBufferBitDepths |= DDBD_24;
+            break;
+        case 32:
+            caps->dwZBufferBitDepths |= DDBD_32;
+            break;
+    }
+    return D3DENUMRET_OK;
+}
+
 /*****************************************************************************
  * IDirectDraw7::GetCaps
  *
@@ -1502,6 +1516,8 @@ static HRESULT WINAPI ddraw7_GetCaps(IDirectDraw7 *iface, DDCAPS *DriverCaps, DD
 
     caps.dwCaps |= DDCAPS_ALIGNSTRIDE;
     caps.dwAlignStrideAlign = DDRAW_STRIDE_ALIGNMENT;
+
+    IDirect3D7_EnumZBufferFormats(&ddraw->IDirect3D7_iface, &IID_IDirect3DHALDevice, enum_zbuffer, &caps);
 
     if(DriverCaps)
     {
@@ -1885,7 +1901,7 @@ static HRESULT WINAPI ddraw1_GetVerticalBlankStatus(IDirectDraw *iface, BOOL *st
  *
  * Returns
  *  DD_OK on success
- *  DDERR_INVALIDPARAMS of free and total are NULL
+ *  DDERR_INVALIDPARAMS if free and total are NULL
  *
  *****************************************************************************/
 static HRESULT WINAPI ddraw7_GetAvailableVidMem(IDirectDraw7 *iface, DDSCAPS2 *Caps, DWORD *total,
@@ -1921,7 +1937,7 @@ static HRESULT WINAPI ddraw7_GetAvailableVidMem(IDirectDraw7 *iface, DDSCAPS2 *C
         struct wined3d_adapter_identifier desc = {0};
 
         hr = wined3d_get_adapter_identifier(ddraw->wined3d, WINED3DADAPTER_DEFAULT, 0, &desc);
-        *total = desc.video_memory;
+        *total = min(UINT_MAX, desc.video_memory);
     }
 
     wined3d_mutex_unlock();
@@ -2180,23 +2196,13 @@ static HRESULT WINAPI ddraw1_GetScanLine(IDirectDraw *iface, DWORD *line)
     return ddraw7_GetScanLine(&ddraw->IDirectDraw7_iface, line);
 }
 
-/*****************************************************************************
- * IDirectDraw7::TestCooperativeLevel
- *
- * Informs the application about the state of the video adapter, depending
- * on the cooperative level
- *
- * Returns:
- *  DD_OK if the device is in a sane state
- *  DDERR_NOEXCLUSIVEMODE or DDERR_EXCLUSIVEMODEALREADYSET
- *  if the state is not correct(See below)
- *
- *****************************************************************************/
 static HRESULT WINAPI ddraw7_TestCooperativeLevel(IDirectDraw7 *iface)
 {
+    struct ddraw *ddraw = impl_from_IDirectDraw7(iface);
+
     TRACE("iface %p.\n", iface);
 
-    return DD_OK;
+    return ddraw->device_state == DDRAW_DEVICE_STATE_OK ? DD_OK : DDERR_NOEXCLUSIVEMODE;
 }
 
 static HRESULT WINAPI ddraw4_TestCooperativeLevel(IDirectDraw4 *iface)
@@ -2680,27 +2686,20 @@ static HRESULT WINAPI ddraw4_GetSurfaceFromDC(IDirectDraw4 *iface, HDC dc,
     return hr;
 }
 
-/*****************************************************************************
- * IDirectDraw7::RestoreAllSurfaces
- *
- * Calls the restore method of all surfaces
- *
- * Params:
- *
- * Returns:
- *  Always returns DD_OK because it's a stub
- *
- *****************************************************************************/
+static HRESULT CALLBACK restore_callback(IDirectDrawSurface7 *surface, DDSURFACEDESC2 *desc, void *context)
+{
+    IDirectDrawSurface_Restore(surface);
+    IDirectDrawSurface_Release(surface);
+
+    return DDENUMRET_OK;
+}
+
 static HRESULT WINAPI ddraw7_RestoreAllSurfaces(IDirectDraw7 *iface)
 {
-    FIXME("iface %p stub!\n", iface);
+    TRACE("iface %p.\n", iface);
 
-    /* This isn't hard to implement: Enumerate all WineD3D surfaces,
-     * get their parent and call their restore method. Do not implement
-     * it in WineD3D, as restoring a surface means re-creating the
-     * WineD3DDSurface
-     */
-    return DD_OK;
+    return IDirectDraw7_EnumSurfaces(iface, DDENUMSURFACES_ALL | DDENUMSURFACES_DOESEXIST,
+            NULL, NULL, restore_callback);
 }
 
 static HRESULT WINAPI ddraw4_RestoreAllSurfaces(IDirectDraw4 *iface)
@@ -3142,46 +3141,97 @@ static HRESULT WINAPI ddraw7_EnumSurfaces(IDirectDraw7 *iface, DWORD Flags,
 {
     struct ddraw *ddraw = impl_from_IDirectDraw7(iface);
     struct ddraw_surface *surf;
-    BOOL all, nomatch;
-    DDSURFACEDESC2 desc;
-    struct list *entry, *entry2;
+    DWORD match_flags = Flags & (DDENUMSURFACES_ALL | DDENUMSURFACES_NOMATCH | DDENUMSURFACES_MATCH);
 
     TRACE("iface %p, flags %#x, surface_desc %p, context %p, callback %p.\n",
             iface, Flags, DDSD, Context, Callback);
 
-    all = Flags & DDENUMSURFACES_ALL;
-    nomatch = Flags & DDENUMSURFACES_NOMATCH;
-
     if (!Callback)
         return DDERR_INVALIDPARAMS;
 
-    wined3d_mutex_lock();
-
-    /* Use the _SAFE enumeration, the app may destroy enumerated surfaces */
-    LIST_FOR_EACH_SAFE(entry, entry2, &ddraw->surface_list)
+    if (Flags & DDENUMSURFACES_CANBECREATED)
     {
-        surf = LIST_ENTRY(entry, struct ddraw_surface, surface_list_entry);
+         IDirectDrawSurface7 *surface;
+         DDSURFACEDESC2 testdesc;
+         HRESULT hr;
 
-        if (!surf->iface_count)
+        if (match_flags != DDENUMSURFACES_MATCH)
+            return DDERR_INVALIDPARAMS;
+
+        if (!DDSD)
+            return DDERR_INVALIDPARAMS;
+
+        memcpy(&testdesc, DDSD, sizeof(testdesc));
+        if (!(testdesc.dwFlags & DDSD_WIDTH))
         {
-            WARN("Not enumerating surface %p because it doesn't have any references.\n", surf);
-            continue;
+            testdesc.dwFlags |= DDSD_WIDTH;
+            testdesc.dwWidth = 512;
+        }
+        if (!(testdesc.dwFlags & DDSD_HEIGHT))
+        {
+            testdesc.dwFlags |= DDSD_HEIGHT;
+            testdesc.dwHeight = 512;
         }
 
-        if (all || (nomatch != ddraw_match_surface_desc(DDSD, &surf->surface_desc)))
+        hr = IDirectDraw7_CreateSurface(iface, &testdesc, &surface, NULL);
+        if (SUCCEEDED(hr))
         {
-            TRACE("Enumerating surface %p.\n", surf);
-            desc = surf->surface_desc;
-            IDirectDrawSurface7_AddRef(&surf->IDirectDrawSurface7_iface);
-            if (Callback(&surf->IDirectDrawSurface7_iface, &desc, Context) != DDENUMRET_OK)
+            surf = unsafe_impl_from_IDirectDrawSurface7(surface);
+            Callback(NULL, &surf->surface_desc, Context);
+            IDirectDrawSurface7_Release(surface);
+        }
+        else
+            ERR("Failed to create surface, hr %#x.\n", hr);
+    }
+    else if (Flags & DDENUMSURFACES_DOESEXIST)
+    {
+        BOOL all, nomatch;
+        DDSURFACEDESC2 desc;
+        struct list *entry, *entry2;
+
+        /* a combination of match flags is not allowed */
+        if (match_flags != 0 &&
+                match_flags != DDENUMSURFACES_ALL &&
+                match_flags != DDENUMSURFACES_MATCH &&
+                match_flags != DDENUMSURFACES_NOMATCH)
+            return DDERR_INVALIDPARAMS;
+
+        all = (Flags & DDENUMSURFACES_ALL) != 0;
+        nomatch = (Flags & DDENUMSURFACES_NOMATCH) != 0;
+
+        if (!all && !DDSD)
+            return DDERR_INVALIDPARAMS;
+
+        wined3d_mutex_lock();
+
+        /* Use the _SAFE enumeration, the app may destroy enumerated surfaces */
+        LIST_FOR_EACH_SAFE(entry, entry2, &ddraw->surface_list)
+        {
+            surf = LIST_ENTRY(entry, struct ddraw_surface, surface_list_entry);
+
+            if (!surf->iface_count)
             {
-                wined3d_mutex_unlock();
-                return DD_OK;
+                WARN("Not enumerating surface %p because it doesn't have any references.\n", surf);
+                continue;
+            }
+
+            if (all || (nomatch != ddraw_match_surface_desc(DDSD, &surf->surface_desc)))
+            {
+                TRACE("Enumerating surface %p.\n", surf);
+                desc = surf->surface_desc;
+                IDirectDrawSurface7_AddRef(&surf->IDirectDrawSurface7_iface);
+                if (Callback(&surf->IDirectDrawSurface7_iface, &desc, Context) != DDENUMRET_OK)
+                {
+                    wined3d_mutex_unlock();
+                    return DD_OK;
+                }
             }
         }
-    }
 
-    wined3d_mutex_unlock();
+        wined3d_mutex_unlock();
+    }
+    else
+        return DDERR_INVALIDPARAMS;
 
     return DD_OK;
 }
@@ -3695,6 +3745,8 @@ static HRESULT WINAPI d3d3_EnumDevices(IDirect3D3 *iface, LPD3DENUMDEVICESCALLBA
                 | D3DPTEXTURECAPS_NONPOW2CONDITIONAL | D3DPTEXTURECAPS_PERSPECTIVE);
         /* RGB, RAMP and MMX devices have a HAL dcmColorModel of 0 */
         hal_desc.dcmColorModel = 0;
+        /* RGB, RAMP and MMX devices cannot report HAL hardware flags */
+        hal_desc.dwFlags = 0;
 
         hr = callback((GUID *)&IID_IDirect3DRGBDevice, reference_description,
                 device_name, &hal_desc, &hel_desc, context);
@@ -4083,7 +4135,7 @@ static HRESULT WINAPI d3d7_CreateDevice(IDirect3D7 *iface, REFCLSID riid,
     TRACE("iface %p, riid %s, surface %p, device %p.\n", iface, debugstr_guid(riid), surface, device);
 
     wined3d_mutex_lock();
-    if (SUCCEEDED(hr = d3d_device_create(ddraw, target, (IUnknown *)surface, 7, &object, NULL)))
+    if (SUCCEEDED(hr = d3d_device_create(ddraw, riid, target, (IUnknown *)surface, 7, &object, NULL)))
     {
         *device = &object->IDirect3DDevice7_iface;
     }
@@ -4112,7 +4164,7 @@ static HRESULT WINAPI d3d3_CreateDevice(IDirect3D3 *iface, REFCLSID riid,
         return CLASS_E_NOAGGREGATION;
 
     wined3d_mutex_lock();
-    if (SUCCEEDED(hr = d3d_device_create(ddraw, surface_impl, (IUnknown *)surface, 3, &device_impl, NULL)))
+    if (SUCCEEDED(hr = d3d_device_create(ddraw, riid, surface_impl, (IUnknown *)surface, 3, &device_impl, NULL)))
     {
         *device = &device_impl->IDirect3DDevice3_iface;
     }
@@ -4138,7 +4190,7 @@ static HRESULT WINAPI d3d2_CreateDevice(IDirect3D2 *iface, REFCLSID riid,
             iface, debugstr_guid(riid), surface, device);
 
     wined3d_mutex_lock();
-    if (SUCCEEDED(hr = d3d_device_create(ddraw, surface_impl, (IUnknown *)surface, 2, &device_impl, NULL)))
+    if (SUCCEEDED(hr = d3d_device_create(ddraw, riid, surface_impl, (IUnknown *)surface, 2, &device_impl, NULL)))
     {
         *device = &device_impl->IDirect3DDevice2_iface;
     }
@@ -4169,7 +4221,7 @@ static HRESULT WINAPI d3d2_CreateDevice(IDirect3D2 *iface, REFCLSID riid,
  *  D3D_OK on success
  *  DDERR_OUTOFMEMORY if memory allocation failed
  *  The return value of IWineD3DDevice::CreateVertexBuffer if this call fails
- *  DDERR_INVALIDPARAMS if desc or vertex_buffer are NULL
+ *  DDERR_INVALIDPARAMS if desc or vertex_buffer is NULL
  *
  *****************************************************************************/
 static HRESULT WINAPI d3d7_CreateVertexBuffer(IDirect3D7 *iface, D3DVERTEXBUFFERDESC *desc,
@@ -4512,7 +4564,7 @@ static const struct IDirectDraw2Vtbl ddraw2_vtbl =
     ddraw2_GetAvailableVidMem,
 };
 
-static const struct IDirectDrawVtbl ddraw1_vtbl =
+static struct IDirectDrawVtbl ddraw1_vtbl =
 {
     /* IUnknown */
     ddraw1_QueryInterface,
@@ -4717,19 +4769,30 @@ static void CDECL device_parent_mode_changed(struct wined3d_device_parent *devic
         ERR("Failed to resize window.\n");
 }
 
+static void CDECL device_parent_activate(struct wined3d_device_parent *device_parent, BOOL activate)
+{
+    struct ddraw *ddraw = ddraw_from_device_parent(device_parent);
+
+    TRACE("device_parent %p, activate %#x.\n", device_parent, activate);
+
+    if (!activate)
+        InterlockedCompareExchange(&ddraw->device_state, DDRAW_DEVICE_STATE_LOST, DDRAW_DEVICE_STATE_OK);
+    else
+        InterlockedCompareExchange(&ddraw->device_state, DDRAW_DEVICE_STATE_OK, DDRAW_DEVICE_STATE_LOST);
+}
+
 static HRESULT CDECL device_parent_surface_created(struct wined3d_device_parent *device_parent,
-        void *container_parent, struct wined3d_surface *surface,
+        struct wined3d_texture *wined3d_texture, unsigned int sub_resource_idx, struct wined3d_surface *surface,
         void **parent, const struct wined3d_parent_ops **parent_ops)
 {
     struct ddraw *ddraw = ddraw_from_device_parent(device_parent);
     struct ddraw_surface *ddraw_surface;
-    HRESULT hr;
 
-    TRACE("device_parent %p, container_parent %p, surface %p, parent %p, parent_ops %p.\n",
-            device_parent, container_parent, surface, parent, parent_ops);
+    TRACE("device_parent %p, wined3d_texture %p, sub_resource_idx %u, surface %p, parent %p, parent_ops %p.\n",
+            device_parent, wined3d_texture, sub_resource_idx, surface, parent, parent_ops);
 
-    /* We have a swapchain texture. */
-    if (container_parent == ddraw)
+    /* We have a swapchain or wined3d internal texture. */
+    if (!wined3d_texture_get_parent(wined3d_texture) || wined3d_texture_get_parent(wined3d_texture) == ddraw)
     {
         *parent = NULL;
         *parent_ops = &ddraw_null_wined3d_parent_ops;
@@ -4743,13 +4806,7 @@ static HRESULT CDECL device_parent_surface_created(struct wined3d_device_parent 
         return DDERR_OUTOFVIDEOMEMORY;
     }
 
-    if (FAILED(hr = ddraw_surface_init(ddraw_surface, ddraw, container_parent, surface, parent_ops)))
-    {
-        WARN("Failed to initialize surface, hr %#x.\n", hr);
-        HeapFree(GetProcessHeap(), 0, ddraw_surface);
-        return hr;
-    }
-
+    ddraw_surface_init(ddraw_surface, ddraw, wined3d_texture_get_parent(wined3d_texture), surface, parent_ops);
     *parent = ddraw_surface;
     list_add_head(&ddraw->surface_list, &ddraw_surface->surface_list_entry);
 
@@ -4759,11 +4816,11 @@ static HRESULT CDECL device_parent_surface_created(struct wined3d_device_parent 
 }
 
 static HRESULT CDECL device_parent_volume_created(struct wined3d_device_parent *device_parent,
-        void *container_parent, struct wined3d_volume *volume,
+        struct wined3d_texture *wined3d_texture, unsigned int sub_resource_idx,
         void **parent, const struct wined3d_parent_ops **parent_ops)
 {
-    TRACE("device_parent %p, container_parent %p, volume %p, parent %p, parent_ops %p.\n",
-            device_parent, container_parent, volume, parent, parent_ops);
+    TRACE("device_parent %p, texture %p, sub_resource_idx %u, parent %p, parent_ops %p.\n",
+            device_parent, wined3d_texture, sub_resource_idx, parent, parent_ops);
 
     *parent = NULL;
     *parent_ops = &ddraw_null_wined3d_parent_ops;
@@ -4782,16 +4839,14 @@ static const struct wined3d_parent_ops ddraw_frontbuffer_parent_ops =
     ddraw_frontbuffer_destroyed,
 };
 
-static HRESULT CDECL device_parent_create_swapchain_surface(struct wined3d_device_parent *device_parent,
-        void *container_parent, const struct wined3d_resource_desc *desc, struct wined3d_surface **surface)
+static HRESULT CDECL device_parent_create_swapchain_texture(struct wined3d_device_parent *device_parent,
+        void *container_parent, const struct wined3d_resource_desc *desc, struct wined3d_texture **texture)
 {
     struct ddraw *ddraw = ddraw_from_device_parent(device_parent);
-    struct wined3d_resource_desc texture_desc;
-    struct wined3d_texture *texture;
     HRESULT hr;
 
-    TRACE("device_parent %p, container_parent %p, desc %p, surface %p.\n",
-            device_parent, container_parent, desc, surface);
+    TRACE("device_parent %p, container_parent %p, desc %p, texture %p.\n",
+            device_parent, container_parent, desc, texture);
 
     if (ddraw->wined3d_frontbuffer)
     {
@@ -4799,19 +4854,14 @@ static HRESULT CDECL device_parent_create_swapchain_surface(struct wined3d_devic
         return E_FAIL;
     }
 
-    texture_desc = *desc;
-    texture_desc.resource_type = WINED3D_RTYPE_TEXTURE;
-    if (FAILED(hr = wined3d_texture_create(ddraw->wined3d_device, &texture_desc, 1,
-            WINED3D_SURFACE_MAPPABLE, ddraw, &ddraw_frontbuffer_parent_ops, &texture)))
+    if (FAILED(hr = wined3d_texture_create(ddraw->wined3d_device, desc, 1,
+            WINED3D_SURFACE_MAPPABLE, NULL, ddraw, &ddraw_frontbuffer_parent_ops, texture)))
     {
         WARN("Failed to create texture, hr %#x.\n", hr);
         return hr;
     }
 
-    *surface = wined3d_surface_from_resource(wined3d_texture_get_sub_resource(texture, 0));
-    ddraw->wined3d_frontbuffer = *surface;
-    wined3d_surface_incref(*surface);
-    wined3d_texture_decref(texture);
+    ddraw->wined3d_frontbuffer = wined3d_surface_from_resource(wined3d_texture_get_sub_resource(*texture, 0));
 
     return hr;
 }
@@ -4841,16 +4891,16 @@ static const struct wined3d_device_parent_ops ddraw_wined3d_device_parent_ops =
 {
     device_parent_wined3d_device_created,
     device_parent_mode_changed,
+    device_parent_activate,
     device_parent_surface_created,
     device_parent_volume_created,
-    device_parent_create_swapchain_surface,
+    device_parent_create_swapchain_texture,
     device_parent_create_swapchain,
 };
 
-HRESULT ddraw_init(struct ddraw *ddraw, enum wined3d_device_type device_type)
+HRESULT ddraw_init(struct ddraw *ddraw, DWORD flags, enum wined3d_device_type device_type)
 {
     WINED3DCAPS caps;
-    DWORD flags;
     HRESULT hr;
 
     ddraw->IDirectDraw7_iface.lpVtbl = &ddraw7_vtbl;
@@ -4865,10 +4915,11 @@ HRESULT ddraw_init(struct ddraw *ddraw, enum wined3d_device_type device_type)
     ddraw->numIfaces = 1;
     ddraw->ref7 = 1;
 
-    flags = WINED3D_LEGACY_DEPTH_BIAS | WINED3D_VIDMEM_ACCOUNTING;
+    flags |= DDRAW_WINED3D_FLAGS;
     if (!(ddraw->wined3d = wined3d_create(flags)))
     {
-        if (!(ddraw->wined3d = wined3d_create(flags | WINED3D_NO3D)))
+        flags |= WINED3D_NO3D;
+        if (!(ddraw->wined3d = wined3d_create(flags)))
         {
             WARN("Failed to create a wined3d object.\n");
             return E_FAIL;

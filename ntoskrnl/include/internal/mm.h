@@ -115,7 +115,8 @@ typedef ULONG_PTR SWAPENTRY;
      PAGE_EXECUTE_READ | \
      PAGE_EXECUTE_READWRITE | \
      PAGE_EXECUTE_WRITECOPY | \
-     PAGE_NOACCESS)
+     PAGE_NOACCESS | \
+     PAGE_NOCACHE)
 
 #define PAGE_IS_READABLE                    \
     (PAGE_READONLY | \
@@ -199,10 +200,14 @@ typedef struct _ROS_SECTION_OBJECT
     };
 } ROS_SECTION_OBJECT, *PROS_SECTION_OBJECT;
 
+#define MA_GetStartingAddress(_MemoryArea) ((_MemoryArea)->StartingVpn << PAGE_SHIFT)
+#define MA_GetEndingAddress(_MemoryArea) (((_MemoryArea)->EndingVpn + 1) << PAGE_SHIFT)
+
 typedef struct _MEMORY_AREA
 {
-    PVOID StartingAddress;
-    PVOID EndingAddress;
+    MMVAD VadNode;
+    ULONG_PTR StartingVpn;
+    ULONG_PTR EndingVpn;
     struct _MEMORY_AREA *Parent;
     struct _MEMORY_AREA *LeftChild;
     struct _MEMORY_AREA *RightChild;
@@ -483,7 +488,6 @@ MmCreateMemoryArea(
     SIZE_T Length,
     ULONG Protection,
     PMEMORY_AREA *Result,
-    BOOLEAN FixedAddress,
     ULONG AllocationFlags,
     ULONG AllocationGranularity
 );
@@ -491,14 +495,6 @@ MmCreateMemoryArea(
 PMEMORY_AREA
 NTAPI
 MmLocateMemoryAreaByAddress(
-    PMMSUPPORT AddressSpace,
-    PVOID Address
-);
-
-// fixme: unused?
-ULONG_PTR
-NTAPI
-MmFindGapAtAddress_(
     PMMSUPPORT AddressSpace,
     PVOID Address
 );
@@ -511,6 +507,12 @@ MmFreeMemoryArea(
     PMM_FREE_PAGE_FUNC FreePage,
     PVOID FreePageContext
 );
+
+VOID
+NTAPI
+MiRosCleanupMemoryArea(
+    PEPROCESS Process,
+    PMMVAD Vad);
 
 NTSTATUS
 NTAPI
@@ -537,13 +539,6 @@ MmFindGap(
     ULONG_PTR Granularity,
     BOOLEAN TopDown
 );
-
-VOID
-NTAPI
-MmMapMemoryArea(PVOID BaseAddress,
-                SIZE_T Length,
-                ULONG Consumer,
-                ULONG Protection);
 
 VOID
 NTAPI
@@ -726,7 +721,7 @@ MmPageFault(
 
 VOID
 NTAPI
-MiInitializeSpecialPool();
+MiInitializeSpecialPool(VOID);
 
 BOOLEAN
 NTAPI
@@ -737,6 +732,11 @@ MmUseSpecialPool(
 BOOLEAN
 NTAPI
 MmIsSpecialPoolAddress(
+    IN PVOID P);
+
+BOOLEAN
+NTAPI
+MmIsSpecialPoolAddressFree(
     IN PVOID P);
 
 PVOID
@@ -1158,7 +1158,6 @@ NTAPI
 MmDeleteVirtualMapping(
     struct _EPROCESS *Process,
     PVOID Address,
-    BOOLEAN FreePage,
     BOOLEAN* WasDirty,
     PPFN_NUMBER Page
 );

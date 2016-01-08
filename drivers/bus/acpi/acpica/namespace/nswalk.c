@@ -8,7 +8,7 @@
  *
  * 1. Copyright Notice
  *
- * Some or all of this work - Copyright (c) 1999 - 2014, Intel Corp.
+ * Some or all of this work - Copyright (c) 1999 - 2015, Intel Corp.
  * All rights reserved.
  *
  * 2. License
@@ -112,9 +112,6 @@
  * such license, approval or letter.
  *
  *****************************************************************************/
-
-
-#define __NSWALK_C__
 
 #include "acpi.h"
 #include "accommon.h"
@@ -293,10 +290,10 @@ AcpiNsWalkNamespace (
 
     /* Null child means "get first node" */
 
-    ParentNode  = StartNode;
-    ChildNode   = AcpiNsGetNextNode (ParentNode, NULL);
-    ChildType   = ACPI_TYPE_ANY;
-    Level       = 1;
+    ParentNode = StartNode;
+    ChildNode = AcpiNsGetNextNode (ParentNode, NULL);
+    ChildType = ACPI_TYPE_ANY;
+    Level = 1;
 
     /*
      * Traverse the tree of nodes until we bubble back up to where we
@@ -354,7 +351,7 @@ AcpiNsWalkNamespace (
                 if (DescendingCallback)
                 {
                     Status = DescendingCallback (ChildNode, Level,
-                                Context, ReturnValue);
+                        Context, ReturnValue);
                 }
             }
             else
@@ -362,7 +359,7 @@ AcpiNsWalkNamespace (
                 if (AscendingCallback)
                 {
                     Status = AscendingCallback (ChildNode, Level,
-                                Context, ReturnValue);
+                        Context, ReturnValue);
                 }
             }
 

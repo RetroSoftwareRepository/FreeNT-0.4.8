@@ -64,7 +64,7 @@ BEGIN
 END
 
 IDD_PARTITION DIALOGEX 0, 0, 145, 90
-STYLE WS_VISIBLE | WS_CAPTION
+STYLE DS_SHELLFONT | WS_VISIBLE | WS_CAPTION
 CAPTION "Partitsiooni loomine"
 FONT 8, "MS Shell Dlg"
 BEGIN
@@ -80,7 +80,7 @@ BEGIN
 END
 
 IDD_BOOTOPTIONS DIALOGEX 0, 0, 305, 116
-STYLE WS_VISIBLE | WS_CAPTION
+STYLE DS_SHELLFONT | WS_VISIBLE | WS_CAPTION
 CAPTION "Täpsemad vormindamise seaded"
 FONT 8, "MS Shell Dlg"
 BEGIN
@@ -144,4 +144,6 @@ BEGIN
     IDS_SUMMARYSUBTITLE "Seadete kontrollimine enne paigaldamise alustamist"
     IDS_ABORTSETUP "ReactOS ei ole veel täielikult paigaldatud. Kas tõesti lahkuda?"
     IDS_ABORTSETUP2 "Katkestada paigaldamine?"
+    IDS_NO_TXTSETUP_SIF "Unable to find 'txtsetup.sif'\nSetup is unable to continue."
+    IDS_CAPTION "ReactOSi paigaldamine"
 END

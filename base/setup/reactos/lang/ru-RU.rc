@@ -64,7 +64,7 @@ BEGIN
 END
 
 IDD_PARTITION DIALOGEX 0, 0, 145, 90
-STYLE WS_VISIBLE | WS_CAPTION
+STYLE DS_SHELLFONT | WS_VISIBLE | WS_CAPTION
 CAPTION "Создать раздел на диске"
 FONT 8, "MS Shell Dlg"
 BEGIN
@@ -80,7 +80,7 @@ BEGIN
 END
 
 IDD_BOOTOPTIONS DIALOGEX 0, 0, 305, 116
-STYLE WS_VISIBLE | WS_CAPTION
+STYLE DS_SHELLFONT | WS_VISIBLE | WS_CAPTION
 CAPTION "Дополнительные параметры установки"
 FONT 8, "MS Shell Dlg"
 BEGIN
@@ -140,8 +140,10 @@ BEGIN
     IDS_PROCESSSUBTITLE "Создание раздела на диске, копирование файлов, установка загрузчика"
     IDS_RESTARTTITLE "Первый этап установки закончен"
     IDS_RESTARTSUBTITLE "Первый этап закончен, для продолжения требуется перезагрузка"
-    IDS_SUMMARYTITLE "Installation Summary"
-    IDS_SUMMARYSUBTITLE "List installation properties to check before apply to the installation device"
+    IDS_SUMMARYTITLE "Сводка"
+    IDS_SUMMARYSUBTITLE "Проверьте список параметров перед началом установки"
     IDS_ABORTSETUP "ReactOS установлен на компьютер не полностью. Если вы закроете программу установки сейчас, в дальнейшем вам придется повторить установку ReactOS. Вы уверены, что необходимо прервать установку?"
     IDS_ABORTSETUP2 "Прервать установку?"
+    IDS_NO_TXTSETUP_SIF "Не удалось найти файл 'txtsetup.sif'\nПродолжение установки невозможно."
+    IDS_CAPTION "Установка ReactOS"
 END

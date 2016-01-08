@@ -8,7 +8,7 @@
  *
  * 1. Copyright Notice
  *
- * Some or all of this work - Copyright (c) 1999 - 2014, Intel Corp.
+ * Some or all of this work - Copyright (c) 1999 - 2015, Intel Corp.
  * All rights reserved.
  *
  * 2. License
@@ -113,8 +113,6 @@
  *
  *****************************************************************************/
 
-#define __TBDATA_C__
-
 #include "acpi.h"
 #include "accommon.h"
 #include "acnamesp.h"
@@ -151,7 +149,7 @@ AcpiTbInitTableDescriptor (
      * Initialize the table descriptor. Set the pointer to NULL, since the
      * table is not fully mapped at this time.
      */
-    ACPI_MEMSET (TableDesc, 0, sizeof (ACPI_TABLE_DESC));
+    memset (TableDesc, 0, sizeof (ACPI_TABLE_DESC));
     TableDesc->Address = Address;
     TableDesc->Length = Table->Length;
     TableDesc->Flags = Flags;
@@ -195,7 +193,8 @@ AcpiTbAcquireTable (
     case ACPI_TABLE_ORIGIN_INTERNAL_VIRTUAL:
     case ACPI_TABLE_ORIGIN_EXTERNAL_VIRTUAL:
 
-        Table = ACPI_CAST_PTR (ACPI_TABLE_HEADER, TableDesc->Address);
+        Table = ACPI_CAST_PTR (ACPI_TABLE_HEADER,
+            ACPI_PHYSADDR_TO_PTR (TableDesc->Address));
         break;
 
     default:
@@ -301,7 +300,8 @@ AcpiTbAcquireTempTable (
     case ACPI_TABLE_ORIGIN_INTERNAL_VIRTUAL:
     case ACPI_TABLE_ORIGIN_EXTERNAL_VIRTUAL:
 
-        TableHeader = ACPI_CAST_PTR (ACPI_TABLE_HEADER, Address);
+        TableHeader = ACPI_CAST_PTR (ACPI_TABLE_HEADER,
+            ACPI_PHYSADDR_TO_PTR (Address));
         if (!TableHeader)
         {
             return (AE_NO_MEMORY);
@@ -375,7 +375,7 @@ AcpiTbValidateTable (
     if (!TableDesc->Pointer)
     {
         Status = AcpiTbAcquireTable (TableDesc, &TableDesc->Pointer,
-                    &TableDesc->Length, &TableDesc->Flags);
+            &TableDesc->Length, &TableDesc->Flags);
         if (!TableDesc->Pointer)
         {
             Status = AE_NO_MEMORY;
@@ -424,7 +424,43 @@ AcpiTbInvalidateTable (
 
 /******************************************************************************
  *
- * FUNCTION:    AcpiTbVerifyTable
+ * FUNCTION:    AcpiTbValidateTempTable
+ *
+ * PARAMETERS:  TableDesc           - Table descriptor
+ *
+ * RETURN:      Status
+ *
+ * DESCRIPTION: This function is called to validate the table, the returned
+ *              table descriptor is in "VALIDATED" state.
+ *
+ *****************************************************************************/
+
+ACPI_STATUS
+AcpiTbValidateTempTable (
+    ACPI_TABLE_DESC         *TableDesc)
+{
+
+    if (!TableDesc->Pointer && !AcpiGbl_VerifyTableChecksum)
+    {
+        /*
+         * Only validates the header of the table.
+         * Note that Length contains the size of the mapping after invoking
+         * this work around, this value is required by
+         * AcpiTbReleaseTempTable().
+         * We can do this because in AcpiInitTableDescriptor(), the Length
+         * field of the installed descriptor is filled with the actual
+         * table length obtaining from the table header.
+         */
+        TableDesc->Length = sizeof (ACPI_TABLE_HEADER);
+    }
+
+    return (AcpiTbValidateTable (TableDesc));
+}
+
+
+/******************************************************************************
+ *
+ * FUNCTION:    AcpiTbVerifyTempTable
  *
  * PARAMETERS:  TableDesc           - Table descriptor
  *              Signature           - Table signature to verify
@@ -437,19 +473,19 @@ AcpiTbInvalidateTable (
  *****************************************************************************/
 
 ACPI_STATUS
-AcpiTbVerifyTable (
+AcpiTbVerifyTempTable (
     ACPI_TABLE_DESC         *TableDesc,
     char                    *Signature)
 {
     ACPI_STATUS             Status = AE_OK;
 
 
-    ACPI_FUNCTION_TRACE (TbVerifyTable);
+    ACPI_FUNCTION_TRACE (TbVerifyTempTable);
 
 
     /* Validate the table */
 
-    Status = AcpiTbValidateTable (TableDesc);
+    Status = AcpiTbValidateTempTable (TableDesc);
     if (ACPI_FAILURE (Status))
     {
         return_ACPI_STATUS (AE_NO_MEMORY);
@@ -469,16 +505,20 @@ AcpiTbVerifyTable (
 
     /* Verify the checksum */
 
-    Status = AcpiTbVerifyChecksum (TableDesc->Pointer, TableDesc->Length);
-    if (ACPI_FAILURE (Status))
+    if (AcpiGbl_VerifyTableChecksum)
     {
-        ACPI_EXCEPTION ((AE_INFO, AE_NO_MEMORY,
-            "%4.4s " ACPI_PRINTF_UINT
-            " Attempted table install failed",
-            AcpiUtValidAcpiName (TableDesc->Signature.Ascii) ?
-                TableDesc->Signature.Ascii : "????",
-            ACPI_FORMAT_TO_UINT (TableDesc->Address)));
-        goto InvalidateAndExit;
+        Status = AcpiTbVerifyChecksum (TableDesc->Pointer, TableDesc->Length);
+        if (ACPI_FAILURE (Status))
+        {
+            ACPI_EXCEPTION ((AE_INFO, AE_NO_MEMORY,
+                "%4.4s 0x%8.8X%8.8X"
+                " Attempted table install failed",
+                AcpiUtValidAcpiName (TableDesc->Signature.Ascii) ?
+                    TableDesc->Signature.Ascii : "????",
+                ACPI_FORMAT_UINT64 (TableDesc->Address)));
+
+            goto InvalidateAndExit;
+        }
     }
 
     return_ACPI_STATUS (AE_OK);
@@ -544,7 +584,7 @@ AcpiTbResizeRootTableList (
 
     if (AcpiGbl_RootTableList.Tables)
     {
-        ACPI_MEMCPY (Tables, AcpiGbl_RootTableList.Tables,
+        memcpy (Tables, AcpiGbl_RootTableList.Tables,
             (ACPI_SIZE) TableCount * sizeof (ACPI_TABLE_DESC));
 
         if (AcpiGbl_RootTableList.Flags & ACPI_ROOT_ORIGIN_ALLOCATED)
@@ -564,21 +604,24 @@ AcpiTbResizeRootTableList (
 
 /*******************************************************************************
  *
- * FUNCTION:    AcpiTbGetNextRootIndex
+ * FUNCTION:    AcpiTbGetNextTableDescriptor
  *
  * PARAMETERS:  TableIndex          - Where table index is returned
+ *              TableDesc           - Where table descriptor is returned
  *
- * RETURN:      Status and table index.
+ * RETURN:      Status and table index/descriptor.
  *
  * DESCRIPTION: Allocate a new ACPI table entry to the global table list
  *
  ******************************************************************************/
 
 ACPI_STATUS
-AcpiTbGetNextRootIndex (
-    UINT32                  *TableIndex)
+AcpiTbGetNextTableDescriptor (
+    UINT32                  *TableIndex,
+    ACPI_TABLE_DESC         **TableDesc)
 {
     ACPI_STATUS             Status;
+    UINT32                  i;
 
 
     /* Ensure that there is room for the table in the Root Table List */
@@ -593,8 +636,18 @@ AcpiTbGetNextRootIndex (
         }
     }
 
-    *TableIndex = AcpiGbl_RootTableList.CurrentTableCount;
+    i = AcpiGbl_RootTableList.CurrentTableCount;
     AcpiGbl_RootTableList.CurrentTableCount++;
+
+    if (TableIndex)
+    {
+        *TableIndex = i;
+    }
+    if (TableDesc)
+    {
+        *TableDesc = &AcpiGbl_RootTableList.Tables[i];
+    }
+
     return (AE_OK);
 }
 
@@ -741,7 +794,7 @@ AcpiTbAllocateOwnerId (
     if (TableIndex < AcpiGbl_RootTableList.CurrentTableCount)
     {
         Status = AcpiUtAllocateOwnerId (
-                    &(AcpiGbl_RootTableList.Tables[TableIndex].OwnerId));
+            &(AcpiGbl_RootTableList.Tables[TableIndex].OwnerId));
     }
 
     (void) AcpiUtReleaseMutex (ACPI_MTX_TABLES);

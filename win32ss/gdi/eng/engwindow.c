@@ -2,7 +2,7 @@
  * COPYRIGHT:         See COPYING in the top level directory
  * PROJECT:           ReactOS kernel
  * PURPOSE:           GDI WNDOBJ Functions
- * FILE:              subsystems/win32/win32k/eng/engwindow.c
+ * FILE:              win32ss/gdi/eng/engwindow.c
  * PROGRAMER:         Gregor Anich
  */
 
@@ -52,41 +52,31 @@ IntEngWndUpdateClipObj(
     XCLIPOBJ* Clip,
     PWND Window)
 {
-    HRGN hVisRgn;
-    PROSRGNDATA visRgn;
+    PREGION visRgn;
 
     TRACE("IntEngWndUpdateClipObj\n");
 
-    hVisRgn = VIS_ComputeVisibleRegion(Window, TRUE, TRUE, TRUE);
-    if (hVisRgn != NULL)
+    visRgn = VIS_ComputeVisibleRegion(Window, TRUE, TRUE, TRUE);
+    if (visRgn != NULL)
     {
-        visRgn = RGNOBJAPI_Lock(hVisRgn, NULL);
-        if (visRgn != NULL)
+        if (visRgn->rdh.nCount > 0)
         {
-            if (visRgn->rdh.nCount > 0)
+            IntEngUpdateClipRegion(Clip, visRgn->rdh.nCount, visRgn->Buffer, &visRgn->rdh.rcBound);
+            TRACE("Created visible region with %lu rects\n", visRgn->rdh.nCount);
+            TRACE("  BoundingRect: %d, %d  %d, %d\n",
+                   visRgn->rdh.rcBound.left, visRgn->rdh.rcBound.top,
+                   visRgn->rdh.rcBound.right, visRgn->rdh.rcBound.bottom);
             {
-                IntEngUpdateClipRegion(Clip, visRgn->rdh.nCount, visRgn->Buffer, &visRgn->rdh.rcBound);
-                TRACE("Created visible region with %lu rects\n", visRgn->rdh.nCount);
-                TRACE("  BoundingRect: %d, %d  %d, %d\n",
-                       visRgn->rdh.rcBound.left, visRgn->rdh.rcBound.top,
-                       visRgn->rdh.rcBound.right, visRgn->rdh.rcBound.bottom);
+                ULONG i;
+                for (i = 0; i < visRgn->rdh.nCount; i++)
                 {
-                    ULONG i;
-                    for (i = 0; i < visRgn->rdh.nCount; i++)
-                    {
-                        TRACE("  Rect #%lu: %ld,%ld  %ld,%ld\n", i+1,
-                               visRgn->Buffer[i].left, visRgn->Buffer[i].top,
-                               visRgn->Buffer[i].right, visRgn->Buffer[i].bottom);
-                    }
+                    TRACE("  Rect #%lu: %ld,%ld  %ld,%ld\n", i+1,
+                           visRgn->Buffer[i].left, visRgn->Buffer[i].top,
+                           visRgn->Buffer[i].right, visRgn->Buffer[i].bottom);
                 }
             }
-            RGNOBJAPI_Unlock(visRgn);
         }
-        else
-        {
-            WARN("Couldn't lock visible region of window DC\n");
-        }
-        GreDeleteObject(hVisRgn);
+        REGION_Delete(visRgn);
     }
     else
     {
@@ -114,7 +104,7 @@ IntEngWindowChanged(
 
     ASSERT_IRQL_LESS_OR_EQUAL(PASSIVE_LEVEL);
 
-    Clip = UserGetProp(Window, AtomWndObj);
+    Clip = UserGetProp(Window, AtomWndObj, TRUE);
     if (!Clip)
     {
         return;
@@ -218,7 +208,7 @@ EngCreateWnd(
     Clip->PixelFormat = iPixelFormat;
 
     /* associate object with window */
-    IntSetProp(Window, AtomWndObj, Clip);
+    UserSetProp(Window, AtomWndObj, Clip, TRUE);
     ++gcountPWO;
 
     TRACE("EngCreateWnd: SUCCESS: %p!\n", WndObjUser);
@@ -263,7 +253,7 @@ EngDeleteWnd(
     else
     {
         /* Remove object from window */
-        IntRemoveProp(Window, AtomWndObj);
+        UserRemoveProp(Window, AtomWndObj, TRUE);
     }
     --gcountPWO;
 

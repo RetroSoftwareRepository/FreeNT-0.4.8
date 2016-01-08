@@ -8,7 +8,7 @@
  *
  * 1. Copyright Notice
  *
- * Some or all of this work - Copyright (c) 1999 - 2014, Intel Corp.
+ * Some or all of this work - Copyright (c) 1999 - 2015, Intel Corp.
  * All rights reserved.
  *
  * 2. License
@@ -210,10 +210,6 @@
 
 #define ACPI_ROOT_TABLE_SIZE_INCREMENT  4
 
-/* Maximum number of While() loop iterations before forced abort */
-
-#define ACPI_MAX_LOOP_ITERATIONS        0xFFFF
-
 /* Maximum sleep allowed via Sleep() operator */
 
 #define ACPI_MAX_SLEEP                  2000    /* 2000 millisec == two seconds */
@@ -291,6 +287,25 @@
 
 #define ACPI_NUM_SxD_METHODS            4
 #define ACPI_NUM_SxW_METHODS            5
+
+
+/******************************************************************************
+ *
+ * Miscellaneous constants
+ *
+ *****************************************************************************/
+
+/* UUID constants */
+
+#define UUID_BUFFER_LENGTH          16 /* Length of UUID in memory */
+#define UUID_STRING_LENGTH          36 /* Total length of a UUID string */
+
+/* Positions for required hyphens (dashes) in UUID strings */
+
+#define UUID_HYPHEN1_OFFSET         8
+#define UUID_HYPHEN2_OFFSET         13
+#define UUID_HYPHEN3_OFFSET         18
+#define UUID_HYPHEN4_OFFSET         23
 
 
 /******************************************************************************

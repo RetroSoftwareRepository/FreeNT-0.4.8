@@ -8,7 +8,7 @@
  *
  * 1. Copyright Notice
  *
- * Some or all of this work - Copyright (c) 1999 - 2014, Intel Corp.
+ * Some or all of this work - Copyright (c) 1999 - 2015, Intel Corp.
  * All rights reserved.
  *
  * 2. License
@@ -113,8 +113,6 @@
  *
  *****************************************************************************/
 
-
-#define __RSXFACE_C__
 #define EXPORT_ACPI_INTERFACES
 
 #include "acpi.h"
@@ -128,18 +126,18 @@
 /* Local macros for 16,32-bit to 64-bit conversion */
 
 #define ACPI_COPY_FIELD(Out, In, Field)  ((Out)->Field = (In)->Field)
-#define ACPI_COPY_ADDRESS(Out, In)                      \
+#define ACPI_COPY_ADDRESS(Out, In)                       \
     ACPI_COPY_FIELD(Out, In, ResourceType);              \
     ACPI_COPY_FIELD(Out, In, ProducerConsumer);          \
     ACPI_COPY_FIELD(Out, In, Decode);                    \
     ACPI_COPY_FIELD(Out, In, MinAddressFixed);           \
     ACPI_COPY_FIELD(Out, In, MaxAddressFixed);           \
     ACPI_COPY_FIELD(Out, In, Info);                      \
-    ACPI_COPY_FIELD(Out, In, Granularity);               \
-    ACPI_COPY_FIELD(Out, In, Minimum);                   \
-    ACPI_COPY_FIELD(Out, In, Maximum);                   \
-    ACPI_COPY_FIELD(Out, In, TranslationOffset);         \
-    ACPI_COPY_FIELD(Out, In, AddressLength);             \
+    ACPI_COPY_FIELD(Out, In, Address.Granularity);       \
+    ACPI_COPY_FIELD(Out, In, Address.Minimum);           \
+    ACPI_COPY_FIELD(Out, In, Address.Maximum);           \
+    ACPI_COPY_FIELD(Out, In, Address.TranslationOffset); \
+    ACPI_COPY_FIELD(Out, In, Address.AddressLength);     \
     ACPI_COPY_FIELD(Out, In, ResourceSource);
 
 
@@ -507,13 +505,15 @@ AcpiResourceToAddress64 (
     {
     case ACPI_RESOURCE_TYPE_ADDRESS16:
 
-        Address16 = ACPI_CAST_PTR (ACPI_RESOURCE_ADDRESS16, &Resource->Data);
+        Address16 = ACPI_CAST_PTR (
+            ACPI_RESOURCE_ADDRESS16, &Resource->Data);
         ACPI_COPY_ADDRESS (Out, Address16);
         break;
 
     case ACPI_RESOURCE_TYPE_ADDRESS32:
 
-        Address32 = ACPI_CAST_PTR (ACPI_RESOURCE_ADDRESS32, &Resource->Data);
+        Address32 = ACPI_CAST_PTR (
+            ACPI_RESOURCE_ADDRESS32, &Resource->Data);
         ACPI_COPY_ADDRESS (Out, Address32);
         break;
 
@@ -521,7 +521,7 @@ AcpiResourceToAddress64 (
 
         /* Simple copy for 64 bit source */
 
-        ACPI_MEMCPY (Out, &Resource->Data, sizeof (ACPI_RESOURCE_ADDRESS64));
+        memcpy (Out, &Resource->Data, sizeof (ACPI_RESOURCE_ADDRESS64));
         break;
 
     default:
@@ -578,8 +578,8 @@ AcpiGetVendorResource (
 
     /* Walk the _CRS or _PRS resource list for this device */
 
-    Status = AcpiWalkResources (DeviceHandle, Name, AcpiRsMatchVendorResource,
-                &Info);
+    Status = AcpiWalkResources (
+        DeviceHandle, Name, AcpiRsMatchVendorResource, &Info);
     if (ACPI_FAILURE (Status))
     {
         return (Status);
@@ -632,7 +632,7 @@ AcpiRsMatchVendorResource (
      */
     if ((Vendor->ByteLength < (ACPI_UUID_LENGTH + 1)) ||
         (Vendor->UuidSubtype != Info->Uuid->Subtype)  ||
-        (ACPI_MEMCMP (Vendor->Uuid, Info->Uuid->Data, ACPI_UUID_LENGTH)))
+        (memcmp (Vendor->Uuid, Info->Uuid->Data, ACPI_UUID_LENGTH)))
     {
         return (AE_OK);
     }
@@ -648,7 +648,7 @@ AcpiRsMatchVendorResource (
 
     /* Found the correct resource, copy and return it */
 
-    ACPI_MEMCPY (Buffer->Pointer, Resource, Resource->Length);
+    memcpy (Buffer->Pointer, Resource, Resource->Length);
     Buffer->Length = Resource->Length;
 
     /* Found the desired descriptor, terminate resource walk */
@@ -698,7 +698,8 @@ AcpiWalkResourceBuffer (
     /* Buffer contains the resource list and length */
 
     Resource = ACPI_CAST_PTR (ACPI_RESOURCE, Buffer->Pointer);
-    ResourceEnd = ACPI_ADD_PTR (ACPI_RESOURCE, Buffer->Pointer, Buffer->Length);
+    ResourceEnd = ACPI_ADD_PTR (
+        ACPI_RESOURCE, Buffer->Pointer, Buffer->Length);
 
     /* Walk the resource list until the EndTag is found (or buffer end) */
 

@@ -8,7 +8,7 @@
  *
  * 1. Copyright Notice
  *
- * Some or all of this work - Copyright (c) 1999 - 2014, Intel Corp.
+ * Some or all of this work - Copyright (c) 1999 - 2015, Intel Corp.
  * All rights reserved.
  *
  * 2. License
@@ -113,8 +113,6 @@
  *
  *****************************************************************************/
 
-#define __RSADDR_C__
-
 #include "acpi.h"
 #include "accommon.h"
 #include "acresrc.h"
@@ -151,7 +149,7 @@ ACPI_RSCONVERT_INFO     AcpiRsConvertAddress16[5] =
      * Address Translation Offset
      * Address Length
      */
-    {ACPI_RSC_MOVE16,   ACPI_RS_OFFSET (Data.Address16.Granularity),
+    {ACPI_RSC_MOVE16,   ACPI_RS_OFFSET (Data.Address16.Address.Granularity),
                         AML_OFFSET (Address16.Granularity),
                         5},
 
@@ -191,7 +189,7 @@ ACPI_RSCONVERT_INFO     AcpiRsConvertAddress32[5] =
      * Address Translation Offset
      * Address Length
      */
-    {ACPI_RSC_MOVE32,   ACPI_RS_OFFSET (Data.Address32.Granularity),
+    {ACPI_RSC_MOVE32,   ACPI_RS_OFFSET (Data.Address32.Address.Granularity),
                         AML_OFFSET (Address32.Granularity),
                         5},
 
@@ -231,7 +229,7 @@ ACPI_RSCONVERT_INFO     AcpiRsConvertAddress64[5] =
      * Address Translation Offset
      * Address Length
      */
-    {ACPI_RSC_MOVE64,   ACPI_RS_OFFSET (Data.Address64.Granularity),
+    {ACPI_RSC_MOVE64,   ACPI_RS_OFFSET (Data.Address64.Address.Granularity),
                         AML_OFFSET (Address64.Granularity),
                         5},
 
@@ -277,7 +275,7 @@ ACPI_RSCONVERT_INFO     AcpiRsConvertExtAddress64[5] =
      * Address Length
      * Type-Specific Attribute
      */
-    {ACPI_RSC_MOVE64,   ACPI_RS_OFFSET (Data.ExtAddress64.Granularity),
+    {ACPI_RSC_MOVE64,   ACPI_RS_OFFSET (Data.ExtAddress64.Address.Granularity),
                         AML_OFFSET (ExtAddress64.Granularity),
                         6}
 };
@@ -402,30 +400,35 @@ AcpiRsGetAddressCommon (
 
     /* Validate the Resource Type */
 
-    if ((Aml->Address.ResourceType > 2) && (Aml->Address.ResourceType < 0xC0))
+    if ((Aml->Address.ResourceType > 2) &&
+        (Aml->Address.ResourceType < 0xC0))
     {
         return (FALSE);
     }
 
     /* Get the Resource Type and General Flags */
 
-    (void) AcpiRsConvertAmlToResource (Resource, Aml, AcpiRsConvertGeneralFlags);
+    (void) AcpiRsConvertAmlToResource (
+        Resource, Aml, AcpiRsConvertGeneralFlags);
 
     /* Get the Type-Specific Flags (Memory and I/O descriptors only) */
 
     if (Resource->Data.Address.ResourceType == ACPI_MEMORY_RANGE)
     {
-        (void) AcpiRsConvertAmlToResource (Resource, Aml, AcpiRsConvertMemFlags);
+        (void) AcpiRsConvertAmlToResource (
+            Resource, Aml, AcpiRsConvertMemFlags);
     }
     else if (Resource->Data.Address.ResourceType == ACPI_IO_RANGE)
     {
-        (void) AcpiRsConvertAmlToResource (Resource, Aml, AcpiRsConvertIoFlags);
+        (void) AcpiRsConvertAmlToResource (
+            Resource, Aml, AcpiRsConvertIoFlags);
     }
     else
     {
         /* Generic resource type, just grab the TypeSpecific byte */
 
-        Resource->Data.Address.Info.TypeSpecific = Aml->Address.SpecificFlags;
+        Resource->Data.Address.Info.TypeSpecific =
+            Aml->Address.SpecificFlags;
     }
 
     return (TRUE);
@@ -456,22 +459,26 @@ AcpiRsSetAddressCommon (
 
     /* Set the Resource Type and General Flags */
 
-    (void) AcpiRsConvertResourceToAml (Resource, Aml, AcpiRsConvertGeneralFlags);
+    (void) AcpiRsConvertResourceToAml (
+        Resource, Aml, AcpiRsConvertGeneralFlags);
 
     /* Set the Type-Specific Flags (Memory and I/O descriptors only) */
 
     if (Resource->Data.Address.ResourceType == ACPI_MEMORY_RANGE)
     {
-        (void) AcpiRsConvertResourceToAml (Resource, Aml, AcpiRsConvertMemFlags);
+        (void) AcpiRsConvertResourceToAml (
+            Resource, Aml, AcpiRsConvertMemFlags);
     }
     else if (Resource->Data.Address.ResourceType == ACPI_IO_RANGE)
     {
-        (void) AcpiRsConvertResourceToAml (Resource, Aml, AcpiRsConvertIoFlags);
+        (void) AcpiRsConvertResourceToAml (
+            Resource, Aml, AcpiRsConvertIoFlags);
     }
     else
     {
         /* Generic resource type, just copy the TypeSpecific byte */
 
-        Aml->Address.SpecificFlags = Resource->Data.Address.Info.TypeSpecific;
+        Aml->Address.SpecificFlags =
+            Resource->Data.Address.Info.TypeSpecific;
     }
 }

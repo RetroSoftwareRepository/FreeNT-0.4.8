@@ -8,7 +8,7 @@
  *
  * 1. Copyright Notice
  *
- * Some or all of this work - Copyright (c) 1999 - 2014, Intel Corp.
+ * Some or all of this work - Copyright (c) 1999 - 2015, Intel Corp.
  * All rights reserved.
  *
  * 2. License
@@ -113,7 +113,6 @@
  *
  *****************************************************************************/
 
-#define __TBXFACE_C__
 #define EXPORT_ACPI_INTERFACES
 
 #include "acpi.h"
@@ -205,7 +204,7 @@ AcpiInitializeTables (
     {
         /* Root Table Array has been statically allocated by the host */
 
-        ACPI_MEMSET (InitialTableArray, 0,
+        memset (InitialTableArray, 0,
             (ACPI_SIZE) InitialTableCount * sizeof (ACPI_TABLE_DESC));
 
         AcpiGbl_RootTableList.Tables = InitialTableArray;
@@ -319,8 +318,8 @@ AcpiGetTableHeader (
 
     for (i = 0, j = 0; i < AcpiGbl_RootTableList.CurrentTableCount; i++)
     {
-        if (!ACPI_COMPARE_NAME (&(AcpiGbl_RootTableList.Tables[i].Signature),
-                    Signature))
+        if (!ACPI_COMPARE_NAME (
+                &(AcpiGbl_RootTableList.Tables[i].Signature), Signature))
         {
             continue;
         }
@@ -337,15 +336,14 @@ AcpiGetTableHeader (
                 ACPI_TABLE_ORIGIN_INTERNAL_PHYSICAL)
             {
                 Header = AcpiOsMapMemory (
-                            AcpiGbl_RootTableList.Tables[i].Address,
-                            sizeof (ACPI_TABLE_HEADER));
+                    AcpiGbl_RootTableList.Tables[i].Address,
+                    sizeof (ACPI_TABLE_HEADER));
                 if (!Header)
                 {
                     return (AE_NO_MEMORY);
                 }
 
-                ACPI_MEMCPY (OutTableHeader, Header,
-                    sizeof (ACPI_TABLE_HEADER));
+                memcpy (OutTableHeader, Header, sizeof (ACPI_TABLE_HEADER));
                 AcpiOsUnmapMemory (Header, sizeof (ACPI_TABLE_HEADER));
             }
             else
@@ -355,7 +353,7 @@ AcpiGetTableHeader (
         }
         else
         {
-            ACPI_MEMCPY (OutTableHeader,
+            memcpy (OutTableHeader,
                 AcpiGbl_RootTableList.Tables[i].Pointer,
                 sizeof (ACPI_TABLE_HEADER));
         }
@@ -406,8 +404,8 @@ AcpiGetTable (
 
     for (i = 0, j = 0; i < AcpiGbl_RootTableList.CurrentTableCount; i++)
     {
-        if (!ACPI_COMPARE_NAME (&(AcpiGbl_RootTableList.Tables[i].Signature),
-                Signature))
+        if (!ACPI_COMPARE_NAME (
+                &(AcpiGbl_RootTableList.Tables[i].Signature), Signature))
         {
             continue;
         }
@@ -478,7 +476,8 @@ AcpiGetTableByIndex (
     {
         /* Table is not mapped, map it */
 
-        Status = AcpiTbValidateTable (&AcpiGbl_RootTableList.Tables[TableIndex]);
+        Status = AcpiTbValidateTable (
+            &AcpiGbl_RootTableList.Tables[TableIndex]);
         if (ACPI_FAILURE (Status))
         {
             (void) AcpiUtReleaseMutex (ACPI_MTX_TABLES);

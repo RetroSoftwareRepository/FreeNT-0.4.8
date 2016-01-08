@@ -8,7 +8,7 @@
  *
  * 1. Copyright Notice
  *
- * Some or all of this work - Copyright (c) 1999 - 2014, Intel Corp.
+ * Some or all of this work - Copyright (c) 1999 - 2015, Intel Corp.
  * All rights reserved.
  *
  * 2. License
@@ -124,6 +124,10 @@ AcpiAllocateRootTable (
 /*
  * tbxfroot - Root pointer utilities
  */
+UINT32
+AcpiTbGetRsdpLength (
+    ACPI_TABLE_RSDP         *Rsdp);
+
 ACPI_STATUS
 AcpiTbValidateRsdp (
     ACPI_TABLE_RSDP         *Rsdp);
@@ -138,8 +142,9 @@ AcpiTbScanMemoryForRsdp (
  * tbdata - table data structure management
  */
 ACPI_STATUS
-AcpiTbGetNextRootIndex (
-    UINT32                  *TableIndex);
+AcpiTbGetNextTableDescriptor (
+    UINT32                  *TableIndex,
+    ACPI_TABLE_DESC         **TableDesc);
 
 void
 AcpiTbInitTableDescriptor (
@@ -158,6 +163,15 @@ void
 AcpiTbReleaseTempTable (
     ACPI_TABLE_DESC         *TableDesc);
 
+ACPI_STATUS
+AcpiTbValidateTempTable (
+    ACPI_TABLE_DESC         *TableDesc);
+
+ACPI_STATUS
+AcpiTbVerifyTempTable (
+    ACPI_TABLE_DESC         *TableDesc,
+    char                    *Signature);
+
 BOOLEAN
 AcpiTbIsTableLoaded (
     UINT32                  TableIndex);
@@ -173,7 +187,7 @@ AcpiTbSetTableLoadedFlag (
  */
 void
 AcpiTbParseFadt (
-    UINT32                  TableIndex);
+    void);
 
 void
 AcpiTbCreateLocalFadt (
@@ -207,11 +221,6 @@ void
 AcpiTbInvalidateTable (
     ACPI_TABLE_DESC         *TableDesc);
 
-ACPI_STATUS
-AcpiTbVerifyTable (
-    ACPI_TABLE_DESC         *TableDesc,
-    char                    *Signature);
-
 void
 AcpiTbOverrideTable (
     ACPI_TABLE_DESC         *OldTableDesc);
@@ -235,14 +244,6 @@ AcpiTbInstallStandardTable (
     UINT8                   Flags,
     BOOLEAN                 Reload,
     BOOLEAN                 Override,
-    UINT32                  *TableIndex);
-
-ACPI_STATUS
-AcpiTbStoreTable (
-    ACPI_PHYSICAL_ADDRESS   Address,
-    ACPI_TABLE_HEADER       *Table,
-    UINT32                  Length,
-    UINT8                   Flags,
     UINT32                  *TableIndex);
 
 void
@@ -278,10 +279,6 @@ ACPI_STATUS
 AcpiTbInitializeFacs (
     void);
 
-BOOLEAN
-AcpiTbTablesLoaded (
-    void);
-
 void
 AcpiTbPrintTableHeader(
     ACPI_PHYSICAL_ADDRESS   Address,
@@ -307,18 +304,30 @@ AcpiTbCopyDsdt (
 
 void
 AcpiTbInstallTableWithOverride (
-    UINT32                  TableIndex,
     ACPI_TABLE_DESC         *NewTableDesc,
-    BOOLEAN                 Override);
+    BOOLEAN                 Override,
+    UINT32                  *TableIndex);
 
 ACPI_STATUS
 AcpiTbInstallFixedTable (
     ACPI_PHYSICAL_ADDRESS   Address,
     char                    *Signature,
-    UINT32                  TableIndex);
+    UINT32                  *TableIndex);
 
 ACPI_STATUS
 AcpiTbParseRootTable (
     ACPI_PHYSICAL_ADDRESS   RsdpAddress);
+
+BOOLEAN
+AcpiIsValidSignature (
+    char                    *Signature);
+
+
+/*
+ * tbxfload
+ */
+ACPI_STATUS
+AcpiTbLoadNamespace (
+    void);
 
 #endif /* __ACTABLES_H__ */

@@ -8,7 +8,7 @@
  *
  * 1. Copyright Notice
  *
- * Some or all of this work - Copyright (c) 1999 - 2014, Intel Corp.
+ * Some or all of this work - Copyright (c) 1999 - 2015, Intel Corp.
  * All rights reserved.
  *
  * 2. License
@@ -116,11 +116,13 @@
 #ifndef __ACPI_H__
 #define __ACPI_H__
 
+#ifdef __REACTOS__
 /*
  * Header inclusion HACK (see modifications to actypes.h too).
  */
 #include <ntddk.h>
 #undef ACPI_BIOS_ERROR  // ACPI_BIOS_ERROR is redefined in acoutput.h
+#endif /* __REACTOS__ */
 
 /*
  * Public include files for use by code that will interface to ACPICA.
@@ -140,8 +142,6 @@
 #include "acrestyp.h"           /* Resource Descriptor structs */
 #include "acpiosxf.h"           /* OSL interfaces (ACPICA-to-OS) */
 #include "acpixf.h"             /* ACPI core subsystem external interfaces */
-#ifdef ACPI_NATIVE_INTERFACE_HEADER
-#include ACPI_NATIVE_INTERFACE_HEADER
-#endif
+#include "platform/acenvex.h"   /* Extra environment-specific items */
 
 #endif /* __ACPI_H__ */

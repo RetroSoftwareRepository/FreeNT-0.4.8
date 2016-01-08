@@ -66,7 +66,7 @@ BEGIN
 END
 
 IDD_PARTITION DIALOGEX 0, 0, 145, 90
-STYLE WS_VISIBLE | WS_CAPTION
+STYLE DS_SHELLFONT | WS_VISIBLE | WS_CAPTION
 CAPTION "Create Partition"
 FONT 8, "MS Shell Dlg"
 BEGIN
@@ -82,7 +82,7 @@ BEGIN
 END
 
 IDD_BOOTOPTIONS DIALOGEX 0, 0, 305, 116
-STYLE WS_VISIBLE | WS_CAPTION
+STYLE DS_SHELLFONT | WS_VISIBLE | WS_CAPTION
 CAPTION "Advanced Partition Settings"
 FONT 8, "MS Shell Dlg"
 BEGIN
@@ -146,4 +146,6 @@ BEGIN
     IDS_SUMMARYSUBTITLE "List installation properties to check before apply to the installation device"
     IDS_ABORTSETUP "ReactOS is not completely installed on your computer. If you quit Setup now, you will need to run Setup again to install ReactOS. Really quit?"
     IDS_ABORTSETUP2 "Abort installation?"
+    IDS_NO_TXTSETUP_SIF "Unable to find 'txtsetup.sif'\nSetup is unable to continue."
+    IDS_CAPTION "ReactOS Setup"
 END

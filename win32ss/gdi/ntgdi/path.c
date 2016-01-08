@@ -1,7 +1,7 @@
 /*
  * PROJECT:         ReactOS win32 kernel mode subsystem
  * LICENSE:         GPL - See COPYING in the top level directory
- * FILE:            subsystems/win32/win32k/objects/path.c
+ * FILE:            win32ss/gdi/ntgdi/path.c
  * PURPOSE:         Graphics paths (BeginPath, EndPath etc.)
  * PROGRAMMER:      Copyright 1997, 1998 Martin Boehme
  *                            1999 Huw D M Davies
@@ -98,7 +98,7 @@ PATH_FillPath(
     //SIZE  ptViewportExt, ptWindowExt;
     //POINTL ptViewportOrg, ptWindowOrg;
     XFORM xform;
-    HRGN  hrgn;
+    PREGION  Rgn;
     PDC_ATTR pdcattr = dc->pdcattr;
 
     if (pPath->state != PATH_Closed)
@@ -107,61 +107,72 @@ PATH_FillPath(
         return FALSE;
     }
 
-    if (PATH_PathToRegion(pPath, pdcattr->jFillMode, &hrgn))
+    /* Allocate a temporary region */
+    Rgn = IntSysCreateRectpRgn(0, 0, 0, 0);
+    if (!Rgn)
     {
-        /* Since PaintRgn interprets the region as being in logical coordinates
-         * but the points we store for the path are already in device
-         * coordinates, we have to set the mapping mode to MM_TEXT temporarily.
-         * Using SaveDC to save information about the mapping mode / world
-         * transform would be easier but would require more overhead, especially
-         * now that SaveDC saves the current path.
-         */
+        EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
+        return FALSE;
+    }
 
-        /* Save the information about the old mapping mode */
-        //mapMode = pdcattr->iMapMode;
-        //ptViewportExt = pdcattr->szlViewportExt;
-        //ptViewportOrg = pdcattr->ptlViewportOrg;
-        //ptWindowExt   = pdcattr->szlWindowExt;
-        //ptWindowOrg   = pdcattr->ptlWindowOrg;
+    if (!PATH_PathToRegion(pPath, pdcattr->jFillMode, Rgn))
+    {
+        /* EngSetLastError ? */
+        REGION_Delete(Rgn);
+        return FALSE;
+    }
 
-        /* Save world transform
-         * NB: The Windows documentation on world transforms would lead one to
-         * believe that this has to be done only in GM_ADVANCED; however, my
-         * tests show that resetting the graphics mode to GM_COMPATIBLE does
-         * not reset the world transform.
-         */
-        MatrixS2XForm(&xform, &dc->pdcattr->mxWorldToPage);
+    /* Since PaintRgn interprets the region as being in logical coordinates
+     * but the points we store for the path are already in device
+     * coordinates, we have to set the mapping mode to MM_TEXT temporarily.
+     * Using SaveDC to save information about the mapping mode / world
+     * transform would be easier but would require more overhead, especially
+     * now that SaveDC saves the current path.
+     */
 
-        /* Set MM_TEXT */
+    /* Save the information about the old mapping mode */
+    //mapMode = pdcattr->iMapMode;
+    //ptViewportExt = pdcattr->szlViewportExt;
+    //ptViewportOrg = pdcattr->ptlViewportOrg;
+    //ptWindowExt   = pdcattr->szlWindowExt;
+    //ptWindowOrg   = pdcattr->ptlWindowOrg;
+
+    /* Save world transform
+     * NB: The Windows documentation on world transforms would lead one to
+     * believe that this has to be done only in GM_ADVANCED; however, my
+     * tests show that resetting the graphics mode to GM_COMPATIBLE does
+     * not reset the world transform.
+     */
+    MatrixS2XForm(&xform, &dc->pdcattr->mxWorldToPage);
+
+    /* Set MM_TEXT */
 //    IntGdiSetMapMode(dc, MM_TEXT);
 //    pdcattr->ptlViewportOrg.x = 0;
 //    pdcattr->ptlViewportOrg.y = 0;
 //    pdcattr->ptlWindowOrg.x = 0;
 //    pdcattr->ptlWindowOrg.y = 0;
 
-        // graphicsMode = pdcattr->iGraphicsMode;
+    // graphicsMode = pdcattr->iGraphicsMode;
 //    pdcattr->iGraphicsMode = GM_ADVANCED;
 //    IntGdiModifyWorldTransform(dc, &xform, MWT_IDENTITY);
 //    pdcattr->iGraphicsMode =  graphicsMode;
 
-        /* Paint the region */
-        IntGdiPaintRgn(dc, hrgn);
-        GreDeleteObject(hrgn);
-        /* Restore the old mapping mode */
+    /* Paint the region */
+    IntGdiPaintRgn(dc, Rgn);
+    REGION_Delete(Rgn);
+    /* Restore the old mapping mode */
 //    IntGdiSetMapMode(dc, mapMode);
 //    pdcattr->szlViewportExt = ptViewportExt;
 //    pdcattr->ptlViewportOrg = ptViewportOrg;
 //    pdcattr->szlWindowExt   = ptWindowExt;
 //    pdcattr->ptlWindowOrg   = ptWindowOrg;
 
-        /* Go to GM_ADVANCED temporarily to restore the world transform */
-        //graphicsMode = pdcattr->iGraphicsMode;
+    /* Go to GM_ADVANCED temporarily to restore the world transform */
+    //graphicsMode = pdcattr->iGraphicsMode;
 //    pdcattr->iGraphicsMode = GM_ADVANCED;
 //    IntGdiModifyWorldTransform(dc, &xform, MWT_MAX+1);
 //    pdcattr->iGraphicsMode = graphicsMode;
-        return TRUE;
-    }
-    return FALSE;
+    return TRUE;
 }
 
 /* PATH_InitGdiPath
@@ -1221,14 +1232,14 @@ FASTCALL
 PATH_PathToRegion(
     PPATH pPath,
     INT nPolyFillMode,
-    HRGN *pHrgn)
+    PREGION Rgn)
 {
     int    numStrokes, iStroke, i;
     PULONG  pNumPointsInStroke;
-    HRGN hrgn = 0;
+    BOOL Ret;
 
     ASSERT(pPath != NULL);
-    ASSERT(pHrgn != NULL);
+    ASSERT(Rgn != NULL);
 
     PATH_FlattenPath(pPath);
 
@@ -1241,6 +1252,7 @@ PATH_PathToRegion(
 
     if (numStrokes == 0)
     {
+        DPRINT1("numStrokes is 0\n");
         return FALSE;
     }
 
@@ -1248,6 +1260,7 @@ PATH_PathToRegion(
     pNumPointsInStroke = ExAllocatePoolWithTag(PagedPool, sizeof(ULONG) * numStrokes, TAG_PATH);
     if (!pNumPointsInStroke)
     {
+        DPRINT1("Failed to allocate %lu strokes\n", numStrokes);
         EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
         return FALSE;
     }
@@ -1268,23 +1281,22 @@ PATH_PathToRegion(
         pNumPointsInStroke[iStroke]++;
     }
 
-    /* Create a region from the strokes */
-    hrgn = IntCreatePolyPolygonRgn(pPath->pPoints,
+    /* Fill the region with the strokes */
+    Ret = REGION_SetPolyPolygonRgn(Rgn,
+                                   pPath->pPoints,
                                    pNumPointsInStroke,
                                    numStrokes,
                                    nPolyFillMode);
-    if (hrgn == (HRGN)0)
+    if (!Ret)
     {
-        EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
-        return FALSE;
+        DPRINT1("REGION_SetPolyPolygonRgn failed\n");
     }
 
     /* Free memory for number-of-points-in-stroke array */
     ExFreePoolWithTag(pNumPointsInStroke, TAG_PATH);
 
     /* Success! */
-    *pHrgn = hrgn;
-    return TRUE;
+    return Ret;
 }
 
 /* PATH_EmptyPath
@@ -1632,6 +1644,7 @@ PATH_StrokePath(
                         if (!Realloc)
                         {
                             DPRINT1("Can't allocate pool!\n");
+                            ExFreePoolWithTag(pBzrPts, TAG_BEZIER);
                             goto end;
                         }
 
@@ -1730,6 +1743,13 @@ PATH_WidenPath(DC *dc)
     }
 
     elp = ExAllocatePoolWithTag(PagedPool, size, TAG_PATH);
+    if (elp == NULL)
+    {
+        PATH_UnlockPath(pPath);
+        EngSetLastError(ERROR_OUTOFMEMORY);
+        return FALSE;
+    }
+
     GreGetObject(pdcattr->hpen, size, elp);
 
     obj_type = GDI_HANDLE_GET_TYPE(pdcattr->hpen);
@@ -2675,6 +2695,7 @@ NtGdiPathToRegion(HDC  hDC)
 {
     PPATH pPath;
     HRGN  hrgnRval = 0;
+    PREGION Rgn;
     DC *pDc;
     PDC_ATTR pdcattr;
 
@@ -2683,6 +2704,7 @@ NtGdiPathToRegion(HDC  hDC)
     pDc = DC_LockDc(hDC);
     if (!pDc)
     {
+        DPRINT1("Failed to lock DC %p\n", hDC);
         EngSetLastError(ERROR_INVALID_PARAMETER);
         return NULL;
     }
@@ -2692,6 +2714,7 @@ NtGdiPathToRegion(HDC  hDC)
     pPath = PATH_LockPath(pDc->dclevel.hPath);
     if (!pPath)
     {
+        DPRINT1("Failed to lock DC path %p\n", pDc->dclevel.hPath);
         DC_UnlockDc(pDc);
         return NULL;
     }
@@ -2699,13 +2722,33 @@ NtGdiPathToRegion(HDC  hDC)
     if (pPath->state != PATH_Closed)
     {
         // FIXME: Check that setlasterror is being called correctly
+        DPRINT1("Path is not closed!\n");
         EngSetLastError(ERROR_CAN_NOT_COMPLETE);
     }
     else
     {
+        /* Create the region and fill it with the path strokes */
+        Rgn = REGION_AllocUserRgnWithHandle(1);
+        if (!Rgn)
+        {
+            DPRINT1("Failed to allocate a region\n");
+            PATH_UnlockPath(pPath);
+            DC_UnlockDc(pDc);
+            return NULL;
+        }
+        hrgnRval = Rgn->BaseObject.hHmgr;
         /* FIXME: Should we empty the path even if conversion failed? */
-        if (PATH_PathToRegion(pPath, pdcattr->jFillMode, &hrgnRval))
+        if (PATH_PathToRegion(pPath, pdcattr->jFillMode, Rgn))
+        {
             PATH_EmptyPath(pPath);
+            REGION_UnlockRgn(Rgn);
+        }
+        else
+        {
+            DPRINT1("PATH_PathToRegion failed\n");
+            REGION_Delete(Rgn);
+            hrgnRval = NULL;
+        }
     }
 
     PATH_UnlockPath(pPath);

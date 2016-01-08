@@ -3,7 +3,7 @@
  * LICENSE:    LGPL
  * FILE:       base/applications/mspaint/lang/tr-TR.rc
  * PURPOSE:    Turkish Resource file for ReactOS Paint
- * TRANSLATOR: 2013 Erdem Ersoy (eersoy93) (erdemersoy@live.com)
+ * TRANSLATOR: 2013, 2014 Erdem Ersoy (eersoy93) (erdemersoy@live.com)
  */
 
 LANGUAGE LANG_TURKISH, SUBLANG_DEFAULT
@@ -14,8 +14,12 @@ BEGIN
     BEGIN
         MENUITEM "&Yeni\tCtrl+N", IDM_FILENEW
         MENUITEM "&Aç...\tCtrl+O", IDM_FILEOPEN
-        MENUITEM "&Kaydet\tCtrl+S", IDM_FILESAVE
-        MENUITEM "Ay&rı Kaydet...", IDM_FILESAVEAS
+        MENUITEM "&Sakla\tCtrl+S", IDM_FILESAVE
+        MENUITEM "Ay&rı Sakla...", IDM_FILESAVEAS
+        MENUITEM SEPARATOR
+        MENUITEM "Sayfa Görünümü", IDM_FILEPAGEVIEW
+        MENUITEM "Sayfa Ayarla...", IDM_FILEPAGESETUP
+        MENUITEM "Yazdır...\tCtrl+P", IDM_FILEPRINT
         MENUITEM SEPARATOR
         MENUITEM "&Döşeyerek Duvar Kağıdı Yap", IDM_FILEASWALLPAPERPLANE
         MENUITEM "&Ortalayarak Duvar Kağıdı Yap", IDM_FILEASWALLPAPERCENTERED
@@ -187,7 +191,7 @@ BEGIN
     IDS_WINDOWTITLE "%s - Boyama"
     IDS_INFOTITLE "Boyama"
     IDS_INFOTEXT "Boyama, GNU Kısıtlı Umûmî Kamu Ruhsatı (LGPL) altında vardır. (LGPL için bakınız: www.gnu.org)"
-    IDS_SAVEPROMPTTEXT "%s için yapılan değişiklikleri kaydetmek ister misiniz?"
+    IDS_SAVEPROMPTTEXT "%s için yapılan değişiklikleri saklamak ister misiniz?"
     IDS_DEFAULTFILENAME "Adsız.bmp"
     IDS_MINIATURETITLE "Küçüğü"
     IDS_TOOLTIP1 "Özgür Seçim"
@@ -211,7 +215,8 @@ BEGIN
     IDS_FILESIZE "%d çoklu"
     IDS_PRINTRES "Tüm metrekarelerde %d*%d nokta"
     IDS_INTNUMBERS "Lütfen yalnızca tam sayı giriniz."
-    IDS_PERCENTAGE "Yüzde 1 ilâ 500 olmalıdır."
-    IDS_ANGLE "Açı -89 ilâ 89 olmalıdır."
+    IDS_PERCENTAGE "Yüzde 1'den 500'e dek olmalıdır."
+    IDS_ANGLE "Açı -89'dan 89'a dek olmalıdır."
     IDS_LOADERRORTEXT "%s kütüğü yüklenemedi."
+	IDS_ENLARGEPROMPTTEXT "Panodaki resim bit eşleminden daha büyük.\nBüyütülmüş bit eşlem ister misiniz?"
 END

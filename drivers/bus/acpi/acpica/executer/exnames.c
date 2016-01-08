@@ -8,7 +8,7 @@
  *
  * 1. Copyright Notice
  *
- * Some or all of this work - Copyright (c) 1999 - 2014, Intel Corp.
+ * Some or all of this work - Copyright (c) 1999 - 2015, Intel Corp.
  * All rights reserved.
  *
  * 2. License
@@ -112,8 +112,6 @@
  * such license, approval or letter.
  *
  *****************************************************************************/
-
-#define __EXNAMES_C__
 
 #include "acpi.h"
 #include "accommon.h"
@@ -234,6 +232,7 @@ AcpiExAllocateNameString (
     return_PTR (NameString);
 }
 
+
 /*******************************************************************************
  *
  * FUNCTION:    AcpiExNameSegment
@@ -263,8 +262,8 @@ AcpiExNameSegment (
 
 
     /*
-     * If first character is a digit, then we know that we aren't looking at a
-     * valid name segment
+     * If first character is a digit, then we know that we aren't looking
+     * at a valid name segment
      */
     CharBuf[0] = *AmlAddress;
 
@@ -295,7 +294,7 @@ AcpiExNameSegment (
 
         if (NameString)
         {
-            ACPI_STRCAT (NameString, CharBuf);
+            strcat (NameString, CharBuf);
             ACPI_DEBUG_PRINT ((ACPI_DB_NAMES,
                 "Appended to - %s\n", NameString));
         }
@@ -468,7 +467,8 @@ AcpiExGetNameString (
             AmlAddress++;
             NumSegments = *AmlAddress;
 
-            NameString = AcpiExAllocateNameString (PrefixCount, NumSegments);
+            NameString = AcpiExAllocateNameString (
+                PrefixCount, NumSegments);
             if (!NameString)
             {
                 Status = AE_NO_MEMORY;

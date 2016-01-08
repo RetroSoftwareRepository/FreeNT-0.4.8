@@ -50,7 +50,7 @@ static HRESULT WINAPI BaseRenderer_InputPin_ReceiveConnection(IPin * iface, IPin
 {
     BaseInputPin *This = impl_BaseInputPin_from_IPin(iface);
     BaseRenderer *renderer = impl_from_IBaseFilter(This->pin.pinInfo.pFilter);
-    HRESULT hr = S_OK;
+    HRESULT hr;
 
     TRACE("(%p/%p)->(%p, %p)\n", This, renderer, pReceivePin, pmt);
 
@@ -89,14 +89,14 @@ static HRESULT WINAPI BaseRenderer_InputPin_Disconnect(IPin * iface)
 
 static HRESULT WINAPI BaseRenderer_InputPin_EndOfStream(IPin * iface)
 {
-    HRESULT hr = S_OK;
+    HRESULT hr;
     BaseInputPin* This = impl_BaseInputPin_from_IPin(iface);
     BaseRenderer *pFilter = impl_from_IBaseFilter(This->pin.pinInfo.pFilter);
 
     TRACE("(%p/%p)->()\n", This, pFilter);
 
-    EnterCriticalSection(&pFilter->filter.csFilter);
     EnterCriticalSection(&pFilter->csRenderLock);
+    EnterCriticalSection(&pFilter->filter.csFilter);
     hr = BaseInputPinImpl_EndOfStream(iface);
     EnterCriticalSection(This->pin.pCritSec);
     if (SUCCEEDED(hr))
@@ -107,8 +107,8 @@ static HRESULT WINAPI BaseRenderer_InputPin_EndOfStream(IPin * iface)
             hr = BaseRendererImpl_EndOfStream(pFilter);
     }
     LeaveCriticalSection(This->pin.pCritSec);
-    LeaveCriticalSection(&pFilter->csRenderLock);
     LeaveCriticalSection(&pFilter->filter.csFilter);
+    LeaveCriticalSection(&pFilter->csRenderLock);
     return hr;
 }
 
@@ -116,12 +116,12 @@ static HRESULT WINAPI BaseRenderer_InputPin_BeginFlush(IPin * iface)
 {
     BaseInputPin* This = impl_BaseInputPin_from_IPin(iface);
     BaseRenderer *pFilter = impl_from_IBaseFilter(This->pin.pinInfo.pFilter);
-    HRESULT hr = S_OK;
+    HRESULT hr;
 
     TRACE("(%p/%p)->()\n", This, iface);
 
-    EnterCriticalSection(&pFilter->filter.csFilter);
     EnterCriticalSection(&pFilter->csRenderLock);
+    EnterCriticalSection(&pFilter->filter.csFilter);
     EnterCriticalSection(This->pin.pCritSec);
     hr = BaseInputPinImpl_BeginFlush(iface);
     if (SUCCEEDED(hr))
@@ -141,12 +141,12 @@ static HRESULT WINAPI BaseRenderer_InputPin_EndFlush(IPin * iface)
 {
     BaseInputPin* This = impl_BaseInputPin_from_IPin(iface);
     BaseRenderer *pFilter = impl_from_IBaseFilter(This->pin.pinInfo.pFilter);
-    HRESULT hr = S_OK;
+    HRESULT hr;
 
     TRACE("(%p/%p)->()\n", This, pFilter);
 
-    EnterCriticalSection(&pFilter->filter.csFilter);
     EnterCriticalSection(&pFilter->csRenderLock);
+    EnterCriticalSection(&pFilter->filter.csFilter);
     EnterCriticalSection(This->pin.pCritSec);
     hr = BaseInputPinImpl_EndFlush(iface);
     if (SUCCEEDED(hr))
@@ -157,8 +157,8 @@ static HRESULT WINAPI BaseRenderer_InputPin_EndFlush(IPin * iface)
             hr = BaseRendererImpl_EndFlush(pFilter);
     }
     LeaveCriticalSection(This->pin.pCritSec);
-    LeaveCriticalSection(&pFilter->csRenderLock);
     LeaveCriticalSection(&pFilter->filter.csFilter);
+    LeaveCriticalSection(&pFilter->csRenderLock);
     return hr;
 }
 

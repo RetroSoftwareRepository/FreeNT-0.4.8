@@ -6,7 +6,10 @@ add_definitions(
 
 list(APPEND SOURCE
     cminit.c
+    cmindex.c
+    cmname.c
     cmtools.c
+    cmvalue.c
     hivebin.c
     hivecell.c
     hiveinit.c
@@ -16,7 +19,7 @@ list(APPEND SOURCE
 
 if(CMAKE_CROSSCOMPILING)
     add_library(cmlib ${SOURCE})
-    add_dependencies(cmlib bugcodes)
+    add_dependencies(cmlib bugcodes xdk)
     add_pch(cmlib cmlib.h SOURCE)
 else()
     add_definitions(

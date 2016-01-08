@@ -29,6 +29,11 @@
 #define NDEBUG
 #include <debug.h>
 
+#if defined(ALLOC_PRAGMA)
+#pragma alloc_text(INIT, MountmgrReadNoAutoMount)
+#pragma alloc_text(INIT, DriverEntry)
+#endif
+
 /* FIXME */
 GUID MountedDevicesGuid = {0x53F5630D, 0xB6BF, 0x11D0, {0x94, 0xF2, 0x00, 0xA0, 0xC9, 0x1E, 0xFB, 0x8B}};
 
@@ -37,16 +42,6 @@ KEVENT UnloadEvent;
 LONG Unloading;
 
 static const WCHAR Cunc[] = L"\\??\\C:";
-
-/*
- * TODO:
- * - MountMgrQueryDosVolumePaths
- * - MountMgrQueryVolumePaths
- * - MountMgrValidateBackPointer
- * - MountMgrVolumeMountPointCreated
- * - MountMgrVolumeMountPointDeleted
- * - ReconcileThisDatabaseWithMasterWorker
- */
 
 /*
  * @implemented
@@ -132,8 +127,8 @@ CreateNewDriveLetterName(OUT PUNICODE_STRING DriveLetter,
     NTSTATUS Status = STATUS_UNSUCCESSFUL;
 
     /* Allocate a big enough buffer to contain the symbolic link */
-    DriveLetter->MaximumLength = sizeof(DosDevices.Buffer) + 3 * sizeof(WCHAR);
-    DriveLetter->Buffer = AllocatePool(sizeof(DosDevices.Buffer) + 3 * sizeof(WCHAR));
+    DriveLetter->MaximumLength = DosDevices.Length + 3 * sizeof(WCHAR);
+    DriveLetter->Buffer = AllocatePool(DriveLetter->MaximumLength);
     if (!DriveLetter->Buffer)
     {
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -143,9 +138,9 @@ CreateNewDriveLetterName(OUT PUNICODE_STRING DriveLetter,
     RtlCopyUnicodeString(DriveLetter, &DosDevices);
 
     /* Update string to reflect real contents */
-    DriveLetter->Length = sizeof(DosDevices.Buffer) + 2 * sizeof(WCHAR);
-    DriveLetter->Buffer[(sizeof(DosDevices.Buffer) + 2 * sizeof(WCHAR)) / sizeof (WCHAR)] = UNICODE_NULL;
-    DriveLetter->Buffer[(sizeof(DosDevices.Buffer) + sizeof(WCHAR)) / sizeof (WCHAR)] = L':';
+    DriveLetter->Length = DosDevices.Length + 2 * sizeof(WCHAR);
+    DriveLetter->Buffer[DosDevices.Length / sizeof(WCHAR) + 2] = UNICODE_NULL;
+    DriveLetter->Buffer[DosDevices.Length / sizeof(WCHAR) + 1] = L':';
 
     /* If caller wants a no drive entry */
     if (Letter == (UCHAR)-1)
@@ -158,7 +153,7 @@ CreateNewDriveLetterName(OUT PUNICODE_STRING DriveLetter,
     else if (Letter)
     {
         /* Use the letter given by the caller */
-        DriveLetter->Buffer[sizeof(DosDevices.Buffer) / sizeof(WCHAR)] = (WCHAR)Letter;
+        DriveLetter->Buffer[DosDevices.Length / sizeof(WCHAR)] = (WCHAR)Letter;
         Status = GlobalCreateSymbolicLink(DriveLetter, DeviceName);
         if (NT_SUCCESS(Status))
         {
@@ -187,16 +182,18 @@ CreateNewDriveLetterName(OUT PUNICODE_STRING DriveLetter,
     /* Try to affect a letter (up to Z, ofc) until it's possible */
     for (; Letter <= 'Z'; Letter++)
     {
-        DriveLetter->Buffer[sizeof(DosDevices.Buffer) / sizeof(WCHAR)] = (WCHAR)Letter;
+        DriveLetter->Buffer[DosDevices.Length / sizeof(WCHAR)] = (WCHAR)Letter;
         Status = GlobalCreateSymbolicLink(DriveLetter, DeviceName);
         if (NT_SUCCESS(Status))
         {
+            DPRINT("Assigned drive %c: to %wZ\n", Letter, DeviceName);
             return Status;
         }
     }
 
     /* We failed to allocate a letter */
     FreePool(DriveLetter->Buffer);
+    DPRINT("Failed to create a drive letter for %wZ\n", DeviceName);
     return Status;
 }
 
@@ -558,7 +555,7 @@ QueryDeviceInformation(IN PUNICODE_STRING SymbolicName,
 
             /* Query unique ID */
             KeInitializeEvent(&Event, NotificationEvent, FALSE);
-            Irp = IoBuildDeviceIoControlRequest(IOCTL_MOUNTDEV_QUERY_DEVICE_NAME,
+            Irp = IoBuildDeviceIoControlRequest(IOCTL_MOUNTDEV_QUERY_UNIQUE_ID,
                                                 DeviceObject,
                                                 NULL,
                                                 0,
@@ -910,6 +907,7 @@ MountMgrUnload(IN struct _DRIVER_OBJECT *DriverObject)
 /*
  * @implemented
  */
+INIT_SECTION
 BOOLEAN
 MountmgrReadNoAutoMount(IN PUNICODE_STRING RegistryPath)
 {
@@ -946,7 +944,7 @@ MountmgrReadNoAutoMount(IN PUNICODE_STRING RegistryPath)
 NTSTATUS
 MountMgrMountedDeviceArrival(IN PDEVICE_EXTENSION DeviceExtension,
                              IN PUNICODE_STRING SymbolicName,
-                             IN BOOLEAN FromVolume)
+                             IN BOOLEAN ManuallyRegistered)
 {
     WCHAR Letter;
     GUID StableGuid;
@@ -988,7 +986,7 @@ MountMgrMountedDeviceArrival(IN PDEVICE_EXTENSION DeviceExtension,
     /* Copy symbolic name */
     RtlCopyMemory(DeviceInformation->SymbolicName.Buffer, SymbolicName->Buffer, SymbolicName->Length);
     DeviceInformation->SymbolicName.Buffer[DeviceInformation->SymbolicName.Length / sizeof(WCHAR)] = UNICODE_NULL;
-    DeviceInformation->Volume = FromVolume;
+    DeviceInformation->ManuallyRegistered = ManuallyRegistered;
     DeviceInformation->DeviceExtension = DeviceExtension;
 
     /* Query as much data as possible about device */
@@ -1070,7 +1068,7 @@ MountMgrMountedDeviceArrival(IN PDEVICE_EXTENSION DeviceExtension,
     {
         CurrentDevice = CONTAINING_RECORD(NextEntry, DEVICE_INFORMATION, DeviceListEntry);
 
-        if (RtlEqualUnicodeString(&(DeviceInformation->DeviceName), &TargetDeviceName, TRUE))
+        if (RtlEqualUnicodeString(&(CurrentDevice->DeviceName), &TargetDeviceName, TRUE))
         {
             break;
         }
@@ -1329,9 +1327,9 @@ MountMgrMountedDeviceArrival(IN PDEVICE_EXTENSION DeviceExtension,
         DeviceInformation->SuggestedDriveLetter = 0;
     }
     /* Else, it's time to set up one */
-    else if (!DeviceExtension->NoAutoMount && !DeviceInformation->Removable &&
-             DeviceExtension->AutomaticDriveLetter && HasGptDriveLetter &&
-             DeviceInformation->SuggestedDriveLetter &&
+    else if ((DeviceExtension->NoAutoMount || DeviceInformation->Removable) &&
+             DeviceExtension->AutomaticDriveLetter &&
+             (HasGptDriveLetter || DeviceInformation->SuggestedDriveLetter) &&
              !HasNoDriveLetterEntry(UniqueId))
     {
         /* Create a new drive letter */
@@ -1370,8 +1368,8 @@ MountMgrMountedDeviceArrival(IN PDEVICE_EXTENSION DeviceExtension,
         }
     }
 
-    /* If required, register for notifications about the device */
-    if (!FromVolume)
+    /* If that's a PnP device, register for notifications */
+    if (!ManuallyRegistered)
     {
         RegisterForTargetDeviceNotification(DeviceExtension, DeviceInformation);
     }
@@ -1803,6 +1801,7 @@ MountMgrShutdown(IN PDEVICE_OBJECT DeviceObject,
 
 /* FUNCTIONS ****************************************************************/
 
+INIT_SECTION
 NTSTATUS
 NTAPI
 DriverEntry(IN PDRIVER_OBJECT DriverObject,
@@ -1876,7 +1875,7 @@ DriverEntry(IN PDRIVER_OBJECT DriverObject,
                                             &MountedDevicesGuid,
                                             DriverObject,
                                             MountMgrMountedDeviceNotification,
-                                            DeviceObject,
+                                            DeviceExtension,
                                             &(DeviceExtension->NotificationEntry));
 
     if (!NT_SUCCESS(Status))

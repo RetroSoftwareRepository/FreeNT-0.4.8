@@ -70,7 +70,7 @@ BEGIN
 END
 
 IDD_PARTITION DIALOGEX 0, 0, 145, 90
-STYLE WS_VISIBLE | WS_CAPTION
+STYLE DS_SHELLFONT | WS_VISIBLE | WS_CAPTION
 CAPTION "Vytvořit oddíl"
 FONT 8, "MS Shell Dlg"
 BEGIN
@@ -86,7 +86,7 @@ BEGIN
 END
 
 IDD_BOOTOPTIONS DIALOGEX 0, 0, 305, 116
-STYLE WS_VISIBLE | WS_CAPTION
+STYLE DS_SHELLFONT | WS_VISIBLE | WS_CAPTION
 CAPTION "Pokročilá nastavení oddílu"
 FONT 8, "MS Shell Dlg"
 BEGIN
@@ -150,4 +150,6 @@ BEGIN
     IDS_SUMMARYSUBTITLE "Výpis voleb instalace k ověření před tím, než začne instalace"
     IDS_ABORTSETUP "Systém ReactOS není na tomto počítači kompletně nainstalovaný. Pokud nyní ukončíte instalaci, bude ji pro nainstalování systému ReactOS nutné provést znova. Opravdu ukončit?"
     IDS_ABORTSETUP2 "Přerušit instalaci?"
+    IDS_NO_TXTSETUP_SIF "Unable to find 'txtsetup.sif'\nSetup is unable to continue."
+    IDS_CAPTION "Instalace systému ReactOS"
 END

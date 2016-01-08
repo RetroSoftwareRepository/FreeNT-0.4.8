@@ -1,7 +1,7 @@
 /*
  * PROJECT:         ReactOS Kernel
  * LICENSE:         GPL - See COPYING in the top level directory
- * FILE:            ntoskrnl/cm/cm.h
+ * FILE:            ntoskrnl/include/internal/cm.h
  * PURPOSE:         Internal header for the Configuration Manager
  * PROGRAMMERS:     Alex Ionescu (alex.ionescu@reactos.org)
  */
@@ -552,12 +552,24 @@ CmpInitHiveViewList(
     IN PCMHIVE Hive
 );
 
+VOID
+NTAPI
+CmpDestroyHiveViewList(
+    IN PCMHIVE Hive
+);
+
 //
 // Security Cache Functions
 //
 VOID
 NTAPI
 CmpInitSecurityCache(
+    IN PCMHIVE Hive
+);
+
+VOID
+NTAPI
+CmpDestroySecurityCache(
     IN PCMHIVE Hive
 );
 
@@ -826,6 +838,12 @@ CmpOpenHiveFiles(
     IN BOOLEAN MarkAsSystemHive,
     IN BOOLEAN NoBuffering,
     OUT PULONG ClusterSize OPTIONAL
+);
+
+VOID
+NTAPI
+CmpCloseHiveFiles(
+    IN PCMHIVE Hive
 );
 
 NTSTATUS
@@ -1575,6 +1593,14 @@ CmSaveKey(
     IN ULONG Flags
 );
 
+NTSTATUS
+NTAPI
+CmSaveMergedKeys(
+    IN PCM_KEY_CONTROL_BLOCK HighKcb,
+    IN PCM_KEY_CONTROL_BLOCK LowKcb,
+    IN HANDLE FileHandle
+);
+
 //
 // Startup and Shutdown
 //
@@ -1651,6 +1677,7 @@ extern BOOLEAN CmpSpecialBootCondition;
 extern BOOLEAN CmpFlushOnLockRelease;
 extern BOOLEAN CmpShareSystemHives;
 extern BOOLEAN CmpMiniNTBoot;
+extern BOOLEAN CmpNoVolatileCreates;
 extern EX_PUSH_LOCK CmpHiveListHeadLock, CmpLoadHiveLock;
 extern LIST_ENTRY CmpHiveListHead;
 extern POBJECT_TYPE CmpKeyObjectType;

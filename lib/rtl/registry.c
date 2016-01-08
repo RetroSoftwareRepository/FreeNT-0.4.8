@@ -523,7 +523,7 @@ RtlpGetRegistryHandle(IN ULONG RelativeTo,
     /* Initialize the object attributes */
     InitializeObjectAttributes(&ObjectAttributes,
                                &KeyName,
-                               OBJ_CASE_INSENSITIVE,
+                               OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
                                NULL,
                                NULL);
 
@@ -551,6 +551,20 @@ RtlpGetRegistryHandle(IN ULONG RelativeTo,
     return Status;
 }
 
+FORCEINLINE
+VOID
+RtlpCloseRegistryHandle(
+    _In_ ULONG RelativeTo,
+    _In_ HANDLE KeyHandle)
+{
+    /* Did the caller pass a key handle? */
+    if (!(RelativeTo & RTL_REGISTRY_HANDLE))
+    {
+        /* We opened the key in RtlpGetRegistryHandle, so close it now */
+        ZwClose(KeyHandle);
+    }
+}
+
 /* PUBLIC FUNCTIONS **********************************************************/
 
 /*
@@ -572,7 +586,7 @@ RtlCheckRegistryKey(IN ULONG RelativeTo,
                                    &KeyHandle);
     if (!NT_SUCCESS(Status)) return Status;
 
-    /* All went well, close the handle and return success */
+    /* Close the handle even for RTL_REGISTRY_HANDLE */
     ZwClose(KeyHandle);
     return STATUS_SUCCESS;
 }
@@ -596,8 +610,8 @@ RtlCreateRegistryKey(IN ULONG RelativeTo,
                                    &KeyHandle);
     if (!NT_SUCCESS(Status)) return Status;
 
-    /* All went well, close the handle and return success */
-    ZwClose(KeyHandle);
+    /* All went well, close the handle and return status */
+    RtlpCloseRegistryHandle(RelativeTo, KeyHandle);
     return STATUS_SUCCESS;
 }
 
@@ -626,8 +640,8 @@ RtlDeleteRegistryValue(IN ULONG RelativeTo,
     RtlInitUnicodeString(&Name, ValueName);
     Status = ZwDeleteValueKey(KeyHandle, &Name);
 
-    /* All went well, close the handle and return status */
-    ZwClose(KeyHandle);
+    /* Close the handle and return status */
+    RtlpCloseRegistryHandle(RelativeTo, KeyHandle);
     return Status;
 }
 
@@ -664,13 +678,8 @@ RtlWriteRegistryValue(IN ULONG RelativeTo,
                            ValueData,
                            ValueLength);
 
-    /* Did the caller pass a key handle? */
-    if (!(RelativeTo & RTL_REGISTRY_HANDLE))
-    {
-        /* We opened the key in RtlpGetRegistryHandle, so close it now */
-        ZwClose(KeyHandle);
-    }
-
+    /* Close the handle and return status */
+    RtlpCloseRegistryHandle(RelativeTo, KeyHandle);
     return Status;
 }
 
@@ -694,7 +703,7 @@ RtlOpenCurrentUser(IN ACCESS_MASK DesiredAccess,
         /* Initialize the attributes and open it */
         InitializeObjectAttributes(&ObjectAttributes,
                                    &KeyPath,
-                                   OBJ_CASE_INSENSITIVE,
+                                   OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
                                    NULL,
                                    NULL);
         Status = ZwOpenKey(KeyHandle, DesiredAccess, &ObjectAttributes);
@@ -708,7 +717,7 @@ RtlOpenCurrentUser(IN ACCESS_MASK DesiredAccess,
     RtlInitUnicodeString(&KeyPath, RtlpRegPaths[RTL_REGISTRY_USER]);
     InitializeObjectAttributes(&ObjectAttributes,
                                &KeyPath,
-                               OBJ_CASE_INSENSITIVE,
+                               OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
                                NULL,
                                NULL);
     Status = ZwOpenKey(KeyHandle, DesiredAccess, &ObjectAttributes);
@@ -733,19 +742,21 @@ RtlFormatCurrentUserKeyPath(OUT PUNICODE_STRING KeyPath)
     PAGED_CODE_RTL();
 
     /* Open the thread token */
-    Status = ZwOpenThreadToken(NtCurrentThread(),
-                               TOKEN_QUERY,
-                               TRUE,
-                               &TokenHandle);
+    Status = ZwOpenThreadTokenEx(NtCurrentThread(),
+                                 TOKEN_QUERY,
+                                 TRUE,
+                                 OBJ_KERNEL_HANDLE,
+                                 &TokenHandle);
     if (!NT_SUCCESS(Status))
     {
         /* We failed, is it because we don't have a thread token? */
         if (Status != STATUS_NO_TOKEN) return Status;
 
         /* It is, so use the process token */
-        Status = ZwOpenProcessToken(NtCurrentProcess(),
-                                    TOKEN_QUERY,
-                                    &TokenHandle);
+        Status = ZwOpenProcessTokenEx(NtCurrentProcess(),
+                                      TOKEN_QUERY,
+                                      OBJ_KERNEL_HANDLE,
+                                      &TokenHandle);
         if (!NT_SUCCESS(Status)) return Status;
     }
 
@@ -1017,7 +1028,7 @@ RtlQueryRegistryValues(IN ULONG RelativeTo,
     if (!KeyValueInfo)
     {
         /* Close the handle if we have one and fail */
-        if (!(RelativeTo & RTL_REGISTRY_HANDLE)) ZwClose(KeyHandle);
+        RtlpCloseRegistryHandle(RelativeTo, KeyHandle);
         return Status;
     }
 
@@ -1318,7 +1329,7 @@ ProcessValues:
     }
 
     /* Check if we need to close our handle */
-    if ((KeyHandle) && !(RelativeTo & RTL_REGISTRY_HANDLE)) ZwClose(KeyHandle);
+    if (KeyHandle) RtlpCloseRegistryHandle(RelativeTo, KeyHandle);
     if ((CurrentKey) && (CurrentKey != KeyHandle)) ZwClose(CurrentKey);
 
     /* Free our buffer and return status */

@@ -19,7 +19,7 @@
 /*
  * COPYRIGHT:       See COPYING in the top level directory
  * PROJECT:         ReactOS text-mode setup
- * FILE:            subsys/system/usetup/inicache.c
+ * FILE:            base/setup/usetup/inicache.c
  * PURPOSE:         INI file parser that caches contents of INI file in memory
  * PROGRAMMER:      Royce Mitchell III
  *                  Eric Kohl
@@ -42,9 +42,7 @@ IniCacheFreeKey(
     PINICACHEKEY Next;
 
     if (Key == NULL)
-    {
         return NULL;
-    }
 
     Next = Key->Next;
     if (Key->Name != NULL)
@@ -73,9 +71,7 @@ IniCacheFreeSection(
     PINICACHESECTION Next;
 
     if (Section == NULL)
-    {
         return NULL;
-    }
 
     Next = Section->Next;
     while (Section->FirstKey != NULL)
@@ -209,42 +205,6 @@ IniCacheAddKey(
 }
 
 
-#if 0
-static
-PINICACHESECTION
-IniCacheFindSection(
-    PINICACHE Cache,
-    PWCHAR Name,
-    ULONG NameLength)
-{
-    PINICACHESECTION Section = NULL;
-
-    if (Cache == NULL || Name == NULL || NameLength == 0)
-    {
-        return NULL;
-    }
-
-    Section = Cache->FirstSection;
-
-    /* iterate through list of sections */
-    while (Section != NULL)
-    {
-        if (NameLength == wcslen(Section->Name))
-        {
-            /* are the contents the same too? */
-            if (_wcsnicmp(Section->Name, Name, NameLength) == 0)
-                break;
-        }
-
-        /* get the next section*/
-        Section = Section->Next;
-    }
-
-    return Section;
-}
-#endif
-
-
 static
 PINICACHESECTION
 IniCacheAddSection(
@@ -351,7 +311,7 @@ IniCacheGetSectionName(
     *NamePtr = NULL;
     *NameSize = 0;
 
-    /* skip whitespace */
+    /* Skip whitespace */
     while (*Ptr != 0 && isspace(*Ptr))
     {
         Ptr++;
@@ -401,7 +361,7 @@ IniCacheGetKeyName(
         *NameSize = 0;
         Size = 0;
 
-        /* skip whitespace and empty lines */
+        /* Skip whitespace and empty lines */
         while (isspace(*Ptr) || *Ptr == '\n' || *Ptr == '\r')
         {
             Ptr++;
@@ -514,9 +474,10 @@ IniCacheGetKeyValue(
 NTSTATUS
 IniCacheLoad(
     PINICACHE *Cache,
-    PUNICODE_STRING FileName,
+    PWCHAR FileName,
     BOOLEAN String)
 {
+    UNICODE_STRING Name;
     OBJECT_ATTRIBUTES ObjectAttributes;
     FILE_STANDARD_INFORMATION FileInfo;
     IO_STATUS_BLOCK IoStatusBlock;
@@ -542,8 +503,10 @@ IniCacheLoad(
     *Cache = NULL;
 
     /* Open ini file */
+    RtlInitUnicodeString(&Name, FileName);
+
     InitializeObjectAttributes(&ObjectAttributes,
-                               FileName,
+                               &Name,
                                0,
                                NULL,
                                NULL);
@@ -700,9 +663,7 @@ IniCacheDestroy(
     PINICACHE Cache)
 {
     if (Cache == NULL)
-    {
         return;
-    }
 
     while (Cache->FirstSection != NULL)
     {
@@ -1066,8 +1027,7 @@ IniCacheSave(
     }
 
     /* Create ini file */
-    RtlInitUnicodeString(&Name,
-                         FileName);
+    RtlInitUnicodeString(&Name, FileName);
 
     InitializeObjectAttributes(&ObjectAttributes,
                                &Name,

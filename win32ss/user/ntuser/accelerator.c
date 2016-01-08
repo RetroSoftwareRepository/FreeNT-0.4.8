@@ -2,7 +2,7 @@
  * COPYRIGHT:        See COPYING in the top level directory
  * PROJECT:          ReactOS kernel
  * PURPOSE:          Window accelerator
- * FILE:             subsystems/win32/win32k/ntuser/accelerator.c
+ * FILE:             win32ss/user/ntuser/accelerator.c
  * PROGRAMER:        Casper S. Hornstrup (chorns@users.sourceforge.net)
  *                   Copyright 1993 Martin Ayotte
  *                   Copyright 1994 Alexandre Julliard
@@ -235,6 +235,7 @@ NtUserCreateAcceleratorTable(
     ULONG Index;
     NTSTATUS Status = STATUS_SUCCESS;
     DECLARE_RETURN(HACCEL);
+    PTHREADINFO pti;
 
     TRACE("Enter NtUserCreateAcceleratorTable(Entries %p, EntriesCount %u)\n",
           Entries, EntriesCount);
@@ -246,7 +247,14 @@ NtUserCreateAcceleratorTable(
         RETURN( (HACCEL) NULL );
     }
 
-    Accel = UserCreateObject(gHandleTable, NULL, NULL, (PHANDLE)&hAccel, TYPE_ACCELTABLE, sizeof(ACCELERATOR_TABLE));
+    pti = PsGetCurrentThreadWin32Thread();
+
+    Accel = UserCreateObject(gHandleTable,
+        pti->rpdesk,
+        pti,
+        (PHANDLE)&hAccel,
+        TYPE_ACCELTABLE,
+        sizeof(ACCELERATOR_TABLE));
 
     if (Accel == NULL)
     {
@@ -304,6 +312,9 @@ NtUserCreateAcceleratorTable(
 
     /* FIXME: Save HandleTable in a list somewhere so we can clean it up again */
 
+    /* Release the extra reference (UserCreateObject added 2 references) */
+    UserDereferenceObject(Accel);
+
     RETURN(hAccel);
 
 CLEANUP:
@@ -311,6 +322,21 @@ CLEANUP:
           Entries, EntriesCount, _ret_);
     UserLeave();
     END_CLEANUP;
+}
+
+BOOLEAN
+UserDestroyAccelTable(PVOID Object)
+{
+    PACCELERATOR_TABLE Accel = Object;
+
+    if (Accel->Table != NULL)
+    {
+        ExFreePoolWithTag(Accel->Table, USERTAG_ACCEL);
+        Accel->Table = NULL;
+    }
+
+    UserDeleteObject(Accel->head.h, TYPE_ACCELTABLE);
+    return TRUE;
 }
 
 BOOLEAN
@@ -334,13 +360,7 @@ NtUserDestroyAcceleratorTable(
         RETURN( FALSE);
     }
 
-    if (Accel->Table != NULL)
-    {
-        ExFreePoolWithTag(Accel->Table, USERTAG_ACCEL);
-        Accel->Table = NULL;
-    }
-
-    UserDeleteObject(hAccel, TYPE_ACCELTABLE);
+    UserDestroyAccelTable(Accel);
 
     RETURN( TRUE);
 

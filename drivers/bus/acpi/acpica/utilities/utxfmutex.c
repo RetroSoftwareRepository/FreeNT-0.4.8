@@ -8,7 +8,7 @@
  *
  * 1. Copyright Notice
  *
- * Some or all of this work - Copyright (c) 1999 - 2014, Intel Corp.
+ * Some or all of this work - Copyright (c) 1999 - 2015, Intel Corp.
  * All rights reserved.
  *
  * 2. License
@@ -113,8 +113,6 @@
  *
  *****************************************************************************/
 
-#define __UTXFMUTEX_C__
-
 #include "acpi.h"
 #include "accommon.h"
 #include "acnamesp.h"
@@ -172,8 +170,8 @@ AcpiUtGetMutexObject (
     MutexNode = Handle;
     if (Pathname != NULL)
     {
-        Status = AcpiGetHandle (Handle, Pathname,
-            ACPI_CAST_PTR (ACPI_HANDLE, &MutexNode));
+        Status = AcpiGetHandle (
+            Handle, Pathname, ACPI_CAST_PTR (ACPI_HANDLE, &MutexNode));
         if (ACPI_FAILURE (Status))
         {
             return (Status);

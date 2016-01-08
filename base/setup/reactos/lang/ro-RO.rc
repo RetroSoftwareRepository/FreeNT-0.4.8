@@ -3,7 +3,7 @@
  * FILE:    base/setup/reactos/lang/ro-RO.rc
  * PURPOSE: Romanian Language File for ReactOS GUI first stage setup
  * TRANSLATORS:
- *          Petre Dumitriu (petrimetri-at-gmail-dot-com)
+ *          Petru Dimitriu (petrimetri at gmail dot com)
  *          Ștefan Fulea (stefan dot fulea at mail dot md)
  */
 
@@ -14,7 +14,7 @@ STYLE DS_SHELLFONT | DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYS
 CAPTION "Asistent de instalare ReactOS"
 FONT 8, "MS Shell Dlg"
 BEGIN
-    LTEXT "Bun venit la Instalarea ReactOS", IDC_STARTTITLE, 115, 8, 195, 24
+    LTEXT "Bun venit la instalarea ReactOS", IDC_STARTTITLE, 115, 8, 195, 24
     LTEXT "ReactOS încă nu poate fi instalat direct de pe acest CD! Pentru a instala ReactOS, reporniți calculatorul și utilizați acest CD în secvența de inițializare.", IDC_STATIC, 115, 40, 195, 100
     LTEXT "Apăsați pe „Sfârșit” pentru a ieși.", IDC_STATIC, 115, 169, 195, 17
 END
@@ -73,7 +73,7 @@ BEGIN
 END
 
 IDD_PARTITION DIALOGEX 0, 0, 145, 90
-STYLE WS_VISIBLE | WS_CAPTION
+STYLE DS_SHELLFONT | WS_VISIBLE | WS_CAPTION
 CAPTION "Creare partiție"
 FONT 8, "MS Shell Dlg"
 BEGIN
@@ -89,7 +89,7 @@ BEGIN
 END
 
 IDD_BOOTOPTIONS DIALOGEX 0, 0, 305, 116
-STYLE WS_VISIBLE | WS_CAPTION
+STYLE DS_SHELLFONT | WS_VISIBLE | WS_CAPTION
 CAPTION "Opțiuni avansate partiție"
 FONT 8, "MS Shell Dlg"
 BEGIN
@@ -153,4 +153,6 @@ BEGIN
     IDS_SUMMARYSUBTITLE "Lista cu opțiuni de instalare ce necesită verificare înainte de a continua instalarea."
     IDS_ABORTSETUP "ReactOS încă nu este complet instalat în calculator. Daca întrerupeți procesul de instalare, pentru a instala va fi necesară repetarea pașilor parcurși până acum. Sigur doriți asta?"
     IDS_ABORTSETUP2 "Abandonați instalarea?"
+    IDS_NO_TXTSETUP_SIF "Nu se poate găsi „txtsetup.sif”\nInstalarea nu se poate continua."
+    IDS_CAPTION "Asistentul de instalare ReactOS"
 END

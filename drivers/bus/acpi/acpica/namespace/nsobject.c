@@ -9,7 +9,7 @@
  *
  * 1. Copyright Notice
  *
- * Some or all of this work - Copyright (c) 1999 - 2014, Intel Corp.
+ * Some or all of this work - Copyright (c) 1999 - 2015, Intel Corp.
  * All rights reserved.
  *
  * 2. License
@@ -114,9 +114,6 @@
  *
  *****************************************************************************/
 
-
-#define __NSOBJECT_C__
-
 #include "acpi.h"
 #include "accommon.h"
 #include "acnamesp.h"
@@ -220,7 +217,7 @@ AcpiNsAttachObject (
          * Value passed is a name handle and that name has a
          * non-null value. Use that name's value and type.
          */
-        ObjDesc    = ((ACPI_NAMESPACE_NODE *) Object)->Object;
+        ObjDesc = ((ACPI_NAMESPACE_NODE *) Object)->Object;
         ObjectType = ((ACPI_NAMESPACE_NODE *) Object)->Type;
     }
 
@@ -270,8 +267,8 @@ AcpiNsAttachObject (
         LastObjDesc->Common.NextObject = Node->Object;
     }
 
-    Node->Type     = (UINT8) ObjectType;
-    Node->Object   = ObjDesc;
+    Node->Type = (UINT8) ObjectType;
+    Node->Object = ObjDesc;
 
     return_ACPI_STATUS (AE_OK);
 }
@@ -334,6 +331,16 @@ AcpiNsDetachObject (
            (Node->Object->Common.Type != ACPI_TYPE_LOCAL_DATA))
         {
             Node->Object = Node->Object->Common.NextObject;
+        }
+
+        /*
+         * Detach the object from any data objects (which are still held by
+         * the namespace node)
+         */
+        if (ObjDesc->Common.NextObject &&
+           ((ObjDesc->Common.NextObject)->Common.Type == ACPI_TYPE_LOCAL_DATA))
+        {
+           ObjDesc->Common.NextObject = NULL;
         }
     }
 

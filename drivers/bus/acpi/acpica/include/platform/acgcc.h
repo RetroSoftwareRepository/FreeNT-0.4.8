@@ -8,7 +8,7 @@
  *
  * 1. Copyright Notice
  *
- * Some or all of this work - Copyright (c) 1999 - 2014, Intel Corp.
+ * Some or all of this work - Copyright (c) 1999 - 2015, Intel Corp.
  * All rights reserved.
  *
  * 2. License
@@ -147,7 +147,12 @@
 #undef strchr
 #endif
 
+/* GCC supports __VA_ARGS__ in macros */
 
+#define COMPILER_VA_MACRO               1
+
+
+#ifdef __REACTOS__
 /* Flush CPU cache - used when going to sleep. Wbinvd or similar. */
 
 #ifdef ACPI_APPLICATION
@@ -159,35 +164,42 @@
 /*
  * Global Lock acquire/release code
  *
- * Note: Taken from our old adaptation.
- * TODO: Check whether it is equivalent to the MSVC code
- *       (which was also the same in the older version).
+ * Note: Handles case where the FACS pointer is null
  */
-#define ACPI_ACQUIRE_GLOBAL_LOCK(GLptr, Acq)                \
+#define ACPI_ACQUIRE_GLOBAL_LOCK(FacsPtr, Acq)              \
 do {                                                        \
-    int dummy;                                              \
-    asm("1:     movl (%1),%%eax;"                           \
+    asm("orl    %2,%2;"                                     \
+        "jz     2f;"                                        \
+        "leal   16(%2),%2;"                                 \
+        "1:"                                                \
+        "movl   (%2),%%eax;"                                \
         "movl   %%eax,%%edx;"                               \
-        "andl   %2,%%edx;"                                  \
+        "andl   %3,%%edx;"                                  \
         "btsl   $0x1,%%edx;"                                \
         "adcl   $0x0,%%edx;"                                \
-        "lock;  cmpxchgl %%edx,(%1);"                       \
+        "lock;  cmpxchgl %%edx,(%2);"                       \
         "jnz    1b;"                                        \
         "cmpb   $0x3,%%dl;"                                 \
-        "sbbl   %%eax,%%eax"                                \
-        :"=a"(Acq),"=c"(dummy):"c"(GLptr),"i"(~1L):"dx");   \
+        "sbbl   %%eax,%%eax;"                               \
+        "2:"                                                \
+        :"=a"(Acq):"a"(0xFF),"c"(FacsPtr),"i"(~1L):"edx");\
 } while(0)
 
-#define ACPI_RELEASE_GLOBAL_LOCK(GLptr, Acq)                \
+#define ACPI_RELEASE_GLOBAL_LOCK(FacsPtr, Acq)              \
 do {                                                        \
-    int dummy;                                              \
-    asm("1:     movl (%1),%%eax;"                           \
+    asm("orl    %2,%2;"                                     \
+        "jz     2f;"                                        \
+        "leal   16(%2),%2;"                                 \
+        "1:"                                                \
+        "movl  (%2),%%eax;"                                 \
         "movl   %%eax,%%edx;"                               \
-        "andl   %2,%%edx;"                                  \
-        "lock;  cmpxchgl %%edx,(%1);"                       \
+        "andl   %3,%%edx;"                                  \
+        "lock;  cmpxchgl %%edx,(%2);"                       \
         "jnz    1b;"                                        \
-        "andl   $0x1,%%eax"                                 \
-        :"=a"(Acq),"=c"(dummy):"c"(GLptr),"i"(~3L):"dx");   \
+        "cmpb   $0x3,%%dl;" /* FIXME: this is pointless */  \
+        "andl   $0x1,%%eax;"                                \
+        "2:"                                                \
+        :"=a"(Acq):"a"(0),"c"(FacsPtr),"i"(~3L):"edx");\
 } while(0)
 
 
@@ -207,5 +219,5 @@ do {                                                        \
     n_lo >>= 1;    \
 }
 
-
+#endif /* __REACTOS__ */
 #endif /* __ACGCC_H__ */

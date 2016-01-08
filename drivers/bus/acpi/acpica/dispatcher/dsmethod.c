@@ -8,7 +8,7 @@
  *
  * 1. Copyright Notice
  *
- * Some or all of this work - Copyright (c) 1999 - 2014, Intel Corp.
+ * Some or all of this work - Copyright (c) 1999 - 2015, Intel Corp.
  * All rights reserved.
  *
  * 2. License
@@ -113,16 +113,14 @@
  *
  *****************************************************************************/
 
-#define __DSMETHOD_C__
-
 #include "acpi.h"
 #include "accommon.h"
 #include "acdispat.h"
 #include "acinterp.h"
 #include "acnamesp.h"
-#include "acdisasm.h"
 #include "acparser.h"
 #include "amlcode.h"
+#include "acdebug.h"
 
 
 #define _COMPONENT          ACPI_DISPATCHER
@@ -183,7 +181,7 @@ AcpiDsAutoSerializeMethod (
 
     /* Create/Init a root op for the method parse tree */
 
-    Op = AcpiPsAllocOp (AML_METHOD_OP);
+    Op = AcpiPsAllocOp (AML_METHOD_OP, ObjDesc->Method.AmlStart);
     if (!Op)
     {
         return_ACPI_STATUS (AE_NO_MEMORY);
@@ -197,14 +195,16 @@ AcpiDsAutoSerializeMethod (
     WalkState = AcpiDsCreateWalkState (Node->OwnerId, NULL, NULL, NULL);
     if (!WalkState)
     {
+        AcpiPsFreeOp (Op);
         return_ACPI_STATUS (AE_NO_MEMORY);
     }
 
-    Status = AcpiDsInitAmlWalk (WalkState, Op, Node, ObjDesc->Method.AmlStart,
-                ObjDesc->Method.AmlLength, NULL, 0);
+    Status = AcpiDsInitAmlWalk (WalkState, Op, Node,
+        ObjDesc->Method.AmlStart, ObjDesc->Method.AmlLength, NULL, 0);
     if (ACPI_FAILURE (Status))
     {
         AcpiDsDeleteWalkState (WalkState);
+        AcpiPsFreeOp (Op);
         return_ACPI_STATUS (Status);
     }
 
@@ -213,10 +213,6 @@ AcpiDsAutoSerializeMethod (
     /* Parse the method, scan for creation of named objects */
 
     Status = AcpiPsParseAml (WalkState);
-    if (ACPI_FAILURE (Status))
-    {
-        return_ACPI_STATUS (Status);
-    }
 
     AcpiPsDeleteParseTree (Op);
     return_ACPI_STATUS (Status);
@@ -289,7 +285,7 @@ AcpiDsDetectNamedOpcodes (
  * RETURN:      Status
  *
  * DESCRIPTION: Called on method error. Invoke the global exception handler if
- *              present, dump the method data if the disassembler is configured
+ *              present, dump the method data if the debugger is configured
  *
  *              Note: Allows the exception handler to change the status code
  *
@@ -300,6 +296,9 @@ AcpiDsMethodError (
     ACPI_STATUS             Status,
     ACPI_WALK_STATE         *WalkState)
 {
+    UINT32                  AmlOffset;
+
+
     ACPI_FUNCTION_ENTRY ();
 
 
@@ -323,23 +322,28 @@ AcpiDsMethodError (
          * Handler can map the exception code to anything it wants, including
          * AE_OK, in which case the executing method will not be aborted.
          */
+        AmlOffset = (UINT32) ACPI_PTR_DIFF (WalkState->Aml,
+            WalkState->ParserState.AmlStart);
+
         Status = AcpiGbl_ExceptionHandler (Status,
-                    WalkState->MethodNode ?
-                        WalkState->MethodNode->Name.Integer : 0,
-                    WalkState->Opcode, WalkState->AmlOffset, NULL);
+            WalkState->MethodNode ?
+                WalkState->MethodNode->Name.Integer : 0,
+            WalkState->Opcode, AmlOffset, NULL);
         AcpiExEnterInterpreter ();
     }
 
     AcpiDsClearImplicitReturn (WalkState);
 
-#ifdef ACPI_DISASSEMBLER
     if (ACPI_FAILURE (Status))
     {
-        /* Display method locals/args if disassembler is present */
+        AcpiDsDumpMethodStack (Status, WalkState, WalkState->Op);
 
-        AcpiDmDumpMethodInfo (Status, WalkState, WalkState->Op);
-    }
+        /* Display method locals/args if debugger is present */
+
+#ifdef ACPI_DEBUGGER
+        AcpiDbDumpMethodInfo (Status, WalkState);
 #endif
+    }
 
     return (Status);
 }
@@ -425,6 +429,8 @@ AcpiDsBeginMethodExecution (
         return_ACPI_STATUS (AE_NULL_ENTRY);
     }
 
+    AcpiExStartTraceMethod (MethodNode, ObjDesc, WalkState);
+
     /* Prevent wraparound of thread count */
 
     if (ObjDesc->Method.ThreadCount == ACPI_UINT8_MAX)
@@ -466,10 +472,12 @@ AcpiDsBeginMethodExecution (
          */
         if (WalkState &&
             (!(ObjDesc->Method.InfoFlags & ACPI_METHOD_IGNORE_SYNC_LEVEL)) &&
-            (WalkState->Thread->CurrentSyncLevel > ObjDesc->Method.Mutex->Mutex.SyncLevel))
+            (WalkState->Thread->CurrentSyncLevel >
+                ObjDesc->Method.Mutex->Mutex.SyncLevel))
         {
             ACPI_ERROR ((AE_INFO,
-                "Cannot acquire Mutex for method [%4.4s], current SyncLevel is too large (%u)",
+                "Cannot acquire Mutex for method [%4.4s]"
+                ", current SyncLevel is too large (%u)",
                 AcpiUtGetNodeName (MethodNode),
                 WalkState->Thread->CurrentSyncLevel));
 
@@ -482,14 +490,15 @@ AcpiDsBeginMethodExecution (
          */
         if (!WalkState ||
             !ObjDesc->Method.Mutex->Mutex.ThreadId ||
-            (WalkState->Thread->ThreadId != ObjDesc->Method.Mutex->Mutex.ThreadId))
+            (WalkState->Thread->ThreadId !=
+                ObjDesc->Method.Mutex->Mutex.ThreadId))
         {
             /*
              * Acquire the method mutex. This releases the interpreter if we
              * block (and reacquires it before it returns)
              */
-            Status = AcpiExSystemWaitMutex (ObjDesc->Method.Mutex->Mutex.OsMutex,
-                        ACPI_WAIT_FOREVER);
+            Status = AcpiExSystemWaitMutex (
+                ObjDesc->Method.Mutex->Mutex.OsMutex, ACPI_WAIT_FOREVER);
             if (ACPI_FAILURE (Status))
             {
                 return_ACPI_STATUS (Status);
@@ -502,8 +511,22 @@ AcpiDsBeginMethodExecution (
                 ObjDesc->Method.Mutex->Mutex.OriginalSyncLevel =
                     WalkState->Thread->CurrentSyncLevel;
 
-                ObjDesc->Method.Mutex->Mutex.ThreadId = WalkState->Thread->ThreadId;
-                WalkState->Thread->CurrentSyncLevel = ObjDesc->Method.SyncLevel;
+                ObjDesc->Method.Mutex->Mutex.ThreadId =
+                    WalkState->Thread->ThreadId;
+
+                /*
+                 * Update the current SyncLevel only if this is not an auto-
+                 * serialized method. In the auto case, we have to ignore
+                 * the sync level for the method mutex (created for the
+                 * auto-serialization) because we have no idea of what the
+                 * sync level should be. Therefore, just ignore it.
+                 */
+                if (!(ObjDesc->Method.InfoFlags &
+                    ACPI_METHOD_IGNORE_SYNC_LEVEL))
+                {
+                    WalkState->Thread->CurrentSyncLevel =
+                        ObjDesc->Method.SyncLevel;
+                }
             }
             else
             {
@@ -581,7 +604,8 @@ AcpiDsCallControlMethod (
 
     ACPI_FUNCTION_TRACE_PTR (DsCallControlMethod, ThisWalkState);
 
-    ACPI_DEBUG_PRINT ((ACPI_DB_DISPATCH, "Calling method %p, currentstate=%p\n",
+    ACPI_DEBUG_PRINT ((ACPI_DB_DISPATCH,
+        "Calling method %p, currentstate=%p\n",
         ThisWalkState->PrevOp, ThisWalkState));
 
     /*
@@ -601,8 +625,8 @@ AcpiDsCallControlMethod (
 
     /* Init for new method, possibly wait on method mutex */
 
-    Status = AcpiDsBeginMethodExecution (MethodNode, ObjDesc,
-                ThisWalkState);
+    Status = AcpiDsBeginMethodExecution (
+        MethodNode, ObjDesc, ThisWalkState);
     if (ACPI_FAILURE (Status))
     {
         return_ACPI_STATUS (Status);
@@ -610,8 +634,8 @@ AcpiDsCallControlMethod (
 
     /* Begin method parse/execution. Create a new walk state */
 
-    NextWalkState = AcpiDsCreateWalkState (ObjDesc->Method.OwnerId,
-                        NULL, ObjDesc, Thread);
+    NextWalkState = AcpiDsCreateWalkState (
+        ObjDesc->Method.OwnerId, NULL, ObjDesc, Thread);
     if (!NextWalkState)
     {
         Status = AE_NO_MEMORY;
@@ -640,8 +664,8 @@ AcpiDsCallControlMethod (
     Info->Parameters = &ThisWalkState->Operands[0];
 
     Status = AcpiDsInitAmlWalk (NextWalkState, NULL, MethodNode,
-                ObjDesc->Method.AmlStart, ObjDesc->Method.AmlLength,
-                Info, ACPI_IMODE_EXECUTE);
+        ObjDesc->Method.AmlStart, ObjDesc->Method.AmlLength,
+        Info, ACPI_IMODE_EXECUTE);
 
     ACPI_FREE (Info);
     if (ACPI_FAILURE (Status))
@@ -686,10 +710,7 @@ Cleanup:
     /* On error, we must terminate the method properly */
 
     AcpiDsTerminateControlMethod (ObjDesc, NextWalkState);
-    if (NextWalkState)
-    {
-        AcpiDsDeleteWalkState (NextWalkState);
-    }
+    AcpiDsDeleteWalkState (NextWalkState);
 
     return_ACPI_STATUS (Status);
 }
@@ -839,7 +860,8 @@ AcpiDsTerminateControlMethod (
                 WalkState->Thread->CurrentSyncLevel =
                     MethodDesc->Method.Mutex->Mutex.OriginalSyncLevel;
 
-                AcpiOsReleaseMutex (MethodDesc->Method.Mutex->Mutex.OsMutex);
+                AcpiOsReleaseMutex (
+                    MethodDesc->Method.Mutex->Mutex.OsMutex);
                 MethodDesc->Method.Mutex->Mutex.ThreadId = 0;
             }
         }
@@ -869,7 +891,8 @@ AcpiDsTerminateControlMethod (
             if (MethodDesc->Method.InfoFlags & ACPI_METHOD_MODIFIED_NAMESPACE)
             {
                 AcpiNsDeleteNamespaceByOwner (MethodDesc->Method.OwnerId);
-                MethodDesc->Method.InfoFlags &= ~ACPI_METHOD_MODIFIED_NAMESPACE;
+                MethodDesc->Method.InfoFlags &=
+                    ~ACPI_METHOD_MODIFIED_NAMESPACE;
             }
         }
     }
@@ -917,7 +940,8 @@ AcpiDsTerminateControlMethod (
             if (WalkState)
             {
                 ACPI_INFO ((AE_INFO,
-                    "Marking method %4.4s as Serialized because of AE_ALREADY_EXISTS error",
+                    "Marking method %4.4s as Serialized "
+                    "because of AE_ALREADY_EXISTS error",
                     WalkState->MethodNode->Name.Ascii));
             }
 
@@ -932,7 +956,9 @@ AcpiDsTerminateControlMethod (
              * marking the method permanently as Serialized when the last
              * thread exits here.
              */
-            MethodDesc->Method.InfoFlags &= ~ACPI_METHOD_SERIALIZED_PENDING;
+            MethodDesc->Method.InfoFlags &=
+                ~ACPI_METHOD_SERIALIZED_PENDING;
+
             MethodDesc->Method.InfoFlags |=
                 (ACPI_METHOD_SERIALIZED | ACPI_METHOD_IGNORE_SYNC_LEVEL);
             MethodDesc->Method.SyncLevel = 0;
@@ -945,6 +971,9 @@ AcpiDsTerminateControlMethod (
             AcpiUtReleaseOwnerId (&MethodDesc->Method.OwnerId);
         }
     }
+
+    AcpiExStopTraceMethod ((ACPI_NAMESPACE_NODE *) MethodDesc->Method.Node,
+        MethodDesc, WalkState);
 
     return_VOID;
 }

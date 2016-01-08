@@ -8,7 +8,7 @@
  *
  * 1. Copyright Notice
  *
- * Some or all of this work - Copyright (c) 1999 - 2014, Intel Corp.
+ * Some or all of this work - Copyright (c) 1999 - 2015, Intel Corp.
  * All rights reserved.
  *
  * 2. License
@@ -130,6 +130,11 @@ AcpiHwEnableWakeupGpeBlock (
     ACPI_GPE_BLOCK_INFO     *GpeBlock,
     void                    *Context);
 
+static ACPI_STATUS
+AcpiHwGpeEnableWrite (
+    UINT8                   EnableMask,
+    ACPI_GPE_REGISTER_INFO  *GpeRegisterInfo);
+
 
 /******************************************************************************
  *
@@ -164,6 +169,8 @@ AcpiHwGetGpeRegisterBit (
  * RETURN:      Status
  *
  * DESCRIPTION: Enable or disable a single GPE in the parent enable register.
+ *              The EnableMask field of the involved GPE register must be
+ *              updated by the caller if necessary.
  *
  ******************************************************************************/
 
@@ -204,9 +211,9 @@ AcpiHwLowSetGpe (
     {
     case ACPI_GPE_CONDITIONAL_ENABLE:
 
-        /* Only enable if the EnableForRun bit is set */
+        /* Only enable if the corresponding EnableMask bit is set */
 
-        if (!(RegisterBit & GpeRegisterInfo->EnableForRun))
+        if (!(RegisterBit & GpeRegisterInfo->EnableMask))
         {
             return (AE_BAD_PARAMETER);
         }
@@ -273,9 +280,7 @@ AcpiHwClearGpe (
      */
     RegisterBit = AcpiHwGetGpeRegisterBit (GpeEventInfo);
 
-    Status = AcpiHwWrite (RegisterBit,
-                    &GpeRegisterInfo->StatusAddress);
-
+    Status = AcpiHwWrite (RegisterBit, &GpeRegisterInfo->StatusAddress);
     return (Status);
 }
 
@@ -313,6 +318,14 @@ AcpiHwGetGpeStatus (
         return (AE_BAD_PARAMETER);
     }
 
+    /* GPE currently handled? */
+
+    if (ACPI_GPE_DISPATCH_TYPE (GpeEventInfo->Flags) !=
+        ACPI_GPE_DISPATCH_NONE)
+    {
+        LocalEventStatus |= ACPI_EVENT_FLAG_HAS_HANDLER;
+    }
+
     /* Get the info block for the entire GPE register */
 
     GpeRegisterInfo = GpeEventInfo->RegisterInfo;
@@ -335,6 +348,19 @@ AcpiHwGetGpeStatus (
         LocalEventStatus |= ACPI_EVENT_FLAG_WAKE_ENABLED;
     }
 
+    /* GPE currently enabled (enable bit == 1)? */
+
+    Status = AcpiHwRead (&InByte, &GpeRegisterInfo->EnableAddress);
+    if (ACPI_FAILURE (Status))
+    {
+        return (Status);
+    }
+
+    if (RegisterBit & InByte)
+    {
+        LocalEventStatus |= ACPI_EVENT_FLAG_ENABLE_SET;
+    }
+
     /* GPE currently active (status bit == 1)? */
 
     Status = AcpiHwRead (&InByte, &GpeRegisterInfo->StatusAddress);
@@ -345,13 +371,41 @@ AcpiHwGetGpeStatus (
 
     if (RegisterBit & InByte)
     {
-        LocalEventStatus |= ACPI_EVENT_FLAG_SET;
+        LocalEventStatus |= ACPI_EVENT_FLAG_STATUS_SET;
     }
 
     /* Set return value */
 
     (*EventStatus) = LocalEventStatus;
     return (AE_OK);
+}
+
+
+/******************************************************************************
+ *
+ * FUNCTION:    AcpiHwGpeEnableWrite
+ *
+ * PARAMETERS:  EnableMask          - Bit mask to write to the GPE register
+ *              GpeRegisterInfo     - Gpe Register info
+ *
+ * RETURN:      Status
+ *
+ * DESCRIPTION: Write the enable mask byte to the given GPE register.
+ *
+ ******************************************************************************/
+
+static ACPI_STATUS
+AcpiHwGpeEnableWrite (
+    UINT8                   EnableMask,
+    ACPI_GPE_REGISTER_INFO  *GpeRegisterInfo)
+{
+    ACPI_STATUS             Status;
+
+
+    GpeRegisterInfo->EnableMask = EnableMask;
+
+    Status = AcpiHwWrite (EnableMask, &GpeRegisterInfo->EnableAddress);
+    return (Status);
 }
 
 
@@ -384,7 +438,7 @@ AcpiHwDisableGpeBlock (
     {
         /* Disable all GPEs in this register */
 
-        Status = AcpiHwWrite (0x00, &GpeBlock->RegisterInfo[i].EnableAddress);
+        Status = AcpiHwGpeEnableWrite (0x00, &GpeBlock->RegisterInfo[i]);
         if (ACPI_FAILURE (Status))
         {
             return (Status);
@@ -457,6 +511,7 @@ AcpiHwEnableRuntimeGpeBlock (
 {
     UINT32                  i;
     ACPI_STATUS             Status;
+    ACPI_GPE_REGISTER_INFO  *GpeRegisterInfo;
 
 
     /* NOTE: assumes that all GPEs are currently disabled */
@@ -465,15 +520,16 @@ AcpiHwEnableRuntimeGpeBlock (
 
     for (i = 0; i < GpeBlock->RegisterCount; i++)
     {
-        if (!GpeBlock->RegisterInfo[i].EnableForRun)
+        GpeRegisterInfo = &GpeBlock->RegisterInfo[i];
+        if (!GpeRegisterInfo->EnableForRun)
         {
             continue;
         }
 
         /* Enable all "runtime" GPEs in this register */
 
-        Status = AcpiHwWrite (GpeBlock->RegisterInfo[i].EnableForRun,
-                    &GpeBlock->RegisterInfo[i].EnableAddress);
+        Status = AcpiHwGpeEnableWrite (GpeRegisterInfo->EnableForRun,
+            GpeRegisterInfo);
         if (ACPI_FAILURE (Status))
         {
             return (Status);
@@ -506,21 +562,21 @@ AcpiHwEnableWakeupGpeBlock (
 {
     UINT32                  i;
     ACPI_STATUS             Status;
+    ACPI_GPE_REGISTER_INFO  *GpeRegisterInfo;
 
 
     /* Examine each GPE Register within the block */
 
     for (i = 0; i < GpeBlock->RegisterCount; i++)
     {
-        if (!GpeBlock->RegisterInfo[i].EnableForWake)
-        {
-            continue;
-        }
+        GpeRegisterInfo = &GpeBlock->RegisterInfo[i];
 
-        /* Enable all "wake" GPEs in this register */
-
-        Status = AcpiHwWrite (GpeBlock->RegisterInfo[i].EnableForWake,
-                    &GpeBlock->RegisterInfo[i].EnableAddress);
+        /*
+         * Enable all "wake" GPEs in this register and disable the
+         * remaining ones.
+         */
+        Status = AcpiHwGpeEnableWrite (GpeRegisterInfo->EnableForWake,
+            GpeRegisterInfo);
         if (ACPI_FAILURE (Status))
         {
             return (Status);

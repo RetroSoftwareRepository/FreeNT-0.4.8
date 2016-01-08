@@ -8,7 +8,7 @@
  *
  * 1. Copyright Notice
  *
- * Some or all of this work - Copyright (c) 1999 - 2014, Intel Corp.
+ * Some or all of this work - Copyright (c) 1999 - 2015, Intel Corp.
  * All rights reserved.
  *
  * 2. License
@@ -113,8 +113,6 @@
  *
  *****************************************************************************/
 
-#define __RSLIST_C__
-
 #include "acpi.h"
 #include "accommon.h"
 #include "acresrc.h"
@@ -171,9 +169,12 @@ AcpiRsConvertAmlToResources (
     /* Get the appropriate conversion info table */
 
     AmlResource = ACPI_CAST_PTR (AML_RESOURCE, Aml);
-    if (AcpiUtGetResourceType (Aml) == ACPI_RESOURCE_NAME_SERIAL_BUS)
+
+    if (AcpiUtGetResourceType (Aml) ==
+        ACPI_RESOURCE_NAME_SERIAL_BUS)
     {
-        if (AmlResource->CommonSerialBus.Type > AML_RESOURCE_MAX_SERIALBUSTYPE)
+        if (AmlResource->CommonSerialBus.Type >
+            AML_RESOURCE_MAX_SERIALBUSTYPE)
         {
             ConversionTable = NULL;
         }
@@ -181,15 +182,13 @@ AcpiRsConvertAmlToResources (
         {
             /* This is an I2C, SPI, or UART SerialBus descriptor */
 
-            ConversionTable =
-                AcpiGbl_ConvertResourceSerialBusDispatch[
-                    AmlResource->CommonSerialBus.Type];
+            ConversionTable = AcpiGbl_ConvertResourceSerialBusDispatch [
+                AmlResource->CommonSerialBus.Type];
         }
     }
     else
     {
-        ConversionTable =
-            AcpiGbl_GetResourceDispatch[ResourceIndex];
+        ConversionTable = AcpiGbl_GetResourceDispatch[ResourceIndex];
     }
 
     if (!ConversionTable)
@@ -284,7 +283,8 @@ AcpiRsConvertResourcesToAml (
 
         if (Resource->Type == ACPI_RESOURCE_TYPE_SERIAL_BUS)
         {
-            if (Resource->Data.CommonSerialBus.Type > AML_RESOURCE_MAX_SERIALBUSTYPE)
+            if (Resource->Data.CommonSerialBus.Type >
+                AML_RESOURCE_MAX_SERIALBUSTYPE)
             {
                 ConversionTable = NULL;
             }
@@ -310,8 +310,7 @@ AcpiRsConvertResourcesToAml (
         }
 
         Status = AcpiRsConvertResourceToAml (Resource,
-                ACPI_CAST_PTR (AML_RESOURCE, Aml),
-                ConversionTable);
+            ACPI_CAST_PTR (AML_RESOURCE, Aml), ConversionTable);
         if (ACPI_FAILURE (Status))
         {
             ACPI_EXCEPTION ((AE_INFO, Status,
@@ -322,8 +321,8 @@ AcpiRsConvertResourcesToAml (
 
         /* Perform final sanity check on the new AML resource descriptor */
 
-        Status = AcpiUtValidateResource (NULL,
-                    ACPI_CAST_PTR (AML_RESOURCE, Aml), NULL);
+        Status = AcpiUtValidateResource (
+            NULL, ACPI_CAST_PTR (AML_RESOURCE, Aml), NULL);
         if (ACPI_FAILURE (Status))
         {
             return_ACPI_STATUS (Status);

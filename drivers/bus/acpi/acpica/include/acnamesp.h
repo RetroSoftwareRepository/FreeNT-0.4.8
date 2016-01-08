@@ -8,7 +8,7 @@
  *
  * 1. Copyright Notice
  *
- * Some or all of this work - Copyright (c) 1999 - 2014, Intel Corp.
+ * Some or all of this work - Copyright (c) 1999 - 2015, Intel Corp.
  * All rights reserved.
  *
  * 2. License
@@ -139,6 +139,7 @@
 #define ACPI_NS_PREFIX_IS_SCOPE     0x10
 #define ACPI_NS_EXTERNAL            0x20
 #define ACPI_NS_TEMPORARY           0x40
+#define ACPI_NS_OVERRIDE_IF_FOUND   0x80
 
 /* Flags for AcpiNsWalkNamespace */
 
@@ -149,6 +150,7 @@
 /* Object is not a package element */
 
 #define ACPI_NOT_PACKAGE_ELEMENT    ACPI_UINT32_MAX
+#define ACPI_ALL_PACKAGE_ELEMENTS   (ACPI_UINT32_MAX-1)
 
 /* Always emit warning message, not dependent on node flags */
 
@@ -295,11 +297,19 @@ AcpiNsConvertToBuffer (
 
 ACPI_STATUS
 AcpiNsConvertToUnicode (
+    ACPI_NAMESPACE_NODE     *Scope,
     ACPI_OPERAND_OBJECT     *OriginalObject,
     ACPI_OPERAND_OBJECT     **ReturnObject);
 
 ACPI_STATUS
 AcpiNsConvertToResource (
+    ACPI_NAMESPACE_NODE     *Scope,
+    ACPI_OPERAND_OBJECT     *OriginalObject,
+    ACPI_OPERAND_OBJECT     **ReturnObject);
+
+ACPI_STATUS
+AcpiNsConvertToReference (
+    ACPI_NAMESPACE_NODE     *Scope,
     ACPI_OPERAND_OBJECT     *OriginalObject,
     ACPI_OPERAND_OBJECT     **ReturnObject);
 
@@ -421,15 +431,21 @@ UINT32
 AcpiNsOpensScope (
     ACPI_OBJECT_TYPE        Type);
 
-ACPI_STATUS
-AcpiNsBuildExternalPath (
-    ACPI_NAMESPACE_NODE     *Node,
-    ACPI_SIZE               Size,
-    char                    *NameBuffer);
-
 char *
 AcpiNsGetExternalPathname (
     ACPI_NAMESPACE_NODE     *Node);
+
+UINT32
+AcpiNsBuildNormalizedPath (
+    ACPI_NAMESPACE_NODE     *Node,
+    char                    *FullPath,
+    UINT32                  PathSize,
+    BOOLEAN                 NoTrailing);
+
+char *
+AcpiNsGetNormalizedPathname (
+    ACPI_NAMESPACE_NODE     *Node,
+    BOOLEAN                 NoTrailing);
 
 char *
 AcpiNsNameOfCurrentScope (
@@ -438,7 +454,8 @@ AcpiNsNameOfCurrentScope (
 ACPI_STATUS
 AcpiNsHandleToPathname (
     ACPI_HANDLE             TargetHandle,
-    ACPI_BUFFER             *Buffer);
+    ACPI_BUFFER             *Buffer,
+    BOOLEAN                 NoTrailing);
 
 BOOLEAN
 AcpiNsPatternMatch (

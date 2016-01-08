@@ -2,7 +2,7 @@
  * COPYRIGHT:        See COPYING in the top level directory
  * PROJECT:          ReactOS Win32k subsystem
  * PURPOSE:          Callback to usermode support
- * FILE:             subsystems/win32/win32k/ntuser/callback.c
+ * FILE:             win32ss/user/ntuser/callback.c
  * PROGRAMER:        Casper S. Hornstrup (chorns@users.sourceforge.net)
  *                   Thomas Weidenmueller (w3seek@users.sourceforge.net)
  * NOTES:            Please use the Callback Memory Management functions for
@@ -51,12 +51,18 @@ IntCbFreeMemory(PVOID Data)
    PINT_CALLBACK_HEADER Mem;
    PTHREADINFO W32Thread;
 
+   W32Thread = PsGetCurrentThreadWin32Thread();
+   ASSERT(W32Thread);
+
+   if (W32Thread->TIF_flags & TIF_INCLEANUP)
+   {
+      ERR("CbFM Thread is already in cleanup\n");
+      return;
+   }
+
    ASSERT(Data);
 
    Mem = ((PINT_CALLBACK_HEADER)Data - 1);
-
-   W32Thread = PsGetCurrentThreadWin32Thread();
-   ASSERT(W32Thread);
 
    /* Remove the memory block from the thread's callback list */
    RemoveEntryList(&Mem->ListEntry);
@@ -296,6 +302,9 @@ co_IntCallWindowProc(WNDPROC Proc,
    ULONG ArgumentLength;
    LRESULT Result;
 
+   TRACE("co_IntCallWindowProc(Proc %p, IsAnsiProc: %s, Wnd %p, Message %u, wParam %Iu, lParam %Id, lParamBufferSize %d)\n",
+       Proc, IsAnsiProc ? "TRUE" : "FALSE", Wnd, Message, wParam, lParam, lParamBufferSize);
+
    /* Do not allow the desktop thread to do callback to user mode */
    ASSERT(PsGetCurrentThreadWin32Thread() != gptiDesktopThread);
 
@@ -335,6 +344,12 @@ co_IntCallWindowProc(WNDPROC Proc,
                                ArgumentLength,
                                &ResultPointer,
                                &ResultLength);
+   if (!NT_SUCCESS(Status))
+   {
+      ERR("Error Callback to User space Status %lx\n",Status);
+      UserEnterCo();
+      return 0;
+   }
 
    _SEH2_TRY
    {
@@ -343,7 +358,7 @@ co_IntCallWindowProc(WNDPROC Proc,
    }
    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
    {
-      ERR("Failed to copy result from user mode, Message %d lParam size %d!\n", Message, lParamBufferSize);
+      ERR("Failed to copy result from user mode, Message %u lParam size %d!\n", Message, lParamBufferSize);
       Status = _SEH2_GetExceptionCode();
    }
    _SEH2_END;
@@ -354,7 +369,7 @@ co_IntCallWindowProc(WNDPROC Proc,
 
    if (!NT_SUCCESS(Status))
    {
-     ERR("Call to user mode failed!\n");
+     ERR("Call to user mode failed! 0x%08lx\n",Status);
       if (lParamBufferSize != -1)
       {
          IntCbFreeMemory(Arguments);
@@ -369,11 +384,11 @@ co_IntCallWindowProc(WNDPROC Proc,
       // Is this message being processed from inside kernel space?
       BOOL InSendMessage = (pti->pcti->CTI_flags & CTI_INSENDMESSAGE);
 
-      TRACE("Copy lParam Message %d lParam %d!\n", Message, lParam);
+      TRACE("Copy lParam Message %u lParam %d!\n", Message, lParam);
       switch (Message)
       {
           default:
-            TRACE("Don't copy lParam, Message %d Size %d lParam %d!\n", Message, lParamBufferSize, lParam);
+            TRACE("Don't copy lParam, Message %u Size %d lParam %d!\n", Message, lParamBufferSize, lParam);
             break;
           // Write back to user/kernel space. Also see g_MsgMemory.
           case WM_CREATE:
@@ -385,7 +400,9 @@ co_IntCallWindowProc(WNDPROC Proc,
           case WM_WINDOWPOSCHANGING:
           case WM_SIZING:
           case WM_MOVING:
-            TRACE("Copy lParam, Message %d Size %d lParam %d!\n", Message, lParamBufferSize, lParam);
+          case WM_MEASUREITEM:
+          case WM_NEXTMENU:
+            TRACE("Copy lParam, Message %u Size %d lParam %d!\n", Message, lParamBufferSize, lParam);
             if (InSendMessage)
                // Copy into kernel space.
                RtlMoveMemory((PVOID) lParam,
@@ -401,7 +418,7 @@ co_IntCallWindowProc(WNDPROC Proc,
              }
              _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
              {
-                ERR("Failed to copy lParam to user space, Message %d!\n", Message);
+                ERR("Failed to copy lParam to user space, Message %u!\n", Message);
              }
              _SEH2_END;
             }
@@ -414,7 +431,7 @@ co_IntCallWindowProc(WNDPROC Proc,
 }
 
 HMENU APIENTRY
-co_IntLoadSysMenuTemplate()
+co_IntLoadSysMenuTemplate(VOID)
 {
    LRESULT Result = 0;
    NTSTATUS Status;
@@ -480,13 +497,14 @@ co_IntLoadDefaultCursors(VOID)
 
    UserEnterCo();
 
-   /* HACK: The desktop class doen't have a proper cursor yet, so set it here */
-    gDesktopCursor = *((HCURSOR*)ResultPointer);
-
    if (!NT_SUCCESS(Status))
    {
       return FALSE;
    }
+
+   /* HACK: The desktop class doen't have a proper cursor yet, so set it here */
+    gDesktopCursor = *((HCURSOR*)ResultPointer);
+
    return TRUE;
 }
 
@@ -629,7 +647,13 @@ co_IntCallHookProc(INT HookId,
    Common->offPfn = offPfn;
    Common->Ansi = Ansi;
    RtlZeroMemory(&Common->ModuleName, sizeof(Common->ModuleName));
-   RtlCopyMemory(&Common->ModuleName, ModuleName->Buffer, ModuleName->Length);
+   if (ModuleName->Buffer && ModuleName->Length)
+   {
+      RtlCopyMemory(&Common->ModuleName, ModuleName->Buffer, ModuleName->Length);
+      // If ModuleName->Buffer NULL while in destroy,
+      //    this will make User32:Hook.c complain about not loading the library module.
+      // Fix symptom for CORE-10549.
+   }
    Extra = (PCHAR) Common + sizeof(HOOKPROC_CALLBACK_ARGUMENTS);
 
    switch(HookId)
@@ -718,6 +742,12 @@ co_IntCallHookProc(INT HookId,
 
    UserEnterCo();
 
+   if (!NT_SUCCESS(Status))
+   {
+      ERR("Failure to make Callback! Status 0x%x\n",Status);
+      goto Fault_Exit;
+   }
+
    if (ResultPointer)
    {
       _SEH2_TRY
@@ -738,11 +768,6 @@ co_IntCallHookProc(INT HookId,
       ERR("ERROR: Hook %d Code %d ResultPointer 0x%p ResultLength %u\n",HookId,Code,ResultPointer,ResultLength);
    }
 
-   if (!NT_SUCCESS(Status))
-   {
-      ERR("Failure to make Callback! Status 0x%x",Status);
-      goto Fault_Exit;
-   }
    /* Support write backs... SEH is in UserCallNextHookEx. */
    switch (HookId)
    {
@@ -802,7 +827,9 @@ co_IntCallEventProc(HWINEVENTHOOK hook,
                           LONG idChild,
                    DWORD dwEventThread,
                    DWORD dwmsEventTime,
-                     WINEVENTPROC Proc)
+                     WINEVENTPROC Proc,
+                               INT Mod,
+                     ULONG_PTR offPfn)
 {
    LRESULT Result = 0;
    NTSTATUS Status;
@@ -827,6 +854,8 @@ co_IntCallEventProc(HWINEVENTHOOK hook,
    Common->dwEventThread = dwEventThread;
    Common->dwmsEventTime = dwmsEventTime;
    Common->Proc = Proc;
+   Common->Mod = Mod;
+   Common->offPfn = offPfn;
 
    ResultPointer = NULL;
    ResultLength = sizeof(LRESULT);
@@ -899,14 +928,16 @@ co_IntCallLoadMenu( HINSTANCE hModule,
 
    UserEnterCo();
 
-   Result = *(LRESULT*)ResultPointer;
+   if (NT_SUCCESS(Status))
+   {
+      Result = *(LRESULT*)ResultPointer;
+   }
+   else
+   {
+      Result = 0;
+   }
 
    IntCbFreeMemory(Argument);
-
-   if (!NT_SUCCESS(Status))
-   {
-      return 0;
-   }
 
    return (HMENU)Result;
 }
@@ -977,15 +1008,17 @@ co_IntCopyImage(HANDLE hnd, UINT type, INT desiredx, INT desiredy, UINT flags)
 
    UserEnterCo();
 
-   Handle = *(HANDLE*)ResultPointer;
-
-   IntCbFreeMemory(Argument);
-
-   if (!NT_SUCCESS(Status))
+   if (NT_SUCCESS(Status))
+   {
+      Handle = *(HANDLE*)ResultPointer;
+   }
+   else
    {
       ERR("CopyImage callback failed!\n");
-      return 0;
+      Handle = NULL;
    }
+
+   IntCbFreeMemory(Argument);
 
    return Handle;
 }
@@ -1022,17 +1055,20 @@ co_IntGetCharsetInfo(LCID Locale, PCHARSETINFO pCs)
                                &ResultPointer,
                                &ResultLength);
 
-   _SEH2_TRY
+   if (NT_SUCCESS(Status))
    {
-      /* Need to copy into our local buffer */
-      RtlMoveMemory(Argument, ResultPointer, ArgumentLength);
+      _SEH2_TRY
+      {
+         /* Need to copy into our local buffer */
+         RtlMoveMemory(Argument, ResultPointer, ArgumentLength);
+      }
+      _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+      {
+         ERR("Failed to copy result from user mode!\n");
+         Status = _SEH2_GetExceptionCode();
+      }
+      _SEH2_END;
    }
-   _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-   {
-      ERR("Failed to copy result from user mode!\n");
-      Status = _SEH2_GetExceptionCode();
-   }
-   _SEH2_END;
 
    UserEnterCo();
 
@@ -1079,22 +1115,97 @@ co_IntSetWndIcons(VOID)
 
    UserEnterCo();
 
-   /* FIXME: Need to setup Registry System Cursor & Icons via Callbacks at init time! */
+   if (!NT_SUCCESS(Status))
+   {
+      ERR("Set Window Icons callback failed!\n");
+      IntCbFreeMemory(Argument);
+      return FALSE;
+   }
+
    RtlMoveMemory(Common, ResultPointer, ArgumentLength);
    gpsi->hIconSmWindows = Common->hIconSmWindows;
    gpsi->hIconWindows   = Common->hIconWindows;
+
+   IntLoadSystenIcons(Common->hIconSample,   OIC_SAMPLE);
+   IntLoadSystenIcons(Common->hIconHand,     OIC_HAND);
+   IntLoadSystenIcons(Common->hIconQuestion, OIC_QUES);
+   IntLoadSystenIcons(Common->hIconBang,     OIC_BANG);
+   IntLoadSystenIcons(Common->hIconNote,     OIC_NOTE);
+   IntLoadSystenIcons(gpsi->hIconWindows,    OIC_WINLOGO);
+   IntLoadSystenIcons(gpsi->hIconSmWindows,  OIC_WINLOGO+1);
 
    ERR("hIconSmWindows %p hIconWindows %p \n",gpsi->hIconSmWindows,gpsi->hIconWindows);
 
    IntCbFreeMemory(Argument);
 
+   return TRUE;
+}
+
+VOID FASTCALL
+co_IntDeliverUserAPC(VOID)
+{
+   ULONG ResultLength;
+   PVOID ResultPointer;
+   NTSTATUS Status;
+   UserLeaveCo();
+
+   Status = KeUserModeCallback(USER32_CALLBACK_DELIVERUSERAPC,
+                               0,
+                               0,
+                               &ResultPointer,
+                               &ResultLength);
+
+
+   UserEnterCo();
+
+   if (!NT_SUCCESS(Status))
+   {
+      ERR("Delivering User APC callback failed!\n");
+   }
+}
+
+VOID FASTCALL
+co_IntSetupOBM(VOID)
+{
+   NTSTATUS Status;
+   ULONG ArgumentLength, ResultLength;
+   PVOID Argument, ResultPointer;
+   PSETOBM_CALLBACK_ARGUMENTS Common;
+
+   ResultPointer = NULL;
+   ResultLength = ArgumentLength = sizeof(SETOBM_CALLBACK_ARGUMENTS);
+
+   Argument = IntCbAllocateMemory(ArgumentLength);
+   if (NULL == Argument)
+   {
+      ERR("Set Window Icons callback failed: out of memory\n");
+      return;
+   }
+   Common = (PSETOBM_CALLBACK_ARGUMENTS) Argument;
+
+   UserLeaveCo();
+
+   Status = KeUserModeCallback(USER32_CALLBACK_SETOBM,
+                               Argument,
+                               ArgumentLength,
+                               &ResultPointer,
+                               &ResultLength);
+
+
+   UserEnterCo();
+
    if (!NT_SUCCESS(Status))
    {
       ERR("Set Window Icons callback failed!\n");
-      return FALSE;
+      IntCbFreeMemory(Argument);
+      return;
    }
 
-   return TRUE;
+   RtlMoveMemory(Common, ResultPointer, ArgumentLength);
+   RtlCopyMemory(gpsi->oembmi, Common->oembmi, sizeof(gpsi->oembmi));
+
+   IntCbFreeMemory(Argument);
 }
+
 
 /* EOF */

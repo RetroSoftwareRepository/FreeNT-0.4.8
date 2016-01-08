@@ -65,6 +65,15 @@ struct FvfToDecl
 
 #define DDRAW_STRIDE_ALIGNMENT  8
 
+#define DDRAW_WINED3D_FLAGS     (WINED3D_LEGACY_DEPTH_BIAS | WINED3D_VIDMEM_ACCOUNTING \
+        | WINED3D_RESTORE_MODE_ON_ACTIVATE | WINED3D_FOCUS_MESSAGES | WINED3D_PIXEL_CENTER_INTEGER)
+
+enum ddraw_device_state
+{
+    DDRAW_DEVICE_STATE_OK,
+    DDRAW_DEVICE_STATE_LOST,
+};
+
 struct ddraw
 {
     /* Interfaces */
@@ -84,6 +93,7 @@ struct ddraw
     struct wined3d *wined3d;
     struct wined3d_device *wined3d_device;
     DWORD flags;
+    LONG device_state;
 
     struct ddraw_surface *primary;
     RECT primary_lock;
@@ -118,7 +128,7 @@ struct ddraw
 
 #define DDRAW_WINDOW_CLASS_NAME "DirectDrawDeviceWnd"
 
-HRESULT ddraw_init(struct ddraw *ddraw, enum wined3d_device_type device_type) DECLSPEC_HIDDEN;
+HRESULT ddraw_init(struct ddraw *ddraw, DWORD flags, enum wined3d_device_type device_type) DECLSPEC_HIDDEN;
 void ddraw_d3dcaps1_from_7(D3DDEVICEDESC *caps1, D3DDEVICEDESC7 *caps7) DECLSPEC_HIDDEN;
 void ddraw_destroy_swapchain(struct ddraw *ddraw) DECLSPEC_HIDDEN;
 HRESULT ddraw_get_d3dcaps(const struct ddraw *ddraw, D3DDEVICEDESC7 *caps) DECLSPEC_HIDDEN;
@@ -157,6 +167,7 @@ struct ddraw_surface
     struct ddraw *ddraw;
     struct wined3d_surface *wined3d_surface;
     struct wined3d_texture *wined3d_texture;
+    struct wined3d_rendertarget_view *wined3d_rtv;
     struct wined3d_private_store private_store;
     struct d3d_device *device1;
 
@@ -180,10 +191,6 @@ struct ddraw_surface
     /* Surface description, for GetAttachedSurface */
     DDSURFACEDESC2          surface_desc;
 
-    /* Misc things */
-    DWORD                   uniqueness_value;
-    UINT                    mipmap_level;
-
     /* Clipper objects */
     struct ddraw_clipper *clipper;
     struct ddraw_palette *palette;
@@ -204,9 +211,12 @@ struct ddraw_texture
 
 HRESULT ddraw_surface_create(struct ddraw *ddraw, const DDSURFACEDESC2 *surface_desc,
         struct ddraw_surface **surface, IUnknown *outer_unknown, unsigned int version) DECLSPEC_HIDDEN;
-HRESULT ddraw_surface_init(struct ddraw_surface *surface, struct ddraw *ddraw, struct ddraw_texture *texture,
+struct wined3d_rendertarget_view *ddraw_surface_get_rendertarget_view(struct ddraw_surface *surface) DECLSPEC_HIDDEN;
+void ddraw_surface_init(struct ddraw_surface *surface, struct ddraw *ddraw, struct ddraw_texture *texture,
         struct wined3d_surface *wined3d_surface, const struct wined3d_parent_ops **parent_ops) DECLSPEC_HIDDEN;
 ULONG ddraw_surface_release_iface(struct ddraw_surface *This) DECLSPEC_HIDDEN;
+HRESULT ddraw_surface_update_frontbuffer(struct ddraw_surface *surface,
+        const RECT *rect, BOOL read) DECLSPEC_HIDDEN;
 
 static inline struct ddraw_surface *impl_from_IDirect3DTexture(IDirect3DTexture *iface)
 {
@@ -291,6 +301,7 @@ struct d3d_device
     IUnknown IUnknown_inner;
     LONG ref;
     UINT version;
+    BOOL hw;
 
     IUnknown *outer_unknown;
     struct wined3d_device *wined3d_device;
@@ -333,7 +344,7 @@ struct d3d_device
     D3DMATRIXHANDLE          world, proj, view;
 };
 
-HRESULT d3d_device_create(struct ddraw *ddraw, struct ddraw_surface *target, IUnknown *rt_iface,
+HRESULT d3d_device_create(struct ddraw *ddraw, const GUID *guid, struct ddraw_surface *target, IUnknown *rt_iface,
         UINT version, struct d3d_device **device, IUnknown *outer_unknown) DECLSPEC_HIDDEN;
 enum wined3d_depth_buffer_type d3d_device_update_depth_stencil(struct d3d_device *device) DECLSPEC_HIDDEN;
 
@@ -581,6 +592,20 @@ void DDSD_to_DDSD2(const DDSURFACEDESC *in, DDSURFACEDESC2 *out) DECLSPEC_HIDDEN
 void DDSD2_to_DDSD(const DDSURFACEDESC2 *in, DDSURFACEDESC *out) DECLSPEC_HIDDEN;
 
 void multiply_matrix(D3DMATRIX *dst, const D3DMATRIX *src1, const D3DMATRIX *src2) DECLSPEC_HIDDEN;
+
+static inline BOOL format_is_compressed(const DDPIXELFORMAT *format)
+{
+    return (format->dwFlags & DDPF_FOURCC) && (format->dwFourCC == WINED3DFMT_DXT1
+            || format->dwFourCC == WINED3DFMT_DXT2 || format->dwFourCC == WINED3DFMT_DXT3
+            || format->dwFourCC == WINED3DFMT_DXT4 || format->dwFourCC == WINED3DFMT_DXT5);
+}
+
+static inline BOOL format_is_paletteindexed(const DDPIXELFORMAT *fmt)
+{
+    DWORD flags = DDPF_PALETTEINDEXED1 | DDPF_PALETTEINDEXED2 | DDPF_PALETTEINDEXED4
+            | DDPF_PALETTEINDEXED8 | DDPF_PALETTEINDEXEDTO8;
+    return !!(fmt->dwFlags & flags);
+}
 
 /* Used for generic dumping */
 struct flag_info
